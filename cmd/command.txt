@@ -1,0 +1,19 @@
+#Run below command from /home/mahmed/sw/aos2amm/docker/ubuntu directory.
+docker build -t naushada/amm:latest $HOME/lwm2m-server -f Dockerfile
+docker run --rm -p 10.203.77.36:5684:5684/udp naushada/amm:latest /opt/app/ammserver
+
+# Running in interactive mode
+docker run -h mahmed -it naushada/amm:latest /bin/bash
+
+# For multi acrchitecture build - run this command from $HOME/sw/aos2amm/docker/alpine
+# https://confluence.sierrawireless.com/display/ESPROD/Building+container+image+for+various+architectures
+docker buildx build --provenance=false --platform linux/amd64,linux/arm64,linux/arm/v7 -t naushada/amm:latest $HOME/lwm2m-server/apps -f Dockerfile --push
+
+docker buildx build --provenance=false  --platform linux/arm64/v8 --tag aos2amm $HOME/develop/git/repo/Apps-internal/aos2amm -f Dockerfile --builder aosbuilder --push
+
+# tcpdump command
+tcpdump -i enp0s31f6 -w capture.pcap
+
+
+#clean the build of multi architecture build
+docker buildx prune

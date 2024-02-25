@@ -1,0 +1,84 @@
+diff --git a/dtls.c b/dtls.c
+index 2ed7473..b3da253 100644
+--- a/dtls.c
++++ b/dtls.c
+@@ -2685,7 +2685,9 @@ check_server_hello(dtls_context_t *ctx,
+   if (*data) {
+     peer->session_id.size = *data;
+     if (peer->resumption) {
+-      if (0 == memcmp(peer->session_id.id, data + 1, peer->session_id.size)) {
++      if (peer->session_id.size >= 0
++              && peer->session_id.size <= sizeof(peer->session_id.id)
++              && 0 == memcmp(peer->session_id.id, data + 1, peer->session_id.size)) {
+         dtls_info("server is willing to resume the session\n");
+         return 0; /* session resume, no need to init security parameters */
+       }
+@@ -3661,7 +3663,8 @@ handle_handshake(dtls_context_t *ctx, dtls_peer_t *peer, session_t *session,
+   dtls_debug("received handshake packet of type: %s (%i)\n",
+ 	     dtls_handshake_type_to_name(hs_header->msg_type), hs_header->msg_type);
+ 
+-  if ((peer->state == DTLS_STATE_CONNECTED)
++  if (peer
++   && (peer->state == DTLS_STATE_CONNECTED)
+    && (hs_header->msg_type == DTLS_HT_CLIENT_HELLO)
+    && (peer->role == DTLS_CLIENT))
+   {
+@@ -3772,7 +3775,7 @@ handle_ccs(dtls_context_t *ctx, dtls_peer_t *peer,
+ 	   uint8 *record_header, uint8 *data, size_t data_length)
+ {
+   int err;
+-  dtls_handshake_parameters_t *handshake = peer->handshake_params;
++  dtls_handshake_parameters_t *handshake;
+   (void)record_header;
+ 
+   /* A CCS message is handled after a KeyExchange message was
+diff --git a/prng.h b/prng.h
+index 8a82173..db49cb3 100644
+--- a/prng.h
++++ b/prng.h
+@@ -33,6 +33,7 @@
+ 
+ #ifndef WITH_CONTIKI
+ #include <stdlib.h>
++#include <stdio.h>
+ 
+ #ifdef __RTOS__
+ 
+@@ -74,14 +75,18 @@ static void dtls_prng_init(unsigned short seed)
+  */
+ static inline int
+ dtls_prng(unsigned char *buf, size_t len) {
+-  while (len--)
+-    *buf++ = rand() & 0xFF;
+-  return 1;
++  FILE *urandom = fopen("/dev/urandom", "r");
++  if (urandom == NULL) {
++    return -1;
++  }
++  int status = (fread(buf, 1, len, urandom) == len)? 1: -1;
++  fclose(urandom);
++  return status;
+ }
+ 
+ static inline void
+ dtls_prng_init(unsigned short seed) {
+-	srand(seed);
++  /* urandom initialized at system level */
+ }
+ #endif /* __RTOS__ */
+ 
+diff --git a/uthash.h b/uthash.h
+index 07b29db..650bac5 100644
+--- a/uthash.h
++++ b/uthash.h
+@@ -965,7 +965,9 @@ do {
+         _he_newbkt = &(_he_new_buckets[_he_bkt]);                                \
+         if (++(_he_newbkt->count) > (tbl)->ideal_chain_maxlen) {                 \
+           (tbl)->nonideal_items++;                                               \
+-          _he_newbkt->expand_mult = _he_newbkt->count / (tbl)->ideal_chain_maxlen; \
++          if (_he_newbkt->count > _he_newbkt->expand_mult * (tbl)->ideal_chain_maxlen) { \
++            _he_newbkt->expand_mult++;                                           \
++          }                                                                      \
+         }                                                                        \
+         _he_thh->hh_prev = NULL;                                                 \
+         _he_thh->hh_next = _he_newbkt->hh_head;                                  \
