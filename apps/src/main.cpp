@@ -124,6 +124,7 @@ int main(std::int32_t argc, char *argv[]) {
         role = roleMap[argValueMap["role"]];
     } else {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " Error Invalid Option for role" << std::endl;
+        return(-1);
     }
 
     std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");

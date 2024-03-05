@@ -21,13 +21,13 @@ docker buildx prune
 
 
 //////////////   For coap 
-docker run -ti -p 10.203.77.36:5683:5683/udp naushada/lwm2mc:latest /opt/app/lwm2mClient local=coap://0.0.0.0:56830 peer=coap://10.20.150.21:5683
+docker run -ti -p 10.203.77.36:5683:5683/udp naushada/lwm2mc:latest /opt/app/lwm2mClient local=coap://0.0.0.0:56830 peer=coap://10.20.150.21:5683 role=client
 
 post uri="/push" uri-query="ep=A123456789ASDCF"
 
 ////////// For coaps
 
-docker run -ti -p 10.203.77.36:5683:5683/udp naushada/lwm2mc:latest /opt/app/lwm2mClient local=coaps://0.0.0.0:56830 peer=coaps://10.20.150.21:5683 identity="this is identity" secret="secret is same"
+docker run -ti -p 10.203.77.36:5683:5683/udp naushada/lwm2mc:latest /opt/app/lwm2mClient local=coaps://0.0.0.0:56830 peer=coaps://10.20.150.21:5683 identity="this is identity" secret="secret is same" role=client
 
 docker save lwm2mc:latest | gzip > lwm2mc_latest.tar.gz
 docker load < lwm2mc_latest.tar.gz
