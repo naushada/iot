@@ -28,7 +28,7 @@ std::string CBORAdapter::getJson(const std::string& fileName) {
     std::stringstream ss;
 
     if(!ifs.is_open()) {
-        std::cout << basename(__FILE__) << ":" << " Opening of file: " << fileName << " is Failed" << std::endl;
+        std::cout << basename(__FILE__) << ":" << " Error Opening of file: " << fileName << " is Failed" << std::endl;
         return(std::string());
     }
 

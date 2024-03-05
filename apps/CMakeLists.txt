@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16.3)
-project(ammserver C CXX)
+project(lwm2mClient C CXX)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g -Wall -Wextra -O0")
 set(CMAKE_VERBOSE_MAKEFILE ON)
@@ -10,26 +10,25 @@ add_definitions(-DLWM2M_LITTLE_ENDIAN)
 
 # Include External cmake file
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
-#include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/legato-3rdParty-tinycbor/src)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
 
 include_directories(inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
-#link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/legato-3rdParty-tinycbor/lib)
 
 #all files from src directory, the file(GLOB...) allows for wildcard additions:
 file(GLOB SOURCES "src/*.cpp")
 
-add_executable(ammserver ${SOURCES})
-#${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/legato-3rdParty-tinycbor/lib/libtinycbor.a
-target_link_libraries(ammserver 
+add_executable(lwm2mClient ${SOURCES})
+target_link_libraries(lwm2mClient 
                         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls/libtinydtls.a 
-                        z)
+                        z
+                        readline
+                        pthread)
 
 add_subdirectory(test)
 
-install(TARGETS ammserver
+install(TARGETS lwm2mClient
         CONFIGURATIONS Release
         RUNTIME DESTINATION /usr/local/bin
 )

@@ -86,6 +86,7 @@ class DTLSAdapter {
 
         std::int32_t rx(std::int32_t fd);
         std::int32_t tx(std::string& in);
+        void connect();
 
         void add_credential(const std::string& identity, const std::string& secret) {
             if(!device_credentials.insert(std::pair<std::string, std::string>(identity, secret)).second) {

@@ -127,6 +127,10 @@ DTLSAdapter::~DTLSAdapter() {
     dtls_ctx = nullptr;
 }
 
+void DTLSAdapter::connect() {
+      dtls_connect(dtls_ctx, &session);
+}
+
 std::int32_t DTLSAdapter::rx(std::int32_t fd) {
     std::int32_t ret = -1;
     std::vector<std::uint8_t> buf(DTLS_MAX_BUF);

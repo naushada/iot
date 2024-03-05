@@ -142,7 +142,7 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
         std::uint8_t optdelta;
         optdelta = (offset & 0xF) /*Uri-Path*/ << 4;
         for(const auto& uri: uris) {
-            std::cout << basename(__FILE__) << ":" << " uri: " << uri << std::endl;
+            std::cout << basename(__FILE__) << ":" << __LINE__ << " uri: " << uri << std::endl;
             if(uri.length() >= 0 && uri.length() <= 12) {
                 optdelta |= (uri.length() & 0xF);
                 ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
@@ -187,7 +187,7 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
         }
         
         for(const auto& query: queries) {
-            std::cout << basename(__FILE__) << ":" << " query: " << query << std::endl;
+            std::cout << basename(__FILE__) << ":" << __LINE__ << " query: " << query << std::endl;
             if(query.length() > 0 && query.length() <= 12) {
                 optdelta |= query.length();
                 ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));

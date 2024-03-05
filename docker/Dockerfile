@@ -1,6 +1,6 @@
 FROM ubuntu as compile-image
 RUN apt-get update && apt-get -y upgrade && \
-    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev
+    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev
 
 WORKDIR /tmp
 RUN git clone https://github.com/google/googletest/ && \
@@ -35,6 +35,7 @@ RUN mkdir -p /root/.ssh \
 
 WORKDIR /opt/app
 
-COPY --from=compile-image /tmp/source/apps/build/ammserver /opt/app/ammserver
+COPY --from=compile-image /tmp/source/apps/build/lwm2mClient /opt/app/lwm2mClient
+#COPY --from=compile-image /tmp/source/apps/build/test/lwm2mClient_test /opt/app/lwm2mClient_test
 
-CMD "/opt/app/ammserver"
+CMD "/opt/app/lwm2mClient"
