@@ -1,0 +1,29 @@
+mnahmed@mnahmed-VirtualBox:~/sw/iot/apps/build$ ./lwm2mClient local=coap://192.168.0.181:56830 peer=coap://192.168.0.181:5684 role=client
+main.cpp:98 ent.first:role ent.second:client
+main.cpp:98 ent.first:peer ent.second:coap://192.168.0.181:5684
+main.cpp:98 ent.first:local ent.second:coap://192.168.0.181:56830
+main.cpp:120 scheme:2 host:192.168.0.181 port:5684
+fn:App::App(std::string&, uint16_t&, Scheme_t&):71 created handle:3
+app.cpp:109 evts.size: 1
+LwM2MClient-->> post uri="/push" uri-query="ep=A12345678ABCD" data=[{"services.lwm2m.client.enable":true}, {"key":"value1"}]
+terminate called after throwing an instance of 'nlohmann::json_abi_v3_11_3::detail::parse_error'
+  what():  [json.exception.parse_error.101] parse error at line 1, column 40: syntax error while parsing value - unexpected end of input; expected '[', '{', or a literal
+Aborted (core dumped)
+mnahmed@mnahmed-VirtualBox:~/sw/iot/apps/build$ ./lwm2mClient local=coap://192.168.0.181:56830 peer=coap://192.168.0.181:5684 role=client
+main.cpp:98 ent.first:role ent.second:client
+main.cpp:98 ent.first:peer ent.second:coap://192.168.0.181:5684
+main.cpp:98 ent.first:local ent.second:coap://192.168.0.181:56830
+main.cpp:120 scheme:2 host:192.168.0.181 port:5684
+fn:App::App(std::string&, uint16_t&, Scheme_t&):71 created handle:3
+app.cpp:109 evts.size: 1
+LwM2MClient-->> post uri="/push" uri-query="ep=A12345678ABCD" data=[{"services.lwm2m.client.enable":true},{"key":"v1"}]
+coap_adapter.cpp:145 uri: push
+coap_adapter.cpp:190 query: ep=A12345678ABCD
+coap_adapter.cpp:145 uri: push
+coap_adapter.cpp:190 query: ep=A12345678ABCD
+44 02 45 67 32 7B 23 C6 B4 70 75 73 68 12 2F A8 3D 03 65 70 3D 41 31 32 33 34 35 36 37 38 41 42 43 44 C1 0E FF 5B 7B 22 6B 65 79 22 3A 20 22 76 31 22 7D 5D 
+readline.cpp:435 UDP Packet sent len:52
+44 02 98 69 66 33 48 73 B4 70 75 73 68 12 2F A8 3D 03 65 70 3D 41 31 32 33 34 35 36 37 38 41 42 43 44 C1 16 FF 82 A1 78 1C 73 65 72 76 69 63 65 73 2E 6C 77 6D 32 6D 2E 63 6C 69 65 6E 74 2E 65 6E 61 62 6C 65 F5 A1 63 6B 65 79 62 76 31 
+readline.cpp:435 UDP Packet sent len:78
+readline.cpp:279 The Command is ---> post uri="/push" uri-query="ep=A12345678ABCD" data=[{"services.lwm2m.client.enable":true},{"key":"v1"}]
+LwM2MClient-->> post uri="/push" uri-query="ep=A12345678ABCD" data=[{"services.lwm2m.client.enable":true},{"key":"v1"}]

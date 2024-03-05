@@ -400,6 +400,7 @@ int Readline::processCommand(const std::string& command) {
         cbor.push_back("[{\"key\": \"v1\"}]");
         if(!keyValueMap["data"].empty() && keyValueMap["data"].length() <= 1024) {
             std::string content;
+            cbor.clear();
             get_cborAdapter().json2cbor(keyValueMap["data"], content);
             cbor.push_back(content);
         }
@@ -407,6 +408,7 @@ int Readline::processCommand(const std::string& command) {
         if(!keyValueMap["file"].empty()) {
             ///Read data from File
             std::string content;
+            cbor.clear();
             content = get_cborAdapter().getJson(keyValueMap["file"]);
             get_app()->get_coapAdapter().buildRequest(content, cbor); 
         }
