@@ -18,6 +18,11 @@ std::unordered_map<std::string, Scheme_t> schemeMap = {
     {"coap", CoAP}
 };
 
+std::unordered_map<std::string, Role_t> roleMap = {
+    {"server", SERVER},
+    {"client", CLIENT}
+};
+
 void parseCommandLineArgument(std::int32_t argc, char *argv[], std::unordered_map<std::string, std::string>& out) {
 
     if(argc > 1) {
@@ -114,6 +119,13 @@ int main(std::int32_t argc, char *argv[]) {
 
     std::cout << basename(__FILE__) << ":" << __LINE__ << " scheme:" << std::to_string(scheme) << " host:" << peerHost << " port:" << std::to_string(peerPort) << std::endl;
 
+    Role_t role = SERVER;
+    if(!argValueMap["role"].empty() && (argValueMap["role"] == "server" || argValueMap["role"] == "client")) {
+        role = roleMap[argValueMap["role"]];
+    } else {
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error Invalid Option for role" << std::endl;
+    }
+
     std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");
     if(scheme == CoAPs) {
         ///identity & secret are mandatory argument
@@ -153,16 +165,14 @@ int main(std::int32_t argc, char *argv[]) {
     sigset_t emptyMask;
     sigemptyset(&emptyMask);
 
-    bool isDtls = false;
-    if(scheme == CoAPs) {
-        isDtls = true;
+    if(CLIENT == role) {
+        std::thread reception_thread(&App::start, &(*app), role, scheme);
+        Readline rline(app);
+        rline.init();
+        rline.start();
+    } else {
+        app.start(role);
     }
-
-    std::thread reception_thread(&App::start, &(*app), isDtls);
-        
-    Readline rline(app);
-    rline.init();
-    rline.start();
 
     return(0);
 }

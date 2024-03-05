@@ -104,12 +104,12 @@ std::int32_t App::handle_io_coap(const std::int32_t& fd) {
     rx(fd);
 }
 
-std::int32_t App::start(bool isCoAPs) {
+std::int32_t App::start(Role_t role, Scheme_t scheme) {
 
     std::cout << basename(__FILE__) << ":" << __LINE__ << " evts.size: " << evts.size() << std::endl;
     std::vector<struct epoll_event> events(evts.size());
 
-    if(isCoAPs) {
+    if(CLIENT == role &&  CoAPs == scheme) {
         get_adapter().connect();
     }
 

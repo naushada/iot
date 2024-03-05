@@ -36,6 +36,10 @@ typedef enum {
     CoAP = 2
 } Scheme_t;
 
+typedef enum {
+    SERVER = 1,
+    CLIENT = 2
+} Role_t;
 class App {
     public:
 
@@ -86,7 +90,7 @@ class App {
         App(const App& rhs) = default;
         
         std::int32_t init(const Scheme_t& scheme);
-        std::int32_t start(bool isDtls);
+        std::int32_t start(Role_t role, Scheme_t scheme);
         std::int32_t stop();
         std::int32_t rx(std::int32_t fd);
         std::int32_t tx(std::string& in);
