@@ -171,7 +171,7 @@ int main(std::int32_t argc, char *argv[]) {
         rline.init();
         rline.start();
     } else {
-        app.start(role);
+        app->start(role, scheme);
     }
 
     return(0);

@@ -1,7 +1,7 @@
 #Run below command from /home/mahmed/sw/aos2amm/docker/ubuntu directory.
 docker build -t lwm2mc:latest $HOME/lwm2m-server -f Dockerfile
-docker build -t lwm2mc:latest $HOME/sw/iot -f Dockerfile
-docker run --rm -p 10.203.77.36:5683:5683/udp lwm2mc:latest /opt/app/lwm2mClient
+docker build -t naushada/lwm2mc:latest $HOME/sw/iot -f Dockerfile
+docker run --rm -p 10.203.77.36:5683:5683/udp naushada/lwm2mc:latest /opt/app/lwm2mClient
 
 # Running in interactive mode
 docker run -h mahmed -it naushada/lwm2mc:latest /bin/bash
@@ -21,13 +21,13 @@ docker buildx prune
 
 
 //////////////   For coap 
-docker run -ti -p 10.203.77.36:5683:5683/udp lwm2mc:latest /opt/app/lwm2mClient local=coap://0.0.0.0:56830 peer=coap://10.20.150.21:5683
+docker run -ti -p 10.203.77.36:5683:5683/udp naushada/lwm2mc:latest /opt/app/lwm2mClient local=coap://0.0.0.0:56830 peer=coap://10.20.150.21:5683
 
 post uri="/push" uri-query="ep=A123456789ASDCF"
 
 ////////// For coaps
 
-docker run -ti -p 10.203.77.36:5683:5683/udp lwm2mc:latest /opt/app/lwm2mClient local=coaps://0.0.0.0:56830 peer=coaps://10.20.150.21:5683 identity="this is identity" secret="secret is same"
+docker run -ti -p 10.203.77.36:5683:5683/udp naushada/lwm2mc:latest /opt/app/lwm2mClient local=coaps://0.0.0.0:56830 peer=coaps://10.20.150.21:5683 identity="this is identity" secret="secret is same"
 
 docker save lwm2mc:latest | gzip > lwm2mc_latest.tar.gz
 docker load < lwm2mc_latest.tar.gz
