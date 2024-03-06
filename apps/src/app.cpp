@@ -27,7 +27,7 @@ CoAPAdapter& App::get_coapAdapter() {
 std::int32_t App::rx(std::int32_t fd) {
     std::int32_t ret = -1;
     std::vector<std::uint8_t> buf(1400);
-    int len;
+    std::int32_t len;
     struct sockaddr_in session;
     memset(&session, 0, sizeof(session));
     socklen_t slen = sizeof(session);
@@ -47,7 +47,7 @@ std::int32_t App::rx(std::int32_t fd) {
             auto st = coap_inst.parseRequest(std::string(buf.begin(), buf.end()), coapmessage);
 
             ///check if this is an ACK or not?
-            if(coap_inst.getRequestType(static_cast<std::uint32_t>(coapmessage.coapheader.type)) == "Acknowledgement") {
+            if(!st && coap_inst.getRequestType(static_cast<std::uint32_t>(coapmessage.coapheader.type)) == "Acknowledgement") {
                 std::cout << basename(__FILE__) << ":" << __LINE__ << " This is an ACK" << std::endl;
             } else {
                 ///Build the Response for a given Request
@@ -70,8 +70,8 @@ std::int32_t App::tx(std::string& in) {
     }
 
     socklen_t len = sizeof(peerAddr);
-    size_t ret = sendto(serverFd, (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
-    if(len < 0) {
+    std::int32_t ret = sendto(serverFd, (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
+    if(ret < 0) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed" << std::endl;
         return(-1);
     }
@@ -83,7 +83,7 @@ std::int32_t App::init(const Scheme_t& scheme) {
     epollFd = ::epoll_create1(EPOLL_CLOEXEC);
     struct epoll_event evt;
     if(serverFd > 0) {
-        evt.data.u64 = (serverFd << 32) | static_cast<std::uint32_t>(scheme);
+        evt.data.u64 = (((static_cast<std::uint64_t>(serverFd)) << 32) | static_cast<std::uint32_t>(scheme));
         evt.events = EPOLLHUP | EPOLLIN;
         
         ::epoll_ctl(epollFd, EPOLL_CTL_ADD, serverFd, &evt);
@@ -98,10 +98,13 @@ std::int32_t App::handle_io_coaps(const std::int32_t& fd) {
     if(rsp.length()) {
         get_adapter().tx(rsp);
     }
+
+    return(ret);
 }
 
 std::int32_t App::handle_io_coap(const std::int32_t& fd) {
     rx(fd);
+    return(0);
 }
 
 std::int32_t App::start(Role_t role, Scheme_t scheme) {
@@ -156,6 +159,7 @@ std::int32_t App::start(Role_t role, Scheme_t scheme) {
             }
         }
     }
+    return(0);
 }
 
 std::int32_t App::stop() {

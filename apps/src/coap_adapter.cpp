@@ -626,6 +626,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
     }while(0);
 
     //dumpCoAPMessage(coapmessage);
+    return(0);
 }
 
 bool CoAPAdapter::uncompress(const std::string &input, std::string &output) {
