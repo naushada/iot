@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16.3)
-project(ammserver)
+project(lwm2m)
 find_package(GTest REQUIRED)
 
 
@@ -16,12 +16,12 @@ file(GLOB SOURCES "*.cpp"
 
 enable_testing()
 
-add_executable(ammserver_test ${SOURCES})
-target_link_libraries(ammserver_test gtest_main)
+add_executable(lwm2m_test ${SOURCES})
+target_link_libraries(lwm2m_test gtest_main)
 
-target_link_libraries(ammserver_test gtest)
-target_link_libraries(ammserver_test pthread)
-target_link_libraries(ammserver_test z)
+target_link_libraries(lwm2m_test gtest)
+target_link_libraries(lwm2m_test pthread)
+target_link_libraries(lwm2m_test z)
 
-add_test(ammserver_gtests ammserver_test)
-gtest_discover_tests(ammserver_test)
+add_test(lwm2m_gtests lwm2m_test)
+gtest_discover_tests(lwm2m_test)

@@ -35,7 +35,7 @@ RUN mkdir -p /root/.ssh \
 
 WORKDIR /opt/app
 
-COPY --from=compile-image /tmp/source/apps/build/lwm2mClient /opt/app/lwm2mClient
-#COPY --from=compile-image /tmp/source/apps/build/test/lwm2mClient_test /opt/app/lwm2mClient_test
+COPY --from=compile-image /tmp/source/apps/build/lwm2m /opt/app/lwm2m
+COPY --from=compile-image /tmp/source/apps/build/test/lwm2m_test /opt/app/lwm2m_test
 
-CMD "/opt/app/lwm2mClient"
+CMD "/opt/app/lwm2m"
