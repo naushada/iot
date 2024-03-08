@@ -8,6 +8,10 @@
 #include <algorithm>
 #include <fstream>
 
+extern "C" {
+    #include <arpa/inet.h>
+    #include <libgen.h>
+}
 
 enum ObjectId_t : std::uint32_t {
     SecurityObjectID = 0,
@@ -60,14 +64,11 @@ class LwM2MAdapter {
     public:
         LwM2MAdapter();
         ~LwM2MAdapter();
-
-        std::vector<TLV>& tlvs() {
-            return(m_tlvs);
-        }
         
         std::vector<LwM2MObject>& objects() {
             return(m_objects);
         }
+
         /**
          * @brief 
          * 
@@ -76,7 +77,7 @@ class LwM2MAdapter {
          * @param tlvs 
          * @return std::int32_t 
          */
-        std::int32_t parseLwM2MPayload(const std::string& uri, const std::string& payload, std::vector<TLV>& tlvs);
+        std::int32_t parseLwM2MPayload(const std::string& uri, const std::string& payload, std::vector<LwM2MObject>& objects);
         /**
          * @brief 
          * 
@@ -86,7 +87,7 @@ class LwM2MAdapter {
          * @param tlv 
          * @return std::int32_t 
          */
-        std::int32_t buildLwM2MPayload(const std::string& oid, const std::string& oiid, const std::string& orid, TLV& tlv);
+        std::int32_t buildLwM2MPayload(const std::string& oid, const std::string& oiid, const std::string& orid, std::vector<LwM2MObject>& objects);
         /**
          * @brief 
          * 
