@@ -32,12 +32,12 @@ std::int32_t LwM2MAdapter::parseLwM2MUri(const std::string& uri, std::uint32_t& 
         iss.get();
     } else {
         oid = std::stoi(value.str());
-        return(0);
+        //return(0);
     }
 
     if(iss.get(*value.rdbuf(), delim).eof() && !value.str().empty()) {
         oiid = std::stoi(value.str());
-    } else if(iss.get(*value.rdbuf(), delim).good()) {
+    } else if(iss.get(*value.rdbuf(), delim).eof()) {
         oiid = std::stoi(value.str());
         /// Get rid of next '/' character
         iss.get();
@@ -75,7 +75,8 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
         std::uint8_t typeValueOf43Bits = (onebyte & 0b00011000) >> 3;
         std::uint8_t typeValueOf20Bits = (onebyte & 0b00000111) >> 0;
 
-        
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " typeValueOf76Bits:" << std::to_string(typeValueOf76Bits) << " typeValueOf5thBit:" << std::to_string(typeValueOf5thBit)
+                  << " typeValueOf43Bits:" << std::to_string(typeValueOf43Bits) << " typeValueOf20Bits:" << std::to_string(typeValueOf20Bits) << std::endl;
         switch(typeValueOf76Bits) {
             case TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00:
             {
@@ -292,12 +293,12 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
             }
             default:
             {
-                
+
             }
 
         }
 
-    } while(0);
+    } while(1);
 }
 
 std::int32_t LwM2MAdapter::buildLwM2MPayload(const std::string& oid, const std::string& oiid, const std::string& orid, std::vector<LwM2MObject>& objects) {

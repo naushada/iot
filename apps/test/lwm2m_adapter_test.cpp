@@ -31,7 +31,7 @@ TEST(LwM2MAdapterTestSuite, SingleObjectInstance) {
     for(const auto& object: objects) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " object.oid:" << object.oid << " object.oiid:" << object.oiid << std::endl;
         for(const auto& ent: object.tlvs) {
-            std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_type:" << ent.m_type << " ent.m_identifier" << ent.m_identifier << 
+            std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_type:" << ent.m_type << " ent.m_identifier:" << ent.m_identifier << 
             " ent.m_length:" << ent.m_length << std::endl;
         }
     }
