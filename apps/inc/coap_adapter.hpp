@@ -41,18 +41,111 @@ class CoAPAdapter {
 
         CoAPAdapter();
         ~CoAPAdapter();
+        /**
+         * @brief 
+         * 
+         * @param session 
+         * @param in 
+         * @return std::int32_t 
+         */
         std::int32_t processRequest(session_t *session, std::string &in);
+        /**
+         * @brief 
+         * 
+         * @param in 
+         * @param coapmessage 
+         * @return std::int32_t 
+         */
         std::int32_t parseRequest(const std::string& in, CoAPMessage& coapmessage);
+        /**
+         * @brief 
+         * 
+         * @param message 
+         * @return std::string 
+         */
         std::string buildResponse(const CoAPMessage& message);
+        /**
+         * @brief 
+         * 
+         * @param message 
+         * @return std::string 
+         */
         std::string buildRegistrationAck(const CoAPMessage& message);
+        /**
+         * @brief 
+         * 
+         * @param message 
+         * @return std::string 
+         */
         std::string buildPushContinue(const CoAPMessage& message);
+        /**
+         * @brief 
+         * 
+         * @param message 
+         * @return std::string 
+         */
         std::string buildPushAck(const CoAPMessage& message);
+        /**
+         * @brief 
+         * 
+         * @param input 
+         * @param output 
+         * @return true 
+         * @return false 
+         */
         bool uncompress(const std::string &input, std::string &output);
+        /**
+         * @brief 
+         * 
+         * @param input 
+         * @param output 
+         * @return true 
+         * @return false 
+         */
         bool compress(const std::string &input, std::string &output);
+        /**
+         * @brief 
+         * 
+         * @param input 
+         * @param fileName 
+         * @return true 
+         * @return false 
+         */
         bool writeIntoFile(const std::string &input, const std::string& fileName);
+        /**
+         * @brief 
+         * 
+         * @param input 
+         * @param request 
+         * @return true 
+         * @return false 
+         */
         bool buildRequest(const std::string &input, std::vector<std::string>& request);
+        /**
+         * @brief 
+         * 
+         * @param uri 
+         * @param query 
+         * @param request 
+         * @param cf 
+         * @param out 
+         * @return true 
+         * @return false 
+         */
         bool serialisePOST(const std::vector<std::string> &uri, const std::vector<std::string> &query, const std::vector<std::string>& request,
                            const std::uint16_t& cf, std::vector<std::string>& out);
+        /**
+         * @brief 
+         * 
+         * @param uri 
+         * @param query 
+         * @param request 
+         * @param cf 
+         * @param method 
+         * @param out 
+         * @return true 
+         * @return false 
+         */
         bool serialise(const std::vector<std::string> &uri, const std::vector<std::string> &query, const std::vector<std::string>& request,
                            const std::uint16_t& cf, const std::uint8_t& method, std::vector<std::string>& out);
 

@@ -48,6 +48,14 @@ struct TLV {
     ~TLV() = default;
 };
 
+struct LwM2MObject {
+    /// @brief Object ID
+    std::uint32_t oid;
+    /// @brief Object Instance ID
+    std::uint32_t oiid;
+    /// @brief list of Resource IDs
+    std::vector<TLV> rids;
+};
 class LwM2MAdapter {
     public:
         LwM2MAdapter();
@@ -57,11 +65,38 @@ class LwM2MAdapter {
             return(m_tlvs);
         }
 
+        /**
+         * @brief 
+         * 
+         * @param uri 
+         * @param payload 
+         * @param tlvs 
+         * @return std::int32_t 
+         */
         std::int32_t parseLwM2MPayload(const std::string& uri, const std::string& payload, std::vector<TLV>& tlvs);
+        /**
+         * @brief 
+         * 
+         * @param oid 
+         * @param oiid 
+         * @param orid 
+         * @param tlv 
+         * @return std::int32_t 
+         */
         std::int32_t buildLwM2MPayload(const std::string& oid, const std::string& oiid, const std::string& orid, TLV& tlv);
+        /**
+         * @brief 
+         * 
+         * @param uri 
+         * @param oid 
+         * @param oiid 
+         * @param rid 
+         * @return std::int32_t 
+         */
+        std::int32_t parseLwM2MUri(const std::string& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid);
 
     private:
-        std::vector<TLV> m_tlvs;
+        std::vector<LwM2MObject> m_objects;
 };
 
 #endif /*__lwm2m_adapter_hpp__*/

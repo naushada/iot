@@ -40,14 +40,53 @@ class Readline
     ~Readline();
     int init(void);
 
+    /**
+     * @brief 
+     * 
+     * @param text 
+     * @param start 
+     * @param end 
+     * @return char** 
+     */
     friend char **commandCompletion(const char *text, int start, int end);
+    /**
+     * @brief 
+     * 
+     * @param text 
+     * @param state 
+     * @return char* 
+     */
     friend char *commandGenerator(const char *text, int state);
+    /**
+     * @brief 
+     * 
+     * @param text 
+     * @param state 
+     * @return char* 
+     */
     friend char *commandArgGenerator(const char *text, int state);
+    /**
+     * @brief 
+     * 
+     * @param text 
+     * @param state 
+     * @return char* 
+     */
     friend char *commandArgListGenerator(const char *text, int state);
-
+    /**
+     * @brief 
+     * 
+     * @param command 
+     */
     void prompt(std::string command);
     std::string prompt(void);
     int executeLine(std::string line);
+    /**
+     * @brief 
+     * 
+     * @param command 
+     * @return int 
+     */
     int processCommand(const std::string& command);
     int processResponse(char *rsp, int len);
     std::string rtrim(const std::string &s);

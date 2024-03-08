@@ -88,12 +88,24 @@ class DTLSAdapter {
         std::int32_t tx(std::string& in);
         void connect();
 
+        /**
+         * @brief 
+         * 
+         * @param identity 
+         * @param secret 
+         */
         void add_credential(const std::string& identity, const std::string& secret) {
             if(!device_credentials.insert(std::pair<std::string, std::string>(identity, secret)).second) {
                 std::cout << "add_credential-> identity & secret can't be inserted into STL" << std::endl;
             }
         }
 
+        /**
+         * @brief Get the secret object
+         * 
+         * @param identity 
+         * @return std::string 
+         */
         std::string get_secret(const std::string& identity) {
             auto it = std::find_if(device_credentials.begin(), device_credentials.end(), [&](const auto& ent) -> bool {return(identity == ent.first);});
             if(it != device_credentials.end()) {
@@ -102,6 +114,14 @@ class DTLSAdapter {
             return(std::string());
         }
 
+        /**
+         * @brief 
+         * 
+         * @param iden 
+         * @param identity 
+         * @return true 
+         * @return false 
+         */
         bool match_identity(const std::string& iden, std::string& identity) {
             identity.clear();
             auto it = std::find_if(device_credentials.begin(), device_credentials.end(), [&](const auto& ent) -> bool {return(iden == ent.first);});

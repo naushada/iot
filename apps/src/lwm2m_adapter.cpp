@@ -15,7 +15,54 @@ LwM2MAdapter::~LwM2MAdapter() {
 
 }
 
+std::int32_t LwM2MAdapter::parseLwM2MUri(const std::string& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid) {
+
+    if(uri.empty() || (uri.at(0) != '/')) {
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error uri is empty" << std::endl;
+        return(-1);
+    }
+
+    std::istringstream iss(uri);
+    char delim = '/';
+    std::ostringstream value;
+    iss.rdbuf()->pubsetbuf(const_cast<char *>(uri.data()), uri.length());
+
+    if(uri.at(0) == delim)
+        iss.get();
+    
+    if(iss.get(*value.rdbuf(), delim).good()) {
+        oid = std::stoi(value.str());
+        /// Get rid of next '/' character
+        iss.get();
+    } else {
+        oid = std::stoi(value.str());
+        return(0);
+    }
+
+    if(iss.get(*value.rdbuf(), delim).eof() && !value.str().empty()) {
+        oiid = std::stoi(value.str());
+    } else if(iss.get(*value.rdbuf(), delim).good()) {
+        oiid = std::stoi(value.str());
+        /// Get rid of next '/' character
+        iss.get();
+        iss.get(*value.rdbuf(), delim);
+        rid = std::stoi(value.str());
+    }
+    return(0);
+}
+
 std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::string& payload, std::vector<TLV>& tlvs) {
+
+    std::uint32_t oid = 0, oiid = 0, rid = 0;
+    if(parseLwM2MUri(uri, oid, oiid, rid)) {
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error Unable to parse URI: " << uri << std::endl;
+        return(-1);
+    }
+
+    LwM2MObject object;
+    object.oid = oid;
+    object.oiid = oiid;
+
     std::istringstream iss(payload);
     iss.rdbuf()->pubsetbuf(const_cast<char *>(payload.data()), payload.length());
     std::uint8_t onebyte;
@@ -30,12 +77,42 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
         std::uint8_t typeValueOf43Bits = (onebyte & 0b00011000) >> 3;
         std::uint8_t typeValueOf20Bits = (onebyte & 0b00000111) >> 0;
 
-        TLV tlv;
+        
         switch(typeValueOf76Bits) {
 
             case TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00:
             {
                 /// The Value part of this TLV is another TLV resource.
+                switch(typeValueOf5thBit) {
+                    case TypeBit5_LengthOfTheIdentifier8BitsLong_0:
+                    {
+                        /// One byte length
+                        if(!iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
+                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                            break;    
+                        }
+                        object.oid = onebyte;
+
+                        break;
+                    }
+                    case TypeBit5_LengthOfTheIdentifier16BitsLong_1:
+                    {
+                        std::uint16_t twobytes;
+                        /// Two Bytes Length
+                        if(!iss.read(reinterpret_cast<char *>(&twobytes), sizeof(twobytes)).good()) {
+                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                            break;    
+                        }
+                        object.oid = ntohs(twobytes);
+
+                        break;
+                    }
+                    default:
+                    {
+                        std::cout << basename(__FILE__) << ":" << " Error typeValueOf5thBit: " << std::to_string(typeValueOf5thBit) << std::endl;
+                    }
+                }
+                
                 break;
             }
                 
@@ -69,6 +146,10 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                         tlv.m_identifier = ntohs(tlv.m_identifier);
 
                         break;
+                    }
+                    default:
+                    {
+                        std::cout << basename(__FILE__) << ":" << " Error typeValueOf5thBit: " << std::to_string(typeValueOf5thBit) << std::endl;
                     }
                 }
 
@@ -140,7 +221,7 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                     }
                     default:
                     {
-
+                        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error typeValueOf43Bits:" << std::to_string(typeValueOf43Bits) << std::endl;
                     }
                 }
                 
