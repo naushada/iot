@@ -67,6 +67,7 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
     std::istringstream iss(payload);
     iss.rdbuf()->pubsetbuf(const_cast<char *>(payload.data()), payload.length());
     std::uint8_t onebyte;
+
     do {
         if(!iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;

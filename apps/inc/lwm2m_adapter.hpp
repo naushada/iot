@@ -98,6 +98,17 @@ class LwM2MAdapter {
          */
         std::int32_t parseLwM2MUri(const std::string& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid);
 
+        std::string hexToBinary(const std::string &hex) {
+            std::string binary;
+            for (size_t i = 0; i < hex.size()/2; ++i) {
+                std::stringstream hexToDecimal;
+                hexToDecimal << std::hex << hex.substr(2*i, 2);
+                int decimal = 0;
+                hexToDecimal >> decimal;
+                binary.append(1, static_cast<unsigned char>(decimal));
+            }
+            return binary;
+        }
     private:
         std::vector<LwM2MObject> m_objects;
 };
