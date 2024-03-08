@@ -28,17 +28,23 @@ enum TypeFieldOfTLV_t : std::uint8_t {
   TypeBits76_ResourceWithValue_11 = 3
 };
 
-enum LengthFieldOfIdentifier_t : std::uint8_t {
+enum LengthOfTheIdentifier_t : std::uint8_t {
     TypeBit5_LengthOfTheIdentifier8BitsLong_0 = 0,
     TypeBit5_LengthOfTheIdentifier16BitsLong_1 = 1,
 };
 
+enum LengthOfTheType_t : std::uint8_t {
+    TypeBits43_NoTypeLengthField_00 = 0,
+    TypeBits43_8BitsTypeLengthField_01 = 1,
+    TypeBits43_16BitsTypeLengthField_10 = 2,
+    TypeBits43_24BitsTypeLengthField_11 = 3,
+};
 struct TLV {
-    std::uint8_t m_type;
-    std::vector<std::uint8_t> m_identifier;
-    std::vector<std::uint8_t> m_length;
+    TypeFieldOfTLV_t m_type;
+    std::uint32_t m_identifier;
+    std::uint32_t m_length;
     std::vector<std::uint8_t> m_value;
-    TLV() : m_type(0), m_identifier(2),m_length(3), m_value(1024) {}
+    TLV() : m_type(TypeBits76_ResourceWithValue_11), m_identifier(0),m_length(0), m_value(1024) {}
     ~TLV() = default;
 };
 
