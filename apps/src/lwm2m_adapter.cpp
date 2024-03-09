@@ -60,7 +60,7 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
     object.oid = oid;
     object.oiid = oiid;
 
-    std::istringstream iss(payload);
+    std::istringstream iss;
     iss.rdbuf()->pubsetbuf(const_cast<char *>(payload.data()), payload.length());
     std::uint8_t onebyte;
 
@@ -75,8 +75,9 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
         std::uint8_t typeValueOf43Bits = (onebyte & 0b00011000) >> 3;
         std::uint8_t typeValueOf20Bits = (onebyte & 0b00000111) >> 0;
 
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " typeValueOf76Bits:" << std::to_string(typeValueOf76Bits) << " typeValueOf5thBit:" << std::to_string(typeValueOf5thBit)
-                  << " typeValueOf43Bits:" << std::to_string(typeValueOf43Bits) << " typeValueOf20Bits:" << std::to_string(typeValueOf20Bits) << std::endl;
+        //std::cout << basename(__FILE__) << ":" << __LINE__ << " typeValueOf76Bits:" << std::to_string(typeValueOf76Bits) << " typeValueOf5thBit:" << std::to_string(typeValueOf5thBit)
+        //          << " typeValueOf43Bits:" << std::to_string(typeValueOf43Bits) << " typeValueOf20Bits:" << std::to_string(typeValueOf20Bits) << std::endl;
+
         switch(typeValueOf76Bits) {
             case TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00:
             {
@@ -86,7 +87,7 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                     {
                         /// One byte length
                         if(!iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
-                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " Error input buffer is too small to process" << std::endl;
                             break;    
                         }
                         object.oiid = static_cast<std::uint32_t>(onebyte);
@@ -98,7 +99,7 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                         std::uint16_t twobytes;
                         /// Two Bytes Length
                         if(!iss.read(reinterpret_cast<char *>(&twobytes), sizeof(twobytes)).good()) {
-                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " Error input buffer is too small to process" << std::endl;
                             break;    
                         }
                         object.oiid = static_cast<std::uint32_t>(ntohs(twobytes));
@@ -112,25 +113,23 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                 }
 
                 switch(typeValueOf43Bits) {
+
                     case TypeBits43_NoTypeLengthField_00:
                     {
-                        //No Type is encoded in TLV
                         TLV tlv;
                         tlv.m_length = typeValueOf20Bits;
                         std::vector<std::uint8_t> dd(tlv.m_length);
                         if(!iss.read(reinterpret_cast<char *>(dd.data()), dd.size()).good()) {
-                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
-                            //tlv.m_value.resize(iss.gcount());
-                            //tlv().push_back(tlv);
+                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " Error input buffer is too small to process" << std::endl;
                             break;    
                         }
                         tlv.m_value = dd;
 
                         object.tlvs.push_back(tlv);
                         objects.push_back(object);
-                        std::cout << basename(__FILE__) << ":" << " No Length filed for RID (Resource ID)" << std::endl;
                         break;
                     }
+
                     case TypeBits43_8BitsTypeLengthField_01:
                     {
                         ///The length of Type filed is one Byte in encoded TLV
@@ -139,18 +138,18 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                             break;    
                         }
 
-                        std::vector<std::uint8_t> contents(1024);
+                        std::vector<std::uint8_t> contents(onebyte);
                         if(!iss.read(reinterpret_cast<char *>(contents.data()), onebyte).good()) {
                             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
                             break;    
                         }
-
-                        contents.resize(iss.gcount());
+                        
                         std::string newcontents(contents.begin(), contents.end());
                         iss.rdbuf()->pubsetbuf(const_cast<char *>(newcontents.data()), newcontents.length());
 
                         break;
                     }
+
                     case TypeBits43_16BitsTypeLengthField_10:
                     {
                         std::uint16_t twobytes;
