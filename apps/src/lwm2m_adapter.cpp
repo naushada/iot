@@ -202,6 +202,75 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
         return(parseLwM2MObjects(std::string(contents.begin(), contents.end()), object));
 
     } else if(typeValueOf76Bits == TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10) {
+
+        switch(typeValueOf5thBit) {
+
+            case TypeBit5_LengthOfTheIdentifier8BitsLong_0:
+                {
+                    /// One byte Resource Instance ID
+                    if(!iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
+                        std::cout <<basename(__FILE__) << ":" << __LINE__ << " Error input buffer is too small to process" << std::endl;
+                        break;    
+                    }
+                    object.rid = static_cast<std::uint32_t>(onebyte);
+
+                    break;
+                }
+
+            case TypeBit5_LengthOfTheIdentifier16BitsLong_1:
+                {
+                    /// Two Bytes are Resource Instance ID
+                    std::uint16_t twobytes;
+                    if(!iss.read(reinterpret_cast<char *>(&twobytes), sizeof(twobytes)).good()) {
+                        std::cout <<basename(__FILE__) << ":" << __LINE__ << " Error input buffer is too small to process" << std::endl;
+                        break;    
+                    }
+                    object.rid = static_cast<std::uint32_t>(ntohs(twobytes));
+
+                    break;
+                }
+
+            default:
+                {
+                    std::cout << basename(__FILE__) << ":" << " Error Resource Instance can't be greater than 2 bytes: " << std::to_string(typeValueOf5thBit) << std::endl;
+                }
+        }
+
+        std::uint32_t len = 0;
+        if(typeValueOf43Bits == TypeBits43_NoTypeLengthField_00) {
+
+            len = static_cast<std::uint32_t>(typeValueOf20Bits);
+
+        } else if(typeValueOf43Bits == TypeBits43_8BitsTypeLengthField_01) {
+
+            if(!iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
+                std::cout <<basename(__FILE__) << ":" << __LINE__ << " Error input buffer is too small to process" << std::endl;
+            }
+
+            len = static_cast<std::uint32_t>(onebyte);
+
+        } else if(typeValueOf43Bits == TypeBits43_24BitsTypeLengthField_11) {
+
+            std::uint16_t twobytes;
+            if(!iss.read(reinterpret_cast<char *>(&twobytes), sizeof(twobytes)).good()) {
+                std::cout <<basename(__FILE__) << ":" << __LINE__ << " Error input buffer is too small to process" << std::endl;
+                return(-1);    
+            }
+            len = static_cast<std::uint32_t>(ntohs(twobytes));
+
+        } else {
+
+        }
+
+        /// Read len number of bytes
+        std::vector<std::uint8_t> contents(len);
+        if(!iss.read(reinterpret_cast<char *>(contents.data()), onebyte).good()) {
+            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+        }
+                        
+        //std::string newcontents(contents.begin(), contents.end());
+        return(parseLwM2MObjects(std::string(contents.begin(), contents.end()), object));
+        
         
     } else if(typeValueOf76Bits == TypeBits76_ResourceWithValue_11) {
         TLV tlv;
@@ -276,9 +345,9 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
         
         tlv.m_value = contents;
         object.tlvs.push_back(tlv);
-
     }
 
+    return(parseLwM2MObjects(iss.str(), object));
 }
 
 std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::string& payload, std::vector<LwM2MObject>& objects) {
