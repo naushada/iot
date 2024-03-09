@@ -27,15 +27,17 @@ TEST(LwM2MAdapterTestSuite, SingleObjectInstance) {
     //std::vector<LwM2MObject> objects;
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
+    LwM2MObjectData data;
     //lwm2mAdapter.parseLwM2MPayload("/3/0", bindata, objects);
-    lwm2mAdapter.parseLwM2MObjects(bindata, object);
+    lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
 
+#if 0
     std::cout << basename(__FILE__) << ":" << __LINE__ << " object.oid:" << object.oid << " object.oiid:" << object.oiid << " object.rid:" << object.rid << std::endl;
     for(const auto& ent: object.tlvs) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_type:" << std::to_string(ent.m_type) << " ent.m_identifier:" << ent.m_identifier << 
             " ent.m_length:" << ent.m_length << " value: " << std::string(ent.m_value.begin(), ent.m_value.end()) << std::endl;
     }
-    
+#endif
     
 
     //EXPECT_TRUE(isBlock == true && method == 2);
