@@ -53,6 +53,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
     std::uint8_t onebyte;
 
     if(iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).eof()) {
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " End of stream " << std::endl;
         return(0);
     }
 
@@ -60,6 +61,9 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
     std::uint8_t typeValueOf5thBit = (onebyte & 0b00100000) >> 5;
     std::uint8_t typeValueOf43Bits = (onebyte & 0b00011000) >> 3;
     std::uint8_t typeValueOf20Bits = (onebyte & 0b00000111) >> 0;
+
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " typeValueOf76Bits:" << std::to_string(typeValueOf76Bits) << " typeValueOf5thBit:" << std::to_string(typeValueOf5thBit)
+              << " typeValueOf43Bits:" << std::to_string(typeValueOf43Bits) << " typeValueOf20Bits:" << std::to_string(typeValueOf20Bits) << std::endl;
 
     if(typeValueOf76Bits == TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00) {
 
@@ -109,7 +113,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
 
             len = static_cast<std::uint32_t>(onebyte);
 
-        } else if(typeValueOf43Bits == TypeBits43_24BitsTypeLengthField_11) {
+        } else if(typeValueOf43Bits == TypeBits43_16BitsTypeLengthField_10) {
 
             std::uint16_t twobytes;
             if(!iss.read(reinterpret_cast<char *>(&twobytes), sizeof(twobytes)).good()) {
@@ -124,12 +128,12 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
 
         /// Read len number of bytes
         std::vector<std::uint8_t> contents(len);
-        if(!iss.read(reinterpret_cast<char *>(contents.data()), onebyte).good()) {
+        if(!iss.read(reinterpret_cast<char *>(contents.data()), contents.size()).good()) {
             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
         }
                         
         //std::string newcontents(contents.begin(), contents.end());
-        return(parseLwM2MObjects(std::string(contents.begin(), contents.end()), object));
+        parseLwM2MObjects(std::string(contents.begin(), contents.end()), object);
 
     } else if(typeValueOf76Bits == TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01) {
 
@@ -179,7 +183,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
 
             len = static_cast<std::uint32_t>(onebyte);
 
-        } else if(typeValueOf43Bits == TypeBits43_24BitsTypeLengthField_11) {
+        } else if(typeValueOf43Bits == TypeBits43_16BitsTypeLengthField_10) {
 
             std::uint16_t twobytes;
             if(!iss.read(reinterpret_cast<char *>(&twobytes), sizeof(twobytes)).good()) {
@@ -194,12 +198,12 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
 
         /// Read len number of bytes
         std::vector<std::uint8_t> contents(len);
-        if(!iss.read(reinterpret_cast<char *>(contents.data()), onebyte).good()) {
+        if(!iss.read(reinterpret_cast<char *>(contents.data()), contents.size()).good()) {
             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
         }
                         
         //std::string newcontents(contents.begin(), contents.end());
-        return(parseLwM2MObjects(std::string(contents.begin(), contents.end()), object));
+        parseLwM2MObjects(std::string(contents.begin(), contents.end()), object);
 
     } else if(typeValueOf76Bits == TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10) {
 
@@ -249,7 +253,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
 
             len = static_cast<std::uint32_t>(onebyte);
 
-        } else if(typeValueOf43Bits == TypeBits43_24BitsTypeLengthField_11) {
+        } else if(typeValueOf43Bits == TypeBits43_16BitsTypeLengthField_10) {
 
             std::uint16_t twobytes;
             if(!iss.read(reinterpret_cast<char *>(&twobytes), sizeof(twobytes)).good()) {
@@ -264,12 +268,12 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
 
         /// Read len number of bytes
         std::vector<std::uint8_t> contents(len);
-        if(!iss.read(reinterpret_cast<char *>(contents.data()), onebyte).good()) {
+        if(!iss.read(reinterpret_cast<char *>(contents.data()), contents.size()).good()) {
             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
         }
                         
         //std::string newcontents(contents.begin(), contents.end());
-        return(parseLwM2MObjects(std::string(contents.begin(), contents.end()), object));
+        parseLwM2MObjects(std::string(contents.begin(), contents.end()), object);
         
         
     } else if(typeValueOf76Bits == TypeBits76_ResourceWithValue_11) {
@@ -322,7 +326,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
 
             len = static_cast<std::uint32_t>(onebyte);
 
-        } else if(typeValueOf43Bits == TypeBits43_24BitsTypeLengthField_11) {
+        } else if(typeValueOf43Bits == TypeBits43_16BitsTypeLengthField_10) {
 
             std::uint16_t twobytes;
             if(!iss.read(reinterpret_cast<char *>(&twobytes), sizeof(twobytes)).good()) {
@@ -339,15 +343,20 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
 
         /// Read len number of bytes
         std::vector<std::uint8_t> contents(len);
-        if(!iss.read(reinterpret_cast<char *>(contents.data()), onebyte).good()) {
+        if(!iss.read(reinterpret_cast<char *>(contents.data()), contents.size()).good()) {
             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
         }
         
         tlv.m_value = contents;
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " identifier:" << std::to_string(tlv.m_identifier) 
+                  << " length:" << std::to_string(tlv.m_length) << " value:" << std::string(tlv.m_value.begin(), tlv.m_value.end()) << std::endl;
         object.tlvs.push_back(tlv);
+        std::ostringstream rem;
+        iss.get(*rem.rdbuf());
+        parseLwM2MObjects(rem.str(), object);
     }
 
-    return(parseLwM2MObjects(iss.str(), object));
+    //return(parseLwM2MObjects(iss.str(), object));
 }
 
 std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::string& payload, std::vector<LwM2MObject>& objects) {
