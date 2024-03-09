@@ -211,23 +211,24 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                     }
 
                     tlv.m_identifier = onebyte;
+                    std::cout << basename(__FILE__) << ":" << __LINE__ << " tlv.m_identifier:" <<  std::hex << tlv.m_identifier << std::dec << std::endl;
+                    tlv.m_length = static_cast<std::uint32_t>(typeValueOf20Bits);
 
-                    tlv.m_length = typeValueOf20Bits;
-
-                    if(!iss.read(reinterpret_cast<char *>(tlv.m_value.data()), tlv.m_length).good()) {
+                    std::vector<std::uint8_t> dd(tlv.m_length);
+                    if(!iss.read(reinterpret_cast<char *>(dd.data()), dd.size()).good()) {
                         std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
                         //tlv.m_value.resize(iss.gcount());
                         //tlv().push_back(tlv);
                         break;    
                     }
-                    tlv.m_value.resize(iss.gcount());
+                    tlv.m_value = dd;
 
                     object.tlvs.push_back(tlv);
                     objects.push_back(object);
-                    std::cout << basename(__FILE__) << ":" << __LINE__ << " tlv.m_length:" << tlv.m_length << std::endl;
+                    std::cout << basename(__FILE__) << ":" << __LINE__ << " tlv.m_length:" <<  std::hex << tlv.m_length << std::dec << std::endl;
 
                     std::string multiplerid(std::string(tlv.m_value.begin(), tlv.m_value.end()));
-                    for(const auto& ent: multiplerid) {
+                    for(const auto& ent: tlv.m_value) {
                         printf("%0.2X ", static_cast<std::uint32_t>(ent));
                     }
                     std::cout << std::endl;
@@ -263,17 +264,18 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                             newobject.oid = object.oid;
                             newobject.oiid = object.oiid;
                             newobject.rid == static_cast<std::uint32_t>(onebyte);
-                            std::cout << basename(__FILE__) << ":" << __LINE__ << " rid: " << newobject.rid << std::endl;
+                            std::cout << basename(__FILE__) << ":" << __LINE__ << " rid: " << std::hex << newobject.rid << std::dec << std::endl;
                         }
 
                         if(!typeValueOf43Bits) {
                             TLV tlv;
                             tlv.m_length = static_cast<std::uint32_t>(typeValueOf20Bits);
-                            if(!newiss.read(reinterpret_cast<char *>(tlv.m_value.data()), tlv.m_length).good()) {
+                            std::vector<std::uint8_t> dd(tlv.m_length);
+                            if(!newiss.read(reinterpret_cast<char *>(dd.data()), dd.size()).good()) {
                                 std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
                                 break;    
                             }
-                            tlv.m_value.resize(newiss.gcount());
+                            tlv.m_value = dd;
                             newobject.tlvs.push_back(tlv);
                             objects.push_back(newobject);
                         }
