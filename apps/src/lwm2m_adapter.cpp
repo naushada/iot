@@ -66,7 +66,7 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
 
     do {
         if(!iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
-            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+            //std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
             break;    
         }
 
@@ -115,7 +115,20 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                     case TypeBits43_NoTypeLengthField_00:
                     {
                         //No Type is encoded in TLV
-                        std::cout << basename(__FILE__) << ":" << " NoLength filed for RID (Resource ID)" << std::endl;
+                        TLV tlv;
+                        tlv.m_length = typeValueOf20Bits;
+                        std::vector<std::uint8_t> dd(tlv.m_length);
+                        if(!iss.read(reinterpret_cast<char *>(dd.data()), dd.size()).good()) {
+                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                            //tlv.m_value.resize(iss.gcount());
+                            //tlv().push_back(tlv);
+                            break;    
+                        }
+                        tlv.m_value = dd;
+
+                        object.tlvs.push_back(tlv);
+                        objects.push_back(object);
+                        std::cout << basename(__FILE__) << ":" << " No Length filed for RID (Resource ID)" << std::endl;
                         break;
                     }
                     case TypeBits43_8BitsTypeLengthField_01:
@@ -203,7 +216,7 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
             {
                 tlv.m_type = TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10;
 
-                if(!typeValueOf5thBit && !typeValueOf43Bits) {
+                if(!typeValueOf5thBit) {
 
                     if(!iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
                         std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
@@ -212,7 +225,16 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
 
                     tlv.m_identifier = onebyte;
                     std::cout << basename(__FILE__) << ":" << __LINE__ << " tlv.m_identifier:" <<  std::hex << tlv.m_identifier << std::dec << std::endl;
-                    tlv.m_length = static_cast<std::uint32_t>(typeValueOf20Bits);
+
+                    if(!typeValueOf43Bits) {
+                        tlv.m_length = static_cast<std::uint32_t>(typeValueOf20Bits);
+                    } else {
+                        if(!iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
+                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                            break;    
+                        }
+                        tlv.m_length = static_cast<std::uint32_t>(onebyte);
+                    }
 
                     std::vector<std::uint8_t> dd(tlv.m_length);
                     if(!iss.read(reinterpret_cast<char *>(dd.data()), dd.size()).good()) {
@@ -238,10 +260,10 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                     while(1) {
                         
                         if(!newiss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
-                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                            //std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
                             break;    
                         }
-                        std::cout << basename(__FILE__) << ":" << __LINE__ << " value of onebyte:" << std::to_string(onebyte) << std::endl;
+                        std::cout << basename(__FILE__) << ":" << __LINE__ << " value of onebyte: 0x" << std::hex << onebyte << std::dec << std::endl;
 
                         std::uint8_t typeValueOf76Bits = (onebyte & 0b11000000) >> 6;
                         std::uint8_t typeValueOf5thBit = (onebyte & 0b00100000) >> 5;
@@ -264,7 +286,7 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                             newobject.oid = object.oid;
                             newobject.oiid = object.oiid;
                             newobject.rid == static_cast<std::uint32_t>(onebyte);
-                            std::cout << basename(__FILE__) << ":" << __LINE__ << " rid: " << std::hex << newobject.rid << std::dec << std::endl;
+                            std::cout << basename(__FILE__) << ":" << __LINE__ << " rid: 0x" << std::hex << newobject.rid << std::dec << std::endl;
                         }
 
                         if(!typeValueOf43Bits) {
@@ -275,6 +297,8 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                                 std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
                                 break;    
                             }
+
+                            tlv.m_identifier = onebyte;
                             tlv.m_value = dd;
                             newobject.tlvs.push_back(tlv);
                             objects.push_back(newobject);
@@ -324,13 +348,14 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                     {
                         //No Type is encoded in TLV
                         tlv.m_length = typeValueOf20Bits;
-                        if(!iss.read(reinterpret_cast<char *>(tlv.m_value.data()), tlv.m_length).good()) {
+                        std::vector<std::uint8_t> dd(tlv.m_length);
+                        if(!iss.read(reinterpret_cast<char *>(dd.data()), tlv.m_length).good()) {
                             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
                             //tlv.m_value.resize(iss.gcount());
                             //tlv().push_back(tlv);
                             break;    
                         }
-                        tlv.m_value.resize(iss.gcount());
+                        tlv.m_value = dd;
 
                         object.tlvs.push_back(tlv);
                         objects.push_back(object);
@@ -346,13 +371,14 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                         }
 
                         std::cout << basename(__FILE__) << ":" << __LINE__ << " tlv.m_length:" << tlv.m_length << std::endl; 
-                        if(!iss.read(reinterpret_cast<char *>(tlv.m_value.data()), tlv.m_length).good()) {
+                        std::vector<std::uint8_t> dd(tlv.m_length);
+                        if(!iss.read(reinterpret_cast<char *>(dd.data()), tlv.m_length).good()) {
                             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
                             //tlv.m_value.resize(iss.gcount());
                             //tlv().push_back(tlv);
                             break;    
                         }
-                        tlv.m_value.resize(iss.gcount());
+                        tlv.m_value = dd;
 
                         object.tlvs.push_back(tlv);
                         objects.push_back(object);
