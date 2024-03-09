@@ -58,15 +58,23 @@ struct LwM2MObjectData {
     std::uint32_t m_rid;
     std::uint32_t m_ridlength;
     std::vector<std::uint8_t> m_ridvalue;
-    LwM2MObjectData() : m_oiid(0), m_riid(0), m_rid(0), m_ridlength(0), m_ridvalue(1024) {}
+    LwM2MObjectData() : m_oiid(0), m_riid(0), m_rid(0), m_ridlength(0), m_ridvalue(0) {}
     ~LwM2MObjectData() = default;
+    LwM2MObjectData& clear() {
+        m_oiid = 0;
+        m_riid = 0;
+        //m_rid = 0;
+        m_ridlength = 0;
+        m_ridvalue.clear();
+        return(*this);
+    }
 };
 
 struct LwM2MObject {
     /// @brief Object ID
     std::uint32_t m_oid;
     std::vector<LwM2MObjectData>m_value;
-    LwM2MObject() : m_oid(0), m_value(1024) {}
+    LwM2MObject() : m_oid(0), m_value(0) {}
     ~LwM2MObject() = default;
 };
 

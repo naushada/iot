@@ -20,8 +20,7 @@ void LwM2MAdapterTest::TestBody()
 
 TEST(LwM2MAdapterTestSuite, SingleObjectInstance) {
     std::string request = "C800144F70656E204D6F62696C6520416C6C69616E6365C801164C696768747765696774204D324D20436C6965"
-                          "6E7479C80209333435303030313233C303312E30860641000141010588070842000ED842011388870841007D42010384C10964"
-                          "C10A0F830B410000C40D5182428FC60E2B30323A3030C11055";
+                          "6E7479C80209333435303030313233C303312E30860641000141010588070842000ED842011388870841007D42010384C10964C10A0F830B410000C40D5182428FC60E2B30323A3030C11055";
     
     LwM2MAdapter lwm2mAdapter;
     //std::vector<LwM2MObject> objects;
@@ -30,6 +29,11 @@ TEST(LwM2MAdapterTestSuite, SingleObjectInstance) {
     LwM2MObjectData data;
     //lwm2mAdapter.parseLwM2MPayload("/3/0", bindata, objects);
     lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
+    for(const auto& ent: object.m_value) {
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+                  << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue:" << std::string(ent.m_ridvalue.begin(), ent.m_ridvalue.begin())
+                  << std::endl; 
+    }
 
 #if 0
     std::cout << basename(__FILE__) << ":" << __LINE__ << " object.oid:" << object.oid << " object.oiid:" << object.oiid << " object.rid:" << object.rid << std::endl;
