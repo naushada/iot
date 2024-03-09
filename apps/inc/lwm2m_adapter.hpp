@@ -58,6 +58,7 @@ struct LwM2MObject {
     /// @brief Object Instance ID
     std::uint32_t oiid;
     /// @brief list of Resource IDs
+    std::uint32_t rid;
     std::vector<TLV> tlvs;
 };
 class LwM2MAdapter {

@@ -174,9 +174,114 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
             }
                 
             case TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01:
+            {
+                tlv.m_type = TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01;
+                if(!typeValueOf5thBit && !typeValueOf43Bits) {
+                    tlv.m_length = typeValueOf20Bits;
+                    /// One byte length
+                    if(!iss.read(reinterpret_cast<char *>(&object.rid), 1/*One Byte*/).good()) {
+                        std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                        break;    
+                    }
+
+                    if(!iss.read(reinterpret_cast<char *>(tlv.m_value.data()), tlv.m_length).good()) {
+                        std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                        //tlv.m_value.resize(iss.gcount());
+                        //tlv().push_back(tlv);
+                        break;    
+                    }
+                    tlv.m_value.resize(iss.gcount());
+
+                    object.tlvs.push_back(tlv);
+                    objects.push_back(object);
+                    std::cout << basename(__FILE__) << ":" << __LINE__ << " tlv.m_length:" << tlv.m_length << std::endl;
+                }
+
                 break;
+            }
             case TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10:
+            {
+                tlv.m_type = TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10;
+
+                if(!typeValueOf5thBit && !typeValueOf43Bits) {
+
+                    if(!iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
+                        std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                        break;    
+                    }
+
+                    tlv.m_identifier = onebyte;
+
+                    tlv.m_length = typeValueOf20Bits;
+
+                    if(!iss.read(reinterpret_cast<char *>(tlv.m_value.data()), tlv.m_length).good()) {
+                        std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                        //tlv.m_value.resize(iss.gcount());
+                        //tlv().push_back(tlv);
+                        break;    
+                    }
+                    tlv.m_value.resize(iss.gcount());
+
+                    object.tlvs.push_back(tlv);
+                    objects.push_back(object);
+                    std::cout << basename(__FILE__) << ":" << __LINE__ << " tlv.m_length:" << tlv.m_length << std::endl;
+
+                    std::string multiplerid(std::string(tlv.m_value.begin(), tlv.m_value.end()));
+                    for(const auto& ent: multiplerid) {
+                        printf("%0.2X ", static_cast<std::uint32_t>(ent));
+                    }
+                    std::cout << std::endl;
+                    std::istringstream newiss;
+                    
+                    newiss.rdbuf()->pubsetbuf(const_cast<char *>(multiplerid.data()), multiplerid.length());
+                    while(1) {
+                        
+                        if(!newiss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
+                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                            break;    
+                        }
+                        std::cout << basename(__FILE__) << ":" << __LINE__ << " value of onebyte:" << std::to_string(onebyte) << std::endl;
+
+                        std::uint8_t typeValueOf76Bits = (onebyte & 0b11000000) >> 6;
+                        std::uint8_t typeValueOf5thBit = (onebyte & 0b00100000) >> 5;
+                        std::uint8_t typeValueOf43Bits = (onebyte & 0b00011000) >> 3;
+                        std::uint8_t typeValueOf20Bits = (onebyte & 0b00000111) >> 0;
+
+                        std::cout << basename(__FILE__) << ":" << __LINE__ << " typeValueOf76Bits:" << std::to_string(typeValueOf76Bits) << " typeValueOf5thBit:" << std::to_string(typeValueOf5thBit)
+                                << " typeValueOf43Bits:" << std::to_string(typeValueOf43Bits) << " typeValueOf20Bits:" << std::to_string(typeValueOf20Bits) << std::endl;
+                        
+                        LwM2MObject newobject;
+
+                        if(!typeValueOf5thBit) {
+                            if(!newiss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
+                                std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                                break;    
+                            }
+
+                            /// This is resource Instance ID
+                            
+                            newobject.oid = object.oid;
+                            newobject.oiid = object.oiid;
+                            newobject.rid == static_cast<std::uint32_t>(onebyte);
+                            std::cout << basename(__FILE__) << ":" << __LINE__ << " rid: " << newobject.rid << std::endl;
+                        }
+
+                        if(!typeValueOf43Bits) {
+                            TLV tlv;
+                            tlv.m_length = static_cast<std::uint32_t>(typeValueOf20Bits);
+                            if(!newiss.read(reinterpret_cast<char *>(tlv.m_value.data()), tlv.m_length).good()) {
+                                std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                                break;    
+                            }
+                            tlv.m_value.resize(newiss.gcount());
+                            newobject.tlvs.push_back(tlv);
+                            objects.push_back(newobject);
+                        }
+                    }
+                }
+                
                 break;
+            }
 
             case TypeBits76_ResourceWithValue_11:
             {
@@ -192,6 +297,7 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                         }
                         
                         tlv.m_identifier = static_cast<std::uint32_t>(tlv.m_identifier);
+                        std::cout << basename(__FILE__) << ":" << __LINE__ << " tlv.m_identifier:" << tlv.m_identifier << std::endl;
                         break;
                     }
                     case TypeBit5_LengthOfTheIdentifier16BitsLong_1:
@@ -215,8 +321,18 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                     case TypeBits43_NoTypeLengthField_00:
                     {
                         //No Type is encoded in TLV
-                        tlv.m_length = 0;
-                        std::cout << basename(__FILE__) << ":" << " NoLength filed for RID (Resource ID)" << std::endl;
+                        tlv.m_length = typeValueOf20Bits;
+                        if(!iss.read(reinterpret_cast<char *>(tlv.m_value.data()), tlv.m_length).good()) {
+                            std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
+                            //tlv.m_value.resize(iss.gcount());
+                            //tlv().push_back(tlv);
+                            break;    
+                        }
+                        tlv.m_value.resize(iss.gcount());
+
+                        object.tlvs.push_back(tlv);
+                        objects.push_back(object);
+                        std::cout << basename(__FILE__) << ":" << __LINE__ << " tlv.m_length:" << tlv.m_length << std::endl;
                         break;
                     }
                     case TypeBits43_8BitsTypeLengthField_01:
@@ -227,6 +343,7 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
                             break;    
                         }
 
+                        std::cout << basename(__FILE__) << ":" << __LINE__ << " tlv.m_length:" << tlv.m_length << std::endl; 
                         if(!iss.read(reinterpret_cast<char *>(tlv.m_value.data()), tlv.m_length).good()) {
                             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
                             //tlv.m_value.resize(iss.gcount());
