@@ -71,18 +71,21 @@ TEST(LwM2MAdapterTestSuite, SingleObjectInstance) {
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
     LwM2MObjectData data;
-    std::uint32_t oid = 0, oiid = 0,rid = 0;
-    lwm2mAdapter.parseLwM2MUri("/3/0", oid, oiid, rid);
-    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " rid:" << std::to_string(rid) << std::endl;
+    std::uint32_t oid = 0, oiid = 0,riid = 0;
+    lwm2mAdapter.parseLwM2MUri("/3/0", oid, oiid, riid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " rid:" << std::to_string(riid) << std::endl;
+    object.m_oid = oid;
+    data.m_oiid = oiid;
+    data.m_riid = riid;
+
     lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
     for(const auto& ent: object.m_value) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+        std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
                   << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                   << " ent.m_ridvalue:";
-                  //<< std::endl; 
         
         for(const auto& elm: ent.m_ridvalue) {
-            printf("%0.2X ", elm);
+            printf("%0.2X ", (std::uint8_t)elm);
         }
         printf("\n");
     }
@@ -118,20 +121,6 @@ TEST(LwM2MAdapterTestSuite, MultipleObjectInstance)
     }
 }
 
-TEST(LwM2MAdapterTestSuite, CoAPZippedDELETERequest)
-{
-    //EXPECT_TRUE(isBlock == true && method == 4);
-}
-
-TEST(LwM2MAdapterTestSuite, CoAPSerialisation)
-{
-    
-}
-
-LwM2MAdapterTest::LwM2MAdapterTest(const std::string& jsonFileName) {
-    fileName = jsonFileName;
-}
-
 TEST(LwM2MAdapterTestSuite, BootstrapBSServerSecurityObject) {
     std::string request = "c80019636f6170733a2f2f62732e61697276616e746167652e6e6574c10101c10200c803203031646435666264623038633061373135343632373130373664373865373062c004c80510991832119482a3b5c7d730ce328cb47ac10603c007c008c009c10a00c10b01";
     
@@ -140,10 +129,16 @@ TEST(LwM2MAdapterTestSuite, BootstrapBSServerSecurityObject) {
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
     LwM2MObjectData data;
-    //lwm2mAdapter.parseLwM2MPayload("/3/0", bindata, objects);
+    std::uint32_t oid = 0, oiid = 0,riid = 0;
+    lwm2mAdapter.parseLwM2MUri("/0", oid, oiid, riid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " riid:" << std::to_string(riid) << std::endl;
+    object.m_oid = oid;
+    data.m_oiid = oiid;
+    data.m_riid = riid;
+
     lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
     for(const auto& ent: object.m_value) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " object.m_oid:" << object.m_oid << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
                   << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                   << " ent.m_ridvalue:";
                   //<< std::endl; 
@@ -165,10 +160,16 @@ TEST(LwM2MAdapterTestSuite, BootstrapSecurityDMServerObject) {
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
     LwM2MObjectData data;
-    //lwm2mAdapter.parseLwM2MPayload("/3/0", bindata, objects);
+    std::uint32_t oid = 0, oiid = 0,riid = 0;
+    lwm2mAdapter.parseLwM2MUri("/0", oid, oiid, riid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " riid:" << std::to_string(riid) << std::endl;
+    object.m_oid = oid;
+    data.m_oiid = oiid;
+    data.m_riid = riid;
+    
     lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
     for(const auto& ent: object.m_value) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " object.m_oid:" << object.m_oid << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
                   << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                   << " ent.m_ridvalue:";
                   //<< std::endl; 
@@ -190,14 +191,19 @@ TEST(LwM2MAdapterTestSuite, DMServerObject) {
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
     LwM2MObjectData data;
-    //lwm2mAdapter.parseLwM2MPayload("/3/0", bindata, objects);
+    std::uint32_t oid = 0, oiid = 0,riid = 0;
+    lwm2mAdapter.parseLwM2MUri("/1", oid, oiid, riid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " riid:" << std::to_string(riid) << std::endl;
+    object.m_oid = oid;
+    data.m_oiid = oiid;
+    data.m_riid = riid;
+
     lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
     for(const auto& ent: object.m_value) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " object.m_oid:" << object.m_oid << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
                   << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                   << " ent.m_ridvalue:";
-                  //<< std::endl; 
-        
+            
         for(const auto& elm: ent.m_ridvalue) {
             printf("%0.2X ", elm);
         }
