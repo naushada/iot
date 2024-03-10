@@ -18,6 +18,51 @@ void LwM2MAdapterTest::TestBody()
 
 }
 
+TEST(LwM2MAdapterTestSuite, LwM2MUriWithOidOiid) {
+    
+    LwM2MAdapter lwm2mAdapter;
+    LwM2MObject object;
+    std::uint32_t oid = 0, oiid = 0,rid = 0;
+    lwm2mAdapter.parseLwM2MUri("/3/0", oid, oiid, rid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " rid:" << std::to_string(rid) << std::endl;
+
+    EXPECT_TRUE(oid == 3 && oiid == 0);
+}
+
+TEST(LwM2MAdapterTestSuite, LwM2MUriWithOid) {
+    
+    LwM2MAdapter lwm2mAdapter;
+    LwM2MObject object;
+    std::uint32_t oid = 0, oiid = 0,rid = 0;
+    lwm2mAdapter.parseLwM2MUri("/3", oid, oiid, rid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " rid:" << std::to_string(rid) << std::endl;
+
+    EXPECT_TRUE(oid == 3);
+}
+
+
+TEST(LwM2MAdapterTestSuite, LwM2MUriWithOidOiidRidSecurityUri) {
+    
+    LwM2MAdapter lwm2mAdapter;
+    LwM2MObject object;
+    std::uint32_t oid = 0, oiid = 0,rid = 0;
+    lwm2mAdapter.parseLwM2MUri("/0/1/11", oid, oiid, rid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " rid:" << std::to_string(rid) << std::endl;
+
+    EXPECT_TRUE(oid == 0 && oiid == 1 && rid == 11);
+}
+
+TEST(LwM2MAdapterTestSuite, LwM2MUriWithOidOiidRidDeviceUri) {
+    
+    LwM2MAdapter lwm2mAdapter;
+    LwM2MObject object;
+    std::uint32_t oid = 0, oiid = 0,rid = 0;
+    lwm2mAdapter.parseLwM2MUri("/3/1/10", oid, oiid, rid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " rid:" << std::to_string(rid) << std::endl;
+
+    EXPECT_TRUE(oid == 3 && oiid == 1 && rid == 10);
+}
+
 TEST(LwM2MAdapterTestSuite, SingleObjectInstance) {
     std::string request = "080079C800144F70656E204D6F62696C6520416C6C69616E6365C801164C696768747765696774204D324D20436C69656E7465C80209333435303030313233C303312E30860641000141010588070842000ED842011388870841007D42010384C10964C10A0F830B410000C40D5182428FC60E2B30323A3030C11055";
     
@@ -26,7 +71,9 @@ TEST(LwM2MAdapterTestSuite, SingleObjectInstance) {
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
     LwM2MObjectData data;
-    //lwm2mAdapter.parseLwM2MPayload("/3/0", bindata, objects);
+    std::uint32_t oid = 0, oiid = 0,rid = 0;
+    lwm2mAdapter.parseLwM2MUri("/3/0", oid, oiid, rid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " rid:" << std::to_string(rid) << std::endl;
     lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
     for(const auto& ent: object.m_value) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid

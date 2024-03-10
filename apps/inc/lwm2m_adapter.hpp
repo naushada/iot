@@ -54,12 +54,14 @@ struct TLV {
 
 struct LwM2MObjectData {
     std::uint32_t m_oiid;
-    std::uint32_t m_riid;
     std::uint32_t m_rid;
+    std::uint32_t m_riid;
     std::uint32_t m_ridlength;
     std::vector<std::uint8_t> m_ridvalue;
-    LwM2MObjectData() : m_oiid(0), m_riid(0), m_rid(0), m_ridlength(0), m_ridvalue(0) {}
+
+    LwM2MObjectData() : m_oiid(0), m_rid(0), m_riid(0), m_ridlength(0), m_ridvalue(0) {}
     ~LwM2MObjectData() = default;
+
     LwM2MObjectData& clear() {
         m_oiid = 0;
         m_riid = 0;
@@ -76,6 +78,12 @@ struct LwM2MObject {
     std::vector<LwM2MObjectData>m_value;
     LwM2MObject() : m_oid(0), m_value(0) {}
     ~LwM2MObject() = default;
+
+    LwM2MObject& clear() {
+        m_oid = 0;
+        m_value.clear();
+        return(*this);
+    }
 };
 
 class LwM2MAdapter {
@@ -115,7 +123,7 @@ class LwM2MAdapter {
          * @param rid 
          * @return std::int32_t 
          */
-        std::int32_t parseLwM2MUri(const std::string& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid);
+        std::int32_t parseLwM2MUri(const std::string&& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid);
         std::int32_t parseLwM2MObjects(const std::string& payload, LwM2MObjectData&objectData, LwM2MObject& object);
 
         std::string hexToBinary(const std::string &hex) {

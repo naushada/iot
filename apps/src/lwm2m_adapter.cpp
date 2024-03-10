@@ -11,39 +11,40 @@ LwM2MAdapter::~LwM2MAdapter() {
 
 }
 
-std::int32_t LwM2MAdapter::parseLwM2MUri(const std::string& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid) {
+std::int32_t LwM2MAdapter::parseLwM2MUri(const std::string&& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid) {
 
     if(uri.empty() || (uri.at(0) != '/')) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " Error uri is empty" << std::endl;
         return(-1);
     }
 
-    std::istringstream iss(uri);
+    std::istringstream iss;
     char delim = '/';
     std::ostringstream value;
+    std::vector<std::uint32_t> objects;
     iss.rdbuf()->pubsetbuf(const_cast<char *>(uri.data()), uri.length());
+    iss.get();
 
-    if(uri.at(0) == delim)
-        iss.get();
+    while(iss.get(*value.rdbuf(), delim).good()) {
+        if(value.str().length()) {
+            objects.push_back(std::stoi(value.str()));
+            ///uri starts with '/'
+            iss.get();
+        }
+        value.str("");
+    }
+
+    if(iss.eof() && iss.gcount() > 0) {
+        objects.push_back(std::stoi(value.str()));
+    }
+
+    if(objects.size() > 0)
+        oid = objects.at(0);
+    if(objects.size() > 1)
+        oiid = objects.at(1);
+    if(objects.size() > 2)
+        rid = objects.at(2);
     
-    if(iss.get(*value.rdbuf(), delim).good()) {
-        oid = std::stoi(value.str());
-        /// Get rid of next '/' character
-        iss.get();
-    } else {
-        oid = std::stoi(value.str());
-        //return(0);
-    }
-
-    if(iss.get(*value.rdbuf(), delim).eof() && !value.str().empty()) {
-        oiid = std::stoi(value.str());
-    } else if(iss.get(*value.rdbuf(), delim).eof()) {
-        oiid = std::stoi(value.str());
-        /// Get rid of next '/' character
-        iss.get();
-        iss.get(*value.rdbuf(), delim);
-        rid = std::stoi(value.str());
-    }
     return(0);
 }
 
