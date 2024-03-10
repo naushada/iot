@@ -53,7 +53,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
     std::uint8_t onebyte;
 
     if(iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).eof()) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " End of stream " << std::endl;
+        //std::cout << basename(__FILE__) << ":" << __LINE__ << " End of stream " << std::endl;
         return(0);
     }
 
@@ -214,6 +214,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
         printf("\n");
 
         data.m_ridlength = len;
+        data.m_ridvalue.resize(len);
         data.m_ridvalue = contents;
         std::cout << basename(__FILE__) << ":" << __LINE__ << " data.m_riid:" << data.m_riid << " data.m_rid:" << data.m_rid << " data.m_ridlength:" << data.m_ridlength
                   << " data.m_ridvalue:" << std::string(data.m_ridvalue.begin(), data.m_ridvalue.end()) << std::endl;
@@ -378,7 +379,13 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
         printf("\n");
 
         data.m_ridvalue = contents;
-        
+
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " ";
+        for(const auto& ent: data.m_ridvalue) {
+            printf("%0.2X ", ent);
+        }
+        printf("\n");
+
         std::cout << basename(__FILE__) << ":" << __LINE__ << " rid:" << std::to_string(data.m_rid) << " data.m_riid:" << data.m_riid  
                   << " length:" << std::to_string(data.m_ridlength) << " value:" << std::string(data.m_ridvalue.begin(), data.m_ridvalue.end()) << std::endl;
 

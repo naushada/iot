@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include <sstream>
 #include <vector>
+#include <algorithm>
 
 #include "lwm2m_adapter.hpp"
 
