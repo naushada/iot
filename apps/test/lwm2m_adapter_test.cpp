@@ -85,5 +85,79 @@ LwM2MAdapterTest::LwM2MAdapterTest(const std::string& jsonFileName) {
     fileName = jsonFileName;
 }
 
+TEST(LwM2MAdapterTestSuite, BootstrapBSServerSecurityObject) {
+    std::string request = "c80019636f6170733a2f2f62732e61697276616e746167652e6e6574c10101c10200c803203031646435666264623038633061373135343632373130373664373865373062c004c80510991832119482a3b5c7d730ce328cb47ac10603c007c008c009c10a00c10b01";
+    
+    LwM2MAdapter lwm2mAdapter;
+    //std::vector<LwM2MObject> objects;
+    LwM2MObject object;
+    auto bindata = lwm2mAdapter.hexToBinary(request);
+    LwM2MObjectData data;
+    //lwm2mAdapter.parseLwM2MPayload("/3/0", bindata, objects);
+    lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
+    for(const auto& ent: object.m_value) {
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+                  << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                  << " ent.m_ridvalue:";
+                  //<< std::endl; 
+        
+        for(const auto& elm: ent.m_ridvalue) {
+            printf("%0.2X ", elm);
+        }
+        printf("\n");
+    }
+
+    //EXPECT_TRUE(it != object.m_value.end());
+}
+
+TEST(LwM2MAdapterTestSuite, BootstrapSecurityDMServerObject) {
+    std::string request = "c80021636f6170733a2f2f6c772e6e612e61697276616e746167652e6e65743a35363836c10100c10200c803204233373946453136353830344242453843313938334537453431424430433845c804204233373946453136353830344242453843313938334537453431424430433845c8051062f3d1394bc5bc4587db3512e85740d6c10603c007c008c009c10a01c10b01";
+    
+    LwM2MAdapter lwm2mAdapter;
+    //std::vector<LwM2MObject> objects;
+    LwM2MObject object;
+    auto bindata = lwm2mAdapter.hexToBinary(request);
+    LwM2MObjectData data;
+    //lwm2mAdapter.parseLwM2MPayload("/3/0", bindata, objects);
+    lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
+    for(const auto& ent: object.m_value) {
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+                  << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                  << " ent.m_ridvalue:";
+                  //<< std::endl; 
+        
+        for(const auto& elm: ent.m_ridvalue) {
+            printf("%0.2X ", elm);
+        }
+        printf("\n");
+    }
+
+    //EXPECT_TRUE(it != object.m_value.end());
+}
+
+TEST(LwM2MAdapterTestSuite, DMServerObject) {
+    std::string request = "c10001c2010384c10201c10601c2075551";
+    
+    LwM2MAdapter lwm2mAdapter;
+    //std::vector<LwM2MObject> objects;
+    LwM2MObject object;
+    auto bindata = lwm2mAdapter.hexToBinary(request);
+    LwM2MObjectData data;
+    //lwm2mAdapter.parseLwM2MPayload("/3/0", bindata, objects);
+    lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
+    for(const auto& ent: object.m_value) {
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+                  << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                  << " ent.m_ridvalue:";
+                  //<< std::endl; 
+        
+        for(const auto& elm: ent.m_ridvalue) {
+            printf("%0.2X ", elm);
+        }
+        printf("\n");
+    }
+
+    //EXPECT_TRUE(it != object.m_value.end());
+}
 
 #endif /*__lwm2m_adapter_test_cpp__*/

@@ -61,10 +61,10 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
     std::uint8_t typeValueOf5thBit = (onebyte & 0b00100000) >> 5;
     std::uint8_t typeValueOf43Bits = (onebyte & 0b00011000) >> 3;
     std::uint8_t typeValueOf20Bits = (onebyte & 0b00000111) >> 0;
-
+#ifdef __DEBUG__
     std::cout << basename(__FILE__) << ":" << __LINE__ << " typeValueOf76Bits:" << std::to_string(typeValueOf76Bits) << " typeValueOf5thBit:" << std::to_string(typeValueOf5thBit)
               << " typeValueOf43Bits:" << std::to_string(typeValueOf43Bits) << " typeValueOf20Bits:" << std::to_string(typeValueOf20Bits) << std::endl;
-
+#endif
     if(typeValueOf76Bits == TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00) {
 
         /// uri has just Object Id no instance Id.
@@ -131,13 +131,13 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
         if(!iss.read(reinterpret_cast<char *>(contents.data()), contents.size()).good()) {
             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
         }
+#ifdef __DEBUG__
         std::cout << basename(__FILE__) << ":" << __LINE__ << " ";
         for(const auto& ent: contents) {
             printf("%0.2X ", ent);
         }
         printf("\n");
-
-        //std::string newcontents(contents.begin(), contents.end());
+#endif
         parseLwM2MObjects(std::string(contents.begin(), contents.end()), data, object);
 
     } else if(typeValueOf76Bits == TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01) {
@@ -207,18 +207,21 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
         }
 
+#ifdef __DEBUG__
         std::cout << basename(__FILE__) << ":" << __LINE__ << " ";
         for(const auto& ent: contents) {
             printf("%0.2X ", ent);
         }
         printf("\n");
-
+#endif
         data.m_ridlength = len;
         data.m_ridvalue.resize(len);
         data.m_ridvalue = contents;
+#ifdef __DEBUG__
         std::cout << basename(__FILE__) << ":" << __LINE__ << " data.m_riid:" << data.m_riid << " data.m_rid:" << data.m_rid << " data.m_ridlength:" << data.m_ridlength
                   << " data.m_ridvalue:" << std::string(data.m_ridvalue.begin(), data.m_ridvalue.end()) << std::endl;
         //parseLwM2MObjects(std::string(contents.begin(), contents.end()), data, object);
+#endif
         std::ostringstream rem;
         iss.get(*rem.rdbuf(), EOF);
         object.m_value.push_back(data);
@@ -291,12 +294,13 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
         if(!iss.read(reinterpret_cast<char *>(contents.data()), contents.size()).good()) {
             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
         }
+#ifdef __DEBUG__
         std::cout << basename(__FILE__) << ":" << __LINE__ << " ";
         for(const auto& ent: contents) {
             printf("%0.2X ", ent);
         }
         printf("\n");
-
+#endif
         std::ostringstream rem;
         iss.get(*rem.rdbuf(), EOF);
         parseLwM2MObjects(std::string(contents.begin(), contents.end()), data, object);
@@ -371,34 +375,30 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
             std::cout <<basename(__FILE__) << ":" << __LINE__ << " input buffer is too small to process" << std::endl;
             return(0);
         }
-
+#ifdef __DEBUG__
         std::cout << basename(__FILE__) << ":" << __LINE__ << " ";
         for(const auto& ent: contents) {
             printf("%0.2X ", ent);
         }
         printf("\n");
-
+#endif
         data.m_ridvalue = contents;
 
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " ";
-        for(const auto& ent: data.m_ridvalue) {
-            printf("%0.2X ", ent);
-        }
-        printf("\n");
-
+#ifdef __DEBUG__
         std::cout << basename(__FILE__) << ":" << __LINE__ << " rid:" << std::to_string(data.m_rid) << " data.m_riid:" << data.m_riid  
                   << " length:" << std::to_string(data.m_ridlength) << " value:" << std::string(data.m_ridvalue.begin(), data.m_ridvalue.end()) << std::endl;
-
+#endif
         object.m_value.push_back(data);
         data.clear();
         std::ostringstream rem;
         iss.get(*rem.rdbuf(), EOF);
+#ifdef __DEBUG__
         std::cout << basename(__FILE__) << ":" << __LINE__ << " ";
         for(const auto& ent: rem.str()) {
             printf("%0.2X ", static_cast<std::uint8_t>(ent));
         }
         printf("\n");
-        
+#endif
         parseLwM2MObjects(rem.str(), data, object);
     }
 }
