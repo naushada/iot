@@ -219,7 +219,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
                   << " data.m_ridvalue:" << std::string(data.m_ridvalue.begin(), data.m_ridvalue.end()) << std::endl;
         //parseLwM2MObjects(std::string(contents.begin(), contents.end()), data, object);
         std::ostringstream rem;
-        iss.get(*rem.rdbuf());
+        iss.get(*rem.rdbuf(), EOF);
         object.m_value.push_back(data);
         data.clear();
         parseLwM2MObjects(rem.str(), data, object);
@@ -296,16 +296,8 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
         }
         printf("\n");
 
-        //data.m_ridlength = len;
-        //data.m_ridvalue = contents;
-        //object.m_value.push_back(data);
-        //std::cout << basename(__FILE__) << ":" << __LINE__ << " data.m_riid:" << data.m_riid << " data.m_ridlength:" << data.m_ridlength 
-        //          << " data.m_ridvalue:" << std::string(data.m_ridvalue.begin(), data.m_ridvalue.end()) << std::endl;
-        //data.m_ridvalue.clear();
-
         std::ostringstream rem;
-        iss.get(*rem.rdbuf());
-        //std::string newcontents(contents.begin(), contents.end());
+        iss.get(*rem.rdbuf(), EOF);
         parseLwM2MObjects(std::string(contents.begin(), contents.end()), data, object);
         parseLwM2MObjects(rem.str(), data, object);
         
@@ -393,7 +385,13 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
         object.m_value.push_back(data);
         data.clear();
         std::ostringstream rem;
-        iss.get(*rem.rdbuf());
+        iss.get(*rem.rdbuf(), EOF);
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " ";
+        for(const auto& ent: rem.str()) {
+            printf("%0.2X ", static_cast<std::uint8_t>(ent));
+        }
+        printf("\n");
+        
         parseLwM2MObjects(rem.str(), data, object);
     }
 }
