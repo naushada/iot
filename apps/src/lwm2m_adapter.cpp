@@ -4,7 +4,239 @@
 #include "lwm2m_adapter.hpp"
 
 LwM2MAdapter::LwM2MAdapter() {
+    ///LwM2M Security Object URI --> /0
+    SecurityObjectResourceId2ResourceName = {
+        {0, "LwM2M Server URI"},
+        {1, "Bootstrap Server"},
+        {2, "Security Mode"},
+        {3, "Public Key or Identity"},
+        {4, "Server Public Key"},
+        {5, "Secret Key"},
+        {6, "SMS Security Mode"},
+        {7, "SMS Binding Key Parameters"},
+        {8, "SMS Binding Secret Key(s)"},
+        {9, "LwM2M Server SMS Number"},
+        {10, "Short Server ID"},
+        {11, "Client Hold Off Time"},
+        {12, "Bootstrap-Server Account Timeout"}
+    };
 
+    ///LwM2M Security Object URI --> /0
+    ResourceName2SecurityObjectResourceId = {
+        {"LwM2M Server URI", 0},
+        {"Bootstrap Server", 1},
+        {"Security Mode", 2},
+        {"Public Key or Identity", 3},
+        {"Server Public Key", 4},
+        {"Secret Key", 5},
+        {"SMS Security Mode", 6},
+        {"SMS Binding Key Parameters", 7},
+        {"SMS Binding Secret Key(s)", 8},
+        {"LwM2M Server SMS Number", 9},
+        {"Short Server ID", 10},
+        {"Client Hold Off Time", 11},
+        {"Bootstrap-Server Account Timeout", 12}
+    };
+
+    ///LwM2M Server Object URI --> /1
+    ServerObjectResourceId2ResourceName = {
+        {0, "Short Server ID"},
+        {1, "Lifetime"},
+        {2, "Default Minimum Period"},
+        {3, "Default Maximum Period"},
+        {4, "Disable"},
+        {5, "Disable Timeout"},
+        {6, "Notification Storing When Disabled or Offline"},
+        {7, "Binding"},
+        {8, "Registration Update Trigger"}
+    };
+
+    ///LwM2M Server Object URI --> /1
+    ResourceName2ServerObjectResourceId = {
+        {"Short Server ID", 0},
+        {"Lifetime", 1},
+        {"Default Minimum Period", 2},
+        {"Default Maximum Period", 3},
+        {"Disable", 4},
+        {"Disable Timeout", 5},
+        {"Notification Storing When Disabled or Offline", 6},
+        {"Binding", 7},
+        {"Registration Update Trigger", 8}
+    };
+
+    ///LwM2M Acces Control Object URI --> /2
+    AccessControlObjectResourceId2ResourceName = {
+        {0, "Object ID"},
+        {1, "Object Instance ID"},
+        {2, "ACL"},
+        {3, "Access Control Owner"}
+    };
+
+    ///LwM2M Acces Control Object URI --> /2
+    ResourceName2AccessControlObjectResourceId = {
+        {"Object ID", 0},
+        {"Object Instance ID", 1},
+        {"ACL", 2},
+        {"Access Control Owner", 3}
+    };
+
+    ///LwM2M Device Object URI --> /3
+    DeviceObjectResourceId2ResourceName = {
+        {0, "Manufacturer"},
+        {1, "Model Number"},
+        {2, "Serial Number"},
+        {3, "Firmware Version"},
+        {4, "Reboot"},
+        {5, "Factory Reset"},
+        {6, "Available Power Sources"},
+        {7, "Power Source Voltage"},
+        {8, "Power Source Current"},
+        {9, "Battery Level"},
+        {10, "Memory Free"},
+        {11, "Error Code"},
+        {12, "Reset Error Code"},
+        {13, "Current Time"},
+        {14, "UTC Offset"},
+        {15, "Timezone"},
+        {16, "Supported Binding and Modes"},
+        {17, "Device Type"},
+        {18, "Hardware Version"},
+        {19, "Software Version"},
+        {20, "Battery Status"},
+        {21, "Memory Total"},
+        {22, "ExtDevInfo"}
+
+    };
+
+    ///LwM2M Device Object URI --> /3
+    ResourceName2DeviceObjectResourceId = {
+        {"Manufacturer", 0},
+        {"Model Number", 1},
+        {"Serial Number", 2},
+        {"Firmware Version", 3},
+        {"Reboot", 4},
+        {"Factory Reset", 5},
+        {"Available Power Sources", 6},
+        {"Power Source Voltage", 7},
+        {"Power Source Current", 8},
+        {"Battery Level", 9},
+        {"Memory Free", 10},
+        {"Error Code", 11},
+        {"Reset Error Code", 12},
+        {"Current Time", 13},
+        {"UTC Offset", 14},
+        {"Timezone", 15},
+        {"Supported Binding and Modes", 16},
+        {"Device Type", 17},
+        {"Hardware Version", 18},
+        {"Software Version", 19},
+        {"Battery Status", 20},
+        {"Memory Total", 21},
+        {"ExtDevInfo", 22}
+    };
+    ///LwM2M Connectivity Monitoring Object URI --> /4
+    ConnectivityMonitoringObjectResourceId2ResourceName = {
+        {0, "Network Bearer"},
+        {1, "Available Network Bearer"},
+        {2, "Radio Signal Strength"},
+        {3, "Link Quality"},
+        {4, "IP Addresses"},
+        {5, "Router IP Addresses"},
+        {6, "Link Utilization"},
+        {7, "APN"},
+        {8, "Cell ID"},
+        {9, "SMNC"},
+        {10, "SMCC"}
+    };
+    ///LwM2M Connectivity Monitoring Object URI --> /4
+    ResourceName2ConnectivityMonitoringObjectResourceId = {
+        {"Network Bearer", 0},
+        {"Available Network Bearer", 1},
+        {"Radio Signal Strength", 2},
+        {"Link Quality", 3},
+        {"IP Addresses", 4},
+        {"Router IP Addresses", 5},
+        {"Link Utilization", 6},
+        {"APN", 7},
+        {"Cell ID", 8},
+        {"SMNC", 9},
+        {"SMCC", 10}
+    };
+    ///LwM2M Firmware Update Object URI --> /5
+    FirmwareUpdateObjectResourceId2ResourceName = {
+        {0, "Package"},
+        {1, "Package URI"},
+        {2, "Update"},
+        {3, "State"},
+        {5, "Update Result"},
+        {6, "PkgName"},
+        {7, "PkgVersion"},
+        {8, "Firmware Update Protocol Support"},
+        {9, "Firmware Update Delivery Method"}
+
+    };
+
+    ///LwM2M Firmware Update Object URI --> /5
+    ResourceName2FirmwareUpdateObjectResourceId = {
+        {"Package", 0},
+        {"Package URI", 1},
+        {"Update", 2},
+        {"State", 3},
+        {"Update Result", 5},
+        {"PkgName", 6},
+        {"PkgVersion", 7},
+        {"Firmware Update Protocol Support", 8},
+        {"Firmware Update Delivery Method", 9}
+    };
+    ///LwM2M Location Object URI --> /6
+    LocationObjectResourceId2ResourceName = {
+        {0, "Latitude"},
+        {1, "Longitude"},
+        {2, "Altitude"},
+        {3, "Radius"},
+        {4, "Velocity"},
+        {5, "Timestamp"},
+        {6, "Speed"}
+
+    };
+
+    ///LwM2M Location Object URI --> /6
+    ResourceName2LocationObjectResourceId = {
+        {"Latitude", 0},
+        {"Longitude", 1},
+        {"Altitude", 2},
+        {"Radius", 3},
+        {"Velocity", 4},
+        {"Timestamp", 5},
+        {"Speed", 6}
+    };
+
+    ///LwM2M Connectivity Stats Object URI --> /7
+    ConnectivityStatsObjectResourceId2ResourceName = {
+        {0, "SMS Tx Counter"},
+        {1, "SMS Rx Counter"},
+        {2, "Tx Data"},
+        {3, "Rx Data"},
+        {4, "Max Message Size"},
+        {5, "Average Message Size"},
+        {6, "Start"},
+        {7, "Stop"},
+        {8, "Collection Period"}
+
+    };
+
+    ///LwM2M Connectivity Stats Object URI --> /7
+    ResourceName2ConnectivityStatsObjectResourceId = {
+        {"SMS Tx Counter", 0},
+        {"SMS Rx Counter", 1},
+        {"Tx Data", 2},
+        {"Rx Data", 3},
+        {"Max Message Size", 4},
+        {"Average Message Size", 5},
+        {"Start", 6},
+        {"Stop", 7},
+        {"Collection Period", 8}
+    };
 }
 
 LwM2MAdapter::~LwM2MAdapter() {
@@ -54,7 +286,6 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
     std::uint8_t onebyte;
 
     if(iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).eof()) {
-        //std::cout << basename(__FILE__) << ":" << __LINE__ << " End of stream " << std::endl;
         return(0);
     }
 
@@ -804,7 +1035,7 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
 #endif
 }
 
-std::int32_t LwM2MAdapter::buildLwM2MPayload(const std::string& oid, const std::string& oiid, const std::string& orid, std::vector<LwM2MObject>& objects) {
+std::int32_t LwM2MAdapter::buildLwM2MPayload(const std::string& oid, const std::string& oiid, const std::string& rid, std::vector<LwM2MObject>& objects) {
 
 }
 

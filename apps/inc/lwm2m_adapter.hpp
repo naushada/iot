@@ -43,14 +43,6 @@ enum LengthOfTheType_t : std::uint8_t {
     TypeBits43_16BitsTypeLengthField_10 = 2,
     TypeBits43_24BitsTypeLengthField_11 = 3,
 };
-struct TLV {
-    TypeFieldOfTLV_t m_type;
-    std::uint32_t m_identifier;
-    std::uint32_t m_length;
-    std::vector<std::uint8_t> m_value;
-    TLV() : m_type(TypeBits76_ResourceWithValue_11), m_identifier(0),m_length(0), m_value(1024) {}
-    ~TLV() = default;
-};
 
 struct LwM2MObjectData {
     std::uint32_t m_oiid;
@@ -137,8 +129,25 @@ class LwM2MAdapter {
             }
             return binary;
         }
+
     private:
         std::vector<LwM2MObject> m_objects;
+        std::unordered_map<std::uint32_t, std::string> SecurityObjectResourceId2ResourceName;
+        std::unordered_map<std::string, std::uint32_t> ResourceName2SecurityObjectResourceId;
+        std::unordered_map<std::uint32_t, std::string> ServerObjectResourceId2ResourceName;
+        std::unordered_map<std::string, std::uint32_t> ResourceName2ServerObjectResourceId;
+        std::unordered_map<std::uint32_t, std::string> AccessControlObjectResourceId2ResourceName;
+        std::unordered_map<std::string, std::uint32_t> ResourceName2AccessControlObjectResourceId;
+        std::unordered_map<std::uint32_t, std::string> DeviceObjectResourceId2ResourceName;
+        std::unordered_map<std::string, std::uint32_t> ResourceName2DeviceObjectResourceId;
+        std::unordered_map<std::uint32_t, std::string> ConnectivityMonitoringObjectResourceId2ResourceName;
+        std::unordered_map<std::string, std::uint32_t> ResourceName2ConnectivityMonitoringObjectResourceId;
+        std::unordered_map<std::uint32_t, std::string> FirmwareUpdateObjectResourceId2ResourceName;
+        std::unordered_map<std::string, std::uint32_t> ResourceName2FirmwareUpdateObjectResourceId;
+        std::unordered_map<std::uint32_t, std::string> LocationObjectResourceId2ResourceName;
+        std::unordered_map<std::string, std::uint32_t> ResourceName2LocationObjectResourceId;
+        std::unordered_map<std::uint32_t, std::string> ConnectivityStatsObjectResourceId2ResourceName;
+        std::unordered_map<std::string, std::uint32_t> ResourceName2ConnectivityStatsObjectResourceId;
 };
 
 #endif /*__lwm2m_adapter_hpp__*/
