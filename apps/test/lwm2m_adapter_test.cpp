@@ -81,7 +81,7 @@ TEST(LwM2MAdapterTestSuite, SingleObjectInstance) {
     lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
     for(const auto& ent: object.m_value) {
         std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                  << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                  << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                   << " ent.m_ridvalue:";
         
         for(const auto& elm: ent.m_ridvalue) {
@@ -107,10 +107,17 @@ TEST(LwM2MAdapterTestSuite, MultipleObjectInstance)
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
     LwM2MObjectData data;
+    std::uint32_t oid = 0, oiid = 0,riid = 0;
+    lwm2mAdapter.parseLwM2MUri("/3", oid, oiid, riid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " riid:" << std::to_string(riid) << std::endl;
+    object.m_oid = oid;
+    data.m_oiid = oiid;
+    data.m_riid = riid;
+
     lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
     for(const auto& ent: object.m_value) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                  << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                  << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                   << " ent.m_ridvalue:";
                   //<< std::endl; 
         
@@ -139,7 +146,7 @@ TEST(LwM2MAdapterTestSuite, BootstrapBSServerSecurityObject) {
     lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
     for(const auto& ent: object.m_value) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " object.m_oid:" << object.m_oid << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                  << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                  << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                   << " ent.m_ridvalue:";
                   //<< std::endl; 
         
@@ -170,7 +177,7 @@ TEST(LwM2MAdapterTestSuite, BootstrapSecurityDMServerObject) {
     lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
     for(const auto& ent: object.m_value) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " object.m_oid:" << object.m_oid << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                  << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                  << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                   << " ent.m_ridvalue:";
                   //<< std::endl; 
         
@@ -201,7 +208,7 @@ TEST(LwM2MAdapterTestSuite, DMServerObject) {
     lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
     for(const auto& ent: object.m_value) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " object.m_oid:" << object.m_oid << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                  << " ent.m_rid:" << ent.m_rid << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                  << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                   << " ent.m_ridvalue:";
             
         for(const auto& elm: ent.m_ridvalue) {

@@ -243,6 +243,114 @@ LwM2MAdapter::~LwM2MAdapter() {
 
 }
 
+std::string LwM2MAdapter::resourceIDName(const std::uint32_t& oid, const std::uint32_t& rid) {
+    std::string out;
+
+    switch(oid) {
+        case SecurityObjectID:
+        {
+            auto it = std::find_if(SecurityObjectResourceId2ResourceName.begin(), SecurityObjectResourceId2ResourceName.end(), [&](const auto& ent) -> bool {
+                return(ent.first == rid);
+            });
+
+            if(it != SecurityObjectResourceId2ResourceName.end()) {
+                out.assign(it->second);
+            }
+
+            break;
+        }
+        case ServerObjectID:
+        {
+            auto it = std::find_if(ServerObjectResourceId2ResourceName.begin(), ServerObjectResourceId2ResourceName.end(), [&](const auto& ent) -> bool {
+                return(ent.first == rid);
+            });
+
+            if(it != ServerObjectResourceId2ResourceName.end()) {
+                out.assign(it->second);
+            }
+
+            break;
+        }
+        case AccessControlObjectID:
+        {
+            auto it = std::find_if(AccessControlObjectResourceId2ResourceName.begin(), AccessControlObjectResourceId2ResourceName.end(), [&](const auto& ent) -> bool {
+                return(ent.first == rid);
+            });
+
+            if(it != AccessControlObjectResourceId2ResourceName.end()) {
+                out.assign(it->second);
+            }
+
+            break;
+        }
+        case DeviceObjectID:
+        {
+            auto it = std::find_if(DeviceObjectResourceId2ResourceName.begin(), DeviceObjectResourceId2ResourceName.end(), [&](const auto& ent) -> bool {
+                return(ent.first == rid);
+            });
+
+            if(it != DeviceObjectResourceId2ResourceName.end()) {
+                out.assign(it->second);
+            }
+
+            break;
+        }
+        case ConnectivityMonitoringObjectID:
+        {
+            auto it = std::find_if(ConnectivityMonitoringObjectResourceId2ResourceName.begin(), ConnectivityMonitoringObjectResourceId2ResourceName.end(), [&](const auto& ent) -> bool {
+                return(ent.first == rid);
+            });
+
+            if(it != ConnectivityMonitoringObjectResourceId2ResourceName.end()) {
+                out.assign(it->second);
+            }
+
+            break;
+        }
+        case FirmwareUpdateObjectID:
+        {
+            auto it = std::find_if(FirmwareUpdateObjectResourceId2ResourceName.begin(), FirmwareUpdateObjectResourceId2ResourceName.end(), [&](const auto& ent) -> bool {
+                return(ent.first == rid);
+            });
+
+            if(it != FirmwareUpdateObjectResourceId2ResourceName.end()) {
+                out.assign(it->second);
+            }
+
+            break;
+        }
+        case LocationObjectID:
+        {
+            auto it = std::find_if(LocationObjectResourceId2ResourceName.begin(), LocationObjectResourceId2ResourceName.end(), [&](const auto& ent) -> bool {
+                return(ent.first == rid);
+            });
+
+            if(it != LocationObjectResourceId2ResourceName.end()) {
+                out.assign(it->second);
+            }
+
+            break;
+        }
+        case ConnectivityStatisticsObjectID:
+        {
+            auto it = std::find_if(ConnectivityStatsObjectResourceId2ResourceName.begin(), ConnectivityStatsObjectResourceId2ResourceName.end(), [&](const auto& ent) -> bool {
+                return(ent.first == rid);
+            });
+
+            if(it != ConnectivityStatsObjectResourceId2ResourceName.end()) {
+                out.assign(it->second);
+            }
+
+            break;
+        }
+        default:
+        {
+
+        }
+    }
+    return(out);
+}
+
 std::int32_t LwM2MAdapter::parseLwM2MUri(const std::string&& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid) {
 
     if(uri.empty() || (uri.at(0) != '/')) {
