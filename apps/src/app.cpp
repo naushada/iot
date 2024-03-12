@@ -3,6 +3,7 @@
 
 #include "app.hpp"
 #include "coap_adapter.hpp"
+#include "lwm2m_adapter.hpp"
 
 void App::hex_dump(const std::string& in) {
     std::stringstream oss;
@@ -50,8 +51,46 @@ std::int32_t App::rx(std::int32_t fd) {
             if(!st && coap_inst.getRequestType(static_cast<std::uint32_t>(coapmessage.coapheader.type)) == "Acknowledgement") {
                 std::cout << basename(__FILE__) << ":" << __LINE__ << " This is an ACK" << std::endl;
             } else {
+
                 ///Build the Response for a given Request
+                std::string uri;
+                std::uint32_t oid, oiid, rid, riid;
+                if(coap_inst.isCoAPUri(coapmessage, uri)) {
+                    ///This is a CoAP URI handle it.
+                } else if(coap_inst.isLwm2mUri(coapmessage, uri)) {
+                    /// This is aLwM2M string URI rd or bs
+                } else if(coap_inst.isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
+                    /// This is LwM2M Object URI, Handle it.
+                    LwM2MAdapter lwm2mAdapter;
+                    LwM2MObjectData data;
+                    LwM2MObject object;
+                    data.m_oiid = oiid;
+                    data.m_rid = rid;
+                    data.m_riid = riid;
+                    object.m_oid = oid;
+
+                    if(!lwm2mAdapter.parseLwM2MObjects(coapmessage.payload, data, object)) {
+
+                        ///Objects are extracted successfully
+                        for(const auto& ent: object.m_value) {
+                            std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+                                      << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                                      << " ent.m_ridvalue:";
+        
+                            for(const auto& elm: ent.m_ridvalue) {
+                                printf("%0.2X ", (std::uint8_t)elm);
+                            }
+                            printf("\n");
+                        }
+                        
+                        ///Build Response and send it.
+                        
+                    }
+                } else {
+                    ///Unknown URI ---- Error 
+                }
             }
+
             return(ret);
         }
     }
