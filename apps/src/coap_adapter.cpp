@@ -108,6 +108,8 @@ CoAPAdapter::CoAPAdapter() {
         {2, "Acknowledgement"},
         {3, "Rest"}
     };
+
+    CoAPUri = {"set", "get", "push", "execute"};
 }
 
 CoAPAdapter::~CoAPAdapter() {

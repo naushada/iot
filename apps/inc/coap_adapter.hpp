@@ -161,6 +161,10 @@ class CoAPAdapter {
             return(ResponseCode[statuscode]);
         }
 
+        std::string getUriStr(std::uint32_t opt) {
+            return(getOptionNumber(opt));
+        }
+
         std::string getOptionNumber(std::uint32_t opt) {
             return(OptionNumber[opt]);
         }
@@ -188,12 +192,77 @@ class CoAPAdapter {
             return(cborAdapter);
         }
 
+        bool isLwm2mUri(const CoAPMessage& message, std::string& uriName) {
+            auto it = std::find_if(message.uripath.begin(), message.uripath.end(), [&](const auto& ent) -> bool {
+                return((ent.optionvalue == "rd") || (ent.optionvalue == "bs"));
+            });
+
+            if(it != message.uripath.end()) {
+                auto &ent = *it;
+                uriName = ent.optionvalue;
+                return(true);
+            }
+
+            return(false);
+        }
+
+        bool isLwm2mUriObject(const CoAPMessage& message, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid, std::uint32_t& riid) {
+            bool ret = false;
+
+            if(!message.uripath.empty() && !getUriStr(message.uripath.at(0).optiondelta).compare("Uri-Path") &&
+            std::isdigit(message.uripath.at(0).optionvalue.at(0))) {
+                oid = std::stoi(message.uripath.at(0).optionvalue);
+                ret = true;
+            } else {
+                return(ret);
+            }
+            
+            if(!message.uripath.empty() && !getUriStr(message.uripath.at(1).optiondelta).compare("Uri-Path") &&
+            std::isdigit(message.uripath.at(1).optionvalue.at(0))) {
+                oiid = std::stoi(message.uripath.at(1).optionvalue);
+            }
+            
+            if(!message.uripath.empty() && !getUriStr(message.uripath.at(2).optiondelta).compare("Uri-Path") &&
+            std::isdigit(message.uripath.at(2).optionvalue.at(0))) {
+                rid = std::stoi(message.uripath.at(2).optionvalue);
+            }
+
+            if(!message.uripath.empty() && !getUriStr(message.uripath.at(3).optiondelta).compare("Uri-Path") &&
+            std::isdigit(message.uripath.at(3).optionvalue.at(0))) {
+                riid = std::stoi(message.uripath.at(3).optionvalue);
+            }
+            
+            return(ret);
+        }
+
+        bool isCoAPUri(const CoAPMessage& message, std::string& uri) {
+            auto it = std::find_if(message.uripath.begin(), message.uripath.end(), [&](const auto& ent) -> bool {
+                auto iter = std::find_if(CoAPUri.begin(), CoAPUri.end(), [&](const auto& elm) -> bool {
+                    return(ent.optionvalue == elm);
+                });
+                return(iter != CoAPUri.end());
+            });
+
+            if(it != message.uripath.end()) {
+                auto &ent = *it;
+                uri = ent.optionvalue;
+                return(true);
+            }
+
+            return(false);
+        }
+
+        std::string getUriQuery() const {
+
+        }
+
     private:
         std::unordered_map<std::uint32_t, std::string> OptionNumber;
         std::unordered_map<std::uint32_t, std::string> ContentFormat;
         std::unordered_map<std::string, std::string> ResponseCode;
         std::unordered_map<std::uint32_t, std::string> MethodCode;
         std::unordered_map<std::uint32_t, std::string> RequestType;
+        std::vector<std::string> CoAPUri;
         std::string response;
         std::uint32_t cumulativeOptionNumber;
         CBORAdapter cborAdapter;
