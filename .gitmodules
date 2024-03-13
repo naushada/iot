@@ -1,3 +1,0 @@
-[submodule "apps/3rdparty/json-new"]
-	path = apps/3rdparty/json-new
-	url = https://github.com/nlohmann/json.git
