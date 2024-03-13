@@ -1,3 +1,6 @@
 [submodule "apps/3rdparty/json"]
 	path = apps/3rdparty/json
 	url = https://github.com/nlohmann/json.git
+[submodule "apps/3rdparty/tinydtls"]
+	path = apps/3rdparty/tinydtls
+	url = https://github.com/legatoproject/tinydtls.git
