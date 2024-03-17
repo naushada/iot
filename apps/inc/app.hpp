@@ -40,6 +40,13 @@ typedef enum {
     SERVER = 1,
     CLIENT = 2
 } Role_t;
+
+typedef enum {
+    DeviceMgmt  = 0,
+    BootsstrapMgmt = 1,
+    UNKNOWN
+}ServeerType_t;
+
 class App {
     public:
 
@@ -90,10 +97,12 @@ class App {
         App(const App& rhs) = default;
         
         std::int32_t init(const Scheme_t& scheme);
+        std::int32_t init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme);
         std::int32_t start(Role_t role, Scheme_t scheme);
         std::int32_t stop();
         std::int32_t rx(std::int32_t fd);
         std::int32_t tx(std::string& in);
+        std::int32_t add_server(const std::int32_t& fd, const Scheme_t& scheme, const ServeerType_t& serverType);
 
         void set_peerHost(std::string host) {
             peerHost = host;

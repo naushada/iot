@@ -118,6 +118,52 @@ std::int32_t App::tx(std::string& in) {
     return(ret);
 }
 
+std::int32_t App::add_server(const std::int32_t& fd, const Scheme_t& scheme, const ServeerType_t& serverType) {
+    struct epoll_event evt;
+    if(fd > 0) {
+        evt.data.u64 = (((static_cast<std::uint64_t>(fd)) << 32) | static_cast<std::uint32_t>(((serverType & 0xFFFF) << 16) | (scheme & 0xFFFF)));
+        evt.events = EPOLLHUP | EPOLLIN;
+        
+        ::epoll_ctl(epollFd, EPOLL_CTL_ADD, serverFd, &evt);
+        evts.push_back(evt);
+    }
+    return(0);
+
+}
+
+std::int32_t App::init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme) {
+    this->scheme = scheme;
+    auto channel = ::socket(AF_INET, SOCK_DGRAM, 0);
+            
+    if(channel < 0) {
+    }
+            
+    struct sockaddr_in selfAddr;
+    struct addrinfo *result;
+
+    auto s = getaddrinfo(host.data(), std::to_string(port).c_str(), nullptr, &result);
+    if (!s) {
+        selfAddr = *((struct sockaddr_in*)(result->ai_addr));
+        freeaddrinfo(result);
+    }
+
+    socklen_t len = sizeof(selfAddr);
+    auto status = ::bind(channel, (struct sockaddr *)&selfAddr, len);
+
+    if(status < 0) {
+        std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " bind failed error:"<< std::strerror(errno) << std::endl;
+    }
+                        
+    std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " created handle:" << serverFd << std::endl;
+
+    if(scheme == CoAPs) {
+        //DTLS_LOG_INFO
+        dtls_adapter = std::make_unique<DTLSAdapter>(serverFd, DTLS_LOG_DEBUG);
+    }
+
+    coapAdapter = std::make_unique<CoAPAdapter>();
+}
+
 std::int32_t App::init(const Scheme_t& scheme) {
     epollFd = ::epoll_create1(EPOLL_CLOEXEC);
     struct epoll_event evt;
