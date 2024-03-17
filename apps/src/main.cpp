@@ -100,14 +100,24 @@ int main(std::int32_t argc, char *argv[]) {
 
     }
 
+    Role_t role = SERVER;
+    if(!argValueMap["role"].empty() && (argValueMap["role"] == "server" || argValueMap["role"] == "client")) {
+        role = roleMap[argValueMap["role"]];
+    } else {
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error Invalid Option for role" << std::endl;
+        return(-1);
+    }
+
     Scheme_t scheme;
     std::string peerHost;
     std::uint16_t peerPort;
-    if(argValueMap["peer"].empty()) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error peer=value is missing in command line argument" << std::endl;
-        return(-1);
+    if(CLIENT == role) {
+        if(argValueMap["peer"].empty()) {
+            std::cout << basename(__FILE__) << ":" << __LINE__ << " Error peer=value is missing in command line argument" << std::endl;
+            return(-1);
+        }
+        parsePeerOption(argValueMap["peer"], scheme, peerHost, peerPort);
     }
-    parsePeerOption(argValueMap["peer"], scheme, peerHost, peerPort);
 
     std::string selfHost;
     std::uint16_t selfPort;
@@ -119,13 +129,7 @@ int main(std::int32_t argc, char *argv[]) {
 
     std::cout << basename(__FILE__) << ":" << __LINE__ << " scheme:" << std::to_string(scheme) << " host:" << peerHost << " port:" << std::to_string(peerPort) << std::endl;
 
-    Role_t role = SERVER;
-    if(!argValueMap["role"].empty() && (argValueMap["role"] == "server" || argValueMap["role"] == "client")) {
-        role = roleMap[argValueMap["role"]];
-    } else {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error Invalid Option for role" << std::endl;
-        return(-1);
-    }
+    
 
     std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");
     if(scheme == CoAPs) {
