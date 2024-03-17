@@ -31,23 +31,25 @@ extern "C"
     #include <signal.h>
 }
 
-typedef enum {
-    CoAPs = 1,
-    CoAP = 2
-} Scheme_t;
-
-typedef enum {
-    SERVER = 1,
-    CLIENT = 2
-} Role_t;
-
-typedef enum {
-    DeviceMgmt  = 0,
-    BootsstrapMgmt = 1,
-    UNKNOWN
-}ServeerType_t;
 
 class App {
+    public:
+        
+        typedef enum {
+            CoAPs = 1,
+            CoAP = 2
+        } Scheme_t;
+
+        typedef enum {
+            SERVER = 1,
+            CLIENT = 2
+        } Role_t;
+
+        typedef enum {
+            DeviceMgmt  = 0,
+            BootsstrapMgmt = 1,
+        }ServeerType_t;
+
     public:
 
         App(std::string& host, std::uint16_t& port, Scheme_t& scheme) {

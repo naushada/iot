@@ -197,7 +197,7 @@ std::int32_t App::start(Role_t role, Scheme_t scheme) {
     std::cout << basename(__FILE__) << ":" << __LINE__ << " evts.size: " << evts.size() << std::endl;
     std::vector<struct epoll_event> events(evts.size());
 
-    if(CLIENT == role &&  CoAPs == scheme) {
+    if(App::CLIENT == role &&  App::CoAPs == scheme) {
         get_adapter().connect();
     }
 
@@ -226,7 +226,7 @@ std::int32_t App::start(Role_t role, Scheme_t scheme) {
 
                 if(ent.events & EPOLLIN) {
                     std::cout << basename(__FILE__) << ":" << __LINE__ << " EPOLLIN on Fd: " << handle << std::endl;
-                    if(scheme == CoAPs) {
+                    if(scheme == App::CoAPs) {
                         handle_io_coaps(handle);
                     } else {
                         handle_io_coap(handle);

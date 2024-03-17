@@ -13,14 +13,14 @@
 #include "readline.hpp"
 
 
-std::unordered_map<std::string, Scheme_t> schemeMap = {
-    {"coaps", CoAPs},
-    {"coap", CoAP}
+std::unordered_map<std::string, App::Scheme_t> schemeMap = {
+    {"coaps", App::CoAPs},
+    {"coap", App::CoAP}
 };
 
-std::unordered_map<std::string, Role_t> roleMap = {
-    {"server", SERVER},
-    {"client", CLIENT}
+std::unordered_map<std::string, App::Role_t> roleMap = {
+    {"server", App::SERVER},
+    {"client", App::CLIENT}
 };
 
 void parseCommandLineArgument(std::int32_t argc, char *argv[], std::unordered_map<std::string, std::string>& out) {
@@ -48,7 +48,7 @@ void parseCommandLineArgument(std::int32_t argc, char *argv[], std::unordered_ma
     
 }
 
-void parsePeerOption(const std::string& in, Scheme_t& scheme, std::string& host, std::uint16_t& port) {
+void parsePeerOption(const std::string& in, App::Scheme_t& scheme, std::string& host, std::uint16_t& port) {
     ///in = coaps://host:port
     if(in.empty()) {
         ///input is empty, 
@@ -100,7 +100,7 @@ int main(std::int32_t argc, char *argv[]) {
 
     }
 
-    Role_t role = SERVER;
+    App::Role_t role = App::SERVER;
     if(!argValueMap["role"].empty() && (argValueMap["role"] == "server" || argValueMap["role"] == "client")) {
         role = roleMap[argValueMap["role"]];
     } else {
@@ -108,10 +108,10 @@ int main(std::int32_t argc, char *argv[]) {
         return(-1);
     }
 
-    Scheme_t scheme;
+    App::Scheme_t scheme;
     std::string peerHost;
     std::uint16_t peerPort;
-    if(CLIENT == role) {
+    if(App::CLIENT == role) {
         if(argValueMap["peer"].empty()) {
             std::cout << basename(__FILE__) << ":" << __LINE__ << " Error peer=value is missing in command line argument" << std::endl;
             return(-1);
@@ -132,7 +132,7 @@ int main(std::int32_t argc, char *argv[]) {
     
 
     std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");
-    if(scheme == CoAPs) {
+    if(scheme == App::CoAPs) {
         ///identity & secret are mandatory argument
         if(argValueMap["identity"].empty() || argValueMap["secret"].empty()) {
             std::cout << basename(__FILE__) << ":" << __LINE__ << " Error either identity or secret missing for coaps" << std::endl;
@@ -146,12 +146,12 @@ int main(std::int32_t argc, char *argv[]) {
     std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme);
     app->init(scheme);
 
-    if(CLIENT == role) {
+    if(App::CLIENT == role) {
         app->set_peerHost(peerHost);
         app->set_peerPort(peerPort);
     }
 
-    if(scheme == CoAPs) {
+    if(scheme == App::CoAPs) {
         ///dtls adapter
         auto& adapter = app->get_adapter();
         adapter.add_credential(identity, secret);
@@ -173,7 +173,7 @@ int main(std::int32_t argc, char *argv[]) {
     sigset_t emptyMask;
     sigemptyset(&emptyMask);
 
-    if(CLIENT == role) {
+    if(App::CLIENT == role) {
         std::thread reception_thread(&App::start, &(*app), role, scheme);
         Readline rline(app);
         rline.init();
