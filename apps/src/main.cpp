@@ -145,8 +145,11 @@ int main(std::int32_t argc, char *argv[]) {
 
     std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme);
     app->init(scheme);
-    app->set_peerHost(peerHost);
-    app->set_peerPort(peerPort);
+
+    if(CLIENT == role) {
+        app->set_peerHost(peerHost);
+        app->set_peerPort(peerPort);
+    }
 
     if(scheme == CoAPs) {
         ///dtls adapter
