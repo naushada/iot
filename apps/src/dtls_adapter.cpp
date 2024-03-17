@@ -128,7 +128,17 @@ DTLSAdapter::~DTLSAdapter() {
 }
 
 void DTLSAdapter::connect() {
-      dtls_connect(dtls_ctx, &session);
+      auto ret = dtls_connect(dtls_ctx, &session);
+      if(!ret) {
+        /// Channel exists
+        dtls_debug("DTLSAdapter::connect Channel is already exists\n");
+      } else if(ret > 0) {
+        /// Establishes new Channel
+        dtls_debug("DTLSAdapter::connect Establises new channel for Client Hello\n");
+      } else {
+        /// Error in establishes channel
+        dtls_debug("DTLSAdapter::connect Error in establishes Channel\n");
+      }
 }
 
 std::int32_t DTLSAdapter::rx(std::int32_t fd) {

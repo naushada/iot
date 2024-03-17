@@ -127,7 +127,7 @@ int main(std::int32_t argc, char *argv[]) {
     }
     parsePeerOption(argValueMap["local"], scheme, selfHost, selfPort);
 
-    std::cout << basename(__FILE__) << ":" << __LINE__ << " scheme:" << std::to_string(scheme) << " host:" << peerHost << " port:" << std::to_string(peerPort) << std::endl;
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " scheme:" << std::to_string(scheme) << " host:" << selfHost << " port:" << std::to_string(selfPort) << std::endl;
 
     
 
