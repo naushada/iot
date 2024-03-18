@@ -156,7 +156,7 @@ std::int32_t App::init(const std::string& host, const std::uint16_t& port, const
         return(-1);
     }
                         
-    std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " created handle:" << fd << std::endl;
+    std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " created handle:" << fd  << " for service:" << service << std::endl;
 
     ServiceContext_t ctx(fd, scheme);
     ctx.set_selfHost(host);
