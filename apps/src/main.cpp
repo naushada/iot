@@ -144,22 +144,31 @@ int main(std::int32_t argc, char *argv[]) {
         secret.assign(argValueMap["secret"]);
     }
 
-    std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme, ((App::CLIENT == role)? App::ServiceType_t::DeviceMgmtClient: App::ServiceType_t::BootsstrapMgmtServer));
+    App::ServiceType_t service;
+    if(App::CLIENT == role) {
+        service = App::ServiceType_t::DeviceMgmtClient;
+    } else {
+        service = App::ServiceType_t::BootsstrapMgmtServer;
+    }
+
+    std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme, service);
     //app->init(scheme);
 
     if(App::SERVER == role) {
-        app->init(selfHost, selfPort, scheme, App::ServiceType_t::DeviceMgmtServer);
+        app->init(selfHost, selfPort, scheme, service);
         //app->set_peerHost(peerHost);
         //app->set_peerPort(peerPort);
     }
 
     if(scheme == App::CoAPs) {
         auto it = std::find_if(app->get_services().begin(), app->get_services().end(),[&](auto& ent) -> bool {
-            return(App::ServiceType_t::DeviceMgmtClient == ent.get_service() || ent.get_service() == App::ServiceType_t::BootsstrapMgmtServer);
+            return(App::ServiceType_t::DeviceMgmtClient == ent.second.get_service() || ent.second.get_service() == App::ServiceType_t::BootsstrapMgmtServer);
         });
-        ///dtls adapter
-        auto& adapter = app->get_adapter();
-        adapter.add_credential(identity, secret);
+
+        if(it != app->get_services().end()) {
+            auto& ent = *it;
+            ent.second.get_dtls_adapter().add_credential(identity, secret);
+        }
     }
 
     // install signal handler

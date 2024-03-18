@@ -151,7 +151,7 @@ class DTLSAdapter {
         }
 
         CoAPAdapter& get_coapAdapter() {
-            return(*coapAdapter);
+            return(coapAdapter);
         }
 
     private:
@@ -159,7 +159,8 @@ class DTLSAdapter {
         dtls_context_t *dtls_ctx;
         std::unordered_map<std::string, std::string> device_credentials;
         std::int32_t dtlsFd;
-        std::unique_ptr<CoAPAdapter> coapAdapter;
+        //std::unique_ptr<CoAPAdapter> coapAdapter;
+        CoAPAdapter coapAdapter;
         session_t session;
 };
 

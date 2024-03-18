@@ -50,7 +50,7 @@ class App {
             DeviceMgmtServer  = 0,
             BootsstrapMgmtServer = 1,
             DeviceMgmtClient = 3
-        }ServiceType_t;
+        } ServiceType_t;
 
         struct ServiceContext_t  {
             std::int32_t fd;
@@ -60,21 +60,24 @@ class App {
             std::uint16_t selfPort;
             Scheme_t scheme;
             ServiceType_t service;
-            std::unique_ptr<DTLSAdapter> dtls_adapter;
+            //std::unique_ptr<DTLSAdapter> dtls_adapter;
+            DTLSAdapter dtls_adapter;
 
             ServiceContext_t(std::int32_t Fd, Scheme_t schm) {
                 if(schm == Scheme_t::CoAPs) {
                     //DTLS_LOG_INFO
-                    dtls_adapter = std::make_unique<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
+                    //dtls_adapter = std::make_unique<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
+                    dtls_adapter = DTLSAdapter(Fd, DTLS_LOG_DEBUG);
                 }
 
                 fd = Fd;
                 scheme = schm;
             }
 
+             ServiceContext_t() = default;
             ~ServiceContext_t() {
                 ::close(fd);
-                dtls_adapter.reset(nullptr);
+                //dtls_adapter.reset(nullptr);
             }
 
             void set_peerHost(std::string host) {
@@ -124,7 +127,7 @@ class App {
             }
 
             DTLSAdapter& get_dtls_adapter() {
-                return(*dtls_adapter.get());
+                return(dtls_adapter);
             }
 
         };
@@ -133,7 +136,7 @@ class App {
 
         App(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service) {
             if(!init(host, port, scheme, service)) {
-                coapAdapter = std::make_unique<CoAPAdapter>();
+                coapAdapter = CoAPAdapter();
                 epollFd = ::epoll_create1(EPOLL_CLOEXEC);
             }
         }
@@ -141,7 +144,7 @@ class App {
         ~App() {
             
             ::close(epollFd);
-            coapAdapter.reset(nullptr);
+            //coapAdapter.reset(nullptr);
         }
 
         App& operator=(App& rhs) = default;
@@ -170,7 +173,8 @@ class App {
     private:
         std::int32_t epollFd;
         std::vector<struct epoll_event> evts;
-        std::unique_ptr<CoAPAdapter> coapAdapter;
+        //std::unique_ptr<CoAPAdapter> coapAdapter;
+        CoAPAdapter coapAdapter;
         std::unordered_map<App::ServiceType_t, App::ServiceContext_t> services;
 };
 

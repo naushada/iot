@@ -18,7 +18,7 @@ void App::hex_dump(const std::string& in) {
 }
 
 CoAPAdapter& App::get_coapAdapter() {
-    return(*coapAdapter.get());
+    return(coapAdapter);
 }
 
 std::int32_t App::rx(std::int32_t fd) {
@@ -217,7 +217,7 @@ std::int32_t App::handle_io(const std::int32_t& fd, const Scheme_t& scheme, cons
 
 std::int32_t App::handle_io_coaps(const std::int32_t& fd, const ServiceType_t& service) {
     auto it = std::find_if(services.begin(), services.end(), [&](auto& ent) -> bool {
-        return(service == ent.get_service());
+        return(service == ent.second.get_service());
     });
 
     if(it != services.end()) {
@@ -243,7 +243,14 @@ std::int32_t App::start(Role_t role, Scheme_t scheme) {
     std::vector<struct epoll_event> events(evts.size());
 
     if(App::CLIENT == role &&  App::CoAPs == scheme) {
-        get_adapter().connect();
+        auto it = std::find_if(get_services().begin(), get_services().end(), [&](auto& ent) -> bool {
+            return(App::ServiceType_t::DeviceMgmtClient == ent.second.get_service());
+        });
+
+        if(it != get_services().end()) {
+            auto& ent = *it;
+            ent.second.get_dtls_adapter().connect();
+        }
     }
 
     for(;;) {

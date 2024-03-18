@@ -117,7 +117,7 @@ DTLSAdapter::DTLSAdapter(std::int32_t fd, log_t log_level) {
     dtls_ctx = dtls_new_context(this);
     dtls_set_log_level(log_level);
     dtls_set_handler(dtls_ctx, &cb);
-    coapAdapter = std::make_unique<CoAPAdapter>();
+    coapAdapter = CoAPAdapter();
 }
 
 DTLSAdapter::DTLSAdapter() : dtls_ctx(nullptr), device_credentials() {}

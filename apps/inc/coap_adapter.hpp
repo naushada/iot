@@ -253,7 +253,7 @@ class CoAPAdapter {
         }
 
         std::string getUriQuery() const {
-
+            return(std::string());
         }
 
     private:
