@@ -162,7 +162,7 @@ std::int32_t App::init(const std::string& host, const std::uint16_t& port, const
     ctx.set_selfHost(host);
     ctx.set_selfPort(port);
     ctx.set_service(service);
-    services[service] = std::move(ctx);
+    services[service] = ctx; //std::move(ctx);
     return(0);
 }
 

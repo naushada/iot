@@ -152,10 +152,13 @@ int main(std::int32_t argc, char *argv[]) {
     }
 
     std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme, service);
+    app->add_event_handle(scheme, service);
     //app->init(scheme);
 
     if(App::SERVER == role) {
-        app->init(selfHost, selfPort, scheme, service);
+        app->init(selfHost, selfPort, scheme, App::ServiceType_t::DeviceMgmtServer);
+        app->add_event_handle(scheme, App::ServiceType_t::DeviceMgmtServer);
+
         //app->set_peerHost(peerHost);
         //app->set_peerPort(peerPort);
     }
