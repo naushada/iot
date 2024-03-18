@@ -158,7 +158,6 @@ class App {
         std::int32_t stop();
         std::int32_t rx(std::int32_t fd);
         std::int32_t tx(std::string& in, ServiceType_t& service);
-        std::int32_t add_server(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t& serverType);
 
         void hex_dump(const std::string& in);
         std::int32_t handle_io_coaps(const std::int32_t& handle, const ServiceType_t& service);

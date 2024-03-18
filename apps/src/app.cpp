@@ -115,19 +115,6 @@ std::int32_t App::tx(std::string& in, ServiceType_t& service) {
     return(ret);
 }
 
-std::int32_t App::add_server(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t& service) {
-    struct epoll_event evt;
-    if(fd > 0) {
-        evt.data.u64 = (((static_cast<std::uint64_t>(fd)) << 32) | static_cast<std::uint32_t>(((service & 0xFFFF) << 16) | (scheme & 0xFFFF)));
-        evt.events = EPOLLHUP | EPOLLIN;
-        
-        ::epoll_ctl(epollFd, EPOLL_CTL_ADD, fd, &evt);
-        evts.push_back(evt);
-    }
-    return(0);
-
-}
-
 std::int32_t App::init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme, const ServiceType_t& service) {
     std::int32_t fd = ::socket(AF_INET, SOCK_DGRAM, 0);
             
