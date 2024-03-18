@@ -161,16 +161,16 @@ class App {
         std::int32_t handle_io_coaps(const std::int32_t& handle, const ServiceType_t& service);
         std::int32_t handle_io_coap(const std::int32_t& handle, const ServiceType_t& service);
         std::int32_t handle_io(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t&  serverType);
-        DTLSAdapter& get_adapter();
         CoAPAdapter& get_coapAdapter();
+
+        std::unordered_map<App::ServiceType_t, App::ServiceContext_t>&  get_services() {
+            return(services);
+        }
 
     private:
         std::int32_t epollFd;
-
         std::vector<struct epoll_event> evts;
-        
         std::unique_ptr<CoAPAdapter> coapAdapter;
-        
         std::unordered_map<App::ServiceType_t, App::ServiceContext_t> services;
 };
 

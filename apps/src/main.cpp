@@ -109,20 +109,21 @@ int main(std::int32_t argc, char *argv[]) {
     }
 
     App::Scheme_t scheme;
-    std::string peerHost;
-    std::uint16_t peerPort;
+    /// Bootstrap Host & Port
+    std::string bsHost;
+    std::uint16_t bsPort;
     if(App::CLIENT == role) {
-        if(argValueMap["peer"].empty()) {
+        if(argValueMap["bs"].empty()) {
             std::cout << basename(__FILE__) << ":" << __LINE__ << " Error peer=value is missing in command line argument" << std::endl;
             return(-1);
         }
-        parsePeerOption(argValueMap["peer"], scheme, peerHost, peerPort);
+        parsePeerOption(argValueMap["bs"], scheme, bsHost, bsPort);
     }
 
     std::string selfHost;
     std::uint16_t selfPort;
     if(argValueMap["local"].empty()) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error self=value is missing in command line argument" << std::endl;
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error local=value is missing in command line argument" << std::endl;
         return(-1);
     }
     parsePeerOption(argValueMap["local"], scheme, selfHost, selfPort);
@@ -153,6 +154,9 @@ int main(std::int32_t argc, char *argv[]) {
     }
 
     if(scheme == App::CoAPs) {
+        auto it = std::find_if(app->get_services().begin(), app->get_services().end(),[&](auto& ent) -> bool {
+            return(App::ServiceType_t::DeviceMgmtClient == ent.get_service() || ent.get_service() == App::ServiceType_t::BootsstrapMgmtServer);
+        });
         ///dtls adapter
         auto& adapter = app->get_adapter();
         adapter.add_credential(identity, secret);
