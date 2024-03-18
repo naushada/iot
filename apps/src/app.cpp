@@ -108,7 +108,8 @@ std::int32_t App::tx(std::string& in, ServiceType_t& service) {
     socklen_t len = sizeof(peerAddr);
     std::int32_t ret = sendto(ctx.get_fd(), (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
     if(ret < 0) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed" << std::endl;
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed for Fd:" << ctx.get_fd() << " bs:" << ctx.get_peerHost() 
+                  << " port:" << std::to_string(ctx.get_peerPort()) << std::endl;
         return(-1);
     }
 
@@ -149,7 +150,13 @@ std::int32_t App::init(const std::string& host, const std::uint16_t& port, const
     ctx.set_selfHost(host);
     ctx.set_selfPort(port);
     ctx.set_service(service);
-    services[service] = ctx; //std::move(ctx);
+
+    if(!services.insert(std::pair<ServiceType_t, ServiceContext_t>(service, ctx)).second) {
+        ///Insertion failed.
+        std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Failed to add into services map" << std::endl;
+        return(-1);
+    }
+    //services[service] = ctx; //std::move(ctx);
     return(0);
 }
 

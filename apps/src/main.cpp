@@ -114,7 +114,7 @@ int main(std::int32_t argc, char *argv[]) {
     std::uint16_t bsPort;
     if(App::CLIENT == role) {
         if(argValueMap["bs"].empty()) {
-            std::cout << basename(__FILE__) << ":" << __LINE__ << " Error peer=value is missing in command line argument" << std::endl;
+            std::cout << basename(__FILE__) << ":" << __LINE__ << " Error bs=value is missing in command line argument" << std::endl;
             return(-1);
         }
         parsePeerOption(argValueMap["bs"], scheme, bsHost, bsPort);
@@ -161,6 +161,16 @@ int main(std::int32_t argc, char *argv[]) {
 
         //app->set_peerHost(peerHost);
         //app->set_peerPort(peerPort);
+    } else {
+        auto it = std::find_if(app->get_services().begin(), app->get_services().end(),[&](auto& ent) -> bool {
+            return(service == ent.second.get_service());
+        });
+
+        if(it != app->get_services().end()) {
+            auto& ent = *it;
+            ent.second.set_peerHost(bsHost);
+            ent.second.set_peerPort(bsPort);
+        }
     }
 
     if(scheme == App::CoAPs) {

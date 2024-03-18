@@ -415,11 +415,11 @@ int Readline::processCommand(const std::string& command) {
 
         ///Method type...
         std::uint16_t method = 2;
-        if(!cmd.compare(0, 3, "GET")) {
+        if(!cmd.compare(0, 3, "get")) {
             method = 1;
-        } else if(!cmd.compare(0, 4, "POST")) {
+        } else if(!cmd.compare(0, 4, "post")) {
             method = 4;
-        } else if(!cmd.compare(0, 3, "PUT")) {
+        } else if(!cmd.compare(0, 3, "put")) {
             method = 3;
         }
 
@@ -440,7 +440,7 @@ int Readline::processCommand(const std::string& command) {
                 if(it != get_app()->get_services().end()) {
                     auto& elm = *it;
                     auto len = get_app()->tx(ent, elm.second.get_service());
-                    std::cout << basename(__FILE__) << ":" << __LINE__ << " UDP Packet sent len:" << len << std::endl;
+                    std::cout << basename(__FILE__) << ":" << __LINE__ << " UDP Packet sent len:" << len   << " strerror:" << std::strerror(errno)<< std::endl;
                 }
                 
             }
