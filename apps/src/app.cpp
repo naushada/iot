@@ -103,13 +103,17 @@ std::int32_t App::tx(std::string& in, ServiceType_t& service) {
     if (!s) {
         peerAddr = *((struct sockaddr_in*)(result->ai_addr));
         freeaddrinfo(result);
+    } else {
+        std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Unable to get addrinfo for bs:"<< std::strerror(errno) << std::endl;
+        return(-1); 
     }
 
     socklen_t len = sizeof(peerAddr);
     std::int32_t ret = sendto(ctx.get_fd(), (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
     if(ret < 0) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed for Fd:" << ctx.get_fd() << " bs:" << ctx.get_peerHost() 
-                  << " port:" << std::to_string(ctx.get_peerPort()) << std::endl;
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed for Fd:" << ctx.get_fd() << " bs:" << ctx.get_peerHost()
+                  << " localIP:" << ctx.get_selfHost() << " selfPort:" << std::to_string(ctx.get_selfPort())
+                  << " peerPort:" << std::to_string(ctx.get_peerPort()) << std::endl;
         return(-1);
     }
 
@@ -156,7 +160,7 @@ std::int32_t App::init(const std::string& host, const std::uint16_t& port, const
         std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Failed to add into services map" << std::endl;
         return(-1);
     }
-    //services[service] = ctx; //std::move(ctx);
+
     return(0);
 }
 

@@ -153,14 +153,11 @@ int main(std::int32_t argc, char *argv[]) {
 
     std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme, service);
     app->add_event_handle(scheme, service);
-    //app->init(scheme);
-
+    
     if(App::SERVER == role) {
         app->init(selfHost, selfPort, scheme, App::ServiceType_t::DeviceMgmtServer);
         app->add_event_handle(scheme, App::ServiceType_t::DeviceMgmtServer);
 
-        //app->set_peerHost(peerHost);
-        //app->set_peerPort(peerPort);
     } else {
         auto it = std::find_if(app->get_services().begin(), app->get_services().end(),[&](auto& ent) -> bool {
             return(service == ent.second.get_service());
@@ -175,7 +172,7 @@ int main(std::int32_t argc, char *argv[]) {
 
     if(scheme == App::CoAPs) {
         auto it = std::find_if(app->get_services().begin(), app->get_services().end(),[&](auto& ent) -> bool {
-            return(App::ServiceType_t::DeviceMgmtClient == ent.second.get_service() || ent.second.get_service() == App::ServiceType_t::BootsstrapMgmtServer);
+            return(service == ent.second.get_service());
         });
 
         if(it != app->get_services().end()) {
