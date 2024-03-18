@@ -143,12 +143,13 @@ int main(std::int32_t argc, char *argv[]) {
         secret.assign(argValueMap["secret"]);
     }
 
-    std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme);
-    app->init(scheme);
+    std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme, ((App::CLIENT == role)? App::ServiceType_t::DeviceMgmtClient: App::ServiceType_t::BootsstrapMgmtServer));
+    //app->init(scheme);
 
-    if(App::CLIENT == role) {
-        app->set_peerHost(peerHost);
-        app->set_peerPort(peerPort);
+    if(App::SERVER == role) {
+        app->init(selfHost, selfPort, scheme, App::ServiceType_t::DeviceMgmtServer);
+        //app->set_peerHost(peerHost);
+        //app->set_peerPort(peerPort);
     }
 
     if(scheme == App::CoAPs) {

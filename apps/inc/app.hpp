@@ -37,7 +37,8 @@ class App {
         
         typedef enum {
             CoAPs = 1,
-            CoAP = 2
+            CoAP = 2,
+            INVALID = 3
         } Scheme_t;
 
         typedef enum {
@@ -46,51 +47,100 @@ class App {
         } Role_t;
 
         typedef enum {
-            DeviceMgmt  = 0,
-            BootsstrapMgmt = 1,
-        }ServeerType_t;
+            DeviceMgmtServer  = 0,
+            BootsstrapMgmtServer = 1,
+            DeviceMgmtClient = 3
+        }ServiceType_t;
+
+        struct ServiceContext_t  {
+            std::int32_t fd;
+            std::string peerHost;
+            std::uint16_t peerPort;
+            std::string selfHost;
+            std::uint16_t selfPort;
+            Scheme_t scheme;
+            ServiceType_t service;
+            std::unique_ptr<DTLSAdapter> dtls_adapter;
+
+            ServiceContext_t(std::int32_t Fd, Scheme_t schm) {
+                if(schm == Scheme_t::CoAPs) {
+                    //DTLS_LOG_INFO
+                    dtls_adapter = std::make_unique<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
+                }
+
+                fd = Fd;
+                scheme = schm;
+            }
+
+            ~ServiceContext_t() {
+                ::close(fd);
+                dtls_adapter.reset(nullptr);
+            }
+
+            void set_peerHost(std::string host) {
+                peerHost = host;
+            }
+            std::string& get_peerHost() {
+                return(peerHost);
+            }
+
+            void set_peerPort(std::uint16_t port) {
+                peerPort = port;
+            }
+            std::uint16_t& get_peerPort() {
+                return(peerPort);
+            }
+
+            void set_selfHost(std::string host) {
+                selfHost = host;
+            }
+            std::string& get_selfHost() {
+                return(selfHost);
+            }
+
+            void set_selfPort(std::uint16_t port) {
+                selfPort = port;
+            }
+            std::uint16_t& get_selfPort() {
+                return(selfPort);
+            }
+
+            void set_scheme(Scheme_t sc) {
+                scheme = sc;
+            }
+            Scheme_t& get_scheme() {
+                return(scheme);
+            }
+
+            void set_service(ServiceType_t sc) {
+                service = sc;
+            }
+            ServiceType_t& get_service() {
+                return(service);
+            }
+
+            std::int32_t get_fd() {
+                return(fd);
+            }
+
+            DTLSAdapter& get_dtls_adapter() {
+                return(*dtls_adapter.get());
+            }
+
+        };
 
     public:
 
-        App(std::string& host, std::uint16_t& port, Scheme_t& scheme) {
-            set_selfHost(host);
-            set_selfPort(port);
-            this->scheme = scheme;
-
-            serverFd = ::socket(AF_INET, SOCK_DGRAM, 0);
-            
-            if(serverFd < 0) {
+        App(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service) {
+            if(!init(host, port, scheme, service)) {
+                coapAdapter = std::make_unique<CoAPAdapter>();
+                epollFd = ::epoll_create1(EPOLL_CLOEXEC);
             }
-            
-            struct sockaddr_in selfAddr;
-            struct addrinfo *result;
-
-            auto s = getaddrinfo(host.data(), std::to_string(port).c_str(), nullptr, &result);
-            if (!s) {
-                selfAddr = *((struct sockaddr_in*)(result->ai_addr));
-                freeaddrinfo(result);
-            }
-
-            socklen_t len = sizeof(selfAddr);
-            auto status = ::bind(serverFd, (struct sockaddr *)&selfAddr, len);
-            if(status < 0) {
-                std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " bind failed error:"<< std::strerror(errno) << std::endl;
-            }
-                        
-            std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " created handle:" << serverFd << std::endl;
-
-            if(scheme == CoAPs) {
-                //DTLS_LOG_INFO
-                dtls_adapter = std::make_unique<DTLSAdapter>(serverFd, DTLS_LOG_DEBUG);
-            }
-
-            coapAdapter = std::make_unique<CoAPAdapter>();
         }
 
         ~App() {
-            ::close(serverFd);
+            
             ::close(epollFd);
-            dtls_adapter.reset(nullptr);
             coapAdapter.reset(nullptr);
         }
 
@@ -98,61 +148,30 @@ class App {
         App& operator=(const App& rhs) = default;
         App(const App& rhs) = default;
         
-        std::int32_t init(const Scheme_t& scheme);
+        std::int32_t add_event_handle(const Scheme_t& scheme, const ServiceType_t& svc);
         std::int32_t init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme);
+        std::int32_t init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme, const ServiceType_t& service);
         std::int32_t start(Role_t role, Scheme_t scheme);
         std::int32_t stop();
         std::int32_t rx(std::int32_t fd);
-        std::int32_t tx(std::string& in);
-        std::int32_t add_server(const std::int32_t& fd, const Scheme_t& scheme, const ServeerType_t& serverType);
-
-        void set_peerHost(std::string host) {
-            peerHost = host;
-        }
-        std::string& get_peerHost() {
-            return(peerHost);
-        }
-
-        void set_peerPort(std::uint16_t port) {
-            peerPort = port;
-        }
-        std::uint16_t& get_peerPort() {
-            return(peerPort);
-        }
-
-        void set_selfHost(std::string host) {
-            selfHost = host;
-        }
-        std::string& get_selfHost() {
-            return(selfHost);
-        }
-
-        void set_selfPort(std::uint16_t port) {
-            selfPort = port;
-        }
-        std::uint16_t& get_selfPort() {
-            return(selfPort);
-        }
+        std::int32_t tx(std::string& in, ServiceType_t& service);
+        std::int32_t add_server(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t& serverType);
 
         void hex_dump(const std::string& in);
-        std::int32_t handle_io_coaps(const std::int32_t& handle);
-        std::int32_t handle_io_coap(const std::int32_t& handle);
+        std::int32_t handle_io_coaps(const std::int32_t& handle, const ServiceType_t& service);
+        std::int32_t handle_io_coap(const std::int32_t& handle, const ServiceType_t& service);
+        std::int32_t handle_io(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t&  serverType);
         DTLSAdapter& get_adapter();
         CoAPAdapter& get_coapAdapter();
 
     private:
         std::int32_t epollFd;
-        std::int32_t serverFd;
 
         std::vector<struct epoll_event> evts;
-        std::unique_ptr<DTLSAdapter> dtls_adapter;
+        
         std::unique_ptr<CoAPAdapter> coapAdapter;
-
-        std::string peerHost;
-        std::uint16_t peerPort;
-        std::string selfHost;
-        std::uint16_t selfPort;
-        Scheme_t scheme;
+        
+        std::unordered_map<App::ServiceType_t, App::ServiceContext_t> services;
 };
 
 #endif /*__app_hpp__*/

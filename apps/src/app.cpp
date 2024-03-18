@@ -17,10 +17,6 @@ void App::hex_dump(const std::string& in) {
     std::cout << hexDump << std::endl;
 }
 
-DTLSAdapter& App::get_adapter() {
-    return(*dtls_adapter.get());
-}
-
 CoAPAdapter& App::get_coapAdapter() {
     return(*coapAdapter.get());
 }
@@ -98,18 +94,19 @@ std::int32_t App::rx(std::int32_t fd) {
     return(-1);
 }
 
-std::int32_t App::tx(std::string& in) {
+std::int32_t App::tx(std::string& in, ServiceType_t& service) {
     struct sockaddr_in peerAddr;
     struct addrinfo *result;
 
-    auto s = getaddrinfo(get_peerHost().data(), std::to_string(get_peerPort()).c_str(), nullptr, &result);
+    auto& ctx = services[service];
+    auto s = getaddrinfo(ctx.get_peerHost().data(), std::to_string(ctx.get_peerPort()).c_str(), nullptr, &result);
     if (!s) {
         peerAddr = *((struct sockaddr_in*)(result->ai_addr));
         freeaddrinfo(result);
     }
 
     socklen_t len = sizeof(peerAddr);
-    std::int32_t ret = sendto(serverFd, (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
+    std::int32_t ret = sendto(ctx.get_fd(), (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
     if(ret < 0) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed" << std::endl;
         return(-1);
@@ -118,24 +115,25 @@ std::int32_t App::tx(std::string& in) {
     return(ret);
 }
 
-std::int32_t App::add_server(const std::int32_t& fd, const Scheme_t& scheme, const ServeerType_t& serverType) {
+std::int32_t App::add_server(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t& service) {
     struct epoll_event evt;
     if(fd > 0) {
-        evt.data.u64 = (((static_cast<std::uint64_t>(fd)) << 32) | static_cast<std::uint32_t>(((serverType & 0xFFFF) << 16) | (scheme & 0xFFFF)));
+        evt.data.u64 = (((static_cast<std::uint64_t>(fd)) << 32) | static_cast<std::uint32_t>(((service & 0xFFFF) << 16) | (scheme & 0xFFFF)));
         evt.events = EPOLLHUP | EPOLLIN;
         
-        ::epoll_ctl(epollFd, EPOLL_CTL_ADD, serverFd, &evt);
+        ::epoll_ctl(epollFd, EPOLL_CTL_ADD, fd, &evt);
         evts.push_back(evt);
     }
     return(0);
 
 }
 
-std::int32_t App::init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme) {
-    this->scheme = scheme;
-    auto channel = ::socket(AF_INET, SOCK_DGRAM, 0);
+std::int32_t App::init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme, const ServiceType_t& service) {
+    std::int32_t fd = ::socket(AF_INET, SOCK_DGRAM, 0);
             
-    if(channel < 0) {
+    if(fd < 0) {
+        std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error socket creation failed error:"<< std::strerror(errno) << std::endl; 
+        return(-1);
     }
             
     struct sockaddr_in selfAddr;
@@ -145,49 +143,96 @@ std::int32_t App::init(const std::string& host, const std::uint16_t& port, const
     if (!s) {
         selfAddr = *((struct sockaddr_in*)(result->ai_addr));
         freeaddrinfo(result);
+    } else {
+        ::close(fd);
+        std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error getaddrinfo failed error:"<< std::strerror(errno) << std::endl; 
+        return(-1);
     }
 
     socklen_t len = sizeof(selfAddr);
-    auto status = ::bind(channel, (struct sockaddr *)&selfAddr, len);
-
+    auto status = ::bind(fd, (struct sockaddr *)&selfAddr, len);
     if(status < 0) {
         std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " bind failed error:"<< std::strerror(errno) << std::endl;
+        return(-1);
     }
                         
-    std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " created handle:" << serverFd << std::endl;
+    std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " created handle:" << fd << std::endl;
 
-    if(scheme == CoAPs) {
-        //DTLS_LOG_INFO
-        dtls_adapter = std::make_unique<DTLSAdapter>(serverFd, DTLS_LOG_DEBUG);
-    }
-
-    coapAdapter = std::make_unique<CoAPAdapter>();
-}
-
-std::int32_t App::init(const Scheme_t& scheme) {
-    epollFd = ::epoll_create1(EPOLL_CLOEXEC);
-    struct epoll_event evt;
-    if(serverFd > 0) {
-        evt.data.u64 = (((static_cast<std::uint64_t>(serverFd)) << 32) | static_cast<std::uint32_t>(scheme));
-        evt.events = EPOLLHUP | EPOLLIN;
-        
-        ::epoll_ctl(epollFd, EPOLL_CTL_ADD, serverFd, &evt);
-        evts.push_back(evt);
-    }
+    ServiceContext_t ctx(fd, scheme);
+    ctx.set_selfHost(host);
+    ctx.set_selfPort(port);
+    ctx.set_service(service);
+    services[service] = std::move(ctx);
     return(0);
 }
 
-std::int32_t App::handle_io_coaps(const std::int32_t& fd) {
-    auto ret = get_adapter().rx(fd);
-    auto rsp = get_adapter().get_coapAdapter().getResponse();
-    if(rsp.length()) {
-        get_adapter().tx(rsp);
+std::int32_t App::init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme) {
+    auto ret = init(host, port, scheme, ServiceType_t::DeviceMgmtClient);
+    if(ret) {
+        std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " init failed for scheme:" << scheme << std::endl;
+        return(ret);
     }
 
     return(ret);
 }
 
-std::int32_t App::handle_io_coap(const std::int32_t& fd) {
+std::int32_t App::add_event_handle(const Scheme_t& scheme, const ServiceType_t& svc) {
+    
+    struct epoll_event evt;
+    auto it = std::find_if(services.begin(), services.end(), [&](auto& ent) -> bool {
+        return(svc == ent.second.get_service());
+    });
+
+    if(it != services.end()) {
+        auto& ent = it->second;
+        evt.data.u64 = (((static_cast<std::uint64_t>(ent.get_fd())) << 32) | static_cast<std::uint32_t>(((svc << 16) & 0xFFFF) | (scheme & 0xFFFF)));
+        evt.events = EPOLLHUP | EPOLLIN;
+        
+        ::epoll_ctl(epollFd, EPOLL_CTL_ADD, ent.get_fd(), &evt);
+        evts.push_back(evt);
+        return(0);
+    }
+
+    return(-1);
+}
+
+std::int32_t App::handle_io(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t&  service) {
+    switch (scheme) {
+        case App::CoAP:
+        {
+            handle_io_coap(fd, service);
+        }
+        break;
+        case App::CoAPs:
+        {
+            handle_io_coaps(fd, service);
+        }
+        break;
+    
+        default:
+            std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " Error unknown scheme:" << scheme << std::endl;
+        break;
+    }
+}
+
+std::int32_t App::handle_io_coaps(const std::int32_t& fd, const ServiceType_t& service) {
+    auto it = std::find_if(services.begin(), services.end(), [&](auto& ent) -> bool {
+        return(service == ent.get_service());
+    });
+
+    if(it != services.end()) {
+        auto& ctx = *it;
+        auto ret = ctx.second.get_dtls_adapter().rx(fd);
+        auto rsp = ctx.second.get_dtls_adapter().get_coapAdapter().getResponse();
+        if(rsp.length()) {
+            ctx.second.get_dtls_adapter().tx(rsp);
+        }
+        return(0);
+    }
+    return(-1);
+}
+
+std::int32_t App::handle_io_coap(const std::int32_t& fd, const ServiceType_t& service) {
     rx(fd);
     return(0);
 }
@@ -217,8 +262,9 @@ std::int32_t App::start(Role_t role, Scheme_t scheme) {
             for(auto it = events.begin(); it != events.end(); ++it) {
 
                 struct epoll_event ent = *it;
-                auto handle = ((ent.data.u64 >> 32) & 0xFFFFFFFF);
-                auto scheme = ent.data.u64 & 0xFFFFFFFF;
+                std::int32_t handle = ((ent.data.u64 >> 32) & 0xFFFFFFFF);
+                Scheme_t scheme = static_cast<Scheme_t>(ent.data.u64 & 0xFFFF);
+                ServiceType_t service = static_cast<ServiceType_t>((ent.data.u64 > 16) & 0xFFFF);
                 
                 if(ent.events & EPOLLHUP) {
                     std::cout << "fn:" << __PRETTY_FUNCTION__ << " line:" << __LINE__ <<" ent.events: EPOLLHUP" << std::endl;
@@ -226,11 +272,7 @@ std::int32_t App::start(Role_t role, Scheme_t scheme) {
 
                 if(ent.events & EPOLLIN) {
                     std::cout << basename(__FILE__) << ":" << __LINE__ << " EPOLLIN on Fd: " << handle << std::endl;
-                    if(scheme == App::CoAPs) {
-                        handle_io_coaps(handle);
-                    } else {
-                        handle_io_coap(handle);
-                    }
+                    handle_io(handle, scheme, service);
                 }
 
                 if(ent.events & EPOLLERR) {
