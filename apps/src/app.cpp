@@ -248,6 +248,7 @@ std::int32_t App::handle_io_coaps(const std::int32_t& fd, const ServiceType_t& s
 }
 
 std::int32_t App::handle_io_coap(const std::int32_t& fd, const ServiceType_t& service) {
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " received packet handle_io_coap" << std::endl;
     rx(fd);
     return(0);
 }

@@ -171,10 +171,19 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
         if(!request.empty() && !uris.empty()) {
             optdelta = (12 - offset /*Content-Format - Uri-Path*/) << 4;
             offset += (12 - offset);
-            optdelta |= 2 /*Length of cf value (2 bytes)*/;
-            auto ct = htons(cf);
-            ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
-            ss.write (reinterpret_cast <const char *>(&ct), sizeof(cf));
+            
+            if(cf < 256) { 
+                optdelta |= 1 /*Length of cf value (1 bytes)*/;
+                std::uint8_t ct = cf;
+                ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
+                ss.write (reinterpret_cast <const char *>(&ct), sizeof(ct));
+            } else {
+                optdelta |= 2 /*Length of cf value (2 bytes)*/;
+                std::uint16_t ct = htons(cf);
+                ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
+                ss.write (reinterpret_cast <const char *>(&ct), sizeof(ct));
+            }
+            
         } else if(!request.empty()) {
             offset = 12;
             optdelta = (offset /*Content-Format*/) << 4;
@@ -665,7 +674,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
         }
     }while(0);
 
-    //dumpCoAPMessage(coapmessage);
+    dumpCoAPMessage(coapmessage);
     return(0);
 }
 

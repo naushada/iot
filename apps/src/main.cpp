@@ -155,7 +155,7 @@ int main(std::int32_t argc, char *argv[]) {
     app->add_event_handle(scheme, service);
     
     if(App::SERVER == role) {
-        app->init(selfHost, selfPort, scheme, App::ServiceType_t::DeviceMgmtServer);
+        app->init(selfHost, 58686, scheme, App::ServiceType_t::DeviceMgmtServer);
         app->add_event_handle(scheme, App::ServiceType_t::DeviceMgmtServer);
 
     } else {

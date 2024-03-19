@@ -414,11 +414,11 @@ int Readline::processCommand(const std::string& command) {
         }
 
         ///Method type...
-        std::uint16_t method = 2;
+        std::uint16_t method = 4;
         if(!cmd.compare(0, 3, "get")) {
             method = 1;
         } else if(!cmd.compare(0, 4, "post")) {
-            method = 4;
+            method = 2;
         } else if(!cmd.compare(0, 3, "put")) {
             method = 3;
         }
