@@ -97,27 +97,34 @@ std::int32_t App::rx(std::int32_t fd) {
 std::int32_t App::tx(std::string& in, ServiceType_t& service) {
     struct sockaddr_in peerAddr;
     struct addrinfo *result;
+    
+    auto it = std::find_if(services.begin(), services.end(), [&](auto& ent) -> bool {
+        return(service == ent.second->get_service());
+    });
 
-    auto& ctx = services[service];
-    auto s = getaddrinfo(ctx.get_peerHost().data(), std::to_string(ctx.get_peerPort()).c_str(), nullptr, &result);
-    if (!s) {
-        peerAddr = *((struct sockaddr_in*)(result->ai_addr));
-        freeaddrinfo(result);
-    } else {
-        std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Unable to get addrinfo for bs:"<< std::strerror(errno) << std::endl;
-        return(-1); 
+    if(it != services.end()) {
+        auto& ctx = *it;
+    
+        auto s = getaddrinfo(ctx.second->get_peerHost().data(), std::to_string(ctx.second->get_peerPort()).c_str(), nullptr, &result);
+        if (!s) {
+            peerAddr = *((struct sockaddr_in*)(result->ai_addr));
+            freeaddrinfo(result);
+        } else {
+            std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Unable to get addrinfo for bs:"<< std::strerror(errno) << std::endl;
+            return(-1); 
+        }
+
+        socklen_t len = sizeof(peerAddr);
+        std::int32_t ret = sendto(ctx.second->get_fd(), (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
+        if(ret < 0) {
+            std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed for Fd:" << ctx.second->get_fd() << " bs:" << ctx.second->get_peerHost()
+                    << " localIP:" << ctx.second->get_selfHost() << " selfPort:" << std::to_string(ctx.second->get_selfPort())
+                    << " peerPort:" << std::to_string(ctx.second->get_peerPort()) << std::endl;
+            return(-1);
+        }
     }
 
-    socklen_t len = sizeof(peerAddr);
-    std::int32_t ret = sendto(ctx.get_fd(), (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
-    if(ret < 0) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed for Fd:" << ctx.get_fd() << " bs:" << ctx.get_peerHost()
-                  << " localIP:" << ctx.get_selfHost() << " selfPort:" << std::to_string(ctx.get_selfPort())
-                  << " peerPort:" << std::to_string(ctx.get_peerPort()) << std::endl;
-        return(-1);
-    }
-
-    return(ret);
+    return(0);
 }
 
 std::int32_t App::init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme, const ServiceType_t& service) {
@@ -150,17 +157,27 @@ std::int32_t App::init(const std::string& host, const std::uint16_t& port, const
                         
     std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " created handle:" << fd  << " for service:" << service << std::endl;
 
-    ServiceContext_t ctx(fd, scheme);
-    ctx.set_selfHost(host);
-    ctx.set_selfPort(port);
-    ctx.set_service(service);
+    std::unique_ptr<ServiceContext_t> ctx = std::make_unique<ServiceContext_t>(fd, scheme);
+    ctx->set_selfHost(host);
+    ctx->set_selfPort(port);
+    ctx->set_service(service);
 
-    if(!services.insert(std::pair<ServiceType_t, ServiceContext_t>(service, ctx)).second) {
+    if(!services.insert(std::pair(service, std::move(ctx))).second) {
         ///Insertion failed.
         std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Failed to add into services map" << std::endl;
         return(-1);
     }
-
+#if 0
+    auto it = std::find_if(services.begin(), services.end(), [&](auto& ent) -> bool {
+        return(fd == ent.second.get_fd());
+    });
+    if(it != services.end()) {
+        auto& elm = *it;
+        elm.second.set_selfHost(host);
+        elm.second.set_selfPort(port);
+        elm.second.set_service(service);
+    }
+#endif
     return(0);
 }
 
@@ -178,15 +195,15 @@ std::int32_t App::add_event_handle(const Scheme_t& scheme, const ServiceType_t& 
     
     struct epoll_event evt;
     auto it = std::find_if(services.begin(), services.end(), [&](auto& ent) -> bool {
-        return(svc == ent.second.get_service());
+        return(svc == ent.second->get_service());
     });
 
     if(it != services.end()) {
-        auto& ent = it->second;
-        evt.data.u64 = (((static_cast<std::uint64_t>(ent.get_fd())) << 32) | static_cast<std::uint32_t>(((svc << 16) & 0xFFFF) | (scheme & 0xFFFF)));
+        auto& ent = *it;
+        evt.data.u64 = (((static_cast<std::uint64_t>(ent.second->get_fd())) << 32) | static_cast<std::uint32_t>(((svc << 16) & 0xFFFF) | (scheme & 0xFFFF)));
         evt.events = EPOLLHUP | EPOLLIN;
         
-        ::epoll_ctl(epollFd, EPOLL_CTL_ADD, ent.get_fd(), &evt);
+        ::epoll_ctl(epollFd, EPOLL_CTL_ADD, ent.second->get_fd(), &evt);
         evts.push_back(evt);
         return(0);
     }
@@ -215,15 +232,15 @@ std::int32_t App::handle_io(const std::int32_t& fd, const Scheme_t& scheme, cons
 
 std::int32_t App::handle_io_coaps(const std::int32_t& fd, const ServiceType_t& service) {
     auto it = std::find_if(services.begin(), services.end(), [&](auto& ent) -> bool {
-        return(service == ent.second.get_service());
+        return(service == ent.second->get_service());
     });
 
     if(it != services.end()) {
         auto& ctx = *it;
-        auto ret = ctx.second.get_dtls_adapter().rx(fd);
-        auto rsp = ctx.second.get_dtls_adapter().get_coapAdapter().getResponse();
+        auto ret = ctx.second->get_dtls_adapter().rx(fd);
+        auto rsp = ctx.second->get_dtls_adapter().get_coapAdapter().getResponse();
         if(rsp.length()) {
-            ctx.second.get_dtls_adapter().tx(rsp);
+            ctx.second->get_dtls_adapter().tx(rsp);
         }
         return(0);
     }
@@ -242,12 +259,12 @@ std::int32_t App::start(Role_t role, Scheme_t scheme) {
 
     if(App::CLIENT == role &&  App::CoAPs == scheme) {
         auto it = std::find_if(get_services().begin(), get_services().end(), [&](auto& ent) -> bool {
-            return(App::ServiceType_t::DeviceMgmtClient == ent.second.get_service());
+            return(App::ServiceType_t::DeviceMgmtClient == ent.second->get_service());
         });
 
         if(it != get_services().end()) {
             auto& ent = *it;
-            ent.second.get_dtls_adapter().connect();
+            ent.second->get_dtls_adapter().connect();
         }
     }
 

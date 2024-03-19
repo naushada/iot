@@ -74,11 +74,15 @@ class App {
                 scheme = schm;
             }
 
-             ServiceContext_t() = default;
+             ServiceContext_t() = delete;
+             //~ServiceContext_t() = delete;
+             
             ~ServiceContext_t() {
+                std::cout << basename(__FILE__) << ":" << __LINE__ << " Closing Socket:" << fd << std::endl;
                 ::close(fd);
                 //dtls_adapter.reset(nullptr);
             }
+            
 
             void set_peerHost(std::string host) {
                 peerHost = host;
@@ -165,7 +169,7 @@ class App {
         std::int32_t handle_io(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t&  serverType);
         CoAPAdapter& get_coapAdapter();
 
-        std::unordered_map<App::ServiceType_t, App::ServiceContext_t>&  get_services() {
+        std::unordered_map<App::ServiceType_t, std::unique_ptr<App::ServiceContext_t>>&  get_services() {
             return(services);
         }
 
@@ -174,7 +178,7 @@ class App {
         std::vector<struct epoll_event> evts;
         //std::unique_ptr<CoAPAdapter> coapAdapter;
         CoAPAdapter coapAdapter;
-        std::unordered_map<App::ServiceType_t, App::ServiceContext_t> services;
+        std::unordered_map<App::ServiceType_t, std::unique_ptr<App::ServiceContext_t>> services;
 };
 
 #endif /*__app_hpp__*/

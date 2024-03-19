@@ -160,24 +160,24 @@ int main(std::int32_t argc, char *argv[]) {
 
     } else {
         auto it = std::find_if(app->get_services().begin(), app->get_services().end(),[&](auto& ent) -> bool {
-            return(service == ent.second.get_service());
+            return(service == ent.second->get_service());
         });
 
         if(it != app->get_services().end()) {
             auto& ent = *it;
-            ent.second.set_peerHost(bsHost);
-            ent.second.set_peerPort(bsPort);
+            ent.second->set_peerHost(bsHost);
+            ent.second->set_peerPort(bsPort);
         }
     }
 
     if(scheme == App::CoAPs) {
         auto it = std::find_if(app->get_services().begin(), app->get_services().end(),[&](auto& ent) -> bool {
-            return(service == ent.second.get_service());
+            return(service == ent.second->get_service());
         });
 
         if(it != app->get_services().end()) {
             auto& ent = *it;
-            ent.second.get_dtls_adapter().add_credential(identity, secret);
+            ent.second->get_dtls_adapter().add_credential(identity, secret);
         }
     }
 
