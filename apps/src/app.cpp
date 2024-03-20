@@ -46,6 +46,7 @@ std::int32_t App::rx(std::int32_t fd) {
             ///check if this is an ACK or not?
             if(!st && coap_inst.getRequestType(static_cast<std::uint32_t>(coapmessage.coapheader.type)) == "Acknowledgement") {
                 std::cout << basename(__FILE__) << ":" << __LINE__ << " This is an ACK" << std::endl;
+                coap_inst.dumpCoAPMessage(coapmessage);
             } else {
 
                 ///Build the Response for a given Request
@@ -55,6 +56,11 @@ std::int32_t App::rx(std::int32_t fd) {
                     ///This is a CoAP URI handle it.
                 } else if(coap_inst.isLwm2mUri(coapmessage, uri)) {
                     /// This is aLwM2M string URI rd or bs
+                    std::cout << basename(__FILE__) << ":" << __LINE__ << " This is either bs  or rd" << std::endl;
+                    auto rsp = coap_inst.buildResponse(coapmessage);
+                    auto ret = sendto(fd, (const void *)rsp.data(), rsp.length(), 0, (struct sockaddr *)&session, slen);
+                    std::cout << basename(__FILE__) << ":" << __LINE__ << " bs or rd response is sent ret:" << ret << std::endl;
+
                 } else if(coap_inst.isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
                     /// This is LwM2M Object URI, Handle it.
                     LwM2MAdapter lwm2mAdapter;

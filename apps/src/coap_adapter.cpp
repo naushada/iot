@@ -429,7 +429,33 @@ std::string CoAPAdapter::buildRegistrationAck(const CoAPMessage& message) {
 
     ss.write (reinterpret_cast <const char *>(&header), sizeof(header));
     ss.write (reinterpret_cast <const char *>(message.tokens.data()), message.tokens.size());
-
+    /// Encode URI also.
+    for(const auto& ent: message.uripath) {
+        std::uint8_t onebyte;
+//        std::cout << basename(__FILE__) << ":" << __LINE__ << " delta:" << OptionNumber[ent.optiondelta] << " length:" << ent.optionlength << " value:" << ent.optionvalue << std::endl;
+        if(!OptionNumber[ent.optiondelta].compare(0, 8, "Uri-Path")) {
+            onebyte = ent.optiondelta << 4;
+            if(ent.optionlength > 0 && ent.optionlength < 13) {
+                onebyte |= ent.optionlength;
+                ss.write (reinterpret_cast <const char *>(&onebyte), sizeof(onebyte));
+                ss.write (reinterpret_cast <const char *>(ent.optionvalue.data()), ent.optionvalue.size());
+            } else if(ent.optionlength >= 13 && ent.optionlength < 269) {
+                //extended length 
+                onebyte |= 13;
+                std::uint8_t extendedlength = ent.optionvalue.length() - 13;
+                ss.write (reinterpret_cast <const char *>(&onebyte), sizeof(onebyte));
+                ss.write (reinterpret_cast <const char *>(&extendedlength), sizeof(extendedlength));
+                ss.write (reinterpret_cast <const char *>(ent.optionvalue.data()), ent.optionvalue.size());
+            } else {
+                //extended length 
+                onebyte |= 14;
+                std::uint16_t extendedlength = ent.optionvalue.length() - 14;
+                ss.write (reinterpret_cast <const char *>(&onebyte), sizeof(onebyte));
+                ss.write (reinterpret_cast <const char *>(&extendedlength), sizeof(extendedlength));
+                ss.write (reinterpret_cast <const char *>(ent.optionvalue.data()), ent.optionvalue.size());
+            }
+        }
+    }
     return(ss.str());
 }
 
