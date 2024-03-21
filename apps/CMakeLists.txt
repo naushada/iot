@@ -11,6 +11,8 @@ add_definitions(-DLWM2M_LITTLE_ENDIAN)
 # Include External cmake file
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
+include_directories(/usr/local/include/mongocxx/v_noabi)
+include_directories(/usr/local/include/bsoncxx/v_noabi)
 
 include_directories(inc)
 
@@ -24,7 +26,11 @@ target_link_libraries(lwm2m
                         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls/libtinydtls.a 
                         z
                         readline
-                        pthread)
+                        pthread
+                        bsoncxx
+                        mongocxx
+                        ssl
+                        crypto)
 
 add_subdirectory(test)
 
