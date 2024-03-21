@@ -2,6 +2,36 @@ FROM ubuntu as compile-image
 RUN apt-get update && apt-get -y upgrade && \
     apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev
 
+# Building openssl 3.1.1
+RUN git clone -b openssl-3.1.1 https://github.com/naushada/openssl.git
+
+RUN cd openssl && \
+    gunzip openssl-3.1.1.tar.gz && \
+    tar -xvf openssl-3.1.1.tar && \
+    cd openssl-3.1.1 && \
+    ./config --prefix=/usr/local/openssl-3.1.1 && \
+    make && make install
+
+# RUN openssl req -newkey rsa:4096  -x509  -sha512  -days 365 -nodes -out /opt/xAPP/cert/cert.pem -keyout /opt/xAPP/cert/key.pem
+
+WORKDIR /root/mongo-c
+# #RUN apt-get -y install mongodb-server-core
+RUN git clone -b r1.19 https://github.com/mongodb/mongo-c-driver.git
+
+RUN cd mongo-c-driver
+WORKDIR /root/mongo-c/mongo-c-driver/build
+RUN cmake .. && \
+    make && make install
+
+WORKDIR /root/mongo-cxx
+RUN git clone -b releases/v3.6 https://github.com/mongodb/mongo-cxx-driver.git
+RUN cd mongo-cxx-driver
+
+WORKDIR /root/mongo-cxx/mongo-cxx-driver/build
+RUN cmake .. -DBSONCXX_POLY_USE_MNMLSTC=1 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+RUN make && make install
+RUN ldconfig
+
 WORKDIR /tmp
 RUN git clone https://github.com/google/googletest/ && \
     cd /tmp/googletest && \
