@@ -1143,13 +1143,24 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
 #endif
 }
 
-std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::string& oiid, const std::vector<std::string>& rid, std::string& out) {
+std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::string& oiid, const json& rids, std::string& out) {
     
     switch (oid)
     {
     case SecurityObjectID:
     {
-        /* code */
+        std::stringstream ss;
+        for(const auto& [key, value]: rids.items()) {
+            if(value.is_string()) {
+
+            } else if(value.is_boolean()) {
+
+            } else if(value.is_number()) {
+
+            } else {
+                
+            }
+        }
     }
         break;
     case ServerObjectID:

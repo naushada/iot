@@ -8,6 +8,10 @@
 #include <algorithm>
 #include <fstream>
 
+#include "nlohmann/json.hpp"
+
+using json = nlohmann::json;
+
 extern "C" {
     #include <arpa/inet.h>
     #include <libgen.h>
@@ -105,7 +109,7 @@ class LwM2MAdapter {
          * @param tlv 
          * @return std::int32_t 
          */
-        std::int32_t buildLwM2MPayload(const ObjectId_t& oid, const std::string& oiid, const std::vector<std::string>& rid, std::string& out);
+        std::int32_t buildLwM2MPayload(const ObjectId_t& oid, const std::string& oiid, const json& rids, std::string& out);
         /**
          * @brief 
          * 
