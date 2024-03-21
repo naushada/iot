@@ -319,6 +319,7 @@ bool Readline::continueStatus(void) {
 int Readline::processCommand(const std::string& command) {
     std::istringstream istrstr;
     std::string cmd;
+    CoAPAdapter coap_inst;
 
     istrstr.rdbuf()->pubsetbuf(const_cast<char *>(command.data()), command.length());
 
@@ -391,7 +392,7 @@ int Readline::processCommand(const std::string& command) {
             queries = str2Vector(keyValueMap["uri-query"], '&');
         }
         
-        std::uint16_t cf = 12200;
+        std::uint16_t cf = 0;
         if(!keyValueMap["content-format"].empty()) {
             cf = std::stoi(keyValueMap["content-format"]);
         }
@@ -410,7 +411,7 @@ int Readline::processCommand(const std::string& command) {
             std::string content;
             cbor.clear();
             content = get_cborAdapter().getJson(keyValueMap["file"]);
-            get_app()->get_coapAdapter().buildRequest(content, cbor); 
+            coap_inst.buildRequest(content, cbor); 
         }
 
         ///Method type...
@@ -424,7 +425,7 @@ int Readline::processCommand(const std::string& command) {
         }
 
         std::vector<std::string> res;
-        if(get_app()->get_coapAdapter().serialise(uris, queries, cbor, cf, method, res) && !res.empty()) {
+        if(coap_inst.serialise(uris, queries, cbor, cf, method, res) && !res.empty()) {
             ///Serialize CoAP request.
             for(auto& ent: res) {
                 for(auto const& elm: ent) {

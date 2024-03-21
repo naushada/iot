@@ -16,11 +16,11 @@ void App::hex_dump(const std::string& in) {
     std::string hexDump = oss.str();
     std::cout << hexDump << std::endl;
 }
-
+#if 0
 CoAPAdapter& App::get_coapAdapter() {
     return(coapAdapter);
 }
-
+#endif
 std::int32_t App::rx(std::int32_t fd) {
     std::int32_t ret = -1;
     std::vector<std::uint8_t> buf(1400);
@@ -45,7 +45,7 @@ std::int32_t App::rx(std::int32_t fd) {
 
             ///check if this is an ACK or not?
             if(!st && coap_inst.getRequestType(static_cast<std::uint32_t>(coapmessage.coapheader.type)) == "Acknowledgement") {
-                std::cout << basename(__FILE__) << ":" << __LINE__ << " This is an ACK" << std::endl;
+                //std::cout << basename(__FILE__) << ":" << __LINE__ << " This is an ACK" << std::endl;
                 coap_inst.dumpCoAPMessage(coapmessage);
             } else {
 

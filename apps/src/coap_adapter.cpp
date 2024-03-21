@@ -429,6 +429,8 @@ std::string CoAPAdapter::buildRegistrationAck(const CoAPMessage& message) {
 
     ss.write (reinterpret_cast <const char *>(&header), sizeof(header));
     ss.write (reinterpret_cast <const char *>(message.tokens.data()), message.tokens.size());
+
+#if 0
     /// Encode URI also.
     for(const auto& ent: message.uripath) {
         std::uint8_t onebyte;
@@ -456,6 +458,7 @@ std::string CoAPAdapter::buildRegistrationAck(const CoAPMessage& message) {
             }
         }
     }
+#endif
     return(ss.str());
 }
 
@@ -822,8 +825,43 @@ std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in) {
     cumulativeOptionNumber = 0;
     CoAPMessage coapmessage;
     auto ret = parseRequest(in, coapmessage);
-    ///response is a calls variable.
-    response = buildResponse(coapmessage);
+
+    auto cf = getContentFormat(coapmessage);
+    if(cf.length() > 0 && (cf == "application/vnd.oma.lwm2m+tlv") || (cf == "text/plain;charset=utf-8")) {
+        LwM2MAdapter lwm2m_inst;
+        ///Build the Response for a given Request
+        std::string uri;
+        std::uint32_t oid, oiid, rid, riid;
+        if(isLwm2mUri(coapmessage, uri)) {
+            /// This is LwM2M string URI rd or bs
+            response = buildResponse(coapmessage);
+        } else if(isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
+            /// This is LwM2M Object URI, Handle it.
+            LwM2MObjectData data;
+            LwM2MObject object;
+            data.m_oiid = oiid;
+            data.m_rid = rid;
+            data.m_riid = riid;
+            object.m_oid = oid;
+
+            if(!lwm2m_inst.parseLwM2MObjects(coapmessage.payload, data, object)) {
+                for(const auto& ent: object.m_value) {
+                    std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+                            << " ent.m_rid:" << lwm2m_inst.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                            << " ent.m_ridvalue:";
+            
+                    for(const auto& elm: ent.m_ridvalue) {
+                        printf("%0.2X ", (std::uint8_t)elm);
+                    }
+                    printf("\n");
+                }
+                response = buildResponse(coapmessage);
+            }
+        }
+    } else {
+        ///response is a calls variable.
+        response = buildResponse(coapmessage);
+    }
 
     if(!coapmessage.ismorebitset) {
         

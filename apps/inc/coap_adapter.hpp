@@ -256,6 +256,18 @@ class CoAPAdapter {
             return(std::string());
         }
 
+        std::string getContentFormat(const CoAPMessage& coapmessage ) {
+            auto it = std::find_if(coapmessage.uripath.begin(), coapmessage.uripath.end(), [&](const auto& ent) -> bool {
+                return(OptionNumber[ent.optiondelta] == "Content-Format");
+            });
+
+            if(it != coapmessage.uripath.end()) {
+                return(getContentFormat(std::stoi(it->optionvalue)));
+            }
+
+            return(std::string());
+        }
+
     private:
         std::unordered_map<std::uint32_t, std::string> OptionNumber;
         std::unordered_map<std::uint32_t, std::string> ContentFormat;
