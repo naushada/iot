@@ -105,7 +105,7 @@ class LwM2MAdapter {
          * @param tlv 
          * @return std::int32_t 
          */
-        std::int32_t buildLwM2MPayload(const std::string& oid, const std::string& oiid, const std::string& orid, std::vector<LwM2MObject>& objects);
+        std::int32_t buildLwM2MPayload(const ObjectId_t& oid, const std::string& oiid, const std::vector<std::string>& rid, std::string& out);
         /**
          * @brief 
          * 

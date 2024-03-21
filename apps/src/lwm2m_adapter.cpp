@@ -1143,8 +1143,46 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
 #endif
 }
 
-std::int32_t LwM2MAdapter::buildLwM2MPayload(const std::string& oid, const std::string& oiid, const std::string& rid, std::vector<LwM2MObject>& objects) {
+std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::string& oiid, const std::vector<std::string>& rid, std::string& out) {
+    
+    switch (oid)
+    {
+    case SecurityObjectID:
+    {
+        /* code */
+    }
+        break;
+    case ServerObjectID:
+        /* code */
+        break;
+    
+    case AccessControlObjectID:
+        /* code */
+        break;
+    
+    case DeviceObjectID:
+        /* code */
+        break;
 
+    case ConnectivityMonitoringObjectID:
+        /* code */
+        break;
+
+    case FirmwareUpdateObjectID:
+        /* code */
+        break;
+
+    case LocationObjectID:
+        /* code */
+        break;
+
+    case ConnectivityStatisticsObjectID:
+        /* code */
+        break;
+
+    default:
+        break;
+    }
 }
 
 
