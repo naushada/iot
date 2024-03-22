@@ -1150,14 +1150,47 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
     case SecurityObjectID:
     {
         std::stringstream ss;
-        for(const auto& [key, value]: rids.items()) {
-            if(value.is_string()) {
+        std::uint8_t type;
+        std::uint16_t len;
 
-            } else if(value.is_boolean()) {
+        if(oiid.length()) {
+            for(const auto& rid: rids) {
+                std::uint8_t type;
+                std::uint16_t identifier = rid["rid"].get<std::uint16_t>();
+                std::uint16_t length = rid["length"].get<std::uint16_t>();
+                std::string value;
 
-            } else if(value.is_number()) {
+                if(rid["value"].is_array()) {
 
-            } else {
+                } else if(rid["value"].is_string()) {
+                    value.assign(rid["value"].get<std::string>());
+                    length = value.length();
+                } else if(rid["value"].is_boolean()) {
+                    length = 1;
+                } else if(rid["value"].is_number()) {
+                    length = 2;
+                } else {
+                    length = 0;
+                }
+
+                type = TypeBits76_ResourceWithValue_11;
+                if(identifier < 8 && identifier >= 0) {
+                    type = (type << 6) | TypeBit5_LengthOfTheIdentifier8BitsLong_0;
+                } else {
+                    type = (type << 6) | TypeBit5_LengthOfTheIdentifier16BitsLong_1;
+                }
+
+                if(length < 8 && length > 0) {
+                    type = (type << 5) | TypeBits43_NoTypeLengthField_00;
+                    type = (type << 3) | length & 0b111;
+                } else if(length > 7 && length < 256) {
+                    type = (type << 5) | TypeBits43_8BitsTypeLengthField_01;
+                } else if(length > 255 && length <= 65535) {
+                    type = (type << 5) | TypeBits43_16BitsTypeLengthField_10;
+                } else {
+                    ///length is24 bits
+                }
+
                 
             }
         }
