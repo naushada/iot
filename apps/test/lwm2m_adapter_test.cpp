@@ -230,7 +230,7 @@ TEST(LwM2MAdapterTestSuite, DeserialiseLwM2MObject) {
         {
             {"rid", 1},
             {"value", {
-                "Lightweight M2M Client", "This is at rid 1"}
+                "1.2", "2.5"}
             }
         }
     };

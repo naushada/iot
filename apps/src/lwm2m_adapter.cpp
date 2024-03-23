@@ -1169,8 +1169,6 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                     std::string rivalue;
                     std::uint8_t ritype;
 
-                    type = TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10 << 6;
-
                     for(const auto& ent: rid["value"]) {
 
                         if(ent.is_string()) {
@@ -1213,7 +1211,11 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                         }
 
                         riss.write(reinterpret_cast<char*>(&ritype), sizeof(ritype));
-                        if(rilength > 7 && rilength < 256) {
+                        if(rilength >= 0 && rilength < 8) {
+
+                            riss.write(reinterpret_cast<char*>(&riid), 1);
+
+                        } if(rilength > 7 && rilength < 256) {
 
                             riss.write(reinterpret_cast<char*>(&riid), 1);
                             riss.write(reinterpret_cast<char*>(&rilength), 1);
@@ -1244,7 +1246,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                         type |= len & 0b111;
                         ss.write(reinterpret_cast<char*>(&type), sizeof(type));
 
-                    } else if(len > 0 && len < 256) {
+                    } else if(len > 7 && len < 256) {
 
                         type |= TypeBits43_8BitsTypeLengthField_01 << 3;
                         type |= length & 0b000;
@@ -1275,7 +1277,6 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                     }
 
                     ss.write(reinterpret_cast<char*>(riss.str().data()), len);
-                    //out.assign(ss.str());
 
                 } else if(rid["value"].is_string()) {
 
