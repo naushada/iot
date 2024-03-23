@@ -1169,6 +1169,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                     std::string rivalue;
                     std::uint8_t ritype;
 
+                    riss.str("");
                     for(const auto& ent: rid["value"]) {
 
                         if(ent.is_string()) {

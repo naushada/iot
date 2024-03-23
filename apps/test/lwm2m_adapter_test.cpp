@@ -222,13 +222,15 @@ TEST(LwM2MAdapterTestSuite, DMServerObject) {
 
 TEST(LwM2MAdapterTestSuite, DeserialiseLwM2MObject) {
     json request = json::array();
+    ///request: [{"rid":0,"value":"Open Mobile Alliance"},{"rid":340,"value":["1.2","2.5"]}]
     request = {
         {
             {"rid", 0},
             {"value", "Open Mobile Alliance"}
         },
         {
-            {"rid", 1},
+            {"rid", 340},
+            /// An Array of value
             {"value", {
                 "1.2", "2.5"}
             }
