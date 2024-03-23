@@ -1275,7 +1275,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                     }
 
                     ss.write(reinterpret_cast<char*>(riss.str().data()), len);
-                    out.assign(ss.str());
+                    //out.assign(ss.str());
 
                 } else if(rid["value"].is_string()) {
 
