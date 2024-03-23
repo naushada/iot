@@ -1309,6 +1309,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
         std::stringstream ss;
         std::uint8_t type;
         std::uint16_t len;
+        std::stringstream tmpss;
 
         if(oiid.length()) {
             for(const auto& rid: rids) {
@@ -1321,31 +1322,35 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                 if(rid["value"].is_array()) {
 
                     std::uint16_t riid = 0;
-                    std::stringstream riss;
+                    
                     std::uint16_t rilength;
                     std::string rivalue;
                     std::uint8_t ritype;
 
-                    riss.str("");
+                    tmpss.str("");
                     for(const auto& ent: rid["value"]) {
                         std::string out;
                         if(ent.is_string()) {
 
                             serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::string>(), riid, out);
+                            tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
                             //rivalue.assign(ent.get<std::string>());
                             //rilength = rivalue.length();
                             
                         } else if(ent.is_boolean()) {
 
                             serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<bool>(), riid, out);
+                            tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
 
                         } else if(ent.is_number()) {
 
                             serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::uint16_t>(), riid, out);
+                            tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
 
                         } else {
                             std::cout << basename(__FILE__) << ":" << __LINE__ << " unsupported type" << std::endl;
                         }
+                        riid++;
                         #if 0
                         ritype = TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01 << 6;
                         if(riid < 256 && riid >= 0) {
@@ -1395,6 +1400,8 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                         riid++;
                         #endif
                     }
+                    serialiseTLV(TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10, tmpss.str(), identifier, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
                     #if 0
                     len = riss.str().length();
                     type = TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10 << 6;
@@ -1443,9 +1450,11 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                     ss.write(reinterpret_cast<char*>(riss.str().data()), len);
                     #endif
                 } else if(rid["value"].is_string()) {
-
-                    value.assign(rid["value"].get<std::string>());
-                    length = value.length();
+                    tmpss.str("");
+                    serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<std::string>(), identifier, out);
+                    tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
+                    //value.assign(rid["value"].get<std::string>());
+                    //length = value.length();
 
                 } else if(rid["value"].is_boolean()) {
 
@@ -1458,7 +1467,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                 } else {
                     length = 0;
                 }
-
+                #if 0
                 type = TypeBits76_ResourceWithValue_11 << 6;
                 if(identifier < 256 && identifier >= 0) {
                     type |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
@@ -1498,9 +1507,10 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
 
                 }
                 ss.write(reinterpret_cast<char*>(value.data()), value.length());
+                #endif
             }
+            out.assign(ss.str());
         }
-        out.assign(ss.str());
     }
         break;
     case ServerObjectID:
