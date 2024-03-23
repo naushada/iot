@@ -1157,7 +1157,6 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
             for(const auto& rid: rids) {
                 std::uint8_t type;
                 std::uint16_t identifier = rid["rid"].get<std::uint16_t>();
-                //std::uint16_t length = rid["length"].get<std::uint16_t>();
                 std::uint16_t length;
                 std::string value;
 
@@ -1166,6 +1165,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                 } else if(rid["value"].is_string()) {
                     value.assign(rid["value"].get<std::string>());
                     length = value.length();
+                    std::cout << basename(__FILE__) << ":" << __LINE__ << " value:" << value << std::endl;
                 } else if(rid["value"].is_boolean()) {
                     length = 1;
                 } else if(rid["value"].is_number()) {
@@ -1202,7 +1202,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                     ss.write(reinterpret_cast<char*>(&identifier), sizeof(identifier));
                     ss.write(reinterpret_cast<char*>(&length), sizeof(length));
                 }
-                ss.write(reinterpret_cast<char*>(&value), value.length());
+                ss.write(reinterpret_cast<char*>(value.data()), value.length());
             }
         }
         out.assign(ss.str());

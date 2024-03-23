@@ -235,9 +235,7 @@ TEST(LwM2MAdapterTestSuite, DeserialiseLwM2MObject) {
     
     std::cout << basename(__FILE__) << ":" << __LINE__ << " request: " << request.dump() << std::endl;
     LwM2MAdapter lwm2mAdapter;
-    //std::vector<LwM2MObject> objects;
     LwM2MObject object;
-    //auto bindata = lwm2mAdapter.hexToBinary(request);
     LwM2MObjectData data;
     std::uint32_t oid = 0, oiid = 0,riid = 0;
     lwm2mAdapter.parseLwM2MUri("/0/1", oid, oiid, riid);
