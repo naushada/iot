@@ -220,4 +220,40 @@ TEST(LwM2MAdapterTestSuite, DMServerObject) {
     //EXPECT_TRUE(it != object.m_value.end());
 }
 
+TEST(LwM2MAdapterTestSuite, DeserialiseLwM2MObject) {
+    json request = json::array();
+    request = {
+        {
+            {"rid", 0},
+            {"value", "Open Mobile Alliance"}
+        },
+        {
+            {"rid", 1},
+            {"value", "Lightweight M2M Client"}
+        }
+    };
+    
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " request: " << request.dump() << std::endl;
+    LwM2MAdapter lwm2mAdapter;
+    //std::vector<LwM2MObject> objects;
+    LwM2MObject object;
+    //auto bindata = lwm2mAdapter.hexToBinary(request);
+    LwM2MObjectData data;
+    std::uint32_t oid = 0, oiid = 0,riid = 0;
+    lwm2mAdapter.parseLwM2MUri("/0/1", oid, oiid, riid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " riid:" << std::to_string(riid) << std::endl;
+    object.m_oid = oid;
+    data.m_oiid = oiid;
+    data.m_riid = riid;
+    std::string out = "";
+    lwm2mAdapter.buildLwM2MPayload(SecurityObjectID, std::to_string(oiid), request, out);
+    for(const auto& elm: out) {
+        printf("%0.2X ", static_cast<unsigned char>(elm));
+    }
+    printf("\n");
+    
+
+    //EXPECT_TRUE(it != object.m_value.end());
+}
+
 #endif /*__lwm2m_adapter_test_cpp__*/
