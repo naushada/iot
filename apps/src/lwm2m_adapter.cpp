@@ -1143,6 +1143,163 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
 #endif
 }
 
+std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::string value, std::uint16_t id, std::string& out) {
+    std::uint8_t type;
+    std::stringstream ss;
+
+    /// id could be any of these --- The Object Instance, Resource, or Resource Instance ID as indicated by the Type field
+    type = bits76 << 6;
+
+    if(id >=0 && id <= 255) {
+        type |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
+    } else {
+        type |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
+    }
+
+    if(value.length() >= 0 && value.length() < 8) {
+
+        type |= TypeBits43_NoTypeLengthField_00 << 3;
+        type |= value.length() & 0b111;
+
+    } else if(value.length() > 0 && value.length() <= 255) {
+
+        type |= TypeBits43_8BitsTypeLengthField_01 << 3;
+        type |= value.length() & 0b000;
+
+    } else if(value.length() > 255 && value.length() <= 65535) {
+
+        type |= TypeBits43_16BitsTypeLengthField_10 << 3;
+        type |= value.length() & 0b000;
+
+    } else {
+        ///length is24 bits
+    }
+
+    ss.write(reinterpret_cast<char*>(&type), sizeof(type));
+    if(id >= 0 && id <=255) {
+        ss.write(reinterpret_cast<char*>(&id), 1);
+    } else {
+        std::uint16_t tmpid = htons(id);
+        ss.write(reinterpret_cast<char*>(&tmpid), 2);
+    }
+
+    if(value.length() >= 0 && value.length() < 8) {
+
+        ss.write(reinterpret_cast<char*>(value.data()), value.length());
+
+    } else if(value.length() > 0 && value.length() <= 255) {
+
+        std::uint8_t len = value.length();
+        ss.write(reinterpret_cast<char*>(&len), sizeof(len));
+        ss.write(reinterpret_cast<char*>(value.data()), value.length());
+
+    } else if(value.length() > 255 && value.length() <= 65535) {
+
+        std::uint16_t len = value.length();
+        ss.write(reinterpret_cast<char*>(&len), sizeof(len));
+        ss.write(reinterpret_cast<char*>(value.data()), value.length());
+
+    } else {
+        ///length is24 bits
+    }
+    
+    out.assign(ss.str());
+    return(0);
+}
+
+std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::uint16_t value, std::uint16_t id, std::string& out) {
+    std::uint8_t type;
+    std::stringstream ss;
+
+    /// id could be any of these --- The Object Instance, Resource, or Resource Instance ID as indicated by the Type field
+    type = bits76 << 6;
+
+    if(id >=0 && id <= 255) {
+        type |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
+    } else {
+        type |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
+    }
+
+    if(value >= 0 && value < 8) {
+
+        type |= TypeBits43_NoTypeLengthField_00 << 3;
+        type |= 1 & 0b111;
+
+    } else if(value > 0 && value <= 255) {
+
+        type |= TypeBits43_8BitsTypeLengthField_01 << 3;
+        type |= value & 0b000;
+
+    } else if(value > 255 && value <= 65535) {
+
+        type |= TypeBits43_16BitsTypeLengthField_10 << 3;
+        type |= value & 0b000;
+
+    } else {
+        ///length is24 bits
+    }
+
+    ss.write(reinterpret_cast<char*>(&type), sizeof(type));
+    if(id >= 0 && id <=255) {
+        ss.write(reinterpret_cast<char*>(&id), 1);
+    } else {
+        std::uint16_t tmpid = htons(id);
+        ss.write(reinterpret_cast<char*>(&tmpid), 2);
+    }
+
+    if(value >= 0 && value < 8) {
+
+        ss.write(reinterpret_cast<char*>(value), 1);
+
+    } else if(value > 0 && value <= 255) {
+
+        std::uint8_t len = 1;
+        ss.write(reinterpret_cast<char*>(&len), sizeof(len));
+        ss.write(reinterpret_cast<char*>(&value), 1);
+
+    } else if(value > 255 && value <= 65535) {
+
+        std::uint16_t len = 2;
+        ss.write(reinterpret_cast<char*>(&len), 1);
+        ss.write(reinterpret_cast<char*>(value), 2);
+
+    } else {
+        ///length is24 bits
+    }
+    
+    out.assign(ss.str());
+    return(0);
+}
+
+std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, bool value, std::uint16_t id, std::string& out) {
+    std::uint8_t type;
+    std::stringstream ss;
+
+    /// id could be any of these --- The Object Instance, Resource, or Resource Instance ID as indicated by the Type field
+    type = bits76 << 6;
+
+    if(id >=0 && id <= 255) {
+        type |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
+    } else {
+        type |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
+    }
+
+    type |= TypeBits43_NoTypeLengthField_00 << 3;
+    type |= 1 & 0b111;
+
+    ss.write(reinterpret_cast<char*>(&type), sizeof(type));
+    if(id >= 0 && id <= 255) {
+        ss.write(reinterpret_cast<char*>(&id), 1);
+    } else {
+        std::uint16_t tmpid = htons(id);
+        ss.write(reinterpret_cast<char*>(&tmpid), 2);
+    }
+
+    ss.write(reinterpret_cast<char*>(&value), 1);
+    out.assign(ss.str());
+    return(0);
+}
+
 std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::string& oiid, const json& rids, std::string& out) {
     
     switch (oid)
