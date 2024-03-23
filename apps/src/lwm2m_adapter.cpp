@@ -1328,20 +1328,25 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
 
                     riss.str("");
                     for(const auto& ent: rid["value"]) {
-
+                        std::string out;
                         if(ent.is_string()) {
 
-                            rivalue.assign(ent.get<std::string>());
-                            rilength = rivalue.length();
+                            serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::string>(), riid, out);
+                            //rivalue.assign(ent.get<std::string>());
+                            //rilength = rivalue.length();
                             
                         } else if(ent.is_boolean()) {
-                            
+
+                            serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<bool>(), riid, out);
+
                         } else if(ent.is_number()) {
+
+                            serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::uint16_t>(), riid, out);
 
                         } else {
                             std::cout << basename(__FILE__) << ":" << __LINE__ << " unsupported type" << std::endl;
                         }
-
+                        #if 0
                         ritype = TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01 << 6;
                         if(riid < 256 && riid >= 0) {
                             ritype |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
@@ -1388,8 +1393,9 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
 
                         riss.write(reinterpret_cast<char*>(rivalue.data()), rivalue.length());
                         riid++;
+                        #endif
                     }
-
+                    #if 0
                     len = riss.str().length();
                     type = TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10 << 6;
                     if(identifier < 256 && identifier >= 0) {
@@ -1435,7 +1441,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                     }
 
                     ss.write(reinterpret_cast<char*>(riss.str().data()), len);
-
+                    #endif
                 } else if(rid["value"].is_string()) {
 
                     value.assign(rid["value"].get<std::string>());
