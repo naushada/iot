@@ -1155,6 +1155,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
 
         if(oiid.length()) {
             for(const auto& rid: rids) {
+
                 std::uint8_t type;
                 std::uint16_t identifier = rid["rid"].get<std::uint16_t>();
                 std::uint16_t length;
@@ -1162,45 +1163,165 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
 
                 if(rid["value"].is_array()) {
 
+                    std::uint16_t riid = 0;
+                    std::stringstream riss;
+                    std::uint16_t rilength;
+                    std::string rivalue;
+                    std::uint8_t ritype;
+
+                    type = TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10 << 6;
+
+                    for(const auto& ent: rid["value"]) {
+
+                        if(ent.is_string()) {
+
+                            rivalue.assign(ent.get<std::string>());
+                            rilength = value.length();
+
+                        } else if(ent.is_boolean()) {
+                            
+                        } else if(ent.is_number()) {
+
+                        } else {
+                            std::cout << basename(__FILE__) << ":" << __LINE__ << " unsupported type" << std::endl;
+                        }
+
+                        ritype = TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01 << 6;
+                        if(riid < 256 && riid >= 0) {
+                            ritype |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
+                        } else {
+                            ritype |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
+                        }
+
+                        if(rilength < 8 && rilength > 0) {
+
+                            ritype |= TypeBits43_NoTypeLengthField_00 << 3;
+                            ritype |= rilength & 0b111;
+
+                        } else if(rilength > 7 && rilength < 256) {
+
+                            ritype |= TypeBits43_8BitsTypeLengthField_01 << 3;
+                            ritype |= rilength & 0b000;
+
+                        } else if(rilength > 255 && rilength <= 65535) {
+
+                            ritype |= TypeBits43_16BitsTypeLengthField_10 << 3;
+                            ritype |= length & 0b000;
+
+                        } else {
+                            ///length is24 bits
+                        }
+
+                        ss.write(reinterpret_cast<char*>(&ritype), sizeof(ritype));
+                        if(rilength > 7 && rilength < 256) {
+
+                            ss.write(reinterpret_cast<char*>(&riid), 1);
+                            ss.write(reinterpret_cast<char*>(&rilength), 1);
+
+                        } else if(rilength > 255 && rilength <= 65535) {
+
+                            //ss.write(reinterpret_cast<char*>(&riid), sizeof(riid));
+                            ss.write(reinterpret_cast<char*>(&rilength), sizeof(rilength));
+
+                        }
+
+                        ss.write(reinterpret_cast<char*>(rivalue.data()), rivalue.length());
+                        riid++;
+                    }
+
+                    len = riss.str().length();
+                    type = TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10 << 6;
+                    if(identifier < 256 && identifier >= 0) {
+                        type |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
+                    } else {
+                        type |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
+                    }
+
+                    if(len < 8 && len >= 0) {
+
+                        type |= TypeBits43_NoTypeLengthField_00 << 3;
+                        type |= len & 0b111;
+                        ss.write(reinterpret_cast<char*>(&type), sizeof(type));
+
+                    } else if(len > 7 && len < 256) {
+
+                        type |= TypeBits43_8BitsTypeLengthField_01 << 3;
+                        type |= length & 0b000;
+                        ss.write(reinterpret_cast<char*>(&type), sizeof(type));
+
+                    } else if(len > 255 && len <= 65535) {
+
+                        type |= TypeBits43_16BitsTypeLengthField_10 << 3;
+                        type |= length & 0b000;
+                        ss.write(reinterpret_cast<char*>(&type), sizeof(type));
+        
+                    } else {
+                        ///length is24 bits
+                    }
+
+                    if(identifier >=0 && identifier < 256) {
+                        ss.write(reinterpret_cast<char*>(&identifier), 1);
+                    } else {
+                        ss.write(reinterpret_cast<char*>(&identifier), 2);
+                    }
+                    
+                    ss.write(reinterpret_cast<char*>(riss.str().data()), riss.str().length());
+                    out.assign(ss.str());
+
                 } else if(rid["value"].is_string()) {
+
                     value.assign(rid["value"].get<std::string>());
                     length = value.length();
-                    std::cout << basename(__FILE__) << ":" << __LINE__ << " value:" << value << std::endl;
+
                 } else if(rid["value"].is_boolean()) {
+
                     length = 1;
+
                 } else if(rid["value"].is_number()) {
+
                     length = rid["value"].get<std::uint16_t>();
+
                 } else {
                     length = 0;
                 }
 
                 type = TypeBits76_ResourceWithValue_11 << 6;
                 if(identifier < 256 && identifier >= 0) {
-                    type = type | (TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5);
+                    type |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
                 } else {
-                    type = type | TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
+                    type |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
                 }
 
                 if(length < 8 && length > 0) {
-                    type = type | TypeBits43_NoTypeLengthField_00 << 3;
-                    type = type | length & 0b111;
+
+                    type |= TypeBits43_NoTypeLengthField_00 << 3;
+                    type |= length & 0b111;
+
                 } else if(length > 7 && length < 256) {
-                    type = type | TypeBits43_8BitsTypeLengthField_01 << 3;
-                    type = type | length & 0b000;
+
+                    type |= TypeBits43_8BitsTypeLengthField_01 << 3;
+                    type |= length & 0b000;
+
                 } else if(length > 255 && length <= 65535) {
-                    type = type| TypeBits43_16BitsTypeLengthField_10 << 3;
-                    type = type | length & 0b000;
+
+                    type |= TypeBits43_16BitsTypeLengthField_10 << 3;
+                    type |= length & 0b000;
+
                 } else {
                     ///length is24 bits
                 }
 
                 ss.write(reinterpret_cast<char*>(&type), sizeof(type));
                 if(length > 7 && length < 256) {
+
                     ss.write(reinterpret_cast<char*>(&identifier), 1);
                     ss.write(reinterpret_cast<char*>(&length), 1);
+
                 } else if(length > 255 && length <= 65535) {
+
                     ss.write(reinterpret_cast<char*>(&identifier), sizeof(identifier));
                     ss.write(reinterpret_cast<char*>(&length), sizeof(length));
+
                 }
                 ss.write(reinterpret_cast<char*>(value.data()), value.length());
             }
