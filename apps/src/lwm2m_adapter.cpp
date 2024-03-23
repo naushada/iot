@@ -1176,8 +1176,8 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                         if(ent.is_string()) {
 
                             rivalue.assign(ent.get<std::string>());
-                            rilength = value.length();
-
+                            rilength = rivalue.length();
+                            
                         } else if(ent.is_boolean()) {
                             
                         } else if(ent.is_number()) {
@@ -1193,12 +1193,12 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                             ritype |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
                         }
 
-                        if(rilength < 8 && rilength > 0) {
+                        if(rilength >= 0 && rilength < 8) {
 
                             ritype |= TypeBits43_NoTypeLengthField_00 << 3;
                             ritype |= rilength & 0b111;
 
-                        } else if(rilength > 7 && rilength < 256) {
+                        } else if(rilength > 0 && rilength < 256) {
 
                             ritype |= TypeBits43_8BitsTypeLengthField_01 << 3;
                             ritype |= rilength & 0b000;
@@ -1212,20 +1212,21 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                             ///length is24 bits
                         }
 
-                        ss.write(reinterpret_cast<char*>(&ritype), sizeof(ritype));
+                        riss.write(reinterpret_cast<char*>(&ritype), sizeof(ritype));
                         if(rilength > 7 && rilength < 256) {
 
-                            ss.write(reinterpret_cast<char*>(&riid), 1);
-                            ss.write(reinterpret_cast<char*>(&rilength), 1);
+                            riss.write(reinterpret_cast<char*>(&riid), 1);
+                            riss.write(reinterpret_cast<char*>(&rilength), 1);
 
                         } else if(rilength > 255 && rilength <= 65535) {
 
                             //ss.write(reinterpret_cast<char*>(&riid), sizeof(riid));
-                            ss.write(reinterpret_cast<char*>(&rilength), sizeof(rilength));
+                            std::uint16_t tmplen = htons(rilength);
+                            riss.write(reinterpret_cast<char*>(&tmplen), sizeof(tmplen));
 
                         }
 
-                        ss.write(reinterpret_cast<char*>(rivalue.data()), rivalue.length());
+                        riss.write(reinterpret_cast<char*>(rivalue.data()), rivalue.length());
                         riid++;
                     }
 
@@ -1243,7 +1244,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                         type |= len & 0b111;
                         ss.write(reinterpret_cast<char*>(&type), sizeof(type));
 
-                    } else if(len > 7 && len < 256) {
+                    } else if(len > 0 && len < 256) {
 
                         type |= TypeBits43_8BitsTypeLengthField_01 << 3;
                         type |= length & 0b000;
@@ -1262,10 +1263,18 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                     if(identifier >=0 && identifier < 256) {
                         ss.write(reinterpret_cast<char*>(&identifier), 1);
                     } else {
-                        ss.write(reinterpret_cast<char*>(&identifier), 2);
+                        std::uint16_t tmpid = htons(identifier);
+                        ss.write(reinterpret_cast<char*>(&tmpid), 2);
                     }
                     
-                    ss.write(reinterpret_cast<char*>(riss.str().data()), riss.str().length());
+                    if(len >= 0 && len < 256) {
+                        ss.write(reinterpret_cast<char*>(&len), 1);
+                    } else {
+                        std::uint16_t tmplen = htons(len);
+                        ss.write(reinterpret_cast<char*>(&tmplen), 2);
+                    }
+
+                    ss.write(reinterpret_cast<char*>(riss.str().data()), len);
                     out.assign(ss.str());
 
                 } else if(rid["value"].is_string()) {
