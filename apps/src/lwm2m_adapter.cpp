@@ -1227,14 +1227,18 @@ std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::uin
 
     } else if(value > 0 && value <= 255) {
 
-        type |= TypeBits43_8BitsTypeLengthField_01 << 3;
+        type |= TypeBits43_NoTypeLengthField_00 << 3;
+        type |= 1 & 0b111;
 
     } else if(value > 255 && value <= 65535) {
 
-        type |= TypeBits43_16BitsTypeLengthField_10 << 3;
+        type |= TypeBits43_NoTypeLengthField_00 << 3;
+        type |= 2 & 0b111;
 
     } else {
-        ///length is24 bits
+
+        type |= TypeBits43_NoTypeLengthField_00 << 3;
+        type |= 4 & 0b111;
     }
 
     ss.write(reinterpret_cast<char*>(&type), sizeof(type));
@@ -1251,18 +1255,17 @@ std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::uin
 
     } else if(value > 0 && value <= 255) {
 
-        std::uint8_t len = 1;
-        ss.write(reinterpret_cast<char*>(&len), sizeof(len));
         ss.write(reinterpret_cast<char*>(&value), 1);
 
     } else if(value > 255 && value <= 65535) {
 
-        std::uint16_t len = 2;
-        ss.write(reinterpret_cast<char*>(&len), 1);
-        ss.write(reinterpret_cast<char*>(&value), 2);
+        std::uint16_t tmpvalue = htons(value);
+        ss.write(reinterpret_cast<char*>(&tmpvalue), sizeof(tmpvalue));
 
     } else {
-        ///length is24 bits
+
+        std::uint32_t tmpvalue = htonl(value);
+        ss.write(reinterpret_cast<char*>(&tmpvalue), sizeof(tmpvalue));
     }
     
     out.assign(ss.str());
@@ -1352,7 +1355,8 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
 
                 } else if(rid["value"].is_number()) {
 
-                    
+                    serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<std::uint16_t>(), identifier, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
 
                 } else {
                     

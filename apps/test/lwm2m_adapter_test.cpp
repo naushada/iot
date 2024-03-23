@@ -291,6 +291,35 @@ TEST(LwM2MAdapterTestSuite, SerialiseLwM2MOMAObject) {
                 1, 5}
             }
         }
+        ,
+        {
+            {"rid", 7},
+            {"value", {
+                0x0ED8, 0x1388}
+            }
+        },
+        {
+            {"rid", 8},
+            {"value", {
+                0x7D, 0x0384}
+            }
+        },
+        {
+            {"rid", 9},
+            {"value", 0x64}
+        },
+        {
+            {"rid", 0xA},
+            {"value", 0x0F}
+        },
+        {
+            {"rid", 0xB},
+            {"value", {0x00}}
+        },
+        {
+            {"rid", 0xD},
+            {"value", 0x5182428F}
+        }
     };
     
     std::cout << basename(__FILE__) << ":" << __LINE__ << " request: " << request.dump() << std::endl;
