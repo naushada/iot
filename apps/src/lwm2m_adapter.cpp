@@ -1450,9 +1450,8 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                     ss.write(reinterpret_cast<char*>(riss.str().data()), len);
                     #endif
                 } else if(rid["value"].is_string()) {
-                    tmpss.str("");
                     serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<std::string>(), identifier, out);
-                    tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
                     //value.assign(rid["value"].get<std::string>());
                     //length = value.length();
 
