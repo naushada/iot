@@ -1307,23 +1307,17 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
     case SecurityObjectID:
     {
         std::stringstream ss;
-        std::uint8_t type;
-        std::uint16_t len;
         std::stringstream tmpss;
 
         if(oiid.length()) {
             for(const auto& rid: rids) {
 
-                std::uint8_t type;
                 std::uint16_t identifier = rid["rid"].get<std::uint16_t>();
-                std::uint16_t length;
-                std::string value;
-
                 if(rid["value"].is_array()) {
 
                     std::uint16_t riid = 0;
-                    
                     tmpss.str("");
+
                     for(const auto& ent: rid["value"]) {
                         std::string out;
                         if(ent.is_string()) {
@@ -1337,7 +1331,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                             tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
 
                         } else if(ent.is_number()) {
-
+                            std::cout << basename(__FILE__) << ":" << __LINE__ << " this is number" << std::endl;
                             serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::uint16_t>(), riid, out);
                             tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
 
@@ -1356,14 +1350,14 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
 
                 } else if(rid["value"].is_boolean()) {
 
-                    length = 1;
+                    
 
                 } else if(rid["value"].is_number()) {
 
-                    length = rid["value"].get<std::uint16_t>();
+                    
 
                 } else {
-                    length = 0;
+                    
                 }
             }
             out.assign(ss.str());
