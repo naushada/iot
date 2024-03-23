@@ -1323,10 +1323,6 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
 
                     std::uint16_t riid = 0;
                     
-                    std::uint16_t rilength;
-                    std::string rivalue;
-                    std::uint8_t ritype;
-
                     tmpss.str("");
                     for(const auto& ent: rid["value"]) {
                         std::string out;
@@ -1334,8 +1330,6 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
 
                             serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::string>(), riid, out);
                             tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
-                            //rivalue.assign(ent.get<std::string>());
-                            //rilength = rivalue.length();
                             
                         } else if(ent.is_boolean()) {
 
@@ -1351,109 +1345,14 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                             std::cout << basename(__FILE__) << ":" << __LINE__ << " unsupported type" << std::endl;
                         }
                         riid++;
-                        #if 0
-                        ritype = TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01 << 6;
-                        if(riid < 256 && riid >= 0) {
-                            ritype |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
-                        } else {
-                            ritype |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
-                        }
-
-                        if(rilength >= 0 && rilength < 8) {
-
-                            ritype |= TypeBits43_NoTypeLengthField_00 << 3;
-                            ritype |= rilength & 0b111;
-
-                        } else if(rilength > 0 && rilength < 256) {
-
-                            ritype |= TypeBits43_8BitsTypeLengthField_01 << 3;
-                            ritype |= rilength & 0b000;
-
-                        } else if(rilength > 255 && rilength <= 65535) {
-
-                            ritype |= TypeBits43_16BitsTypeLengthField_10 << 3;
-                            ritype |= length & 0b000;
-
-                        } else {
-                            ///length is24 bits
-                        }
-
-                        riss.write(reinterpret_cast<char*>(&ritype), sizeof(ritype));
-                        if(rilength >= 0 && rilength < 8) {
-
-                            riss.write(reinterpret_cast<char*>(&riid), 1);
-
-                        } if(rilength > 7 && rilength < 256) {
-
-                            riss.write(reinterpret_cast<char*>(&riid), 1);
-                            riss.write(reinterpret_cast<char*>(&rilength), 1);
-
-                        } else if(rilength > 255 && rilength <= 65535) {
-
-                            //ss.write(reinterpret_cast<char*>(&riid), sizeof(riid));
-                            std::uint16_t tmplen = htons(rilength);
-                            riss.write(reinterpret_cast<char*>(&tmplen), sizeof(tmplen));
-
-                        }
-
-                        riss.write(reinterpret_cast<char*>(rivalue.data()), rivalue.length());
-                        riid++;
-                        #endif
                     }
                     serialiseTLV(TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10, tmpss.str(), identifier, out);
                     ss.write(reinterpret_cast<char *>(out.data()), out.length());
-                    #if 0
-                    len = riss.str().length();
-                    type = TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10 << 6;
-                    if(identifier < 256 && identifier >= 0) {
-                        type |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
-                    } else {
-                        type |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
-                    }
 
-                    if(len < 8 && len >= 0) {
-
-                        type |= TypeBits43_NoTypeLengthField_00 << 3;
-                        type |= len & 0b111;
-                        ss.write(reinterpret_cast<char*>(&type), sizeof(type));
-
-                    } else if(len > 7 && len < 256) {
-
-                        type |= TypeBits43_8BitsTypeLengthField_01 << 3;
-                        type |= length & 0b000;
-                        ss.write(reinterpret_cast<char*>(&type), sizeof(type));
-
-                    } else if(len > 255 && len <= 65535) {
-
-                        type |= TypeBits43_16BitsTypeLengthField_10 << 3;
-                        type |= length & 0b000;
-                        ss.write(reinterpret_cast<char*>(&type), sizeof(type));
-        
-                    } else {
-                        ///length is24 bits
-                    }
-
-                    if(identifier >=0 && identifier < 256) {
-                        ss.write(reinterpret_cast<char*>(&identifier), 1);
-                    } else {
-                        std::uint16_t tmpid = htons(identifier);
-                        ss.write(reinterpret_cast<char*>(&tmpid), 2);
-                    }
-                    
-                    if(len >= 0 && len < 256) {
-                        ss.write(reinterpret_cast<char*>(&len), 1);
-                    } else {
-                        std::uint16_t tmplen = htons(len);
-                        ss.write(reinterpret_cast<char*>(&tmplen), 2);
-                    }
-
-                    ss.write(reinterpret_cast<char*>(riss.str().data()), len);
-                    #endif
                 } else if(rid["value"].is_string()) {
+
                     serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<std::string>(), identifier, out);
                     ss.write(reinterpret_cast<char *>(out.data()), out.length());
-                    //value.assign(rid["value"].get<std::string>());
-                    //length = value.length();
 
                 } else if(rid["value"].is_boolean()) {
 
@@ -1466,47 +1365,6 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
                 } else {
                     length = 0;
                 }
-                #if 0
-                type = TypeBits76_ResourceWithValue_11 << 6;
-                if(identifier < 256 && identifier >= 0) {
-                    type |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
-                } else {
-                    type |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
-                }
-
-                if(length < 8 && length > 0) {
-
-                    type |= TypeBits43_NoTypeLengthField_00 << 3;
-                    type |= length & 0b111;
-
-                } else if(length > 7 && length < 256) {
-
-                    type |= TypeBits43_8BitsTypeLengthField_01 << 3;
-                    type |= length & 0b000;
-
-                } else if(length > 255 && length <= 65535) {
-
-                    type |= TypeBits43_16BitsTypeLengthField_10 << 3;
-                    type |= length & 0b000;
-
-                } else {
-                    ///length is24 bits
-                }
-
-                ss.write(reinterpret_cast<char*>(&type), sizeof(type));
-                if(length > 7 && length < 256) {
-
-                    ss.write(reinterpret_cast<char*>(&identifier), 1);
-                    ss.write(reinterpret_cast<char*>(&length), 1);
-
-                } else if(length > 255 && length <= 65535) {
-
-                    ss.write(reinterpret_cast<char*>(&identifier), sizeof(identifier));
-                    ss.write(reinterpret_cast<char*>(&length), sizeof(length));
-
-                }
-                ss.write(reinterpret_cast<char*>(value.data()), value.length());
-                #endif
             }
             out.assign(ss.str());
         }
