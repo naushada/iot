@@ -1208,7 +1208,7 @@ std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::str
 }
 
 std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::uint16_t value, std::uint16_t id, std::string& out) {
-    std::uint8_t type;
+    std::uint8_t type = 0;
     std::stringstream ss;
 
     /// id could be any of these --- The Object Instance, Resource, or Resource Instance ID as indicated by the Type field
@@ -1228,12 +1228,10 @@ std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::uin
     } else if(value > 0 && value <= 255) {
 
         type |= TypeBits43_8BitsTypeLengthField_01 << 3;
-        type |= value & 0b000;
 
     } else if(value > 255 && value <= 65535) {
 
         type |= TypeBits43_16BitsTypeLengthField_10 << 3;
-        type |= value & 0b000;
 
     } else {
         ///length is24 bits
@@ -1249,7 +1247,7 @@ std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::uin
 
     if(value >= 0 && value < 8) {
 
-        ss.write(reinterpret_cast<char*>(value), 1);
+        ss.write(reinterpret_cast<char*>(&value), 1);
 
     } else if(value > 0 && value <= 255) {
 
@@ -1261,7 +1259,7 @@ std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::uin
 
         std::uint16_t len = 2;
         ss.write(reinterpret_cast<char*>(&len), 1);
-        ss.write(reinterpret_cast<char*>(value), 2);
+        ss.write(reinterpret_cast<char*>(&value), 2);
 
     } else {
         ///length is24 bits
