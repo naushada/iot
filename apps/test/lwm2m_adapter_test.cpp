@@ -234,6 +234,13 @@ TEST(LwM2MAdapterTestSuite, DeserialiseLwM2MObject) {
             {"value", {
                 "1.2", "2.5"}
             }
+        },
+        {
+            {"rid", 7},
+            /// An Array of value
+            {"value", {
+                true, "test1"}
+            }
         }
     };
     
