@@ -1,0 +1,65 @@
+[
+    {
+        "rid": 0,
+        "description":"Short Server ID",
+        "value": 1,
+        "include": true
+        
+    },
+    {
+        "rid": 1,
+        "description":"Lifetime",
+        "value": 1500,
+        "include": true
+        
+    },
+    {
+        "rid": 2,
+        "description":"Default Minimum Period",
+        "value": 0,
+        "include": false
+        
+    },
+    {
+        "rid": 3,
+        "description":"Default Maximum Period",
+        "value": 0,
+        "include": false
+        
+    },
+    {
+        "rid": 4,
+        "description":"Disable",
+        "value": 0,
+        "include": false
+        
+    },
+    {
+        "rid": 5,
+        "description":"Disable Timeout",
+        "value": 0,
+        "include": false
+        
+    },
+    {
+        "rid": 6,
+        "description":"Notification Storing When Disabled or Offline",
+        "value": 0,
+        "include": false
+        
+    },
+    {
+        "rid": 7,
+        "description":"Binding",
+        "value": "U",
+        "include": true
+        
+    },
+    {
+        "rid": 8,
+        "description":"Registration Update Trigger",
+        "value": 0,
+        "include": false
+        
+    }
+]

@@ -1,0 +1,93 @@
+[
+    {
+        "rid": 0,
+        "description":"LwM2M Server URI",
+        "value": "coaps://0.0.0.0:5683",
+        "include": true
+        
+    },
+    {
+        "rid": 1,
+        "description":"Bootstrap-Server",
+        "value": false,
+        "include": true
+        
+    },
+    {
+        "rid": 2,
+        "description":"Security Mode",
+        "value": 0,
+        "include": true
+        
+    },
+    {
+        "rid": 3,
+        "description":"Public Key or Identity",
+        "value": 0,
+        "include": true
+        
+    },
+    {
+        "rid": 4,
+        "description":"Server Public Key",
+        "value": 0,
+        "include": true
+        
+    },
+    {
+        "rid": 5,
+        "description":"Secret Key",
+        "value": 0,
+        "include": true
+        
+    },
+    {
+        "rid": 6,
+        "description":"SMS Security Mode",
+        "value": 0,
+        "include": false
+        
+    },
+    {
+        "rid": 7,
+        "description":"SMS Binding Key Parameters",
+        "value": 0,
+        "include": false
+        
+    },
+    {
+        "rid": 8,
+        "description":"SMS Binding Secret Key(s)",
+        "value": 0,
+        "include": false
+        
+    },
+    {
+        "rid": 9,
+        "description":"LwM2M Server SMS Number",
+        "value": 0,
+        "include": false
+        
+    },
+    {
+        "rid": 10,
+        "description":"Short Server ID",
+        "value": 0,
+        "include": false
+        
+    },
+    {
+        "rid": 11,
+        "description":"Client Hold Off Time",
+        "value": 0,
+        "include": false
+        
+    },
+    {
+        "rid": 12,
+        "description":"Bootstrap-Server Account Timeout",
+        "value": 0,
+        "include": false
+        
+    }
+]
