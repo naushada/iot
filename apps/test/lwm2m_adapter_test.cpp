@@ -436,4 +436,34 @@ TEST(LwM2MAdapterTestSuite, SerialiseLwM2MOMAMultipleObjectInstance) {
 
     //EXPECT_TRUE(it != object.m_value.end());
 }
+
+TEST(LwM2MAdapterTestSuite, SerialiseLwM2MSecurityObject) {
+    
+    LwM2MAdapter lwm2mAdapter;
+    std::string out = "";
+    lwm2mAdapter.securityObject(out);
+    for(const auto& elm: out) {
+        printf("%0.2X ", static_cast<unsigned char>(elm));
+    }
+    printf("\n");
+    
+
+    //EXPECT_TRUE(it != object.m_value.end());
+}
+
+TEST(LwM2MAdapterTestSuite, SerialiseLwM2MServerObject) {
+    
+    LwM2MAdapter lwm2mAdapter;
+    std::string out = "";
+    lwm2mAdapter.serverObject30(out);
+    for(const auto& elm: out) {
+        printf("%0.2X ", static_cast<unsigned char>(elm));
+    }
+    printf("\n");
+    
+
+    //EXPECT_TRUE(it != object.m_value.end());
+}
+
+
 #endif /*__lwm2m_adapter_test_cpp__*/
