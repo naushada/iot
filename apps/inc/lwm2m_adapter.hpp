@@ -175,6 +175,10 @@ class LwM2MAdapter {
          * @return std::int32_t upon success 0 else -1
          */
         std::int32_t serialiseObjects(const json& rids, std::string& out);
+        std::int32_t bootstrapSecurityObject00(std::string& out);
+        std::int32_t devicemgmtSecurityObject01(std::string& out);
+        std::int32_t serverObject30(std::string& out);
+        std::int32_t securityObject(std::string& out);
 
         std::string hexToBinary(const std::string &hex) {
             std::string binary;

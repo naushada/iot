@@ -1662,8 +1662,63 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
 }
 
 
+std::int32_t LwM2MAdapter::bootstrapSecurityObject00(std::string& out) {
+    std::ifstream ifs("../config/securityObject/0.json");
+    std::stringstream ss("");
 
+    if(ifs.is_open()) {
+        ss << ifs.rdbuf();
+        ifs.close();
 
+        json LwM2MObject00 = json::parse(ss.str());
+        buildLwM2MPayload(SecurityObjectID, std::to_string(0), LwM2MObject00, out);
+        return(0);
+    }
+    return(-1);
 
+}
+
+std::int32_t LwM2MAdapter::devicemgmtSecurityObject01(std::string& out) {
+    std::ifstream ifs("../config/securityObject/1.json");
+    std::stringstream ss("");
+
+    if(ifs.is_open()) {
+        ss << ifs.rdbuf();
+        ifs.close();
+
+        json LwM2MObject01 = json::parse(ss.str());
+        buildLwM2MPayload(SecurityObjectID, std::to_string(1), LwM2MObject01, out);
+        return(0);
+    }
+    return(-1);
+}
+
+std::int32_t LwM2MAdapter::serverObject30(std::string& out) {
+    std::ifstream ifs("../config/serverObject/0.json");
+    std::stringstream ss("");
+
+    if(ifs.is_open()) {
+        ss << ifs.rdbuf();
+        ifs.close();
+
+        json LwM2MObject30 = json::parse(ss.str());
+        buildLwM2MPayload(SecurityObjectID, std::to_string(0), LwM2MObject30, out);
+        return(0);
+    }
+    return(-1);
+}
+
+std::int32_t LwM2MAdapter::securityObject(std::string& out) {
+    std::string object;
+    std::stringstream ss;
+    if(!bootstrapSecurityObject00(object)) {
+        ss.write(reinterpret_cast<char *>(object.data()), object.length());
+        devicemgmtSecurityObject01(object);
+        ss.write(reinterpret_cast<char *>(object.data()), object.length());
+        return(0);
+    }
+    return(-1);
+
+}
 
 #endif /*__lwm2m_adapter_cpp__*/
