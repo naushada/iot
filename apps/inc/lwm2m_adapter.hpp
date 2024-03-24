@@ -123,7 +123,7 @@ class LwM2MAdapter {
         std::int32_t parseLwM2MObjects(const std::string& payload, LwM2MObjectData&objectData, LwM2MObject& object);
         std::string resourceIDName(const std::uint32_t& oid, const std::uint32_t& rid);
         std::int32_t serialiseTLV(const TypeFieldOfTLV_t& bits76, std::string value, std::uint16_t riid, std::string& out);
-        std::int32_t serialiseTLV(const TypeFieldOfTLV_t& oid, std::uint16_t value, std::uint16_t riid, std::string& out);
+        std::int32_t serialiseTLV(const TypeFieldOfTLV_t& oid, std::uint32_t value, std::uint16_t riid, std::string& out);
         std::int32_t serialiseTLV(const TypeFieldOfTLV_t& oid, bool value, std::uint16_t riid, std::string& out);
 
         std::string hexToBinary(const std::string &hex) {

@@ -319,6 +319,14 @@ TEST(LwM2MAdapterTestSuite, SerialiseLwM2MOMAObject) {
         {
             {"rid", 0xD},
             {"value", 0x5182428F}
+        },
+        {
+            {"rid", 0xE},
+            {"value", "+02:00"}
+        },
+        {
+            {"rid", 0x10},
+            {"value", "U"}
         }
     };
     

@@ -1207,7 +1207,7 @@ std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::str
     return(0);
 }
 
-std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::uint16_t value, std::uint16_t id, std::string& out) {
+std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::uint32_t value, std::uint16_t id, std::string& out) {
     std::uint8_t type = 0;
     std::stringstream ss;
 
@@ -1333,7 +1333,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
 
                         } else if(ent.is_number()) {
                             std::cout << basename(__FILE__) << ":" << __LINE__ << " this is number" << std::endl;
-                            serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::uint16_t>(), riid, out);
+                            serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::uint32_t>(), riid, out);
                             tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
 
                         } else {
@@ -1355,7 +1355,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::s
 
                 } else if(rid["value"].is_number()) {
 
-                    serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<std::uint16_t>(), identifier, out);
+                    serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<std::uint32_t>(), identifier, out);
                     ss.write(reinterpret_cast<char *>(out.data()), out.length());
 
                 } else {
