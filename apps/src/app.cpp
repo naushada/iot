@@ -16,11 +16,11 @@ void App::hex_dump(const std::string& in) {
     std::string hexDump = oss.str();
     std::cout << hexDump << std::endl;
 }
-#if 0
+
 CoAPAdapter& App::get_coapAdapter() {
-    return(coapAdapter);
+    return(*coapAdapter.get());
 }
-#endif
+
 std::int32_t App::rx(std::int32_t fd) {
     std::int32_t ret = -1;
     std::vector<std::uint8_t> buf(1400);
@@ -39,29 +39,29 @@ std::int32_t App::rx(std::int32_t fd) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " got len: " << len << " bytes from port: " << ntohs(session.sin_port) << std::endl;
 
         if(len <= 1400) {
-            CoAPAdapter coap_inst;
+            //CoAPAdapter coap_inst;
             CoAPAdapter::CoAPMessage coapmessage;
-            auto st = coap_inst.parseRequest(std::string(buf.begin(), buf.end()), coapmessage);
+            auto st = get_coapAdapter().parseRequest(std::string(buf.begin(), buf.end()), coapmessage);
 
             ///check if this is an ACK or not?
-            if(!st && coap_inst.getRequestType(static_cast<std::uint32_t>(coapmessage.coapheader.type)) == "Acknowledgement") {
+            if(!st && get_coapAdapter().getRequestType(static_cast<std::uint32_t>(coapmessage.coapheader.type)) == "Acknowledgement") {
                 //std::cout << basename(__FILE__) << ":" << __LINE__ << " This is an ACK" << std::endl;
-                coap_inst.dumpCoAPMessage(coapmessage);
+                get_coapAdapter().dumpCoAPMessage(coapmessage);
             } else {
 
                 ///Build the Response for a given Request
                 std::string uri;
                 std::uint32_t oid, oiid, rid, riid;
-                if(coap_inst.isCoAPUri(coapmessage, uri)) {
+                if(get_coapAdapter().isCoAPUri(coapmessage, uri)) {
                     ///This is a CoAP URI handle it.
-                } else if(coap_inst.isLwm2mUri(coapmessage, uri)) {
+                } else if(get_coapAdapter().isLwm2mUri(coapmessage, uri)) {
                     /// This is aLwM2M string URI rd or bs
                     std::cout << basename(__FILE__) << ":" << __LINE__ << " This is either bs  or rd" << std::endl;
-                    auto rsp = coap_inst.buildResponse(coapmessage);
+                    auto rsp = get_coapAdapter().buildResponse(coapmessage);
                     auto ret = sendto(fd, (const void *)rsp.data(), rsp.length(), 0, (struct sockaddr *)&session, slen);
                     std::cout << basename(__FILE__) << ":" << __LINE__ << " bs or rd response is sent ret:" << ret << std::endl;
 
-                } else if(coap_inst.isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
+                } else if(get_coapAdapter().isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
                     /// This is LwM2M Object URI, Handle it.
                     LwM2MAdapter lwm2mAdapter;
                     LwM2MObjectData data;

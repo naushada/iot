@@ -140,7 +140,7 @@ class App {
 
         App(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service) {
             if(!init(host, port, scheme, service)) {
-                //coapAdapter = CoAPAdapter();
+                coapAdapter = std::make_unique<CoAPAdapter>();
                 epollFd = ::epoll_create1(EPOLL_CLOEXEC);
             }
         }
@@ -148,7 +148,7 @@ class App {
         ~App() {
             
             ::close(epollFd);
-            //coapAdapter.reset(nullptr);
+            coapAdapter.reset(nullptr);
         }
 
         App& operator=(App& rhs) = default;
@@ -167,7 +167,7 @@ class App {
         std::int32_t handle_io_coaps(const std::int32_t& handle, const ServiceType_t& service);
         std::int32_t handle_io_coap(const std::int32_t& handle, const ServiceType_t& service);
         std::int32_t handle_io(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t&  serverType);
-        //CoAPAdapter& get_coapAdapter();
+        CoAPAdapter& get_coapAdapter();
 
         std::unordered_map<App::ServiceType_t, std::unique_ptr<App::ServiceContext_t>>&  get_services() {
             return(services);
@@ -176,7 +176,7 @@ class App {
     private:
         std::int32_t epollFd;
         std::vector<struct epoll_event> evts;
-        //std::unique_ptr<CoAPAdapter> coapAdapter;
+        std::unique_ptr<CoAPAdapter> coapAdapter;
         //CoAPAdapter coapAdapter;
         std::unordered_map<App::ServiceType_t, std::unique_ptr<App::ServiceContext_t>> services;
 };
