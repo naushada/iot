@@ -1398,31 +1398,262 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
     }
         break;
     case ServerObjectID:
+    {
         /* code */
+        std::stringstream ss;
+
+        if(oiid.length()) {
+            
+            for(const auto& rid: rids) {
+
+                serialiseObjects(rid, out);
+                ss.write(reinterpret_cast<char *>(out.data()), out.length());
+            
+            }
+            out.assign(ss.str());
+            
+        } else {
+            /// no object instance id in the uri
+            std::stringstream newss;
+            for(const  auto& ent: {0, 1}) {
+
+                for(const auto& rid: rids) {
+
+                    serialiseObjects(rid, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+                }
+
+                serialiseTLV(TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00, ss.str(), ent, out);
+                newss.write(reinterpret_cast<char *>(out.data()), out.length());
+                ss.str("");
+
+            }
+            out.assign(newss.str());
+        }
+    }
         break;
     
     case AccessControlObjectID:
         /* code */
+    {
+        std::stringstream ss;
+
+        if(oiid.length()) {
+            
+            for(const auto& rid: rids) {
+
+                serialiseObjects(rid, out);
+                ss.write(reinterpret_cast<char *>(out.data()), out.length());
+            
+            }
+            out.assign(ss.str());
+            
+        } else {
+            /// no object instance id in the uri
+            std::stringstream newss;
+            for(const  auto& ent: {0, 1}) {
+
+                for(const auto& rid: rids) {
+
+                    serialiseObjects(rid, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+                }
+
+                serialiseTLV(TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00, ss.str(), ent, out);
+                newss.write(reinterpret_cast<char *>(out.data()), out.length());
+                ss.str("");
+
+            }
+            out.assign(newss.str());
+        }
+    }
         break;
     
     case DeviceObjectID:
+    {
         /* code */
+        std::stringstream ss;
+
+        if(oiid.length()) {
+            
+            for(const auto& rid: rids) {
+
+                serialiseObjects(rid, out);
+                ss.write(reinterpret_cast<char *>(out.data()), out.length());
+            
+            }
+            out.assign(ss.str());
+            
+        } else {
+            /// no object instance id in the uri
+            std::stringstream newss;
+            for(const  auto& ent: {0, 1}) {
+
+                for(const auto& rid: rids) {
+
+                    serialiseObjects(rid, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+                }
+
+                serialiseTLV(TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00, ss.str(), ent, out);
+                newss.write(reinterpret_cast<char *>(out.data()), out.length());
+                ss.str("");
+
+            }
+            out.assign(newss.str());
+        }
+    }
         break;
 
     case ConnectivityMonitoringObjectID:
+    {
         /* code */
+        std::stringstream ss;
+
+        if(oiid.length()) {
+            
+            for(const auto& rid: rids) {
+
+                serialiseObjects(rid, out);
+                ss.write(reinterpret_cast<char *>(out.data()), out.length());
+            
+            }
+            out.assign(ss.str());
+            
+        } else {
+            /// no object instance id in the uri
+            std::stringstream newss;
+            for(const  auto& ent: {0, 1}) {
+
+                for(const auto& rid: rids) {
+
+                    serialiseObjects(rid, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+                }
+
+                serialiseTLV(TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00, ss.str(), ent, out);
+                newss.write(reinterpret_cast<char *>(out.data()), out.length());
+                ss.str("");
+
+            }
+            out.assign(newss.str());
+        }
+    }
         break;
 
     case FirmwareUpdateObjectID:
+    {
         /* code */
+        std::stringstream ss;
+
+        if(oiid.length()) {
+            
+            for(const auto& rid: rids) {
+
+                serialiseObjects(rid, out);
+                ss.write(reinterpret_cast<char *>(out.data()), out.length());
+            
+            }
+            out.assign(ss.str());
+            
+        } else {
+            /// no object instance id in the uri
+            std::stringstream newss;
+            for(const  auto& ent: {0, 1}) {
+
+                for(const auto& rid: rids) {
+
+                    serialiseObjects(rid, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+                }
+
+                serialiseTLV(TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00, ss.str(), ent, out);
+                newss.write(reinterpret_cast<char *>(out.data()), out.length());
+                ss.str("");
+
+            }
+            out.assign(newss.str());
+        }
+    }
         break;
 
     case LocationObjectID:
+    {
         /* code */
+        std::stringstream ss;
+
+        if(oiid.length()) {
+            
+            for(const auto& rid: rids) {
+
+                serialiseObjects(rid, out);
+                ss.write(reinterpret_cast<char *>(out.data()), out.length());
+            
+            }
+            out.assign(ss.str());
+            
+        } else {
+            /// no object instance id in the uri
+            std::stringstream newss;
+            for(const  auto& ent: {0, 1}) {
+
+                for(const auto& rid: rids) {
+
+                    serialiseObjects(rid, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+                }
+
+                serialiseTLV(TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00, ss.str(), ent, out);
+                newss.write(reinterpret_cast<char *>(out.data()), out.length());
+                ss.str("");
+
+            }
+            out.assign(newss.str());
+        }
+    }
         break;
 
     case ConnectivityStatisticsObjectID:
+    {
         /* code */
+        std::stringstream ss;
+
+        if(oiid.length()) {
+            
+            for(const auto& rid: rids) {
+
+                serialiseObjects(rid, out);
+                ss.write(reinterpret_cast<char *>(out.data()), out.length());
+            
+            }
+            out.assign(ss.str());
+            
+        } else {
+            /// no object instance id in the uri
+            std::stringstream newss;
+            for(const  auto& ent: {0, 1}) {
+
+                for(const auto& rid: rids) {
+
+                    serialiseObjects(rid, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+                }
+
+                serialiseTLV(TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00, ss.str(), ent, out);
+                newss.write(reinterpret_cast<char *>(out.data()), out.length());
+                ss.str("");
+
+            }
+            out.assign(newss.str());
+        }
+    }
         break;
 
     default:
