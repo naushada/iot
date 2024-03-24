@@ -1702,7 +1702,7 @@ std::int32_t LwM2MAdapter::serverObject30(std::string& out) {
         ifs.close();
 
         json LwM2MObject30 = json::parse(ss.str());
-        buildLwM2MPayload(SecurityObjectID, std::to_string(0), LwM2MObject30, out);
+        buildLwM2MPayload(ServerObjectID, std::to_string(0), LwM2MObject30, out);
         return(0);
     }
     return(-1);
@@ -1713,8 +1713,12 @@ std::int32_t LwM2MAdapter::securityObject(std::string& out) {
     std::stringstream ss;
     if(!bootstrapSecurityObject00(object)) {
         ss.write(reinterpret_cast<char *>(object.data()), object.length());
-        devicemgmtSecurityObject01(object);
-        ss.write(reinterpret_cast<char *>(object.data()), object.length());
+        
+        if(!devicemgmtSecurityObject01(object)) {
+            ss.write(reinterpret_cast<char *>(object.data()), object.length());
+        }
+
+        out.assign(ss.str());
         return(0);
     }
     return(-1);
