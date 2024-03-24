@@ -109,7 +109,7 @@ class LwM2MAdapter {
          * @param tlv 
          * @return std::int32_t 
          */
-        std::int32_t buildLwM2MPayload(const ObjectId_t& oid, const std::string& oiid, const json& rids, std::string& out);
+        std::int32_t buildLwM2MPayload(const ObjectId_t& oid, std::string oiid, const json& rids, std::string& out);
         /**
          * @brief 
          * 
@@ -125,6 +125,7 @@ class LwM2MAdapter {
         std::int32_t serialiseTLV(const TypeFieldOfTLV_t& bits76, std::string value, std::uint16_t riid, std::string& out);
         std::int32_t serialiseTLV(const TypeFieldOfTLV_t& oid, std::uint32_t value, std::uint16_t riid, std::string& out);
         std::int32_t serialiseTLV(const TypeFieldOfTLV_t& oid, bool value, std::uint16_t riid, std::string& out);
+        std::int32_t serialiseObjects(const json& rids, std::string& out);
 
         std::string hexToBinary(const std::string &hex) {
             std::string binary;

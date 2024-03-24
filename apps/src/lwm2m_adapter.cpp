@@ -1301,68 +1301,99 @@ std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, bool val
     return(0);
 }
 
-std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, const std::string& oiid, const json& rids, std::string& out) {
+std::int32_t LwM2MAdapter::serialiseObjects(const json& rid, std::string& out) {
+    std::uint16_t identifier = rid["rid"].get<std::uint16_t>();
+    std::stringstream ss, tmpss;
+
+    if(rid["value"].is_array()) {
+
+        std::uint16_t riid = 0;
+        tmpss.str("");
+
+        for(const auto& ent: rid["value"]) {
+            std::string out;
+            if(ent.is_string()) {
+
+                serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::string>(), riid, out);
+                tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
+                            
+            } else if(ent.is_boolean()) {
+
+                serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<bool>(), riid, out);
+                tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+            } else if(ent.is_number()) {
+
+                serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::uint32_t>(), riid, out);
+                tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+            } else {
+                std::cout << basename(__FILE__) << ":" << __LINE__ << " unsupported type" << std::endl;
+            }
+            riid++;
+        }
+        serialiseTLV(TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10, tmpss.str(), identifier, out);
+        ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+    } else if(rid["value"].is_string()) {
+
+        serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<std::string>(), identifier, out);
+        ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+    } else if(rid["value"].is_boolean()) {
+
+        serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<bool>(), identifier, out);
+        ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+    } else if(rid["value"].is_number()) {
+
+        serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<std::uint32_t>(), identifier, out);
+        ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+    } else {
+                    
+    }
+
+    out.assign(ss.str());
+    return(0);
+}
+
+std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string oiid, const json& rids, std::string& out) {
     
     switch (oid)
     {
     case SecurityObjectID:
     {
         std::stringstream ss;
-        std::stringstream tmpss;
 
         if(oiid.length()) {
+            
             for(const auto& rid: rids) {
 
-                std::uint16_t identifier = rid["rid"].get<std::uint16_t>();
-                if(rid["value"].is_array()) {
-
-                    std::uint16_t riid = 0;
-                    tmpss.str("");
-
-                    for(const auto& ent: rid["value"]) {
-                        std::string out;
-                        if(ent.is_string()) {
-
-                            serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::string>(), riid, out);
-                            tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
-                            
-                        } else if(ent.is_boolean()) {
-
-                            serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<bool>(), riid, out);
-                            tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
-
-                        } else if(ent.is_number()) {
-                            std::cout << basename(__FILE__) << ":" << __LINE__ << " this is number" << std::endl;
-                            serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::uint32_t>(), riid, out);
-                            tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
-
-                        } else {
-                            std::cout << basename(__FILE__) << ":" << __LINE__ << " unsupported type" << std::endl;
-                        }
-                        riid++;
-                    }
-                    serialiseTLV(TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10, tmpss.str(), identifier, out);
-                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
-
-                } else if(rid["value"].is_string()) {
-
-                    serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<std::string>(), identifier, out);
-                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
-
-                } else if(rid["value"].is_boolean()) {
-
-                    
-
-                } else if(rid["value"].is_number()) {
-
-                    serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<std::uint32_t>(), identifier, out);
-                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
-
-                } else {
-                    
-                }
+                serialiseObjects(rid, out);
+                ss.write(reinterpret_cast<char *>(out.data()), out.length());
+            
             }
             out.assign(ss.str());
+            
+        } else {
+            /// no object instance id in the uri
+            std::stringstream newss;
+            for(const  auto& ent: {0, 1}) {
+
+                for(const auto& rid: rids) {
+
+                    serialiseObjects(rid, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+                }
+
+                serialiseTLV(TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00, ss.str(), ent, out);
+                newss.write(reinterpret_cast<char *>(out.data()), out.length());
+                ss.str("");
+
+            }
+            out.assign(newss.str());
         }
     }
         break;

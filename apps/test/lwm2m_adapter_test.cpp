@@ -351,4 +351,89 @@ TEST(LwM2MAdapterTestSuite, SerialiseLwM2MOMAObject) {
     //EXPECT_TRUE(it != object.m_value.end());
 }
 
+TEST(LwM2MAdapterTestSuite, SerialiseLwM2MOMAMultipleObjectInstance) {
+    json request = json::array();
+    ///request: [{"rid":0,"value":"Open Mobile Alliance"},{"rid":340,"value":["1.2","2.5"]}]
+    request = {
+        {
+            {"rid", 0},
+            {"value", "Open Mobile Alliance"}
+        },
+        {
+            {"rid", 1},
+            {"value", "Lightweight M2M Client"}
+        },
+        {
+            {"rid", 2},
+            {"value", "345000123"}
+        },
+        {
+            {"rid", 3},
+            {"value", "1.0"}
+        },
+        {
+            {"rid", 6},
+            {"value", {
+                1, 5}
+            }
+        }
+        ,
+        {
+            {"rid", 7},
+            {"value", {
+                0x0ED8, 0x1388}
+            }
+        },
+        {
+            {"rid", 8},
+            {"value", {
+                0x7D, 0x0384}
+            }
+        },
+        {
+            {"rid", 9},
+            {"value", 0x64}
+        },
+        {
+            {"rid", 0xA},
+            {"value", 0x0F}
+        },
+        {
+            {"rid", 0xB},
+            {"value", {0x00}}
+        },
+        {
+            {"rid", 0xD},
+            {"value", 0x5182428F}
+        },
+        {
+            {"rid", 0xE},
+            {"value", "+02:00"}
+        },
+        {
+            {"rid", 0x10},
+            {"value", "U"}
+        }
+    };
+    
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " request: " << request.dump() << std::endl;
+    LwM2MAdapter lwm2mAdapter;
+    LwM2MObject object;
+    LwM2MObjectData data;
+    std::uint32_t oid = 0, oiid = 0,riid = 0;
+    lwm2mAdapter.parseLwM2MUri("/0/1", oid, oiid, riid);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " oid:" << std::to_string(oid) << " oiid:" << std::to_string(oiid) << " riid:" << std::to_string(riid) << std::endl;
+    object.m_oid = oid;
+    data.m_oiid = oiid;
+    data.m_riid = riid;
+    std::string out = "";
+    lwm2mAdapter.buildLwM2MPayload(SecurityObjectID, std::string(), request, out);
+    for(const auto& elm: out) {
+        printf("%0.2X ", static_cast<unsigned char>(elm));
+    }
+    printf("\n");
+    
+
+    //EXPECT_TRUE(it != object.m_value.end());
+}
 #endif /*__lwm2m_adapter_test_cpp__*/
