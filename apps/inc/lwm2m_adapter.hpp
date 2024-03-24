@@ -120,11 +120,60 @@ class LwM2MAdapter {
          * @return std::int32_t 
          */
         std::int32_t parseLwM2MUri(const std::string&& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid);
+        /**
+         * @brief 
+         * 
+         * @param payload 
+         * @param objectData 
+         * @param object 
+         * @return std::int32_t 
+         */
         std::int32_t parseLwM2MObjects(const std::string& payload, LwM2MObjectData&objectData, LwM2MObject& object);
+        /**
+         * @brief 
+         * 
+         * @param oid 
+         * @param rid 
+         * @return std::string 
+         */
         std::string resourceIDName(const std::uint32_t& oid, const std::uint32_t& rid);
+        /**
+         * @brief 
+         * 
+         * @param bits76 
+         * @param value 
+         * @param riid 
+         * @param out 
+         * @return std::int32_t 
+         */
         std::int32_t serialiseTLV(const TypeFieldOfTLV_t& bits76, std::string value, std::uint16_t riid, std::string& out);
+        /**
+         * @brief 
+         * 
+         * @param oid 
+         * @param value 
+         * @param riid 
+         * @param out 
+         * @return std::int32_t 
+         */
         std::int32_t serialiseTLV(const TypeFieldOfTLV_t& oid, std::uint32_t value, std::uint16_t riid, std::string& out);
+        /**
+         * @brief This function serialises the boolean resource id into LwM2M object
+         * 
+         * @param oid LwM2M object id which is part of URI
+         * @param value boolean value true or false
+         * @param riid resource instance id for multiple resources, 0 resource instance is is default
+         * @param out Byte stream of LwM2M object
+         * @return std::int32_t Upon success 0 else -1
+         */
         std::int32_t serialiseTLV(const TypeFieldOfTLV_t& oid, bool value, std::uint16_t riid, std::string& out);
+        /**
+         * @brief This function encodes/serialise into byte buffer from json object into LwM2M Objects
+         * 
+         * @param rids json object (json array) or elementary data type (string,boolean or number)
+         * @param out byte stream of LwM2M object
+         * @return std::int32_t upon success 0 else -1
+         */
         std::int32_t serialiseObjects(const json& rids, std::string& out);
 
         std::string hexToBinary(const std::string &hex) {
