@@ -11,7 +11,7 @@
 #include <cerrno>
 #include <sstream>
 #include "dtls_adapter.hpp"
-
+#include "lwm2m_adapter.hpp"
 
 extern "C"
 {
@@ -141,6 +141,7 @@ class App {
         App(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service) {
             if(!init(host, port, scheme, service)) {
                 coapAdapter = std::make_unique<CoAPAdapter>();
+                lwm2mAdapter = std::make_unique<LwM2MAdapter>();
                 epollFd = ::epoll_create1(EPOLL_CLOEXEC);
             }
         }
@@ -168,6 +169,7 @@ class App {
         std::int32_t handle_io_coap(const std::int32_t& handle, const ServiceType_t& service);
         std::int32_t handle_io(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t&  serverType);
         CoAPAdapter& get_coapAdapter();
+        LwM2MAdapter& get_lwm2mAdapter();
 
         std::unordered_map<App::ServiceType_t, std::unique_ptr<App::ServiceContext_t>>&  get_services() {
             return(services);
@@ -177,6 +179,7 @@ class App {
         std::int32_t epollFd;
         std::vector<struct epoll_event> evts;
         std::unique_ptr<CoAPAdapter> coapAdapter;
+        std::unique_ptr<LwM2MAdapter> lwm2mAdapter;
         //CoAPAdapter coapAdapter;
         std::unordered_map<App::ServiceType_t, std::unique_ptr<App::ServiceContext_t>> services;
 };

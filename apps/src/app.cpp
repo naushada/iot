@@ -21,6 +21,10 @@ CoAPAdapter& App::get_coapAdapter() {
     return(*coapAdapter.get());
 }
 
+LwM2MAdapter& App::get_lwm2mAdapter() {
+    return(*lwm2mAdapter.get());
+}
+
 std::int32_t App::rx(std::int32_t fd) {
     std::int32_t ret = -1;
     std::vector<std::uint8_t> buf(1400);
@@ -63,7 +67,7 @@ std::int32_t App::rx(std::int32_t fd) {
 
                 } else if(get_coapAdapter().isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
                     /// This is LwM2M Object URI, Handle it.
-                    LwM2MAdapter lwm2mAdapter;
+                    //LwM2MAdapter lwm2mAdapter;
                     LwM2MObjectData data;
                     LwM2MObject object;
                     data.m_oiid = oiid;
@@ -71,12 +75,12 @@ std::int32_t App::rx(std::int32_t fd) {
                     data.m_riid = riid;
                     object.m_oid = oid;
 
-                    if(!lwm2mAdapter.parseLwM2MObjects(coapmessage.payload, data, object)) {
+                    if(!get_lwm2mAdapter().parseLwM2MObjects(coapmessage.payload, data, object)) {
 
                         ///Objects are extracted successfully
                         for(const auto& ent: object.m_value) {
                             std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                                      << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                                      << " ent.m_rid:" << get_lwm2mAdapter().resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                                       << " ent.m_ridvalue:";
         
                             for(const auto& elm: ent.m_ridvalue) {
