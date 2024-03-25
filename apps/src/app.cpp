@@ -17,6 +17,7 @@ void App::hex_dump(const std::string& in) {
     std::cout << hexDump << std::endl;
 }
 
+/*
 CoAPAdapter& App::get_coapAdapter() {
     return(*coapAdapter.get());
 }
@@ -25,7 +26,34 @@ LwM2MAdapter& App::get_lwm2mAdapter() {
     return(*lwm2mAdapter.get());
 }
 
+*/
+
+std::int32_t App::rx(std::int32_t fd, std::string& out, std::uint32_t& peerIP, std::uint16_t& peerPort) {
+    std::vector<std::uint8_t> buf(1400);
+    std::int32_t len;
+    struct sockaddr_in session;
+    memset(&session, 0, sizeof(session));
+    socklen_t slen = sizeof(session);
+
+    len = recvfrom(fd, buf.data(), buf.size(), MSG_TRUNC, (struct sockaddr *)&session, &slen);
+    
+
+    if(len < 0) {
+        perror("recvfrom");
+        return (-1);
+    } else {
+        buf.resize(len);
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " got len: " << len << " bytes from port: " << ntohs(session.sin_port) << std::endl;
+        out.assign(std::string(buf.begin(), buf.end()));
+        peerPort = ntohs(session.sin_port);
+        peerIP = ntohl(session.sin_addr.s_addr);
+        return(0);
+    }
+    return(-1);  
+}
+
 std::int32_t App::rx(std::int32_t fd) {
+#if 0
     std::int32_t ret = -1;
     std::vector<std::uint8_t> buf(1400);
     std::int32_t len;
@@ -100,7 +128,7 @@ std::int32_t App::rx(std::int32_t fd) {
             return(ret);
         }
     }
-    
+#endif
     return(-1);
 }
 
@@ -259,7 +287,31 @@ std::int32_t App::handle_io_coaps(const std::int32_t& fd, const ServiceType_t& s
 
 std::int32_t App::handle_io_coap(const std::int32_t& fd, const ServiceType_t& service) {
     std::cout << basename(__FILE__) << ":" << __LINE__ << " received packet handle_io_coap" << std::endl;
-    rx(fd);
+    auto it = std::find_if(services.begin(), services.end(), [&](auto& ent) -> bool {
+        return(service == ent.second->get_service());
+    });
+
+    if(it != services.end()) {
+        auto& ctx = *it;
+        std::uint32_t peerIP;
+        std::uint16_t peerPort;
+        std::string out;
+        auto ret = rx(fd, out, peerIP, peerPort);
+        if(!ret) {
+            ctx.second->set_peerPort(peerPort);
+            struct in_addr pp;
+            pp.s_addr = peerIP;
+            ctx.second->set_peerHost(inet_ntoa(pp));
+        }
+        auto rsp = ctx.second->get_coap_adapter().getResponse();
+        if(rsp.length()) {
+            //ctx.second->get_dtls_adapter().tx(rsp);
+            tx(rsp, ctx.second->get_service());
+        }
+        return(0);
+    }
+    
+    //rx(fd);
     return(0);
 }
 
@@ -270,7 +322,7 @@ std::int32_t App::start(Role_t role, Scheme_t scheme) {
 
     if(App::CLIENT == role &&  App::CoAPs == scheme) {
         auto it = std::find_if(get_services().begin(), get_services().end(), [&](auto& ent) -> bool {
-            return(App::ServiceType_t::DeviceMgmtClient == ent.second->get_service());
+            return(App::ServiceType_t::LwM2MClient == ent.second->get_service());
         });
 
         if(it != get_services().end()) {

@@ -146,9 +146,9 @@ int main(std::int32_t argc, char *argv[]) {
 
     App::ServiceType_t service;
     if(App::CLIENT == role) {
-        service = App::ServiceType_t::DeviceMgmtClient;
+        service = App::ServiceType_t::LwM2MClient;
     } else {
-        service = App::ServiceType_t::BootsstrapMgmtServer;
+        service = App::ServiceType_t::BootsstrapServer;
     }
 
     std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme, service);

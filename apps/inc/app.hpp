@@ -48,8 +48,9 @@ class App {
 
         typedef enum {
             DeviceMgmtServer  = 0,
-            BootsstrapMgmtServer = 1,
-            DeviceMgmtClient = 3
+            BootsstrapServer = 1,
+            DeviceMgmtClient = 3,
+            LwM2MClient = 4
         } ServiceType_t;
 
         struct ServiceContext_t  {
@@ -60,14 +61,17 @@ class App {
             std::uint16_t selfPort;
             Scheme_t scheme;
             ServiceType_t service;
-            //std::unique_ptr<DTLSAdapter> dtls_adapter;
-            DTLSAdapter dtls_adapter;
+            std::unique_ptr<DTLSAdapter> dtls_adapter;
+            //DTLSAdapter dtls_adapter;
+            std::unique_ptr<CoAPAdapter> coap_adapter;
 
             ServiceContext_t(std::int32_t Fd, Scheme_t schm) {
                 if(schm == Scheme_t::CoAPs) {
                     //DTLS_LOG_INFO
-                    //dtls_adapter = std::make_unique<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
-                    dtls_adapter = DTLSAdapter(Fd, DTLS_LOG_DEBUG);
+                    dtls_adapter = std::make_unique<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
+                    //dtls_adapter = DTLSAdapter(Fd, DTLS_LOG_DEBUG);
+                } else {
+                    coap_adapter = std::make_unique<CoAPAdapter>();
                 }
 
                 fd = Fd;
@@ -80,7 +84,7 @@ class App {
             ~ServiceContext_t() {
                 std::cout << basename(__FILE__) << ":" << __LINE__ << " Closing Socket:" << fd << std::endl;
                 ::close(fd);
-                //dtls_adapter.reset(nullptr);
+                dtls_adapter.reset(nullptr);
             }
             
 
@@ -131,7 +135,11 @@ class App {
             }
 
             DTLSAdapter& get_dtls_adapter() {
-                return(dtls_adapter);
+                return(*dtls_adapter.get());
+            }
+
+            CoAPAdapter& get_coap_adapter() {
+                return(*coap_adapter.get());
             }
 
         };
@@ -140,8 +148,12 @@ class App {
 
         App(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service) {
             if(!init(host, port, scheme, service)) {
-                coapAdapter = std::make_unique<CoAPAdapter>();
-                lwm2mAdapter = std::make_unique<LwM2MAdapter>();
+
+                if(CoAP == scheme) {
+                    //coapAdapter = std::make_unique<CoAPAdapter>();
+                    //lwm2mAdapter = std::make_unique<LwM2MAdapter>();
+                }
+
                 epollFd = ::epoll_create1(EPOLL_CLOEXEC);
             }
         }
@@ -149,7 +161,7 @@ class App {
         ~App() {
             
             ::close(epollFd);
-            coapAdapter.reset(nullptr);
+            //coapAdapter.reset(nullptr);
         }
 
         App& operator=(App& rhs) = default;
@@ -162,14 +174,15 @@ class App {
         std::int32_t start(Role_t role, Scheme_t scheme);
         std::int32_t stop();
         std::int32_t rx(std::int32_t fd);
+        std::int32_t rx(std::int32_t fd, std::string& out, std::uint32_t& peerIP, std::uint16_t& peerPort);
         std::int32_t tx(std::string& in, ServiceType_t& service);
 
         void hex_dump(const std::string& in);
         std::int32_t handle_io_coaps(const std::int32_t& handle, const ServiceType_t& service);
         std::int32_t handle_io_coap(const std::int32_t& handle, const ServiceType_t& service);
         std::int32_t handle_io(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t&  serverType);
-        CoAPAdapter& get_coapAdapter();
-        LwM2MAdapter& get_lwm2mAdapter();
+        //CoAPAdapter& get_coapAdapter();
+        //LwM2MAdapter& get_lwm2mAdapter();
 
         std::unordered_map<App::ServiceType_t, std::unique_ptr<App::ServiceContext_t>>&  get_services() {
             return(services);
@@ -178,8 +191,8 @@ class App {
     private:
         std::int32_t epollFd;
         std::vector<struct epoll_event> evts;
-        std::unique_ptr<CoAPAdapter> coapAdapter;
-        std::unique_ptr<LwM2MAdapter> lwm2mAdapter;
+        //std::unique_ptr<CoAPAdapter> coapAdapter;
+        //std::unique_ptr<LwM2MAdapter> lwm2mAdapter;
         //CoAPAdapter coapAdapter;
         std::unordered_map<App::ServiceType_t, std::unique_ptr<App::ServiceContext_t>> services;
 };
