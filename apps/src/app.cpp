@@ -220,7 +220,7 @@ std::int32_t App::init(const std::string& host, const std::uint16_t& port, const
 }
 
 std::int32_t App::init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme) {
-    auto ret = init(host, port, scheme, ServiceType_t::DeviceMgmtClient);
+    auto ret = init(host, port, scheme, ServiceType_t::LwM2MClient);
     if(ret) {
         std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " init failed for scheme:" << scheme << std::endl;
         return(ret);
