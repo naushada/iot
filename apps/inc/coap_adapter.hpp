@@ -49,6 +49,7 @@ class CoAPAdapter {
          * @return std::int32_t 
          */
         std::int32_t processRequest(session_t *session, std::string &in);
+        std::int32_t processRequest(const std::string& in, std::vector<std::string>& out);
         /**
          * @brief 
          * 

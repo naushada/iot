@@ -296,6 +296,7 @@ std::int32_t App::handle_io_coap(const std::int32_t& fd, const ServiceType_t& se
         std::uint32_t peerIP;
         std::uint16_t peerPort;
         std::string out;
+        std::vector<std::string> responses;
         auto ret = rx(fd, out, peerIP, peerPort);
         if(!ret) {
             ctx.second->set_peerPort(peerPort);
@@ -303,10 +304,12 @@ std::int32_t App::handle_io_coap(const std::int32_t& fd, const ServiceType_t& se
             pp.s_addr = peerIP;
             ctx.second->set_peerHost(inet_ntoa(pp));
         }
-        auto rsp = ctx.second->get_coap_adapter().getResponse();
-        if(rsp.length()) {
+        ret = ctx.second->get_coap_adapter().processRequest(out, responses);
+        if(responses.size()) {
             //ctx.second->get_dtls_adapter().tx(rsp);
-            tx(rsp, ctx.second->get_service());
+            for(auto& response: responses) {
+                tx(response, ctx.second->get_service());
+            }
         }
         return(0);
     }

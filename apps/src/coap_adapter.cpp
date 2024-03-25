@@ -820,6 +820,120 @@ bool CoAPAdapter::writeIntoFile(const std::string &input, const std::string& fil
     return(true);
 }
 
+std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std::string>& out) {
+    cumulativeOptionNumber = 0;
+    CoAPMessage coapmessage;
+    std::string rsp;
+    auto ret = parseRequest(in, coapmessage);
+
+    auto cf = getContentFormat(coapmessage);
+    if(cf.length() > 0 && (cf == "application/vnd.oma.lwm2m+tlv") || (cf == "text/plain;charset=utf-8")) {
+        LwM2MAdapter lwm2m_inst;
+        ///Build the Response for a given Request
+        std::string uri;
+        std::uint32_t oid, oiid, rid, riid;
+        if(isLwm2mUri(coapmessage, uri)) {
+            /// This is LwM2M string URI rd or bs
+            rsp = buildResponse(coapmessage);
+            out.push_back(rsp);
+        } else if(isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
+            /// This is LwM2M Object URI, Handle it.
+            LwM2MObjectData data;
+            LwM2MObject object;
+            data.m_oiid = oiid;
+            data.m_rid = rid;
+            data.m_riid = riid;
+            object.m_oid = oid;
+
+            if(!lwm2m_inst.parseLwM2MObjects(coapmessage.payload, data, object)) {
+                for(const auto& ent: object.m_value) {
+                    std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+                            << " ent.m_rid:" << lwm2m_inst.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                            << " ent.m_ridvalue:";
+            
+                    for(const auto& elm: ent.m_ridvalue) {
+                        printf("%0.2X ", (std::uint8_t)elm);
+                    }
+                    printf("\n");
+                }
+                rsp = buildResponse(coapmessage);
+                out.push_back(rsp);
+            }
+        }
+    } else {
+        ///response is a calls variable.
+        rsp = buildResponse(coapmessage);
+        out.push_back(rsp);
+    }
+
+    if(!coapmessage.ismorebitset) {
+        
+        ///check for content type
+        auto it = std::find_if(coapmessage.uripath.begin(), coapmessage.uripath.end(), [&](const auto& ent) -> bool {
+            return(getOptionNumber(ent.optiondelta).compare("Content-Format") == 0);
+        });
+        
+        if(it != coapmessage.uripath.end()) {
+            auto ent = *it;
+            std::uint16_t ct = ntohs(*reinterpret_cast<std::uint16_t *>(ent.optionvalue.data()));
+            std::string output;
+
+            if(12201/*UCBORZ*/ == ct) {
+                ///decompress the contents.
+                if(uncompress(coapmessage.payload, output)) {
+                    ///uncompressed successfully.
+                    writeIntoFile(output, "ucborz_cf_12201.txt");
+                }
+            } else if(12119/*TS*/ == ct) {
+                writeIntoFile(coapmessage.payload, "ts_cf_12119.txt");
+            } else if(12200/*UCBOR*/ == ct) {
+                writeIntoFile(coapmessage.payload, "ucbor_cf_12200.txt");
+            } else if(12202/*SUCBOR*/ == ct) {
+                writeIntoFile(coapmessage.payload, "sucbor_cf_12202.txt");
+            } else if(12203 /*SUCBORZ*/ == ct) {
+                if(uncompress(coapmessage.payload, output)) {
+                    ///uncompressed successfully.
+                    writeIntoFile(output, "sucbor_cf_12203.txt");
+                }
+            } else if(11542 /*application/vnd.oma.lwm2m+tlv*/ == ct) {
+                ///Process LwM2M Object(s)
+                LwM2MAdapter lwm2mAdapter;
+                ///Build the Response for a given Request
+                std::string uri;
+                std::uint32_t oid, oiid, rid, riid;
+                if(isLwm2mUri(coapmessage, uri)) {
+                    /// This is aLwM2M string URI rd or bs
+                } else if(isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
+                    /// This is LwM2M Object URI, Handle it.
+                    LwM2MObjectData data;
+                    LwM2MObject object;
+                    data.m_oiid = oiid;
+                    data.m_rid = rid;
+                    data.m_riid = riid;
+                    object.m_oid = oid;
+
+                    if(!lwm2mAdapter.parseLwM2MObjects(coapmessage.payload, data, object)) {
+
+                        ///Objects are extracted successfully
+                        for(const auto& ent: object.m_value) {
+                            std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+                                      << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                                      << " ent.m_ridvalue:";
+        
+                            for(const auto& elm: ent.m_ridvalue) {
+                                printf("%0.2X ", (std::uint8_t)elm);
+                            }
+                            printf("\n");
+                        }
+                    }
+                }
+            }
+        }        
+    }
+
+    return(out.size());
+}
+
 std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in) {
     /// clear the response buffer now.
     cumulativeOptionNumber = 0;
