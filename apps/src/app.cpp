@@ -160,6 +160,7 @@ std::int32_t App::tx(std::string& in, ServiceType_t& service) {
                     << " peerPort:" << std::to_string(ctx.second->get_peerPort()) << std::endl;
             return(-1);
         }
+        return(ret);
     }
 
     return(0);

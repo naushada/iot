@@ -435,13 +435,16 @@ int Readline::processCommand(const std::string& command) {
                 printf("\n");
                 ///sending CoAP message to Peer now.
                 auto it = std::find_if(get_app()->get_services().begin(), get_app()->get_services().end(), [&](auto& ent) -> bool {
-                    return(App::ServiceType_t::DeviceMgmtClient == ent.second->get_service());
+                    return(App::ServiceType_t::LwM2MClient == ent.second->get_service());
                 });
 
                 if(it != get_app()->get_services().end()) {
                     auto& elm = *it;
                     auto len = get_app()->tx(ent, elm.second->get_service());
-                    std::cout << basename(__FILE__) << ":" << __LINE__ << " UDP Packet sent len:" << len   << " strerror:" << std::strerror(errno)<< std::endl;
+                    if(len < 0)
+                        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error unable to sent topeer" << " strerror:" << std::strerror(errno)<< std::endl;
+                    else 
+                        std::cout << basename(__FILE__) << ":" << __LINE__ << " Successfully sent len:" << len << std::endl;
                 }
                 
             }
