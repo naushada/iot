@@ -263,10 +263,11 @@ class CoAPAdapter {
             });
 
             if(it != coapmessage.uripath.end()) {
-                return(getContentFormat(std::stoi(it->optionvalue)));
+                std::cout << basename(__FILE__) << ":" << __LINE__ << " cf: " << atoi(it->optionvalue.c_str()) << std::endl;
+                return(getContentFormat(atoi(it->optionvalue.c_str())));
             }
 
-            return(std::string());
+            return(getContentFormat(0));
         }
 
     private:

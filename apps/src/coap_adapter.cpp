@@ -827,6 +827,7 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
     auto ret = parseRequest(in, coapmessage);
 
     auto cf = getContentFormat(coapmessage);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " value of cf:"  << cf << std::endl;
     if(cf.length() > 0 && (cf == "application/vnd.oma.lwm2m+tlv") || (cf == "text/plain;charset=utf-8")) {
         LwM2MAdapter lwm2m_inst;
         ///Build the Response for a given Request
