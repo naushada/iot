@@ -312,6 +312,13 @@ std::int32_t App::handle_io_coap(const std::int32_t& fd, const ServiceType_t& se
                     tx(response, ctx.second->get_service());
                 }
             }
+        } else {
+            CoAPAdapter::CoAPMessage coapmessage;
+            auto ret = ctx.second->get_coap_adapter().parseRequest(out, coapmessage);
+            for(const auto& ent: out) {
+                printf("%x ", (unsigned char)ent);
+            }
+            printf("\n");
         }
         return(0);
     }

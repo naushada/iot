@@ -12,6 +12,7 @@
 #include <sstream>
 #include "dtls_adapter.hpp"
 #include "lwm2m_adapter.hpp"
+#include "coap_adapter.hpp"
 
 extern "C"
 {

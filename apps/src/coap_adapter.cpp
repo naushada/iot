@@ -838,6 +838,17 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
             /// This is LwM2M string URI rd or bs
             rsp = buildResponse(coapmessage);
             out.push_back(rsp);
+            std::string secobj;
+            std::vector<std::string> serobj;
+            lwm2m_inst.bootstrapSecurityObject00(secobj);
+            serialise({{0},{0}},{}, {{secobj}},11542/*tlv*/, 2/*post*/,serobj);
+            out.push_back(serobj[0]);
+            secobj.clear();
+            serobj.clear();
+            lwm2m_inst.devicemgmtSecurityObject01(secobj);
+            serialise({{0},{1}},{}, {{secobj}},11542/*tlv*/, 2/*post*/,serobj);
+            out.push_back(serobj[0]);
+
         } else if(isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
             /// This is LwM2M Object URI, Handle it.
             LwM2MObjectData data;
