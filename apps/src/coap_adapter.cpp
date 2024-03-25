@@ -827,13 +827,14 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
     auto ret = parseRequest(in, coapmessage);
 
     auto cf = getContentFormat(coapmessage);
-    std::cout << basename(__FILE__) << ":" << __LINE__ << " value of cf:"  << cf << std::endl;
+    //std::cout << basename(__FILE__) << ":" << __LINE__ << " value of cf: "  << cf << std::endl;
     if(cf.length() > 0 && (cf == "application/vnd.oma.lwm2m+tlv") || (cf == "text/plain;charset=utf-8")) {
         LwM2MAdapter lwm2m_inst;
         ///Build the Response for a given Request
         std::string uri;
         std::uint32_t oid, oiid, rid, riid;
         if(isLwm2mUri(coapmessage, uri)) {
+            //std::cout << basename(__FILE__) << ":" << __LINE__ << " value of uri: "  << uri << std::endl;
             /// This is LwM2M string URI rd or bs
             rsp = buildResponse(coapmessage);
             out.push_back(rsp);

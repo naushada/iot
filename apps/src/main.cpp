@@ -100,7 +100,7 @@ int main(std::int32_t argc, char *argv[]) {
 
     }
 
-    App::Role_t role = App::SERVER;
+    App::Role_t role = App::Role_t::SERVER;
     if(!argValueMap["role"].empty() && (argValueMap["role"] == "server" || argValueMap["role"] == "client")) {
         role = roleMap[argValueMap["role"]];
     } else {
@@ -112,7 +112,7 @@ int main(std::int32_t argc, char *argv[]) {
     /// Bootstrap Host & Port
     std::string bsHost;
     std::uint16_t bsPort;
-    if(App::CLIENT == role) {
+    if(App::Role_t::CLIENT == role) {
         if(argValueMap["bs"].empty()) {
             std::cout << basename(__FILE__) << ":" << __LINE__ << " Error bs=value is missing in command line argument" << std::endl;
             return(-1);
@@ -133,7 +133,7 @@ int main(std::int32_t argc, char *argv[]) {
     
 
     std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");
-    if(scheme == App::CoAPs) {
+    if(scheme == App::Scheme_t::CoAPs) {
         ///identity & secret are mandatory argument
         if(argValueMap["identity"].empty() || argValueMap["secret"].empty()) {
             std::cout << basename(__FILE__) << ":" << __LINE__ << " Error either identity or secret missing for coaps" << std::endl;
@@ -145,7 +145,7 @@ int main(std::int32_t argc, char *argv[]) {
     }
 
     App::ServiceType_t service;
-    if(App::CLIENT == role) {
+    if(App::Role_t::CLIENT == role) {
         service = App::ServiceType_t::LwM2MClient;
     } else {
         service = App::ServiceType_t::BootsstrapServer;
@@ -154,7 +154,7 @@ int main(std::int32_t argc, char *argv[]) {
     std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme, service);
     app->add_event_handle(scheme, service);
     
-    if(App::SERVER == role) {
+    if(App::Role_t::SERVER == role) {
         app->init(selfHost, 58686, scheme, App::ServiceType_t::DeviceMgmtServer);
         app->add_event_handle(scheme, App::ServiceType_t::DeviceMgmtServer);
 
@@ -170,7 +170,7 @@ int main(std::int32_t argc, char *argv[]) {
         }
     }
 
-    if(scheme == App::CoAPs) {
+    if(scheme == App::Scheme_t::CoAPs) {
         auto it = std::find_if(app->get_services().begin(), app->get_services().end(),[&](auto& ent) -> bool {
             return(service == ent.second->get_service());
         });

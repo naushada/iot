@@ -46,7 +46,7 @@ std::int32_t App::rx(std::int32_t fd, std::string& out, std::uint32_t& peerIP, s
         std::cout << basename(__FILE__) << ":" << __LINE__ << " got len: " << len << " bytes from port: " << ntohs(session.sin_port) << std::endl;
         out.assign(std::string(buf.begin(), buf.end()));
         peerPort = ntohs(session.sin_port);
-        peerIP = ntohl(session.sin_addr.s_addr);
+        peerIP = session.sin_addr.s_addr;
         return(0);
     }
     return(-1);  
@@ -142,7 +142,7 @@ std::int32_t App::tx(std::string& in, ServiceType_t& service) {
 
     if(it != services.end()) {
         auto& ctx = *it;
-    
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " peerHost: " << ctx.second->get_peerHost() << " peerPort: " << ctx.second->get_peerPort() << std::endl;
         auto s = getaddrinfo(ctx.second->get_peerHost().data(), std::to_string(ctx.second->get_peerPort()).c_str(), nullptr, &result);
         if (!s) {
             peerAddr = *((struct sockaddr_in*)(result->ai_addr));
@@ -254,6 +254,7 @@ std::int32_t App::handle_io(const std::int32_t& fd, const Scheme_t& scheme, cons
     switch (scheme) {
         case App::CoAP:
         {
+            //std::cout << basename(__FILE__) << ":" << __LINE__ << " scheme: "<< scheme << " service: " << service << std::endl;
             handle_io_coap(fd, service);
         }
         break;
@@ -287,12 +288,13 @@ std::int32_t App::handle_io_coaps(const std::int32_t& fd, const ServiceType_t& s
 }
 
 std::int32_t App::handle_io_coap(const std::int32_t& fd, const ServiceType_t& service) {
-    std::cout << basename(__FILE__) << ":" << __LINE__ << " received packet handle_io_coap" << std::endl;
+    //std::cout << basename(__FILE__) << ":" << __LINE__ << " received packet handle_io_coap" << std::endl;
     auto it = std::find_if(services.begin(), services.end(), [&](auto& ent) -> bool {
         return(service == ent.second->get_service());
     });
 
     if(it != services.end()) {
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " received packet handle_io_coap service: " << service << std::endl;
         auto& ctx = *it;
         std::uint32_t peerIP;
         std::uint16_t peerPort;
@@ -306,10 +308,16 @@ std::int32_t App::handle_io_coap(const std::int32_t& fd, const ServiceType_t& se
             ctx.second->set_peerHost(inet_ntoa(pp));
         }
         ret = ctx.second->get_coap_adapter().processRequest(out, responses);
+        
         if(responses.size()) {
             //ctx.second->get_dtls_adapter().tx(rsp);
             for(auto& response: responses) {
-                tx(response, ctx.second->get_service());
+                std::cout << basename(__FILE__) << ":" << __LINE__ << " servie: " << ctx.second->get_service() << std::endl;
+                if(service == App::ServiceType_t::LwM2MClient) {
+                    
+                } else {
+                    tx(response, ctx.second->get_service());
+                }
             }
         }
         return(0);
@@ -352,8 +360,9 @@ std::int32_t App::start(Role_t role, Scheme_t scheme) {
 
                 struct epoll_event ent = *it;
                 std::int32_t handle = ((ent.data.u64 >> 32) & 0xFFFFFFFF);
+                ServiceType_t service = static_cast<ServiceType_t>((ent.data.u64 >> 16) & 0xFFFF);
                 Scheme_t scheme = static_cast<Scheme_t>(ent.data.u64 & 0xFFFF);
-                ServiceType_t service = static_cast<ServiceType_t>((ent.data.u64 > 16) & 0xFFFF);
+                
                 
                 if(ent.events & EPOLLHUP) {
                     std::cout << "fn:" << __PRETTY_FUNCTION__ << " line:" << __LINE__ <<" ent.events: EPOLLHUP" << std::endl;
