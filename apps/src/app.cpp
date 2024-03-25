@@ -160,6 +160,11 @@ std::int32_t App::tx(std::string& in, ServiceType_t& service) {
                     << " peerPort:" << std::to_string(ctx.second->get_peerPort()) << std::endl;
             return(-1);
         }
+
+        for(const auto& ent: in) {
+            printf("%x ", (unsigned char)ent);
+        }
+        printf("\n");
         return(ret);
     }
 
@@ -206,17 +211,7 @@ std::int32_t App::init(const std::string& host, const std::uint16_t& port, const
         std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Failed to add into services map" << std::endl;
         return(-1);
     }
-#if 0
-    auto it = std::find_if(services.begin(), services.end(), [&](auto& ent) -> bool {
-        return(fd == ent.second.get_fd());
-    });
-    if(it != services.end()) {
-        auto& elm = *it;
-        elm.second.set_selfHost(host);
-        elm.second.set_selfPort(port);
-        elm.second.set_service(service);
-    }
-#endif
+
     return(0);
 }
 
@@ -239,7 +234,7 @@ std::int32_t App::add_event_handle(const Scheme_t& scheme, const ServiceType_t& 
 
     if(it != services.end()) {
         auto& ent = *it;
-        evt.data.u64 = (((static_cast<std::uint64_t>(ent.second->get_fd())) << 32) | static_cast<std::uint32_t>(((svc << 16) & 0xFFFF) | (scheme & 0xFFFF)));
+        evt.data.u64 = (((static_cast<std::uint64_t>(ent.second->get_fd())) << 32) | static_cast<std::uint32_t>(((svc & 0xFFFF) << 16) | (scheme & 0xFFFF)));
         evt.events = EPOLLHUP | EPOLLIN;
         
         ::epoll_ctl(epollFd, EPOLL_CTL_ADD, ent.second->get_fd(), &evt);
@@ -307,15 +302,13 @@ std::int32_t App::handle_io_coap(const std::int32_t& fd, const ServiceType_t& se
             pp.s_addr = peerIP;
             ctx.second->set_peerHost(inet_ntoa(pp));
         }
-        ret = ctx.second->get_coap_adapter().processRequest(out, responses);
-        
-        if(responses.size()) {
-            //ctx.second->get_dtls_adapter().tx(rsp);
-            for(auto& response: responses) {
-                std::cout << basename(__FILE__) << ":" << __LINE__ << " servie: " << ctx.second->get_service() << std::endl;
-                if(service == App::ServiceType_t::LwM2MClient) {
-                    
-                } else {
+        if(App::ServiceType_t::LwM2MClient != service) {
+            ret = ctx.second->get_coap_adapter().processRequest(out, responses);
+            
+            if(responses.size()) {
+                //ctx.second->get_dtls_adapter().tx(rsp);
+                for(auto& response: responses) {
+                    std::cout << basename(__FILE__) << ":" << __LINE__ << " servie: " << ctx.second->get_service() << std::endl;
                     tx(response, ctx.second->get_service());
                 }
             }
@@ -332,7 +325,7 @@ std::int32_t App::start(Role_t role, Scheme_t scheme) {
     std::cout << basename(__FILE__) << ":" << __LINE__ << " evts.size: " << evts.size() << std::endl;
     std::vector<struct epoll_event> events(evts.size());
 
-    if(App::CLIENT == role &&  App::CoAPs == scheme) {
+    if(App::Role_t::CLIENT == role &&  App::Scheme_t::CoAPs == scheme) {
         auto it = std::find_if(get_services().begin(), get_services().end(), [&](auto& ent) -> bool {
             return(App::ServiceType_t::LwM2MClient == ent.second->get_service());
         });

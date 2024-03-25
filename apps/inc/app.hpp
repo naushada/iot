@@ -66,7 +66,7 @@ class App {
             std::unique_ptr<CoAPAdapter> coap_adapter;
 
             ServiceContext_t(std::int32_t Fd, Scheme_t schm) {
-                if(schm == Scheme_t::CoAPs) {
+                if(schm == App::Scheme_t::CoAPs) {
                     //DTLS_LOG_INFO
                     dtls_adapter = std::make_unique<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
                     //dtls_adapter = DTLSAdapter(Fd, DTLS_LOG_DEBUG);

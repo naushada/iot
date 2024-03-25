@@ -197,7 +197,7 @@ int main(std::int32_t argc, char *argv[]) {
     sigset_t emptyMask;
     sigemptyset(&emptyMask);
 
-    if(App::CLIENT == role) {
+    if(App::Role_t::CLIENT == role) {
         std::thread reception_thread(&App::start, &(*app), role, scheme);
         Readline rline(app);
         rline.init();
