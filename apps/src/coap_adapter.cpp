@@ -836,18 +836,22 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
         if(isLwm2mUri(coapmessage, uri)) {
             //std::cout << basename(__FILE__) << ":" << __LINE__ << " value of uri: "  << uri << std::endl;
             /// This is LwM2M string URI rd or bs
-            rsp = buildResponse(coapmessage);
-            out.push_back(rsp);
-            std::string secobj;
-            std::vector<std::string> serobj;
-            lwm2m_inst.bootstrapSecurityObject00(secobj);
-            serialise({{0},{0}},{}, {{secobj}},11542/*tlv*/, 2/*post*/,serobj);
-            out.push_back(serobj[0]);
-            secobj.clear();
-            serobj.clear();
-            lwm2m_inst.devicemgmtSecurityObject01(secobj);
-            serialise({{0},{1}},{}, {{secobj}},11542/*tlv*/, 2/*post*/,serobj);
-            out.push_back(serobj[0]);
+            if(uri == "bs") {
+                rsp = buildResponse(coapmessage);
+                out.push_back(rsp);
+                std::string secobj;
+                std::vector<std::string> serobj;
+                lwm2m_inst.bootstrapSecurityObject00(secobj);
+                serialise({{0},{0}},{}, {{secobj}},11542/*tlv*/, 2/*post*/,serobj);
+                out.push_back(serobj[0]);
+                secobj.clear();
+                serobj.clear();
+                lwm2m_inst.devicemgmtSecurityObject01(secobj);
+                serialise({{0},{1}},{}, {{secobj}},11542/*tlv*/, 2/*post*/,serobj);
+                out.push_back(serobj[0]);
+            } else {
+                ///rd - registration update
+            }
 
         } else if(isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
             /// This is LwM2M Object URI, Handle it.
