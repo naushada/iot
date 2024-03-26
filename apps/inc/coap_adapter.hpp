@@ -158,6 +158,9 @@ class CoAPAdapter {
             return(MethodCode[code]);
         }
 
+        std::uint32_t getMethodCode(std::string code) {
+            return(MethodCodeByName[code]);
+        }
         std::string getResponseCode(std::string statuscode) {
             return(ResponseCode[statuscode]);
         }
@@ -174,6 +177,9 @@ class CoAPAdapter {
             return(ContentFormat[cf]);
         }
 
+        std::uint32_t getContentFormat(std::string cf) {
+            return(ContentFormatByName[cf]);
+        }
         std::uint32_t SumOptionNumber(std::uint32_t optnumber) {
             cumulativeOptionNumber += optnumber;
             return(cumulativeOptionNumber);
@@ -273,8 +279,10 @@ class CoAPAdapter {
     private:
         std::unordered_map<std::uint32_t, std::string> OptionNumber;
         std::unordered_map<std::uint32_t, std::string> ContentFormat;
+        std::unordered_map<std::string, std::uint32_t> ContentFormatByName;
         std::unordered_map<std::string, std::string> ResponseCode;
         std::unordered_map<std::uint32_t, std::string> MethodCode;
+        std::unordered_map<std::string,  std::uint32_t> MethodCodeByName;
         std::unordered_map<std::uint32_t, std::string> RequestType;
         std::vector<std::string> CoAPUri;
         std::string response;

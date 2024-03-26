@@ -64,6 +64,24 @@ CoAPAdapter::CoAPAdapter() {
 
     };
 
+    ContentFormatByName = {
+        {"text/plain;charset=utf-8", 0},
+        {"application/link-format", 40},
+        {"application/xml", 41},
+        {"application/octet-stream", 42},
+        {"application/exi", 47},
+        {"application/json", 50},
+        {"application/cbor", 60},
+        {"application/vnd.oma.lwm2m+tlv", 11542},
+        {"application/vnd.oma.lwm2m+json", 111543},
+        {"application/timeseries", 12119},
+        {"application/ucbor", 12200},
+        {"application/ucborz", 12201},
+        {"application/sucbor", 12202},
+        {"application/sucborz", 12203},
+
+    };
+
     ResponseCode = {
         {"2.01", "Created"},
         {"2.02", "Deleted"},
@@ -101,6 +119,16 @@ CoAPAdapter::CoAPAdapter() {
         {5, "FETCH"},
         {6, "PATCH"},
         {7, "iPATCH"}
+    };
+
+    MethodCodeByName = {
+        {"GET", 1},
+        {"POST", 2},
+        {"PUT", 3},
+        {"DELETE", 4},
+        {"FETCH", 5},
+        {"PATCH", 6},
+        {"iPATCH", 7}
     };
 
     RequestType = {
@@ -842,13 +870,17 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
                 std::string secobj;
                 std::vector<std::string> serobj;
                 lwm2m_inst.bootstrapSecurityObject00(secobj);
-                serialise({{0},{0}},{}, {{secobj}},11542/*tlv*/, 2/*post*/,serobj);
+                serialise({{0},{0}},{}, {{secobj}}, getContentFormat("application/vnd.oma.lwm2m+tlv"), getMethodCode("PUT"), serobj);
                 out.push_back(serobj[0]);
                 secobj.clear();
                 serobj.clear();
                 lwm2m_inst.devicemgmtSecurityObject01(secobj);
-                serialise({{0},{1}},{}, {{secobj}},11542/*tlv*/, 2/*post*/,serobj);
+                serialise({{0},{1}},{}, {{secobj}}, getContentFormat("application/vnd.oma.lwm2m+tlv"), getMethodCode("PUT"), serobj);
                 out.push_back(serobj[0]);
+                serobj.clear();
+                serialise({{"bs"}},{}, {}, getContentFormat("text/plain;charset=utf-8"), getMethodCode("POST"), serobj);
+                out.push_back(serobj[0]);
+
             } else {
                 ///rd - registration update
             }
