@@ -142,7 +142,7 @@ std::int32_t App::tx(std::string& in, ServiceType_t& service) {
 
     if(it != services.end()) {
         auto& ctx = *it;
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " peerHost: " << ctx.second->get_peerHost() << " peerPort: " << ctx.second->get_peerPort() << std::endl;
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " peerHost: " << ctx.second->get_peerHost() << " peerPort: " << ctx.second->get_peerPort() << " service: " << service << std::endl;
         auto s = getaddrinfo(ctx.second->get_peerHost().data(), std::to_string(ctx.second->get_peerPort()).c_str(), nullptr, &result);
         if (!s) {
             peerAddr = *((struct sockaddr_in*)(result->ai_addr));
@@ -319,6 +319,9 @@ std::int32_t App::handle_io_coap(const std::int32_t& fd, const ServiceType_t& se
                 printf("%x ", (unsigned char)ent);
             }
             printf("\n");
+
+            auto response = ctx.second->get_coap_adapter().buildResponse(coapmessage);
+            tx(response, ctx.second->get_service());
         }
         return(0);
     }
