@@ -1,6 +1,6 @@
-FROM ubuntu as compile-image
+FROM ubuntu:jammy
 RUN apt-get update && apt-get -y upgrade && \
-    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev
+    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev python3-dev
 
 # Building openssl 3.1.1
 RUN git clone -b openssl-3.1.1 https://github.com/naushada/openssl.git
@@ -48,7 +48,7 @@ RUN cd /tmp/source/apps &&\
     cmake .. && make
 
 
-FROM ubuntu:jammy
+#FROM ubuntu:jammy
 RUN apt-get update && apt-get -y upgrade && \
     apt-get install -y gcc g++ git make cmake patch gdb openssh-server bash vim
 
@@ -65,7 +65,12 @@ RUN mkdir -p /root/.ssh \
 
 WORKDIR /opt/app
 
-COPY --from=compile-image /tmp/source/apps/build/lwm2m /opt/app/lwm2m
-COPY --from=compile-image /tmp/source/apps/build/test/lwm2m_test /opt/app/lwm2m_test
+RUN cp /tmp/source/apps/build/lwm2m /opt/app/lwm2m
+RUN cp /tmp/source/apps/build/test/lwm2m_test /opt/app/lwm2m_test
+
+#COPY --from=compile-image /tmp/source/apps/build/lwm2m /opt/app/lwm2m
+#COPY --from=compile-image /tmp/source/apps/build/test/lwm2m_test /opt/app/lwm2m_test
 
 CMD "/opt/app/lwm2m"
+# EXPOSE 22
+# CMD ["/usr/sbin/sshd", "-D"]
