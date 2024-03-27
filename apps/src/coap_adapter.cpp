@@ -269,9 +269,9 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
             ///This is an header delimiter
             optdelta = 0xFF;
             ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
+            ss.write (reinterpret_cast <const char *>(request.data()), request.length());
         }
         
-        ss.write (reinterpret_cast <const char *>(request.data()), request.length());
         //ss << request;
         out.push_back(ss.str());
         ++idx;
@@ -878,7 +878,7 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
                 serialise({{0},{1}},{}, {{secobj}}, getContentFormat("application/vnd.oma.lwm2m+tlv"), getMethodCode("PUT"), serobj);
                 out.push_back(serobj[0]);
                 serobj.clear();
-                serialise({{"bs"}},{}, {}, getContentFormat("text/plain;charset=utf-8"), getMethodCode("POST"), serobj);
+                serialise({{"bs"}},{}, {{}}, getContentFormat("text/plain;charset=utf-8"), getMethodCode("POST"), serobj);
                 out.push_back(serobj[0]);
 
             } else {
