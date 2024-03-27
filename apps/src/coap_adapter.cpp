@@ -1099,7 +1099,9 @@ void CoAPAdapter::dumpCoAPMessage(const CoAPMessage& coapmessage) {
     
     std::stringstream ss;
     if(getRequestType(static_cast<std::uint32_t>(coapmessage.coapheader.type)) == "Acknowledgement") {
-        ss << ((coapmessage.coapheader.code >> 5) & 0b111) << "." << (coapmessage.coapheader.code & 0b11111);
+        ss << ((coapmessage.coapheader.code >> 5) & 0b111) << "." << std::setw(2) << std::setfill('0') << (coapmessage.coapheader.code & 0b11111);
+        auto str = ResponseCode[ss.str()];
+        ss <<" " << str;
     } else {
         ss << getMethodCode(static_cast<std::uint32_t>(coapmessage.coapheader.code));
     }
@@ -1109,7 +1111,7 @@ void CoAPAdapter::dumpCoAPMessage(const CoAPMessage& coapmessage) {
               << " tokenlength: " << std::to_string(coapmessage.coapheader.tokenlength)
               //<< " code: "        << getMethodCode(static_cast<std::uint32_t>(coapmessage.coapheader.code))
               << " code: "        << ss.str()
-              << " msgid: "       << std::hex << coapmessage.coapheader.msgid << std::dec << std::endl;
+              << " msgid: "       << coapmessage.coapheader.msgid << std::endl;
 
     for(auto const& opt: coapmessage.uripath) {
         std::cout << " optiondelta: "  << getOptionNumber(static_cast<std::uint32_t>(opt.optiondelta)) 
