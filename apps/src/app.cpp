@@ -321,7 +321,9 @@ std::int32_t App::handle_io_coap(const std::int32_t& fd, const ServiceType_t& se
             printf("\n");
 
             auto response = ctx.second->get_coap_adapter().buildResponse(coapmessage);
-            tx(response, ctx.second->get_service());
+            if(response.length()) {
+                tx(response, ctx.second->get_service());
+            }
         }
         return(0);
     }

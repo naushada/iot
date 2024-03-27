@@ -585,7 +585,8 @@ std::string CoAPAdapter::buildResponse(const CoAPMessage& message) {
                 }
                 printf("\n");
             }
-                        
+
+            return(buildPushAck(message));
             ///Build Response and send it.
                         
         }
@@ -1095,12 +1096,19 @@ std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in) {
 }
 
 void CoAPAdapter::dumpCoAPMessage(const CoAPMessage& coapmessage) {
-
+    
+    std::stringstream ss;
+    if(getRequestType(static_cast<std::uint32_t>(coapmessage.coapheader.type)) == "Acknowledgement") {
+        ss << ((coapmessage.coapheader.code >> 5) & 0b111) << "." << (coapmessage.coapheader.code & 0b11111);
+    } else {
+        ss << getMethodCode(static_cast<std::uint32_t>(coapmessage.coapheader.code));
+    }
     std::cout << std::endl << basename(__FILE__) << ":" << __LINE__ 
               << " ver: "         << std::to_string(coapmessage.coapheader.ver)
               << " type: "        << getRequestType(static_cast<std::uint32_t>(coapmessage.coapheader.type))
               << " tokenlength: " << std::to_string(coapmessage.coapheader.tokenlength)
-              << " code: "        << getMethodCode(static_cast<std::uint32_t>(coapmessage.coapheader.code))
+              //<< " code: "        << getMethodCode(static_cast<std::uint32_t>(coapmessage.coapheader.code))
+              << " code: "        << ss.str()
               << " msgid: "       << std::hex << coapmessage.coapheader.msgid << std::dec << std::endl;
 
     for(auto const& opt: coapmessage.uripath) {
