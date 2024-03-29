@@ -351,7 +351,7 @@ std::string LwM2MAdapter::resourceIDName(const std::uint32_t& oid, const std::ui
     return(out);
 }
 
-std::int32_t LwM2MAdapter::parseLwM2MUri(const std::string&& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid) {
+std::int32_t LwM2MAdapter::parseLwM2MUri(const std::string& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid) {
 
     if(uri.empty() || (uri.at(0) != '/')) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " Error uri is empty" << std::endl;

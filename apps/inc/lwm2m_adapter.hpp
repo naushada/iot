@@ -119,7 +119,7 @@ class LwM2MAdapter {
          * @param rid 
          * @return std::int32_t 
          */
-        std::int32_t parseLwM2MUri(const std::string&& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid);
+        std::int32_t parseLwM2MUri(const std::string& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid);
         /**
          * @brief 
          * 

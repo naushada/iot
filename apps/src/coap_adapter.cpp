@@ -568,7 +568,7 @@ std::string CoAPAdapter::buildResponse(const CoAPMessage& message) {
     }
 
     ///Is this a LwM2M Objects
-    std::uint32_t oid, oiid, rid, riid;
+    std::uint32_t oid = 0, oiid = 0, rid = 0, riid = 0;
     if(isLwm2mUriObject(message, oid, oiid, rid, riid)) {
         LwM2MAdapter lwm2mAdapter;
         LwM2MObjectData data;
@@ -577,9 +577,8 @@ std::string CoAPAdapter::buildResponse(const CoAPMessage& message) {
         data.m_rid = rid;
         data.m_riid = riid;
         object.m_oid = oid;
-                
-        if(!lwm2mAdapter.parseLwM2MObjects(message.payload, data, object)) {
-
+        lwm2mAdapter.parseLwM2MObjects(message.payload, data, object);
+        {
             ///Objects are extracted successfully
             for(const auto& ent: object.m_value) {
                 std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
@@ -592,9 +591,10 @@ std::string CoAPAdapter::buildResponse(const CoAPMessage& message) {
                 printf("\n");
             }
 
-            return(buildPushAck(message));
-            ///Build Response and send it.
-                        
+            if(RequestType[message.coapheader.type].compare("Acknowledgement")) {
+                /// Type is not an ACK, we got a request
+                return(buildPushAck(message));
+            }           
         }
     } else {
         std::cout <<basename(__FILE__) << ":" << __FILE__ << " This is not an LwM2M Object" << std::endl;
