@@ -216,25 +216,25 @@ class CoAPAdapter {
         bool isLwm2mUriObject(const CoAPMessage& message, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid, std::uint32_t& riid) {
             bool ret = false;
 
-            if(!message.uripath.empty() && !getUriStr(message.uripath.at(0).optiondelta).compare("Uri-Path") &&
-            std::isdigit(message.uripath.at(0).optionvalue.at(0))) {
+            if(!message.uripath.empty() && message.uripath.size() > 0 && !getUriStr(message.uripath.at(0).optiondelta).compare("Uri-Path") &&
+                std::isdigit(message.uripath.at(0).optionvalue.at(0))) {
                 oid = std::stoi(message.uripath.at(0).optionvalue);
                 ret = true;
             } else {
                 return(ret);
             }
             
-            if(!message.uripath.empty() && !getUriStr(message.uripath.at(1).optiondelta).compare("Uri-Path") &&
+            if(!message.uripath.empty() && message.uripath.size() > 1 && !getUriStr(message.uripath.at(1).optiondelta).compare("Uri-Path") &&
             std::isdigit(message.uripath.at(1).optionvalue.at(0))) {
                 oiid = std::stoi(message.uripath.at(1).optionvalue);
             }
             
-            if(!message.uripath.empty() && !getUriStr(message.uripath.at(2).optiondelta).compare("Uri-Path") &&
+            if(!message.uripath.empty() && message.uripath.size() > 2 && !getUriStr(message.uripath.at(2).optiondelta).compare("Uri-Path") &&
             std::isdigit(message.uripath.at(2).optionvalue.at(0))) {
                 rid = std::stoi(message.uripath.at(2).optionvalue);
             }
 
-            if(!message.uripath.empty() && !getUriStr(message.uripath.at(3).optiondelta).compare("Uri-Path") &&
+            if(!message.uripath.empty() && message.uripath.size() > 3 && !getUriStr(message.uripath.at(3).optiondelta).compare("Uri-Path") &&
             std::isdigit(message.uripath.at(3).optionvalue.at(0))) {
                 riid = std::stoi(message.uripath.at(3).optionvalue);
             }
