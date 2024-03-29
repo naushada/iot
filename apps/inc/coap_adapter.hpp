@@ -220,8 +220,6 @@ class CoAPAdapter {
                 std::isdigit(message.uripath.at(0).optionvalue.at(0))) {
                 oid = std::stoi(message.uripath.at(0).optionvalue);
                 ret = true;
-            } else {
-                return(ret);
             }
             
             if(!message.uripath.empty() && message.uripath.size() > 1 && !getUriStr(message.uripath.at(1).optiondelta).compare("Uri-Path") &&

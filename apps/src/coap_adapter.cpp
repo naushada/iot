@@ -559,7 +559,7 @@ std::string CoAPAdapter::buildResponse(const CoAPMessage& message) {
 
     if(RequestType[message.coapheader.type].compare("Acknowledgement")) {
         /// Type is not an ACK, we got a request
-        return(buildPushAck(message));
+        //return(buildPushAck(message));
     }
 
     std::string uri;
@@ -577,6 +577,7 @@ std::string CoAPAdapter::buildResponse(const CoAPMessage& message) {
         data.m_rid = rid;
         data.m_riid = riid;
         object.m_oid = oid;
+                
         if(!lwm2mAdapter.parseLwM2MObjects(message.payload, data, object)) {
 
             ///Objects are extracted successfully
@@ -878,12 +879,12 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
                 std::string secobj;
                 std::vector<std::string> serobj;
                 lwm2m_inst.bootstrapSecurityObject00(secobj);
-                serialise({{0},{0}},{}, {{secobj}}, getContentFormat("application/vnd.oma.lwm2m+tlv"), getMethodCode("PUT"), serobj);
+                serialise({{"0"},{"0"}},{}, {{secobj}}, getContentFormat("application/vnd.oma.lwm2m+tlv"), getMethodCode("PUT"), serobj);
                 out.push_back(serobj[0]);
                 secobj.clear();
                 serobj.clear();
                 lwm2m_inst.devicemgmtSecurityObject01(secobj);
-                serialise({{0},{1}},{}, {{secobj}}, getContentFormat("application/vnd.oma.lwm2m+tlv"), getMethodCode("PUT"), serobj);
+                serialise({{"0"},{"1"}},{}, {{secobj}}, getContentFormat("application/vnd.oma.lwm2m+tlv"), getMethodCode("PUT"), serobj);
                 out.push_back(serobj[0]);
                 serobj.clear();
                 serialise({{"bs"}},{}, {{}}, getContentFormat("text/plain;charset=utf-8"), getMethodCode("POST"), serobj);
