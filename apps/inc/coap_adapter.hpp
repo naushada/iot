@@ -258,7 +258,17 @@ class CoAPAdapter {
             return(false);
         }
 
-        std::string getUriQuery() const {
+        std::string getUriQuery(const CoAPMessage& message) const {
+            auto it = std::find_if(message.uripath.begin(), message.uripath.end(), [&](const auto& ent) -> bool {
+                return(!OptionNumber[ent.optiondelta].compare(0, 9,"Uri-Query") && (!ent.optionvalue.compare(0, 2, "ep")));
+            });
+
+            if(it != message.uripath.end()) {
+                auto &elm = *it;
+                /// @brief returns the serialnumber, i.e. ep="Asder123456"
+                return(elm.optionvalue.substr(3));
+            }
+
             return(std::string());
         }
 

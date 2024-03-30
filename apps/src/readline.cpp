@@ -319,7 +319,7 @@ bool Readline::continueStatus(void) {
 int Readline::processCommand(const std::string& command) {
     std::istringstream istrstr;
     std::string cmd;
-    CoAPAdapter coap_inst;
+    CoAPAdapter coapAdapter;
 
     istrstr.rdbuf()->pubsetbuf(const_cast<char *>(command.data()), command.length());
 
@@ -411,7 +411,7 @@ int Readline::processCommand(const std::string& command) {
             std::string content;
             cbor.clear();
             content = get_cborAdapter().getJson(keyValueMap["file"]);
-            coap_inst.buildRequest(content, cbor); 
+            coapAdapter.buildRequest(content, cbor); 
         }
 
         ///Method type...
@@ -425,7 +425,7 @@ int Readline::processCommand(const std::string& command) {
         }
 
         std::vector<std::string> res;
-        if(coap_inst.serialise(uris, queries, cbor, cf, method, res) && !res.empty()) {
+        if(coapAdapter.serialise(uris, queries, cbor, cf, method, res) && !res.empty()) {
             ///Serialize CoAP request.
             for(auto& ent: res) {
                 for(auto const& elm: ent) {

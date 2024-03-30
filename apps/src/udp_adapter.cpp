@@ -187,6 +187,7 @@ std::int32_t UDPAdapter::process_request(const std::string& in, const std::uniqu
     } else {
 
         if(ctx->coapAdapter().isCoAPUri(message, uris)) {
+
             ctx->coapAdapter().processRequest(in, responses);
             for(auto& response: responses) {
                 if(ctx->scheme() == UDPAdapter::Scheme_t::CoAP) {
@@ -195,7 +196,9 @@ std::int32_t UDPAdapter::process_request(const std::string& in, const std::uniqu
                     ctx->dtlsAdapter().tx(response);
                 }
             }
+
         } else if(ctx->coapAdapter().isLwm2mUri(message, uris, oid, oiid, rid, riid)) {
+
             LwM2MObject object;
             LwM2MObjectData data;
             if(uris.empty()) {
@@ -205,6 +208,7 @@ std::int32_t UDPAdapter::process_request(const std::string& in, const std::uniqu
                 data.m_riid = riid;
                 ctx->lwm2mAdapter().parseLwM2MObjects(message.payload, data, object);
             }
+
         }
     }
 

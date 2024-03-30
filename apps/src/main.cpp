@@ -14,13 +14,13 @@
 
 
 std::unordered_map<std::string, App::Scheme_t> schemeMap = {
-    {"coaps", App::CoAPs},
-    {"coap", App::CoAP}
+    {"coaps", App::Scheme_t::CoAPs},
+    {"coap", App::Scheme_t::CoAP}
 };
 
 std::unordered_map<std::string, App::Role_t> roleMap = {
-    {"server", App::SERVER},
-    {"client", App::CLIENT}
+    {"server", App::Role_t::SERVER},
+    {"client", App::Role_t::CLIENT}
 };
 
 void parseCommandLineArgument(std::int32_t argc, char *argv[], std::unordered_map<std::string, std::string>& out) {
