@@ -5,7 +5,8 @@
 #include "udp_adapter.hpp"
 
 
-std::int32_t App::start() {
+std::int32_t App::start(UDPAdapter::Role_t role, UDPAdapter::Scheme_t scheme) {
+    udpAdapter()->start(role, scheme);
     return(0);
 }
 

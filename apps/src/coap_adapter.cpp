@@ -155,6 +155,92 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
         isBlock = true;
     }
 
+    if(requests.empty()) {
+        ss.str("");
+        std::uint16_t offset = 11;
+        std::uint16_t msgid = rand();
+        
+        header = (htons(msgid)     << 16)
+                |((method & 0xFF)  << 8)
+                |0x44              << 0;
+
+        ss.write (reinterpret_cast <const char *>(&header), sizeof(header));
+        std::uint32_t token = htonl(rand());
+        ss.write (reinterpret_cast <const char *>(&token), sizeof(token));
+
+        ///Options encoding
+        std::uint8_t optdelta;
+        optdelta = (offset & 0xF) /*Uri-Path*/ << 4;
+
+        for(const auto& uri: uris) {
+            std::cout << basename(__FILE__) << ":" << __LINE__ << " uri: " << uri << std::endl;
+            if(uri.length() >= 0 && uri.length() <= 12) {
+                optdelta |= (uri.length() & 0xF);
+                ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
+                ss.write (reinterpret_cast <const char *>(uri.data()), uri.length());
+            } else if(uri.length() > 12 && uri.length() < 269) {
+                std::uint8_t optlen = 0;
+                optdelta |= 13;
+                ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
+                optlen = uri.length() - 13;
+                ss.write (reinterpret_cast <const char *>(&optlen), sizeof(optlen));
+                ss.write (reinterpret_cast <const char *>(uri.data()), uri.length());
+            } else if(uri.length() > 268) {
+                std::uint16_t optlen = 0;
+                optdelta |= 14;
+                ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
+                optlen = htons(uri.length() - 269);
+                ss.write (reinterpret_cast <const char *>(&optlen), sizeof(optlen));
+                ss.write (reinterpret_cast <const char *>(uri.data()), uri.length());
+            }
+            optdelta = 0;
+        }
+
+        optdelta = (12 - offset /*Content-Format - Uri-Path*/) << 4;
+        offset += (12 - offset);
+            
+        if(cf < 256) { 
+            optdelta |= 1 /*Length of cf value (1 bytes)*/;
+            std::uint8_t ct = cf;
+            ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
+            ss.write (reinterpret_cast <const char *>(&ct), sizeof(ct));
+        }
+
+        if(!queries.empty()) {
+            optdelta = (15 - offset /* Uri-Query - Uri-Path*/) << 4;
+            offset += (15 - offset);
+        }
+        
+        for(const auto& query: queries) {
+            std::cout << basename(__FILE__) << ":" << __LINE__ << " query: " << query << std::endl;
+            if(query.length() > 0 && query.length() <= 12) {
+                optdelta |= query.length();
+                ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
+                ss.write (reinterpret_cast <const char *>(query.data()), query.length());
+            } else if(query.length() > 12 && query.length() < 269) {
+                std::uint8_t optlen = 0;
+                optdelta |= 13;
+                ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
+                optlen = query.length() - 13;
+                ///extended length of one byte
+                ss.write (reinterpret_cast <const char *>(&optlen), sizeof(optlen));
+                ss.write (reinterpret_cast <const char *>(query.data()), query.length());
+            } else if(query.length() > 268) {
+                std::uint16_t optlen = 0;
+                optdelta |= 14;
+                ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
+                optlen = htons(query.length() - 269);
+                ///extended length of 2 bytes
+                ss.write (reinterpret_cast <const char *>(&optlen), sizeof(optlen));
+                ss.write (reinterpret_cast <const char *>(query.data()), query.length());
+            }
+            optdelta = 0;
+        }
+
+        out.push_back(ss.str());
+        return(true);
+    }
+
     size_t idx = 0;
     for(const auto& request: requests) {
         ss.str("");

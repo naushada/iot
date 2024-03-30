@@ -13,14 +13,14 @@
 #include "readline.hpp"
 
 
-std::unordered_map<std::string, App::Scheme_t> schemeMap = {
-    {"coaps", App::Scheme_t::CoAPs},
-    {"coap", App::Scheme_t::CoAP}
+std::unordered_map<std::string, UDPAdapter::Scheme_t> schemeMap = {
+    {"coaps", UDPAdapter::Scheme_t::CoAPs},
+    {"coap", UDPAdapter::Scheme_t::CoAP}
 };
 
-std::unordered_map<std::string, App::Role_t> roleMap = {
-    {"server", App::Role_t::SERVER},
-    {"client", App::Role_t::CLIENT}
+std::unordered_map<std::string, UDPAdapter::Role_t> roleMap = {
+    {"server", UDPAdapter::Role_t::SERVER},
+    {"client", UDPAdapter::Role_t::CLIENT}
 };
 
 void parseCommandLineArgument(std::int32_t argc, char *argv[], std::unordered_map<std::string, std::string>& out) {
@@ -48,7 +48,7 @@ void parseCommandLineArgument(std::int32_t argc, char *argv[], std::unordered_ma
     
 }
 
-void parsePeerOption(const std::string& in, App::Scheme_t& scheme, std::string& host, std::uint16_t& port) {
+void parsePeerOption(const std::string& in, UDPAdapter::Scheme_t& scheme, std::string& host, std::uint16_t& port) {
     ///in = coaps://host:port
     if(in.empty()) {
         ///input is empty, 
@@ -100,7 +100,7 @@ int main(std::int32_t argc, char *argv[]) {
 
     }
 
-    App::Role_t role = App::Role_t::SERVER;
+    UDPAdapter::Role_t role = UDPAdapter::Role_t::SERVER;
     if(!argValueMap["role"].empty() && (argValueMap["role"] == "server" || argValueMap["role"] == "client")) {
         role = roleMap[argValueMap["role"]];
     } else {
@@ -108,11 +108,11 @@ int main(std::int32_t argc, char *argv[]) {
         return(-1);
     }
 
-    App::Scheme_t scheme;
+    UDPAdapter::Scheme_t scheme;
     /// Bootstrap Host & Port
     std::string bsHost;
     std::uint16_t bsPort;
-    if(App::Role_t::CLIENT == role) {
+    if(UDPAdapter::Role_t::CLIENT == role) {
         if(argValueMap["bs"].empty()) {
             std::cout << basename(__FILE__) << ":" << __LINE__ << " Error bs=value is missing in command line argument" << std::endl;
             return(-1);
@@ -133,7 +133,7 @@ int main(std::int32_t argc, char *argv[]) {
     
 
     std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");
-    if(scheme == App::Scheme_t::CoAPs) {
+    if(scheme == UDPAdapter::Scheme_t::CoAPs) {
         ///identity & secret are mandatory argument
         if(argValueMap["identity"].empty() || argValueMap["secret"].empty()) {
             std::cout << basename(__FILE__) << ":" << __LINE__ << " Error either identity or secret missing for coaps" << std::endl;
@@ -144,40 +144,40 @@ int main(std::int32_t argc, char *argv[]) {
         secret.assign(argValueMap["secret"]);
     }
 
-    App::ServiceType_t service;
-    if(App::Role_t::CLIENT == role) {
-        service = App::ServiceType_t::LwM2MClient;
+    UDPAdapter::ServiceType_t service;
+    if(UDPAdapter::Role_t::CLIENT == role) {
+        service = UDPAdapter::ServiceType_t::LwM2MClient;
     } else {
-        service = App::ServiceType_t::BootsstrapServer;
+        service = UDPAdapter::ServiceType_t::BootsstrapServer;
     }
 
     std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme, service);
-    app->add_event_handle(scheme, service);
+    app->udpAdapter()->add_event_handle(scheme, service);
     
-    if(App::Role_t::SERVER == role) {
-        app->init(selfHost, 58686, scheme, App::ServiceType_t::DeviceMgmtServer);
-        app->add_event_handle(scheme, App::ServiceType_t::DeviceMgmtServer);
+    if(UDPAdapter::Role_t::SERVER == role) {
+        app->udpAdapter()->init(selfHost, 58686, scheme, UDPAdapter::ServiceType_t::DeviceMgmtServer);
+        app->udpAdapter()->add_event_handle(scheme, UDPAdapter::ServiceType_t::DeviceMgmtServer);
 
     } else {
-        auto it = std::find_if(app->get_services().begin(), app->get_services().end(),[&](auto& ent) -> bool {
-            return(service == ent.second->get_service());
+        auto it = std::find_if(app->udpAdapter()->services().begin(), app->udpAdapter()->services().end(),[&](auto& ent) -> bool {
+            return(service == ent.second->service());
         });
 
-        if(it != app->get_services().end()) {
+        if(it != app->udpAdapter()->services().end()) {
             auto& ent = *it;
-            ent.second->set_peerHost(bsHost);
-            ent.second->set_peerPort(bsPort);
+            ent.second->peerHost(bsHost);
+            ent.second->peerPort(bsPort);
         }
     }
 
-    if(scheme == App::Scheme_t::CoAPs) {
-        auto it = std::find_if(app->get_services().begin(), app->get_services().end(),[&](auto& ent) -> bool {
-            return(service == ent.second->get_service());
+    if(scheme == UDPAdapter::Scheme_t::CoAPs) {
+        auto it = std::find_if(app->udpAdapter()->services().begin(), app->udpAdapter()->services().end(),[&](auto& ent) -> bool {
+            return(service == ent.second->service());
         });
 
-        if(it != app->get_services().end()) {
+        if(it != app->udpAdapter()->services().end()) {
             auto& ent = *it;
-            ent.second->get_dtls_adapter().add_credential(identity, secret);
+            ent.second->dtlsAdapter().add_credential(identity, secret);
         }
     }
 
@@ -197,7 +197,7 @@ int main(std::int32_t argc, char *argv[]) {
     sigset_t emptyMask;
     sigemptyset(&emptyMask);
 
-    if(App::Role_t::CLIENT == role) {
+    if(UDPAdapter::Role_t::CLIENT == role) {
         std::thread reception_thread(&App::start, &(*app), role, scheme);
         Readline rline(app);
         rline.init();

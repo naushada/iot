@@ -63,7 +63,7 @@ class App {
         }
 
         
-        std::int32_t start();
+        std::int32_t start(UDPAdapter::Role_t role, UDPAdapter::Scheme_t scheme);
         std::int32_t stop();
 
         std::shared_ptr<UDPAdapter>& udpAdapter() {

@@ -190,9 +190,9 @@ Readline::~Readline() {
   
 }
 
-Readline::Readline(std::shared_ptr<App> a) {
+Readline::Readline(std::shared_ptr<App> app) {
   m_continueStatus = false;
-  app = a;
+  m_app = app;
 }
 
 /* Look up NAME as the name of a command, and return a pointer to that
@@ -381,7 +381,6 @@ int Readline::processCommand(const std::string& command) {
         }
         
         ///Validation passes
-        //std::cout <<basename(__FILE__) << ":" << __LINE__ << " uri:" << keyValueMap["uri"] << std::endl;
         std::vector<std::string> uris;
         if(!keyValueMap["uri"].empty()) {
             uris = str2Vector(keyValueMap["uri"], '/');
@@ -440,7 +439,7 @@ int Readline::processCommand(const std::string& command) {
 
                 if(it != app()->udpAdapter()->services().end()) {
                     auto& elm = *it;
-                    auto len = app()->udpAdapter()->tx (ent, elm.second->service());
+                    auto len = app()->udpAdapter()->tx(ent, elm.second->service());
                     if(len < 0)
                         std::cout << basename(__FILE__) << ":" << __LINE__ << " Error unable to sent topeer" << " strerror:" << std::strerror(errno)<< std::endl;
                     else 

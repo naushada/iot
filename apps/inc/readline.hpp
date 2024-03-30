@@ -36,7 +36,7 @@ class Readline
     static std::vector<Readline::command>::iterator commands_iter;
 
   public:
-    Readline(std::shared_ptr<UDPAdapter> a);
+    Readline(std::shared_ptr<App> a);
     ~Readline();
     int init(void);
 
