@@ -149,19 +149,33 @@ class DTLSAdapter {
             }
             return binary;
         }
-
+        #if 0
         CoAPAdapter& get_coapAdapter() {
             return(coapAdapter);
+        }
+        #endif
+        
+        dtls_context_t* dtls_ctx() {
+            return(m_dtls_ctx);
+        }
+
+        std::string& data() {
+            return(m_data);
+        }
+
+        void data(std::string in) {
+            m_data = in;
         }
 
     private:
         //std::unique_ptr<dtls_context_t, decltype(&dtls_free_context)> dtls_ctx;
-        dtls_context_t *dtls_ctx;
+        dtls_context_t *m_dtls_ctx;
         std::unordered_map<std::string, std::string> device_credentials;
         std::int32_t dtlsFd;
         //std::unique_ptr<CoAPAdapter> coapAdapter;
-        CoAPAdapter coapAdapter;
+        //CoAPAdapter coapAdapter;
         session_t session;
+        std::string m_data;
 };
 
 

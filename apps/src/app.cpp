@@ -17,17 +17,6 @@ void App::hex_dump(const std::string& in) {
     std::cout << hexDump << std::endl;
 }
 
-/*
-CoAPAdapter& App::get_coapAdapter() {
-    return(*coapAdapter.get());
-}
-
-LwM2MAdapter& App::get_lwm2mAdapter() {
-    return(*lwm2mAdapter.get());
-}
-
-*/
-
 std::int32_t App::rx(std::int32_t fd, std::string& out, std::uint32_t& peerIP, std::uint16_t& peerPort) {
     std::vector<std::uint8_t> buf(1400);
     std::int32_t len;

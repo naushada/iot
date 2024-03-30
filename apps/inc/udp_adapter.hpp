@@ -1,5 +1,5 @@
-#ifndef __app_hpp__
-#define __app_hpp__
+#ifndef __udp_adapter_hpp__
+#define __udp_adapter_hpp__
 
 #include <vector>
 #include <unordered_map>
@@ -10,6 +10,7 @@
 #include <cstring>
 #include <cerrno>
 #include <sstream>
+
 #include "dtls_adapter.hpp"
 #include "lwm2m_adapter.hpp"
 #include "coap_adapter.hpp"
@@ -33,7 +34,7 @@ extern "C"
 }
 
 
-class App {
+class UDPAdapter {
     public:
         
         typedef enum {
@@ -55,90 +56,90 @@ class App {
         } ServiceType_t;
 
         struct ServiceContext_t  {
-            std::int32_t fd;
-            std::string peerHost;
-            std::uint16_t peerPort;
-            std::string selfHost;
-            std::uint16_t selfPort;
-            Scheme_t scheme;
-            ServiceType_t service;
+            std::int32_t m_fd;
+            std::string m_peerHost;
+            std::uint16_t m_peerPort;
+            std::string m_selfHost;
+            std::uint16_t m_selfPort;
+            Scheme_t m_scheme;
+            ServiceType_t m_service;
             std::unique_ptr<LwM2MAdapter> m_lwm2mAdapter;
             std::unique_ptr<CoAPAdapter> m_coapAdapter;
             std::unique_ptr<DTLSAdapter> m_dtlsAdapter;
 
-            ServiceContext_t(std::int32_t Fd, Scheme_t schm) {
-                if(schm == App::Scheme_t::CoAPs) {
+            ServiceContext_t(std::int32_t Fd, Scheme_t scheme) {
+                if(scheme == UDPAdapter::Scheme_t::CoAPs) {
                     //DTLS_LOG_INFO
                     m_dtlsAdapter = std::make_unique<DTLSAdapter>(Fd, DTLS_LOG_DEBUG, this);
                 }
                 m_coapAdapter = std::make_unique<CoAPAdapter>();
                 m_lwm2mAdapter = std::make_unique<LwM2MAdapter>();
 
-                fd = Fd;
-                scheme = schm;
+                m_fd = Fd;
+                m_scheme = scheme;
             }
 
              ServiceContext_t() = delete;
             ~ServiceContext_t() {
                 std::cout << basename(__FILE__) << ":" << __LINE__ << " Closing Socket:" << fd << std::endl;
-                ::close(fd);
+                ::close(m_fd);
             }
 
-            void set_peerHost(std::string host) {
-                peerHost = host;
+            void peerHost(std::string host) {
+                m_peerHost = host;
             }
-            std::string& get_peerHost() {
-                return(peerHost);
-            }
-
-            void set_peerPort(std::uint16_t port) {
-                peerPort = port;
-            }
-            std::uint16_t& get_peerPort() {
-                return(peerPort);
+            std::string& peerHost() {
+                return(m_peerHost);
             }
 
-            void set_selfHost(std::string host) {
-                selfHost = host;
+            void peerPort(std::uint16_t port) {
+                m_peerPort = port;
             }
-            std::string& get_selfHost() {
-                return(selfHost);
-            }
-
-            void set_selfPort(std::uint16_t port) {
-                selfPort = port;
-            }
-            std::uint16_t& get_selfPort() {
-                return(selfPort);
+            std::uint16_t& peerPort() {
+                return(m_peerPort);
             }
 
-            void set_scheme(Scheme_t sc) {
-                scheme = sc;
+            void selfHost(std::string host) {
+                m_selfHost = host;
             }
-            Scheme_t& get_scheme() {
-                return(scheme);
-            }
-
-            void set_service(ServiceType_t sc) {
-                service = sc;
-            }
-            ServiceType_t& get_service() {
-                return(service);
+            std::string& selfHost() {
+                return(m_selfHost);
             }
 
-            std::int32_t get_fd() {
-                return(fd);
+            void selfPort(std::uint16_t port) {
+                m_selfPort = port;
+            }
+            std::uint16_t& selfPort() {
+                return(m_selfPort);
             }
 
-            DTLSAdapter& get_dtls_adapter() {
+            void scheme(Scheme_t sc) {
+                m_scheme = sc;
+            }
+            Scheme_t& scheme() {
+                return(m_scheme);
+            }
+
+            void service(ServiceType_t sc) {
+                m_service = sc;
+            }
+            ServiceType_t& service() {
+                return(m_service);
+            }
+
+            std::int32_t fd() {
+                return(m_fd);
+            }
+
+            DTLSAdapter& dtlsAdapter() {
                 return(*m_dtlsAdapter.get());
             }
 
-            CoAPAdapter& get_coap_adapter() {
+            CoAPAdapter& coapAdapter() {
                 return(*m_coapAdapter.get());
             }
 
-            LwM2MAdapter& get_lwm2m_adapter() {
+            LwM2MAdapter& lwm2mAdapter() {
                 return(*m_lwm2mAdapter.get());
             }
 
@@ -146,20 +147,16 @@ class App {
 
     public:
 
-        App(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service) {
+        UDPAdapter(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service) {
             if(!init(host, port, scheme, service)) {
-                epollFd = ::epoll_create1(EPOLL_CLOEXEC);
+                m_epollFd = ::epoll_create1(EPOLL_CLOEXEC);
             }
         }
 
-        ~App() {
+        ~UDPAdapter() {
             
-            ::close(epollFd);
+            ::close(m_epollFd);
         }
-
-        App& operator=(App& rhs) = default;
-        App& operator=(const App& rhs) = default;
-        App(const App& rhs) = default;
         
         std::int32_t add_event_handle(const Scheme_t& scheme, const ServiceType_t& svc);
         std::int32_t init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme);
@@ -169,21 +166,36 @@ class App {
         std::int32_t rx(std::int32_t fd);
         std::int32_t rx(std::int32_t fd, std::string& out, std::uint32_t& peerIP, std::uint16_t& peerPort);
         std::int32_t tx(std::string& in, ServiceType_t& service);
+        std::int32_t process_request(const std::string& in, const std::unique_ptr<UDPAdapter::ServiceContext_t>& ctx, CoAPAdapter::CoAPMessage& message);
 
         void hex_dump(const std::string& in);
         std::int32_t handle_io_coaps(const std::int32_t& handle, const ServiceType_t& service);
         std::int32_t handle_io_coap(const std::int32_t& handle, const ServiceType_t& service);
         std::int32_t handle_io(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t&  serverType);
 
-        std::unordered_map<App::ServiceType_t, std::unique_ptr<App::ServiceContext_t>>&  get_services() {
-            return(services);
+        std::unordered_map<UDPAdapter::ServiceType_t, std::unique_ptr<UDPAdapter::ServiceContext_t>>&  services() {
+            return(m_services);
         }
 
     private:
-        std::int32_t epollFd;
-        std::vector<struct epoll_event> evts;
-        std::unordered_map<App::ServiceType_t, std::unique_ptr<App::ServiceContext_t>> services;
-        
+        std::int32_t m_epollFd;
+        std::vector<struct epoll_event> m_evts;
+        std::unordered_map<UDPAdapter::ServiceType_t, std::unique_ptr<UDPAdapter::ServiceContext_t>> m_services;
+        Role_t m_role;
 };
 
-#endif /*__app_hpp__*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#endif /*__udp_adapter_hpp__*/

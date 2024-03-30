@@ -199,7 +199,7 @@ class CoAPAdapter {
             return(cborAdapter);
         }
 
-        bool isLwm2mUri(const CoAPMessage& message, std::string& uriName) {
+        bool isLwm2mUri(const CoAPMessage& message, std::string& uriName, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid, std::uint32_t& riid) {
             auto it = std::find_if(message.uripath.begin(), message.uripath.end(), [&](const auto& ent) -> bool {
                 return((ent.optionvalue == "rd") || (ent.optionvalue == "bs"));
             });
@@ -210,7 +210,7 @@ class CoAPAdapter {
                 return(true);
             }
 
-            return(false);
+            return(isLwm2mUriObject(message, oid, oiid, rid, riid));
         }
 
         bool isLwm2mUriObject(const CoAPMessage& message, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid, std::uint32_t& riid) {
