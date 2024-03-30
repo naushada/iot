@@ -402,7 +402,7 @@ int Readline::processCommand(const std::string& command) {
         if(!keyValueMap["data"].empty() && keyValueMap["data"].length() <= 1024) {
             std::string content;
             cbor.clear();
-            get_cborAdapter().json2cbor(keyValueMap["data"], content);
+            cborAdapter().json2cbor(keyValueMap["data"], content);
             cbor.push_back(content);
         }
         
@@ -410,7 +410,7 @@ int Readline::processCommand(const std::string& command) {
             ///Read data from File
             std::string content;
             cbor.clear();
-            content = get_cborAdapter().getJson(keyValueMap["file"]);
+            content = cborAdapter().getJson(keyValueMap["file"]);
             coapAdapter.buildRequest(content, cbor); 
         }
 
@@ -434,17 +434,17 @@ int Readline::processCommand(const std::string& command) {
 
                 printf("\n");
                 ///sending CoAP message to Peer now.
-                auto it = std::find_if(get_app()->get_services().begin(), get_app()->get_services().end(), [&](auto& ent) -> bool {
-                    return(App::ServiceType_t::LwM2MClient == ent.second->get_service());
+                auto it = std::find_if(app()->udpAdapter()->services().begin(), app()->udpAdapter()->services().end(), [&](auto& ent) -> bool {
+                    return(UDPAdapter::ServiceType_t::LwM2MClient == ent.second->get_service());
                 });
 
-                if(it != get_app()->get_services().end()) {
+                if(it != app()->udpAdapter()->services().end()) {
                     auto& elm = *it;
-                    auto len = get_app()->tx(ent, elm.second->get_service());
+                    auto len = app()->udpAdapter()->tx (ent, elm.second->service());
                     if(len < 0)
                         std::cout << basename(__FILE__) << ":" << __LINE__ << " Error unable to sent topeer" << " strerror:" << std::strerror(errno)<< std::endl;
                     else 
-                        std::cout << basename(__FILE__) << ":" << __LINE__ << " Successfully sent len:" << len << std::endl;
+                        std::cout << basename(__FILE__) << ":" << __LINE__ << " Successfully sent" << std::endl;
                 }
                 
             }

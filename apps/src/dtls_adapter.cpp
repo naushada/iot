@@ -183,6 +183,20 @@ std::int32_t DTLSAdapter::tx(std::string& in) {
     return(ret);
 }
 
+std::int32_t DTLSAdapter::tx(std::string& in, std::string peerIP, std::uint16_t peerPort) {
+    std::int32_t ret = -1;
+    struct sockaddr_in addr;
+
+    addr.sin_addr.s_addr = inet_addr(peerIP.c_str());
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(peerPort);
+    ::memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
+
+    session_t peersession = {.addr.sa = *((struct  sockaddr *)&addr)};
+    
+    ret = dtls_write(dtls_ctx(), &peersession, (std::uint8_t *)&in.at(0), in.size());
+    return(ret);
+}
 
 
 

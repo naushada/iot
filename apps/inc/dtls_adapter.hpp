@@ -86,6 +86,7 @@ class DTLSAdapter {
 
         std::int32_t rx(std::int32_t fd);
         std::int32_t tx(std::string& in);
+        std::int32_t tx(std::string& in, std::string peerIP, std::uint16_t peerPort);
         void connect();
 
         /**

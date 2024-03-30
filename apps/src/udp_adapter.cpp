@@ -52,29 +52,36 @@ std::int32_t UDPAdapter::tx(std::string& in, ServiceType_t& service) {
     if(it != services().end()) {
         auto& ctx = *it;
         std::cout << basename(__FILE__) << ":" << __LINE__ << " peerHost: " << ctx.second->peerHost() << " peerPort: " << ctx.second->peerPort() << " service: " << service << std::endl;
-        auto s = getaddrinfo(ctx.second->peerHost().data(), std::to_string(ctx.second->peerPort()).c_str(), nullptr, &result);
-        if (!s) {
-            peerAddr = *((struct sockaddr_in*)(result->ai_addr));
-            freeaddrinfo(result);
-        } else {
-            std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Unable to get addrinfo for bs:"<< std::strerror(errno) << std::endl;
-            return(-1); 
-        }
-
-        socklen_t len = sizeof(peerAddr);
-        std::int32_t ret = sendto(ctx.second->fd(), (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
-        if(ret < 0) {
-            std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed for Fd:" << ctx.second->fd() << " bs:" << ctx.second->peerHost()
-                    << " localIP:" << ctx.second->selfHost() << " selfPort:" << std::to_string(ctx.second->selfPort())
-                    << " peerPort:" << std::to_string(ctx.second->peerPort()) << std::endl;
-            return(-1);
-        }
 
         for(const auto& ent: in) {
             printf("%x ", (unsigned char)ent);
         }
         printf("\n");
-        return(ret);
+
+        if(Scheme_t::CoAPs == ctx.second->scheme()) {
+            /// @brief encrypt the request now.
+            ctx.second->dtlsAdapter().tx(in, ctx.second->peerHost(), ctx.second->peerPort());
+
+        } else {
+            auto s = getaddrinfo(ctx.second->peerHost().data(), std::to_string(ctx.second->peerPort()).c_str(), nullptr, &result);
+            if (!s) {
+                peerAddr = *((struct sockaddr_in*)(result->ai_addr));
+                freeaddrinfo(result);
+            } else {
+                std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Unable to get addrinfo for bs:"<< std::strerror(errno) << std::endl;
+                return(-1); 
+            }
+
+            socklen_t len = sizeof(peerAddr);
+            std::int32_t ret = sendto(ctx.second->fd(), (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
+            if(ret < 0) {
+                std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed for Fd:" << ctx.second->fd() << " bs:" << ctx.second->peerHost()
+                        << " localIP:" << ctx.second->selfHost() << " selfPort:" << std::to_string(ctx.second->selfPort())
+                        << " peerPort:" << std::to_string(ctx.second->peerPort()) << std::endl;
+                return(-1);
+            }
+
+        }
     }
 
     return(0);

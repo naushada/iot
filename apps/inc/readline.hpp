@@ -8,7 +8,7 @@
 #include <sstream>
 #include <unordered_map>
 
-#include "udp_adapter.hpp"
+#include "app.hpp"
 #include "cbor_adapter.hpp"
 
 extern "C" {
@@ -100,12 +100,13 @@ class Readline
     static void cmdName(std::string cmdName);
     static std::string cmdName(void);
     bool start(std::string prompt="LwM2MClient-->> ");
-    std::shared_ptr<UDPAdapter>& udpAdapter() {
-      return(m_udpAdapter);
+
+    std::shared_ptr<App>& app() {
+        return(m_app);
     }
 
     CBORAdapter& cborAdapter() {
-      return(m_cborAdapter);
+        return(m_cborAdapter);
     }
 
     std::vector<std::string> str2Vector(const std::string& in, char delim='/');
@@ -114,7 +115,7 @@ class Readline
     std::string m_prompt;
     bool m_continueStatus;
     std::vector<command> m_commands;
-    std::shared_ptr<UDPAdapter> m_udpAdapter;
+    std::shared_ptr<App> m_app;
     CBORAdapter m_cborAdapter;
 };
 
