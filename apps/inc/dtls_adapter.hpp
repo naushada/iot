@@ -168,6 +168,22 @@ class DTLSAdapter {
             m_data = in;
         }
 
+        void responses(std::vector<std::string> rsps) {
+            m_responses = rsps;
+        }
+
+        std::vector<std::string> responses() {
+            return(m_responses);
+        }
+
+        void session(session_t sess) {
+            m_session = sess;
+        }
+
+        session_t session() {
+            return(m_session);
+        }
+
     private:
         //std::unique_ptr<dtls_context_t, decltype(&dtls_free_context)> dtls_ctx;
         dtls_context_t *m_dtls_ctx;
@@ -176,6 +192,7 @@ class DTLSAdapter {
         std::shared_ptr<CoAPAdapter> m_coapAdapter;
         session_t m_session;
         std::string m_data;
+        std::vector<std::string> m_responses;
 };
 
 

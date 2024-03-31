@@ -434,7 +434,7 @@ int Readline::processCommand(const std::string& command) {
                 printf("\n");
                 ///sending CoAP message to Peer now.
                 auto it = std::find_if(app()->udpAdapter()->services().begin(), app()->udpAdapter()->services().end(), [&](auto& ent) -> bool {
-                    return(UDPAdapter::ServiceType_t::LwM2MClient == ent.second->get_service());
+                    return(UDPAdapter::ServiceType_t::LwM2MClient == ent.second->service());
                 });
 
                 if(it != app()->udpAdapter()->services().end()) {

@@ -49,7 +49,7 @@ class CoAPAdapter {
          * @param in 
          * @return std::int32_t 
          */
-        std::int32_t processRequest(session_t *session, std::string &in);
+        std::int32_t processRequest(session_t *session, std::string &in, std::vector<std::string>& out);
         std::int32_t processRequest(const std::string& in, std::vector<std::string>& out);
         /**
          * @brief 
@@ -259,7 +259,7 @@ class CoAPAdapter {
             return(false);
         }
 
-        std::string getUriQuery(const CoAPMessage& message) const {
+        std::string getEndPoint(const CoAPMessage& message) {
             auto it = std::find_if(message.uripath.begin(), message.uripath.end(), [&](const auto& ent) -> bool {
                 return(!OptionNumber[ent.optiondelta].compare(0, 9,"Uri-Query") && (!ent.optionvalue.compare(0, 2, "ep")));
             });
@@ -290,7 +290,8 @@ class CoAPAdapter {
             return(m_lwm2mAdapter);
         }
 
-        std::string handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid, std::uint32_t oiid, std::uint32_t rid, std::uint32_t riid);
+        std::vector<std::string> handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid, 
+                                                    std::uint32_t oiid, std::uint32_t rid, std::uint32_t riid);
 
     private:
         std::unordered_map<std::uint32_t, std::string> OptionNumber;

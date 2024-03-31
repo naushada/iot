@@ -177,7 +177,7 @@ int main(std::int32_t argc, char *argv[]) {
 
         if(it != app->udpAdapter()->services().end()) {
             auto& ent = *it;
-            ent.second->dtlsAdapter().add_credential(identity, secret);
+            ent.second->dtlsAdapter()->add_credential(identity, secret);
         }
     }
 

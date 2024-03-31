@@ -46,7 +46,7 @@ std::int32_t UDPAdapter::tx(std::string& in, ServiceType_t& service) {
     struct addrinfo *result;
     
     auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {
-        return(service == ent.second->get_service());
+        return(service == ent.second->service());
     });
 
     if(it != services().end()) {
@@ -60,7 +60,7 @@ std::int32_t UDPAdapter::tx(std::string& in, ServiceType_t& service) {
 
         if(Scheme_t::CoAPs == ctx.second->scheme()) {
             /// @brief encrypt the request now.
-            ctx.second->dtlsAdapter().tx(in, ctx.second->peerHost(), ctx.second->peerPort());
+            ctx.second->dtlsAdapter()->tx(in, ctx.second->peerHost(), ctx.second->peerPort());
 
         } else {
             auto s = getaddrinfo(ctx.second->peerHost().data(), std::to_string(ctx.second->peerPort()).c_str(), nullptr, &result);
@@ -216,7 +216,7 @@ std::int32_t UDPAdapter::process_request(const std::string& in, const std::uniqu
             }
         }
     } else {
-        ctx->dtlsAdapter()->rx();
+        //ctx->dtlsAdapter()->rx(ctx->fd());
     }
 
     return(0);    
@@ -227,10 +227,16 @@ std::int32_t UDPAdapter::handle_io_coaps(const std::int32_t& fd, const ServiceTy
         return(service == ent.second->service());
     });
 
-    session_t session;
     if(it != services().end()) {
+
         auto& ctx = *it;
         ctx.second->dtlsAdapter()->rx(fd);
+        auto rsp = ctx.second->dtlsAdapter()->responses();
+
+        for(auto& response: ctx.second->dtlsAdapter()->responses()) {
+            ctx.second->dtlsAdapter()->tx(response);
+        }
+
         return(0);
     }
 
@@ -240,7 +246,7 @@ std::int32_t UDPAdapter::handle_io_coaps(const std::int32_t& fd, const ServiceTy
 std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceType_t& service) {
     //std::cout << basename(__FILE__) << ":" << __LINE__ << " received packet handle_io_coap" << std::endl;
     auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {
-        return(service == ent.second->get_service());
+        return(service == ent.second->service());
     });
 
     if(it != services().end()) {
@@ -262,7 +268,7 @@ std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceTyp
 
         
         if(UDPAdapter::ServiceType_t::LwM2MClient != service) {
-            ret = ctx.second->coapAdapter().processRequest(out, responses);
+            ret = ctx.second->coapAdapter()->processRequest(out, responses);
             
             if(responses.size()) {
                 //ctx.second->get_dtls_adapter().tx(rsp);
@@ -273,13 +279,13 @@ std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceTyp
             }
         } else {
             CoAPAdapter::CoAPMessage coapmessage;
-            auto ret = ctx.second->coapAdapter().parseRequest(out, coapmessage);
+            auto ret = ctx.second->coapAdapter()->parseRequest(out, coapmessage);
             for(const auto& ent: out) {
                 printf("%x ", (unsigned char)ent);
             }
             printf("\n");
 
-            auto response = ctx.second->coapAdapter().buildResponse(coapmessage);
+            auto response = ctx.second->coapAdapter()->buildResponse(coapmessage);
             if(response.length()) {
                 tx(response, ctx.second->service());
             }
@@ -303,7 +309,7 @@ std::int32_t UDPAdapter::start(Role_t role, Scheme_t scheme) {
 
         if(it != services().end()) {
             auto& ent = *it;
-            ent.second->dtlsAdapter().connect();
+            ent.second->dtlsAdapter()->connect();
         }
     }
 

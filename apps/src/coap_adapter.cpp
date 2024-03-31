@@ -946,11 +946,13 @@ bool CoAPAdapter::writeIntoFile(const std::string &input, const std::string& fil
     return(true);
 }
 
-std::string CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid, std::uint32_t oiid, std::uint32_t rid, std::uint32_t riid) {
+std::vector<std::string> CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid, std::uint32_t oiid, std::uint32_t rid, std::uint32_t riid) {
     //std::cout << basename(__FILE__) << ":" << __LINE__ << " value of uri: "  << uri << std::endl;
+    std::vector<std::string> out;
+    std::string rsp;
     /// This is LwM2M string URI rd or bs
     if(uri == "bs") {
-        rsp = buildResponse(coapmessage);
+        rsp = buildResponse(message);
         out.push_back(rsp);
         std::string secobj;
         std::vector<std::string> serobj;
@@ -976,21 +978,22 @@ std::string CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAPMessage& mess
         data.m_riid = riid;
         object.m_oid = oid;
 
-        if(!lwm2mAdapter()->parseLwM2MObjects(coapmessage.payload, data, object)) {
+        if(!lwm2mAdapter()->parseLwM2MObjects(message.payload, data, object)) {
             for(const auto& ent: object.m_value) {
-                        std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                                << " ent.m_rid:" << lwm2mAdapter()->resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
-                                << " ent.m_ridvalue:";
+                std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+                          << " ent.m_rid:" << lwm2mAdapter()->resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                          << " ent.m_ridvalue:";
                 
-                        for(const auto& elm: ent.m_ridvalue) {
-                            printf("%0.2X ", (std::uint8_t)elm);
-                        }
-                        printf("\n");
-                    }
-                    rsp = buildResponse(coapmessage);
-                    out.push_back(rsp);
+                for(const auto& elm: ent.m_ridvalue) {
+                    printf("%0.2X ", (std::uint8_t)elm);
                 }
+                printf("\n");
             }
+            rsp = buildResponse(message);
+            out.push_back(rsp);
+        }
+    }
+    return(out);
 }
 
 std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std::string>& out) {
@@ -1006,11 +1009,13 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
         std::string uri;
         std::uint32_t oid = 0, oiid = 0, rid = 0, riid = 0;
         if(isLwm2mUri(coapmessage, uri, oid, oiid, rid, riid)) {
-            
+            out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
         }
-    } else {
+    } else if(!RequestType[coapmessage.coapheader.type].compare("Acknowledgement")) {
         rsp = buildResponse(coapmessage);
         out.push_back(rsp);
+    } else {
+        /// This is a CoAP Request
     }
 
     if(!coapmessage.ismorebitset) {
@@ -1077,47 +1082,29 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
     return(out.size());
 }
 
-std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in) {
+std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in, std::vector<std::string>& out) {
     /// clear the response buffer now.
     cumulativeOptionNumber = 0;
     CoAPMessage coapmessage;
     auto ret = parseRequest(in, coapmessage);
-
     auto cf = getContentFormat(coapmessage);
+
     if(cf.length() > 0 && (cf == "application/vnd.oma.lwm2m+tlv") || (cf == "text/plain;charset=utf-8")) {
-        LwM2MAdapter lwm2m_inst;
+
         ///Build the Response for a given Request
         std::string uri;
         std::uint32_t oid, oiid, rid, riid;
         if(isLwm2mUri(coapmessage, uri, oid, oiid, rid, riid)) {
             /// This is LwM2M string URI rd or bs
-            response = buildResponse(coapmessage);
-        } else if(isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
-            /// This is LwM2M Object URI, Handle it.
-            LwM2MObjectData data;
-            LwM2MObject object;
-            data.m_oiid = oiid;
-            data.m_rid = rid;
-            data.m_riid = riid;
-            object.m_oid = oid;
-
-            if(!lwm2m_inst.parseLwM2MObjects(coapmessage.payload, data, object)) {
-                for(const auto& ent: object.m_value) {
-                    std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                            << " ent.m_rid:" << lwm2m_inst.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
-                            << " ent.m_ridvalue:";
-            
-                    for(const auto& elm: ent.m_ridvalue) {
-                        printf("%0.2X ", (std::uint8_t)elm);
-                    }
-                    printf("\n");
-                }
-                response = buildResponse(coapmessage);
-            }
+            out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
         }
-    } else {
+
+    } else if(!RequestType[coapmessage.coapheader.type].compare("Acknowledgement")) {
         ///response is a calls variable.
         response = buildResponse(coapmessage);
+    } else {
+
+        ///This is a CoAP Request
     }
 
     if(!coapmessage.ismorebitset) {
@@ -1155,7 +1142,7 @@ std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in) {
                 ///Build the Response for a given Request
                 std::string uri;
                 std::uint32_t oid, oiid, rid, riid;
-                if(isLwm2mUri(coapmessage, uri)) {
+                if(isLwm2mUri(coapmessage, uri, oid, oiid, rid, riid)) {
                     /// This is aLwM2M string URI rd or bs
                 } else if(isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
                     /// This is LwM2M Object URI, Handle it.

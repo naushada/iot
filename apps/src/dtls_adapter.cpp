@@ -16,11 +16,12 @@ std::int32_t dtlsReadCb(dtls_context_t *ctx, session_t *session, uint8 *data, si
 
     if(nullptr != session && nullptr != data && len > 0) {
         DTLSAdapter &inst = *static_cast<DTLSAdapter *>(dtls_get_app_data(ctx));
-        std::string in(reinterpret_cast<const char*>(data), len);
-        //inst.data(in);
-        //return(len);
-        auto rsp = inst.coapAdapter()->processRequest(session, in);
-        //return(rsp);
+        inst.session(*session);
+        std::string deciphered(reinterpret_cast<const char*>(data), len);
+        std::vector<std::string> out;
+        auto rsp = inst.coapAdapter()->processRequest(session, deciphered, out);
+        inst.responses(out);
+        return(out.size());
     }
 
     return(ret);
@@ -181,7 +182,7 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
 
 std::int32_t DTLSAdapter::tx(std::string& in) {
     std::int32_t ret = -1;
-    ret = dtls_write(dtls_ctx(), &session, (std::uint8_t *)&in.at(0), in.size());
+    ret = dtls_write(dtls_ctx(), &m_session, (std::uint8_t *)&in.at(0), in.size());
     return(ret);
 }
 
@@ -194,7 +195,8 @@ std::int32_t DTLSAdapter::tx(std::string& in, std::string peerIP, std::uint16_t 
     addr.sin_port = htons(peerPort);
     ::memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
 
-    session_t peersession = {.addr.sa = *((struct  sockaddr *)&addr)};
+    session_t peersession;
+    peersession.addr.sa = *((struct  sockaddr *)&addr);
     
     ret = dtls_write(dtls_ctx(), &peersession, (std::uint8_t *)&in.at(0), in.size());
     return(ret);
