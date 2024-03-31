@@ -12,9 +12,6 @@
 #include <sstream>
 
 #include "udp_adapter.hpp"
-//#include "lwm2m_adapter.hpp"
-//#include "coap_adapter.hpp"
-//#include "dtls_adapter.hpp"
 
 class App {
 

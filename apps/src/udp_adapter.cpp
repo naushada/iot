@@ -182,41 +182,41 @@ std::int32_t UDPAdapter::handle_io(const std::int32_t& fd, const Scheme_t& schem
 }
 
 std::int32_t UDPAdapter::process_request(const std::string& in, const std::unique_ptr<UDPAdapter::ServiceContext_t>& ctx, CoAPAdapter::CoAPMessage& message) {
-    ctx->coapAdapter().parseRequest(in, message);
+    if(UDPAdapter::Scheme_t::CoAP == ctx->scheme()) {
+        ctx->coapAdapter()->parseRequest(in, message);
 
-    std::string uris;
-    std::uint32_t oid, oiid, rid, riid;
-    std::vector<std::string> responses;
+        std::string uris;
+        std::uint32_t oid, oiid, rid, riid;
+        std::vector<std::string> responses;
 
-    if(!ctx->coapAdapter().getRequestType(message.coapheader.type).compare("Acknowledgement")) {
-        ctx->coapAdapter().dumpCoAPMessage(message);
+        if(!ctx->coapAdapter()->getRequestType(message.coapheader.type).compare("Acknowledgement")) {
+            ctx->coapAdapter()->dumpCoAPMessage(message);
 
-    } else {
+        } else {
 
-        if(ctx->coapAdapter().isCoAPUri(message, uris)) {
+            if(ctx->coapAdapter()->isCoAPUri(message, uris)) {
 
-            ctx->coapAdapter().processRequest(in, responses);
-            for(auto& response: responses) {
-                if(ctx->scheme() == UDPAdapter::Scheme_t::CoAP) {
+                ctx->coapAdapter()->processRequest(in, responses);
+                for(auto& response: responses) {
                     tx(response, ctx->service());
-                } else {
-                    ctx->dtlsAdapter().tx(response);
                 }
+
+            } else if(ctx->coapAdapter()->isLwm2mUri(message, uris, oid, oiid, rid, riid)) {
+
+                LwM2MObject object;
+                LwM2MObjectData data;
+                if(uris.empty()) {
+                    object.m_oid = oid;
+                    data.m_oiid = oiid;
+                    data.m_rid = rid;
+                    data.m_riid = riid;
+                    ctx->coapAdapter()->lwm2mAdapter()->parseLwM2MObjects(message.payload, data, object);
+                }
+
             }
-
-        } else if(ctx->coapAdapter().isLwm2mUri(message, uris, oid, oiid, rid, riid)) {
-
-            LwM2MObject object;
-            LwM2MObjectData data;
-            if(uris.empty()) {
-                object.m_oid = oid;
-                data.m_oiid = oiid;
-                data.m_rid = rid;
-                data.m_riid = riid;
-                ctx->lwm2mAdapter().parseLwM2MObjects(message.payload, data, object);
-            }
-
         }
+    } else {
+        ctx->dtlsAdapter()->rx();
     }
 
     return(0);    
@@ -230,34 +230,7 @@ std::int32_t UDPAdapter::handle_io_coaps(const std::int32_t& fd, const ServiceTy
     session_t session;
     if(it != services().end()) {
         auto& ctx = *it;
-        std::uint32_t peerIP;
-        std::uint16_t peerPort;
-        std::string out;
-
-        auto ret = rx(fd, out, peerIP, peerPort);
-        if(ret) {
-            std::cout << basename(__FILE__) << ":" << __LINE__ << " Error Failed to receive from fd:" << fd << std::endl;
-            return(-1);
-        }
-
-        ctx.second->peerPort(peerPort);
-        struct in_addr pp;
-        pp.s_addr = peerIP;
-        ctx.second->peerHost(inet_ntoa(pp));
-
-        struct sockaddr_in addr;
-        addr.sin_addr.s_addr = peerIP;
-        addr.sin_port = peerPort;
-        addr.sin_family = AF_INET;
-        memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
-            
-        session.addr.sa = *(struct sockaddr *)&addr;
-
-        /// @brief decode the encrypted message
-        auto ret = dtls_handle_message(ctx.second->dtlsAdapter().dtls_ctx(), &session, (unsigned char *)&out.at(0), out.length());
-        auto decodedMsg = ctx.second->dtlsAdapter().data();
-        CoAPAdapter::CoAPMessage message;
-        process_request(decodedMsg, ctx.second, message);
+        ctx.second->dtlsAdapter()->rx(fd);
         return(0);
     }
 

@@ -13,8 +13,6 @@
 
 #include "dtls_adapter.hpp"
 #include "coap_adapter.hpp"
-#include "lwm2m_adapter.hpp"
-
 
 extern "C"
 {
@@ -65,18 +63,18 @@ class UDPAdapter {
             std::uint16_t m_selfPort;
             Scheme_t m_scheme;
             ServiceType_t m_service;
-            std::unique_ptr<LwM2MAdapter> m_lwm2mAdapter;
-            std::unique_ptr<CoAPAdapter> m_coapAdapter;
-            std::unique_ptr<DTLSAdapter> m_dtlsAdapter;
+            //std::unique_ptr<LwM2MAdapter> m_lwm2mAdapter;
+            std::shared_ptr<CoAPAdapter> m_coapAdapter;
+            std::shared_ptr<DTLSAdapter> m_dtlsAdapter;
 
             ServiceContext_t(std::int32_t Fd, Scheme_t scheme) {
 
                 if(scheme == UDPAdapter::Scheme_t::CoAPs) {
-                    m_dtlsAdapter = std::make_unique<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
+                    m_dtlsAdapter = std::make_shared<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
                 }
 
-                m_coapAdapter = std::make_unique<CoAPAdapter>();
-                m_lwm2mAdapter = std::make_unique<LwM2MAdapter>();
+                //m_coapAdapter = std::make_unique<CoAPAdapter>();
+                //m_lwm2mAdapter = std::make_unique<LwM2MAdapter>();
 
                 m_fd = Fd;
                 m_scheme = scheme;
@@ -134,17 +132,18 @@ class UDPAdapter {
                 return(m_fd);
             }
 
-            DTLSAdapter& dtlsAdapter() {
-                return(*m_dtlsAdapter.get());
+            std::shared_ptr<DTLSAdapter>& dtlsAdapter() {
+                return(m_dtlsAdapter);
             }
 
-            CoAPAdapter& coapAdapter() {
-                return(*m_coapAdapter.get());
+            std::shared_ptr<CoAPAdapter>& coapAdapter() {
+                return(m_coapAdapter);
             }
-
+#if 0
             LwM2MAdapter& lwm2mAdapter() {
                 return(*m_lwm2mAdapter.get());
             }
+#endif
         };
 
     public:

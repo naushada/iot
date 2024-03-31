@@ -8,6 +8,8 @@
 #include <iostream>
 #include <unordered_map>
 
+#include "coap_adapter.hpp"
+
 /**
  *  @brief Let the c++ compiler know not to mangle the c's functions name because this is an external functions of c not c++,
  *         If we don't do this then c++ compiler mangled the c's functions name and this will fail at linking with tinydtls static library
@@ -148,11 +150,11 @@ class DTLSAdapter {
             }
             return binary;
         }
-        #if 0
-        CoAPAdapter& get_coapAdapter() {
-            return(coapAdapter);
+        
+        std::shared_ptr<CoAPAdapter>& coapAdapter() {
+            return(m_coapAdapter);
         }
-        #endif
+        
         
         dtls_context_t* dtls_ctx() {
             return(m_dtls_ctx);
@@ -171,9 +173,8 @@ class DTLSAdapter {
         dtls_context_t *m_dtls_ctx;
         std::unordered_map<std::string, std::string> device_credentials;
         std::int32_t dtlsFd;
-        //std::unique_ptr<CoAPAdapter> coapAdapter;
-        //CoAPAdapter coapAdapter;
-        session_t session;
+        std::shared_ptr<CoAPAdapter> m_coapAdapter;
+        session_t m_session;
         std::string m_data;
 };
 

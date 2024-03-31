@@ -17,9 +17,9 @@ std::int32_t dtlsReadCb(dtls_context_t *ctx, session_t *session, uint8 *data, si
     if(nullptr != session && nullptr != data && len > 0) {
         DTLSAdapter &inst = *static_cast<DTLSAdapter *>(dtls_get_app_data(ctx));
         std::string in(reinterpret_cast<const char*>(data), len);
-        inst.data(in);
-        return(len);
-        //auto rsp = inst.get_coapAdapter().processRequest(session, in);
+        //inst.data(in);
+        //return(len);
+        auto rsp = inst.coapAdapter()->processRequest(session, in);
         //return(rsp);
     }
 
@@ -120,7 +120,7 @@ DTLSAdapter::DTLSAdapter(std::int32_t fd, log_t log_level) {
     m_dtls_ctx = dtls_new_context(this);
     dtls_set_log_level(log_level);
     dtls_set_handler(m_dtls_ctx, &cb);
-    //coapAdapter = CoAPAdapter();
+    m_coapAdapter = std::make_shared<CoAPAdapter>();
 }
 
 DTLSAdapter::DTLSAdapter() : m_dtls_ctx(nullptr), device_credentials() {}
@@ -131,7 +131,7 @@ DTLSAdapter::~DTLSAdapter() {
 }
 
 void DTLSAdapter::connect() {
-      auto ret = dtls_connect(dtls_ctx(), &session);
+      auto ret = dtls_connect(dtls_ctx(), &m_session);
       if(!ret) {
         /// Channel exists
         dtls_debug("DTLSAdapter::connect Channel is already exists\n");
@@ -149,9 +149,9 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
     std::vector<std::uint8_t> buf(DTLS_MAX_BUF);
     int len;
     dtls_debug("DTLSAdapter::rx on Fd: %d\n", fd);
-    memset(&session, 0, sizeof(session_t));
-    session.size = sizeof(session.addr);
-    len = recvfrom(fd, buf.data(), buf.size(), MSG_TRUNC, &session.addr.sa, &session.size);
+    memset(&m_session, 0, sizeof(session_t));
+    m_session.size = sizeof(m_session.addr);
+    len = recvfrom(fd, buf.data(), buf.size(), MSG_TRUNC, &m_session.addr.sa, &m_session.size);
     dtls_debug("DTLSAdapter::rx len: %d\n", len);
 
     if(len < 0) {
@@ -159,14 +159,15 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
         return ret;
     } else {
         buf.resize(len);
-        dtls_debug("got %d bytes from port %d\n", len, ntohs(session.addr.sin.sin_port));
+        dtls_debug("got %d bytes from port %d\n", len, ntohs(m_session.addr.sin.sin_port));
         std::cout << basename(__FILE__) << ":" << __LINE__ << " got len: " << len << " bytes from port: " << 
-            ntohs(session.addr.sin.sin_port) << std::endl;
+            ntohs(m_session.addr.sin.sin_port) << std::endl;
 
         if(len <= DTLS_MAX_BUF) {
             dtls_debug_dump("bytes from peer: \n", buf.data(), len);
             /// This function deciphers the raw data received from peer and invokes registered callback to deliver decipher message.
-            auto ret = dtls_handle_message(dtls_ctx(), &session, (unsigned char *)&buf.at(0), len);
+            auto ret = dtls_handle_message(dtls_ctx(), &m_session, (unsigned char *)&buf.at(0), len);
+            dtls_debug("Message is deciphered successfully\n");
             return(ret);
         } else {
             dtls_debug_dump("bytes from peer: ", buf.data(), buf.size());

@@ -2,7 +2,6 @@
 #define __coap_adapter_cpp__
 
 #include "coap_adapter.hpp"
-//#include "lwm2m_adapter.hpp"
 #include "nlohmann/json.hpp"
 
 using json = nlohmann::json;
@@ -11,6 +10,7 @@ CoAPAdapter::CoAPAdapter() {
     cumulativeOptionNumber = 0;
     response.clear();
     
+    m_lwm2mAdapter = std::make_shared<LwM2MAdapter>();
     OptionNumber = {
         {0, "Reserve"},
         {1, "If-Match"},
@@ -946,6 +946,53 @@ bool CoAPAdapter::writeIntoFile(const std::string &input, const std::string& fil
     return(true);
 }
 
+std::string CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid, std::uint32_t oiid, std::uint32_t rid, std::uint32_t riid) {
+    //std::cout << basename(__FILE__) << ":" << __LINE__ << " value of uri: "  << uri << std::endl;
+    /// This is LwM2M string URI rd or bs
+    if(uri == "bs") {
+        rsp = buildResponse(coapmessage);
+        out.push_back(rsp);
+        std::string secobj;
+        std::vector<std::string> serobj;
+        lwm2mAdapter()->bootstrapSecurityObject00(secobj);
+        serialise({{"0"},{"0"}},{}, {{secobj}}, getContentFormat("application/vnd.oma.lwm2m+tlv"), getMethodCode("PUT"), serobj);
+        out.push_back(serobj[0]);
+        secobj.clear();
+        serobj.clear();
+        lwm2mAdapter()->devicemgmtSecurityObject01(secobj);
+        serialise({{"0"},{"1"}},{}, {{secobj}}, getContentFormat("application/vnd.oma.lwm2m+tlv"), getMethodCode("PUT"), serobj);
+        out.push_back(serobj[0]);
+        serobj.clear();
+        serialise({{"bs"}},{}, {{}}, getContentFormat("text/plain;charset=utf-8"), getMethodCode("POST"), serobj);
+        out.push_back(serobj[0]);
+
+    } else if(uri == "rd") {
+        ///rd - registration update
+    } else {
+        LwM2MObjectData data;
+        LwM2MObject object;
+        data.m_oiid = oiid;
+        data.m_rid = rid;
+        data.m_riid = riid;
+        object.m_oid = oid;
+
+        if(!lwm2mAdapter()->parseLwM2MObjects(coapmessage.payload, data, object)) {
+            for(const auto& ent: object.m_value) {
+                        std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
+                                << " ent.m_rid:" << lwm2mAdapter()->resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                                << " ent.m_ridvalue:";
+                
+                        for(const auto& elm: ent.m_ridvalue) {
+                            printf("%0.2X ", (std::uint8_t)elm);
+                        }
+                        printf("\n");
+                    }
+                    rsp = buildResponse(coapmessage);
+                    out.push_back(rsp);
+                }
+            }
+}
+
 std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std::string>& out) {
     cumulativeOptionNumber = 0;
     CoAPMessage coapmessage;
@@ -955,60 +1002,13 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
     auto cf = getContentFormat(coapmessage);
     //std::cout << basename(__FILE__) << ":" << __LINE__ << " value of cf: "  << cf << std::endl;
     if(cf.length() > 0 && (cf == "application/vnd.oma.lwm2m+tlv") || (cf == "text/plain;charset=utf-8")) {
-        LwM2MAdapter lwm2m_inst;
         ///Build the Response for a given Request
         std::string uri;
         std::uint32_t oid = 0, oiid = 0, rid = 0, riid = 0;
-        if(isLwm2mUri(coapmessage, uri)) {
-            //std::cout << basename(__FILE__) << ":" << __LINE__ << " value of uri: "  << uri << std::endl;
-            /// This is LwM2M string URI rd or bs
-            if(uri == "bs") {
-                rsp = buildResponse(coapmessage);
-                out.push_back(rsp);
-                std::string secobj;
-                std::vector<std::string> serobj;
-                lwm2m_inst.bootstrapSecurityObject00(secobj);
-                serialise({{"0"},{"0"}},{}, {{secobj}}, getContentFormat("application/vnd.oma.lwm2m+tlv"), getMethodCode("PUT"), serobj);
-                out.push_back(serobj[0]);
-                secobj.clear();
-                serobj.clear();
-                lwm2m_inst.devicemgmtSecurityObject01(secobj);
-                serialise({{"0"},{"1"}},{}, {{secobj}}, getContentFormat("application/vnd.oma.lwm2m+tlv"), getMethodCode("PUT"), serobj);
-                out.push_back(serobj[0]);
-                serobj.clear();
-                serialise({{"bs"}},{}, {{}}, getContentFormat("text/plain;charset=utf-8"), getMethodCode("POST"), serobj);
-                out.push_back(serobj[0]);
-
-            } else {
-                ///rd - registration update
-            }
-
-        } else if(isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
-            /// This is LwM2M Object URI, Handle it.
-            LwM2MObjectData data;
-            LwM2MObject object;
-            data.m_oiid = oiid;
-            data.m_rid = rid;
-            data.m_riid = riid;
-            object.m_oid = oid;
-
-            if(!lwm2m_inst.parseLwM2MObjects(coapmessage.payload, data, object)) {
-                for(const auto& ent: object.m_value) {
-                    std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                            << " ent.m_rid:" << lwm2m_inst.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
-                            << " ent.m_ridvalue:";
+        if(isLwm2mUri(coapmessage, uri, oid, oiid, rid, riid)) {
             
-                    for(const auto& elm: ent.m_ridvalue) {
-                        printf("%0.2X ", (std::uint8_t)elm);
-                    }
-                    printf("\n");
-                }
-                rsp = buildResponse(coapmessage);
-                out.push_back(rsp);
-            }
         }
     } else {
-        ///response is a calls variable.
         rsp = buildResponse(coapmessage);
         out.push_back(rsp);
     }
@@ -1043,14 +1043,10 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
                     writeIntoFile(output, "sucbor_cf_12203.txt");
                 }
             } else if(11542 /*application/vnd.oma.lwm2m+tlv*/ == ct) {
-                ///Process LwM2M Object(s)
-                LwM2MAdapter lwm2mAdapter;
                 ///Build the Response for a given Request
                 std::string uri;
                 std::uint32_t oid, oiid, rid, riid;
-                if(isLwm2mUri(coapmessage, uri)) {
-                    /// This is aLwM2M string URI rd or bs
-                } else if(isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
+                if(isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {
                     /// This is LwM2M Object URI, Handle it.
                     LwM2MObjectData data;
                     LwM2MObject object;
@@ -1059,12 +1055,12 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
                     data.m_riid = riid;
                     object.m_oid = oid;
 
-                    if(!lwm2mAdapter.parseLwM2MObjects(coapmessage.payload, data, object)) {
+                    if(!lwm2mAdapter()->parseLwM2MObjects(coapmessage.payload, data, object)) {
 
                         ///Objects are extracted successfully
                         for(const auto& ent: object.m_value) {
                             std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                                      << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                                      << " ent.m_rid:" << lwm2mAdapter()->resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                                       << " ent.m_ridvalue:";
         
                             for(const auto& elm: ent.m_ridvalue) {
@@ -1093,7 +1089,7 @@ std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in) {
         ///Build the Response for a given Request
         std::string uri;
         std::uint32_t oid, oiid, rid, riid;
-        if(isLwm2mUri(coapmessage, uri)) {
+        if(isLwm2mUri(coapmessage, uri, oid, oiid, rid, riid)) {
             /// This is LwM2M string URI rd or bs
             response = buildResponse(coapmessage);
         } else if(isLwm2mUriObject(coapmessage, oid, oiid, rid, riid)) {

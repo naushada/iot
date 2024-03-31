@@ -10,7 +10,7 @@
 
 #include "nlohmann/json.hpp"
 
-//using json = nlohmann::json;
+using json = nlohmann::json;
 
 extern "C" {
     #include <arpa/inet.h>

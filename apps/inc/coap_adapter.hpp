@@ -9,6 +9,7 @@
 #include <fstream>
 
 #include "cbor_adapter.hpp"
+#include "lwm2m_adapter.hpp"
 
 extern "C" {
     #include "dtls.h"
@@ -285,6 +286,12 @@ class CoAPAdapter {
             return(getContentFormat(0));
         }
 
+        std::shared_ptr<LwM2MAdapter>& lwm2mAdapter() {
+            return(m_lwm2mAdapter);
+        }
+
+        std::string handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid, std::uint32_t oiid, std::uint32_t rid, std::uint32_t riid);
+
     private:
         std::unordered_map<std::uint32_t, std::string> OptionNumber;
         std::unordered_map<std::uint32_t, std::string> ContentFormat;
@@ -297,6 +304,7 @@ class CoAPAdapter {
         std::string response;
         std::uint32_t cumulativeOptionNumber;
         CBORAdapter cborAdapter;
+        std::shared_ptr<LwM2MAdapter> m_lwm2mAdapter;
 
 };
 
