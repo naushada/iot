@@ -3,6 +3,7 @@
 
 #include "dtls_adapter.hpp"
 
+
 std::int32_t dtlsWriteCb(dtls_context_t *ctx, session_t *session, uint8 *data, size_t len) {
     DTLSAdapter &inst = *static_cast<DTLSAdapter *>(dtls_get_app_data(ctx));
     std::int32_t fd = inst.getFd();

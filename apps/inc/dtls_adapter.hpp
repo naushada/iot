@@ -8,8 +8,6 @@
 #include <iostream>
 #include <unordered_map>
 
-#include "coap_adapter.hpp"
-
 /**
  *  @brief Let the c++ compiler know not to mangle the c's functions name because this is an external functions of c not c++,
  *         If we don't do this then c++ compiler mangled the c's functions name and this will fail at linking with tinydtls static library

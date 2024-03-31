@@ -3,6 +3,8 @@
 
 #include "lwm2m_adapter.hpp"
 
+using json = nlohmann::json;
+
 LwM2MAdapter::LwM2MAdapter() {
     ///LwM2M Security Object URI --> /0
     SecurityObjectResourceId2ResourceName = {

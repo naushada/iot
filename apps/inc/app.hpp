@@ -10,29 +10,11 @@
 #include <cstring>
 #include <cerrno>
 #include <sstream>
-#include "dtls_adapter.hpp"
-#include "lwm2m_adapter.hpp"
-#include "coap_adapter.hpp"
+
 #include "udp_adapter.hpp"
-
-extern "C"
-{
-    #include <sys/epoll.h>
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    #include <termios.h>
-    #include <unistd.h>
-    #include <fcntl.h>
-    #include <arpa/inet.h>
-    #include <netinet/in.h>
-    #include <sys/epoll.h>
-    #include <sys/types.h>
-    #include <sys/socket.h>
-    #include <sys/un.h>
-    #include <netdb.h>
-    #include <signal.h>
-}
-
+//#include "lwm2m_adapter.hpp"
+//#include "coap_adapter.hpp"
+//#include "dtls_adapter.hpp"
 
 class App {
 

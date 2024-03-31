@@ -12,8 +12,9 @@
 #include <sstream>
 
 #include "dtls_adapter.hpp"
-#include "lwm2m_adapter.hpp"
 #include "coap_adapter.hpp"
+#include "lwm2m_adapter.hpp"
+
 
 extern "C"
 {
@@ -56,6 +57,7 @@ class UDPAdapter {
         } ServiceType_t;
 
         struct ServiceContext_t  {
+
             std::int32_t m_fd;
             std::string m_peerHost;
             std::uint16_t m_peerPort;
@@ -68,10 +70,11 @@ class UDPAdapter {
             std::unique_ptr<DTLSAdapter> m_dtlsAdapter;
 
             ServiceContext_t(std::int32_t Fd, Scheme_t scheme) {
+
                 if(scheme == UDPAdapter::Scheme_t::CoAPs) {
-                    //DTLS_LOG_INFO
-                    m_dtlsAdapter = std::make_unique<DTLSAdapter>(Fd, DTLS_LOG_DEBUG, this);
+                    m_dtlsAdapter = std::make_unique<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
                 }
+
                 m_coapAdapter = std::make_unique<CoAPAdapter>();
                 m_lwm2mAdapter = std::make_unique<LwM2MAdapter>();
 
@@ -81,7 +84,7 @@ class UDPAdapter {
 
              ServiceContext_t() = delete;
             ~ServiceContext_t() {
-                std::cout << basename(__FILE__) << ":" << __LINE__ << " Closing Socket:" << fd << std::endl;
+                std::cout << basename(__FILE__) << ":" << __LINE__ << " Closing Socket:" << m_fd << std::endl;
                 ::close(m_fd);
             }
 
@@ -142,7 +145,6 @@ class UDPAdapter {
             LwM2MAdapter& lwm2mAdapter() {
                 return(*m_lwm2mAdapter.get());
             }
-
         };
 
     public:
@@ -154,7 +156,6 @@ class UDPAdapter {
         }
 
         ~UDPAdapter() {
-            
             ::close(m_epollFd);
         }
         

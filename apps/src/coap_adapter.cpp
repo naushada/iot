@@ -2,7 +2,10 @@
 #define __coap_adapter_cpp__
 
 #include "coap_adapter.hpp"
-#include "lwm2m_adapter.hpp"
+//#include "lwm2m_adapter.hpp"
+#include "nlohmann/json.hpp"
+
+using json = nlohmann::json;
 
 CoAPAdapter::CoAPAdapter() {
     cumulativeOptionNumber = 0;

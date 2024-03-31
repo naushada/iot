@@ -2,7 +2,7 @@
 #define __app_cpp__
 
 #include "app.hpp"
-#include "udp_adapter.hpp"
+//#include "udp_adapter.hpp"
 
 
 std::int32_t App::start(UDPAdapter::Role_t role, UDPAdapter::Scheme_t scheme) {
