@@ -40,12 +40,18 @@ RUN git clone https://github.com/google/googletest/ && \
     mkdir source && \
     cd source
 
-COPY apps /tmp/source/apps
-
-RUN cd /tmp/source/apps &&\
-    mkdir build &&\
-    cd build &&\
+RUN git clone https://github.com/naushada/iot.git && \
+    cd /tmp/source/iot/apps && \
+    mkdir build && \
+    cd build && \
     cmake .. && make
+
+#COPY apps /tmp/source/apps
+
+#RUN cd /tmp/source/iot/apps &&\
+#    mkdir build &&\
+#    cd build &&\
+#    cmake .. && make
 
 
 #FROM ubuntu:jammy
@@ -65,11 +71,12 @@ RUN mkdir -p /root/.ssh \
 
 WORKDIR /opt/app
 
-RUN cp /tmp/source/apps/build/lwm2m /opt/app/lwm2m
-RUN cp /tmp/source/apps/build/test/lwm2m_test /opt/app/lwm2m_test
+RUN cp /tmp/source/iot/apps/build/lwm2m /opt/app/lwm2m
+RUN cp /tmp/source/iot/apps/build/test/lwm2m_test /opt/app/lwm2m_test
 
 #COPY --from=compile-image /tmp/source/apps/build/lwm2m /opt/app/lwm2m
 #COPY --from=compile-image /tmp/source/apps/build/test/lwm2m_test /opt/app/lwm2m_test
+RUN rm -fr /tmp
 
 CMD "/opt/app/lwm2m"
 # EXPOSE 22
