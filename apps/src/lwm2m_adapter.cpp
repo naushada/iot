@@ -1180,7 +1180,7 @@ std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::str
         ss.write(reinterpret_cast<char*>(&id), 1);
     } else {
         std::uint16_t tmpid = htons(id);
-        ss.write(reinterpret_cast<char*>(&tmpid), 2);
+        ss.write(reinterpret_cast<char*>(&tmpid), sizeof(tmpid));
     }
 
     if(value.length() >= 0 && value.length() < 8) {
@@ -1293,7 +1293,7 @@ std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, bool val
         ss.write(reinterpret_cast<char*>(&id), 1);
     } else {
         std::uint16_t tmpid = htons(id);
-        ss.write(reinterpret_cast<char*>(&tmpid), 2);
+        ss.write(reinterpret_cast<char*>(&tmpid), sizeof(tmpid));
     }
 
     ss.write(reinterpret_cast<char*>(&value), 1);
@@ -1351,7 +1351,7 @@ std::int32_t LwM2MAdapter::serialiseObjects(const json& rid, std::string& out) {
         ss.write(reinterpret_cast<char *>(out.data()), out.length());
 
     } else {
-                    
+
     }
 
     out.assign(ss.str());
@@ -1367,15 +1367,15 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
         std::stringstream ss;
 
         if(oiid.length()) {
-            
+
             for(const auto& rid: rids) {
 
                 serialiseObjects(rid, out);
                 ss.write(reinterpret_cast<char *>(out.data()), out.length());
-            
+
             }
             out.assign(ss.str());
-            
+
         } else {
             /// no object instance id in the uri
             std::stringstream newss;
@@ -1403,15 +1403,15 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
         std::stringstream ss;
 
         if(oiid.length()) {
-            
+
             for(const auto& rid: rids) {
 
                 serialiseObjects(rid, out);
                 ss.write(reinterpret_cast<char *>(out.data()), out.length());
-            
+
             }
             out.assign(ss.str());
-            
+
         } else {
             /// no object instance id in the uri
             std::stringstream newss;
@@ -1433,22 +1433,22 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
         }
     }
         break;
-    
+
     case AccessControlObjectID:
         /* code */
     {
         std::stringstream ss;
 
         if(oiid.length()) {
-            
+
             for(const auto& rid: rids) {
 
                 serialiseObjects(rid, out);
                 ss.write(reinterpret_cast<char *>(out.data()), out.length());
-            
+
             }
             out.assign(ss.str());
-            
+
         } else {
             /// no object instance id in the uri
             std::stringstream newss;
@@ -1477,15 +1477,15 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
         std::stringstream ss;
 
         if(oiid.length()) {
-            
+
             for(const auto& rid: rids) {
 
                 serialiseObjects(rid, out);
                 ss.write(reinterpret_cast<char *>(out.data()), out.length());
-            
+
             }
             out.assign(ss.str());
-            
+
         } else {
             /// no object instance id in the uri
             std::stringstream newss;
@@ -1514,15 +1514,15 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
         std::stringstream ss;
 
         if(oiid.length()) {
-            
+
             for(const auto& rid: rids) {
 
                 serialiseObjects(rid, out);
                 ss.write(reinterpret_cast<char *>(out.data()), out.length());
-            
+
             }
             out.assign(ss.str());
-            
+
         } else {
             /// no object instance id in the uri
             std::stringstream newss;
@@ -1551,15 +1551,15 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
         std::stringstream ss;
 
         if(oiid.length()) {
-            
+
             for(const auto& rid: rids) {
 
                 serialiseObjects(rid, out);
                 ss.write(reinterpret_cast<char *>(out.data()), out.length());
-            
+
             }
             out.assign(ss.str());
-            
+
         } else {
             /// no object instance id in the uri
             std::stringstream newss;
@@ -1593,10 +1593,10 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
 
                 serialiseObjects(rid, out);
                 ss.write(reinterpret_cast<char *>(out.data()), out.length());
-            
+
             }
             out.assign(ss.str());
-            
+
         } else {
             /// no object instance id in the uri
             std::stringstream newss;
@@ -1630,10 +1630,10 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
 
                 serialiseObjects(rid, out);
                 ss.write(reinterpret_cast<char *>(out.data()), out.length());
-            
+
             }
             out.assign(ss.str());
-            
+
         } else {
             /// no object instance id in the uri
             std::stringstream newss;

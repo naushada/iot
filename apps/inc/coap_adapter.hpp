@@ -20,8 +20,11 @@ extern "C" {
 class CoAPAdapter {
     public:
         struct CoAPOptions {
+            /// @brief This is same as type, This could be encoded in either 4bits, 8bits or 16bits
             std::uint32_t optiondelta;
+            /// @brief This is type length, This could be encoded in either 4bits, 8bits or 16bits
             std::uint32_t optionlength;
+            /// @brief This is value part of type
             std::string optionvalue;
         };
         struct CoAPHeader {
