@@ -73,7 +73,7 @@ class UDPAdapter {
                     m_dtlsAdapter = std::make_shared<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
                 }
 
-                //m_coapAdapter = std::make_unique<CoAPAdapter>();
+                m_coapAdapter = std::make_shared<CoAPAdapter>();
                 //m_lwm2mAdapter = std::make_unique<LwM2MAdapter>();
 
                 m_fd = Fd;
