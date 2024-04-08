@@ -132,12 +132,7 @@ DTLSAdapter::~DTLSAdapter() {
 }
 
 void DTLSAdapter::connect(const std::string& ip, const std::uint16_t& port) {
-    m_session.addr.sin.sin_addr.s_addr = inet_addr(ip.c_str());
-    m_session.addr.sin.sin_family = AF_INET;
-    m_session.addr.sin.sin_port = htons(port);
-    ::memset(m_session.addr.sin.sin_zero, 0, sizeof(m_session.addr.sin.sin_zero));
-    m_session.size = sizeof(struct sockaddr_in);
-
+    session(ip, port);
     auto ret = dtls_connect(dtls_ctx(), &m_session);
     if(!ret) {
         /// Channel exists

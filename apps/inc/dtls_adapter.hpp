@@ -184,6 +184,14 @@ class DTLSAdapter {
             return(m_session);
         }
 
+        void session(const std::string& ip, const std::uint16_t& port) {
+            m_session.addr.sin.sin_addr.s_addr = inet_addr(ip.c_str());
+            m_session.addr.sin.sin_family = AF_INET;
+            m_session.addr.sin.sin_port = htons(port);
+            ::memset(m_session.addr.sin.sin_zero, 0, sizeof(m_session.addr.sin.sin_zero));
+            m_session.size = sizeof(struct sockaddr_in);
+        }
+
     private:
         //std::unique_ptr<dtls_context_t, decltype(&dtls_free_context)> dtls_ctx;
         dtls_context_t *m_dtls_ctx;
