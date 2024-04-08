@@ -1035,14 +1035,23 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
                 if(uncompress(coapmessage.payload, output)) {
                     ///uncompressed successfully.
                     writeIntoFile(output, "ucborz_cf_12201.txt");
+                    auto payload = json::from_cbor(output.c_str());
+                    std::cout << basename(__FILE__) << ":" << __LINE__ << " The Response is\n" << payload.dump() << std::endl;
                 }
             } else if(12119/*TS*/ == ct) {
                 writeIntoFile(coapmessage.payload, "ts_cf_12119.txt");
             } else if(12200/*UCBOR*/ == ct) {
                 writeIntoFile(coapmessage.payload, "ucbor_cf_12200.txt");
+                auto payload = json::from_cbor(coapmessage.payload.c_str());
+                for(auto&[key, value]: payload.items()) {
+                    
+                }
+                std::cout << basename(__FILE__) << ":" << __LINE__ << " The Response is\n" << payload.dump() << std::endl;
+
             } else if(12202/*SUCBOR*/ == ct) {
                 writeIntoFile(coapmessage.payload, "sucbor_cf_12202.txt");
             } else if(12203 /*SUCBORZ*/ == ct) {
+                /// @brief this is a signed payload
                 if(uncompress(coapmessage.payload, output)) {
                     ///uncompressed successfully.
                     writeIntoFile(output, "sucbor_cf_12203.txt");

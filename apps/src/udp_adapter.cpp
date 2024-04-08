@@ -6,7 +6,6 @@
 
 void UDPAdapter::hex_dump(const std::string& in) {
     std::stringstream oss;
-    //oss << std::hex << std::setfill('0');
     for(const auto& ent: in)
     {
         oss << ent << ' ';
@@ -25,7 +24,6 @@ std::int32_t UDPAdapter::rx(std::int32_t fd, std::string& out, std::uint32_t& pe
 
     len = recvfrom(fd, buf.data(), buf.size(), MSG_TRUNC, (struct sockaddr *)&session, &slen);
     
-
     if(len < 0) {
         perror("recvfrom");
         return (-1);
@@ -37,6 +35,7 @@ std::int32_t UDPAdapter::rx(std::int32_t fd, std::string& out, std::uint32_t& pe
         peerIP = session.sin_addr.s_addr;
         return(0);
     }
+
     return(-1);  
 }
 
@@ -57,30 +56,23 @@ std::int32_t UDPAdapter::tx(std::string& in, ServiceType_t& service) {
             printf("%x ", (unsigned char)ent);
         }
         printf("\n");
-
-        if(Scheme_t::CoAPs == ctx.second->scheme()) {
-            /// @brief encrypt the request now.
-            ctx.second->dtlsAdapter()->tx(in, ctx.second->peerHost(), ctx.second->peerPort());
-
+        
+        auto s = getaddrinfo(ctx.second->peerHost().data(), std::to_string(ctx.second->peerPort()).c_str(), nullptr, &result);
+        if (!s) {
+            peerAddr = *((struct sockaddr_in*)(result->ai_addr));
+            freeaddrinfo(result);
         } else {
-            auto s = getaddrinfo(ctx.second->peerHost().data(), std::to_string(ctx.second->peerPort()).c_str(), nullptr, &result);
-            if (!s) {
-                peerAddr = *((struct sockaddr_in*)(result->ai_addr));
-                freeaddrinfo(result);
-            } else {
-                std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Unable to get addrinfo for bs:"<< std::strerror(errno) << std::endl;
-                return(-1); 
-            }
+            std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Unable to get addrinfo for bs:"<< std::strerror(errno) << std::endl;
+            return(-1); 
+        }
 
-            socklen_t len = sizeof(peerAddr);
-            std::int32_t ret = sendto(ctx.second->fd(), (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
-            if(ret < 0) {
-                std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed for Fd:" << ctx.second->fd() << " bs:" << ctx.second->peerHost()
-                        << " localIP:" << ctx.second->selfHost() << " selfPort:" << std::to_string(ctx.second->selfPort())
-                        << " peerPort:" << std::to_string(ctx.second->peerPort()) << std::endl;
-                return(-1);
-            }
-
+        socklen_t len = sizeof(peerAddr);
+        std::int32_t ret = sendto(ctx.second->fd(), (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
+        if(ret < 0) {
+            std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed for Fd:" << ctx.second->fd() << " bs:" << ctx.second->peerHost()
+                      << " localIP:" << ctx.second->selfHost() << " selfPort:" << std::to_string(ctx.second->selfPort())
+                      << " peerPort:" << std::to_string(ctx.second->peerPort()) << std::endl;
+            return(-1);
         }
     }
 
@@ -265,21 +257,11 @@ std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceTyp
             CoAPAdapter::CoAPMessage message;
             process_request(out, ctx.second, message);
         }
-
         
-        if(UDPAdapter::ServiceType_t::LwM2MClient != service) {
-            ret = ctx.second->coapAdapter()->processRequest(out, responses);
-            
-            if(responses.size()) {
-                //ctx.second->get_dtls_adapter().tx(rsp);
-                for(auto& response: responses) {
-                    std::cout << basename(__FILE__) << ":" << __LINE__ << " servie: " << ctx.second->service() << std::endl;
-                    tx(response, ctx.second->service());
-                }
-            }
-        } else {
+        if(UDPAdapter::ServiceType_t::LwM2MClient == service) {
             CoAPAdapter::CoAPMessage coapmessage;
             auto ret = ctx.second->coapAdapter()->parseRequest(out, coapmessage);
+
             for(const auto& ent: out) {
                 printf("%x ", (unsigned char)ent);
             }
@@ -289,7 +271,18 @@ std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceTyp
             if(response.length()) {
                 tx(response, ctx.second->service());
             }
+
+        } else {
+
+            ret = ctx.second->coapAdapter()->processRequest(out, responses);
+            if(responses.size()) {
+                for(auto& response: responses) {
+                    std::cout << basename(__FILE__) << ":" << __LINE__ << " servie: " << ctx.second->service() << std::endl;
+                    tx(response, ctx.second->service());
+                }
+            }
         }
+
         return(0);
     }
     
@@ -326,9 +319,10 @@ std::int32_t UDPAdapter::start(Role_t role, Scheme_t scheme) {
         } else if(eventCount > 0) {
             ///event is received.
             events.resize(eventCount);
-            for(auto it = events.begin(); it != events.end(); ++it) {
+            //for(auto it = events.begin(); it != events.end(); ++it) {
+            for(auto& event: events) {
 
-                struct epoll_event ent = *it;
+                struct epoll_event ent = event;
                 std::int32_t handle = ((ent.data.u64 >> 32) & 0xFFFFFFFF);
                 ServiceType_t service = static_cast<ServiceType_t>((ent.data.u64 >> 16) & 0xFFFF);
                 Scheme_t scheme = static_cast<Scheme_t>(ent.data.u64 & 0xFFFF);

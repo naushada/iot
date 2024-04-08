@@ -37,7 +37,8 @@ class App {
             m_dmState(LwM2MDeviceManagementState::IDLE_ST), 
             m_udpAdapter(std::make_shared<UDPAdapter>(host, port, scheme, service)) {
         }
-
+        
+        App() = delete;
         ~App() {
         }
 

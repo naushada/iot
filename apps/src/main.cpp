@@ -130,8 +130,6 @@ int main(std::int32_t argc, char *argv[]) {
 
     std::cout << basename(__FILE__) << ":" << __LINE__ << " scheme:" << std::to_string(scheme) << " host:" << selfHost << " port:" << std::to_string(selfPort) << std::endl;
 
-    
-
     std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");
     if(scheme == UDPAdapter::Scheme_t::CoAPs) {
         ///identity & secret are mandatory argument
@@ -159,6 +157,7 @@ int main(std::int32_t argc, char *argv[]) {
         app->udpAdapter()->add_event_handle(scheme, UDPAdapter::ServiceType_t::DeviceMgmtServer);
 
     } else {
+        /// @brief role is client
         auto it = std::find_if(app->udpAdapter()->services().begin(), app->udpAdapter()->services().end(),[&](auto& ent) -> bool {
             return(service == ent.second->service());
         });
