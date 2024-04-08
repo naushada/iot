@@ -169,7 +169,7 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
             dtls_debug_dump("bytes from peer:", buf.data(), len);
             /// This function deciphers the raw data received from peer and invokes registered callback to deliver decipher message.
             auto ret = dtls_handle_message(dtls_ctx(), &m_session, (unsigned char *)&buf.at(0), len);
-            dtls_debug("Message is deciphered successfully\n");
+            //dtls_debug("Message is deciphered successfully\n");
             return(ret);
         } else {
             dtls_debug_dump("bytes from peer: ", buf.data(), buf.size());
@@ -198,6 +198,7 @@ std::int32_t DTLSAdapter::tx(std::string& in, std::string peerIP, std::uint16_t 
 
     session_t peersession;
     peersession.addr.sa = *((struct  sockaddr *)&addr);
+    peersession.size = sizeof(peersession.addr.sa);
     
     ret = dtls_write(dtls_ctx(), &peersession, (std::uint8_t *)&in.at(0), in.size());
     return(ret);
