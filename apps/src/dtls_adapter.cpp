@@ -165,7 +165,7 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
             ntohs(m_session.addr.sin.sin_port) << std::endl;
 
         if(len <= DTLS_MAX_BUF) {
-            dtls_debug_dump("bytes from peer: \n", buf.data(), len);
+            dtls_debug_dump("bytes from peer:", buf.data(), len);
             /// This function deciphers the raw data received from peer and invokes registered callback to deliver decipher message.
             auto ret = dtls_handle_message(dtls_ctx(), &m_session, (unsigned char *)&buf.at(0), len);
             dtls_debug("Message is deciphered successfully\n");
