@@ -1,6 +1,6 @@
 FROM ubuntu:jammy
 RUN apt-get update && apt-get -y upgrade && \
-    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev python3-dev
+    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev python3-dev autoconf
 
 # Building openssl 3.1.1
 RUN git clone -b openssl-3.1.1 https://github.com/naushada/openssl.git
@@ -36,15 +36,22 @@ WORKDIR /tmp
 RUN git clone https://github.com/google/googletest/ && \
     cd /tmp/googletest && \
     mkdir build && cd build && cmake .. && make install &&\
-    cd .. &&\
+    cd /tmp &&\
     mkdir source && \
-    cd source
-
-RUN git clone https://github.com/naushada/iot.git && \
+    cd source && \
+    git clone https://github.com/naushada/iot.git && \
+    cd /tmp/source/iot/apps/3rdparty/tinydtls && \
+    autoconf && autoheader && ./configure &&  make && \
     cd /tmp/source/iot/apps && \
     mkdir build && \
     cd build && \
     cmake .. && make
+
+#RUN git clone https://github.com/naushada/iot.git && \
+#    cd /tmp/source/iot/apps && \
+#    mkdir build && \
+#    cd build && \
+#    cmake .. && make
 
 #COPY apps /tmp/source/apps
 
