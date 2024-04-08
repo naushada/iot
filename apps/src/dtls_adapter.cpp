@@ -131,18 +131,24 @@ DTLSAdapter::~DTLSAdapter() {
     m_dtls_ctx = nullptr;
 }
 
-void DTLSAdapter::connect() {
-      auto ret = dtls_connect(dtls_ctx(), &m_session);
-      if(!ret) {
+void DTLSAdapter::connect(const std::string& ip, const std::uint16_t& port) {
+    m_session.addr.sin.sin_addr.s_addr = inet_addr(ip.c_str());
+    m_session.addr.sin.sin_family = AF_INET;
+    m_session.addr.sin.sin_port = htons(port);
+    ::memset(m_session.addr.sin.sin_zero, 0, sizeof(m_session.addr.sin.sin_zero));
+    m_session.size = sizeof(struct sockaddr_in);
+
+    auto ret = dtls_connect(dtls_ctx(), &m_session);
+    if(!ret) {
         /// Channel exists
         dtls_debug("DTLSAdapter::connect Channel is already exists\n");
-      } else if(ret > 0) {
+    } else if(ret > 0) {
         /// Establishes new Channel
         dtls_debug("DTLSAdapter::connect Establises new channel for Client Hello\n");
-      } else {
+    } else {
         /// Error in establishes channel
         dtls_debug("DTLSAdapter::connect Error in establishes Channel\n");
-      }
+    }
 }
 
 std::int32_t DTLSAdapter::rx(std::int32_t fd) {

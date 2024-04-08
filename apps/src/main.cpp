@@ -153,7 +153,7 @@ int main(std::int32_t argc, char *argv[]) {
     app->udpAdapter()->add_event_handle(scheme, service);
     
     if(UDPAdapter::Role_t::SERVER == role) {
-        app->udpAdapter()->init(selfHost, 58686, scheme, UDPAdapter::ServiceType_t::DeviceMgmtServer);
+        app->udpAdapter()->init(selfHost, 5683, scheme, UDPAdapter::ServiceType_t::DeviceMgmtServer);
         app->udpAdapter()->add_event_handle(scheme, UDPAdapter::ServiceType_t::DeviceMgmtServer);
 
     } else {
@@ -169,7 +169,7 @@ int main(std::int32_t argc, char *argv[]) {
         }
     }
 
-    if(scheme == UDPAdapter::Scheme_t::CoAPs) {
+    if(UDPAdapter::Scheme_t::CoAPs == scheme) {
         auto it = std::find_if(app->udpAdapter()->services().begin(), app->udpAdapter()->services().end(),[&](auto& ent) -> bool {
             return(service == ent.second->service());
         });

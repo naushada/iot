@@ -302,7 +302,7 @@ std::int32_t UDPAdapter::start(Role_t role, Scheme_t scheme) {
 
         if(it != services().end()) {
             auto& ent = *it;
-            ent.second->dtlsAdapter()->connect();
+            ent.second->dtlsAdapter()->connect(ent.second->peerHost(), ent.second->peerPort());
         }
     }
 
