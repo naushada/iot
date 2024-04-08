@@ -16,21 +16,35 @@ RUN cd openssl && \
 
 WORKDIR /root/mongo-c
 # #RUN apt-get -y install mongodb-server-core
-RUN git clone -b r1.19 https://github.com/mongodb/mongo-c-driver.git
+RUN git clone -b r1.19 https://github.com/mongodb/mongo-c-driver.git && \
+    cd /root/mongo-c/mongo-c-driver && \
+    cd /root/mongo-c/mongo-c-driver/build && \
+    cmake .. && \
+    make && make install && \
+    mkdir /root/mongo-cxx && \
+    cd /root/mongo-cxx && \
+    git clone -b releases/v3.6 https://github.com/mongodb/mongo-cxx-driver.git && \
+    cd /root/mongo-cxx/mongo-cxx-driver/build && \
+    cmake .. -DBSONCXX_POLY_USE_MNMLSTC=1 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make && make install && \
+    ldconfig
 
-RUN cd mongo-c-driver
-WORKDIR /root/mongo-c/mongo-c-driver/build
-RUN cmake .. && \
-    make && make install
+#RUN cd mongo-c-driver
+#WORKDIR /root/mongo-c/mongo-c-driver/build
+#RUN cmake .. && \
+##    make && make install && \
+#    cd /root/mongo-cxx && \
+#    git clone -b releases/v3.6 https://github.com/mongodb/mongo-cxx-driver.git && \
+#    cd mongo-cxx-driver
 
-WORKDIR /root/mongo-cxx
-RUN git clone -b releases/v3.6 https://github.com/mongodb/mongo-cxx-driver.git
-RUN cd mongo-cxx-driver
+#WORKDIR /root/mongo-cxx
+#RUN git clone -b releases/v3.6 https://github.com/mongodb/mongo-cxx-driver.git
+#RUN cd mongo-cxx-driver
 
-WORKDIR /root/mongo-cxx/mongo-cxx-driver/build
-RUN cmake .. -DBSONCXX_POLY_USE_MNMLSTC=1 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
-RUN make && make install
-RUN ldconfig
+#WORKDIR /root/mongo-cxx/mongo-cxx-driver/build
+#RUN cmake .. -DBSONCXX_POLY_USE_MNMLSTC=1 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+#RUN make && make install
+#RUN ldconfig
 
 WORKDIR /tmp
 RUN git clone https://github.com/google/googletest/ && \
