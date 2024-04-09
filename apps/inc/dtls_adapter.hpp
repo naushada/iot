@@ -69,6 +69,63 @@ extern "C"
 class DTLSAdapter {
     public:
 
+        struct ClientDetails {
+            ClientDetails(): m_peerIP(""), m_peerPort(0), m_ep(""), m_lt(0), m_ts(0) {
+            }
+
+            ~ClientDetails() = default;
+
+            std::string m_peerIP;
+            std::uint16_t m_peerPort;
+            std::string m_ep;
+            std::uint32_t m_lt;
+            std::uint64_t m_ts;
+            std::string m_state;
+
+            void peerIP(std::string ip) {
+                m_peerIP = ip;
+            }
+            std::string peerIP() {
+                return(m_peerIP);
+            }
+
+            void peerPort(std::uint16_t port) {
+                m_peerPort = port;
+            }
+            std::uint16_t peerPort() {
+                return(m_peerPort);
+            }
+
+            void ep(std::string endpoint) {
+                m_ep = endpoint;
+            }
+            std::string ep() {
+                return(m_ep);
+            }
+
+            void lt(std::uint32_t lifetime) {
+                m_lt  = lifetime;
+            }
+            std::uint32_t lt() {
+                return(m_lt);
+            }
+
+            void ts(std::uint64_t timestamp) {
+                m_ts = timestamp;
+            }
+            std::uint64_t ts() {
+                return(m_ts);
+            }
+
+            void state(std::string st) {
+                m_state = st;
+            }
+            std::string state() {
+                return(m_state);
+            }
+
+        };
+
         dtls_handler_t cb = {
             /// send encrypted data to peer, This callback will be invoked by dtls when dtls_write is invoked by application.
             .write = dtlsWriteCb,
@@ -216,6 +273,10 @@ class DTLSAdapter {
             return(std::string());
         }
 
+        auto& clients() {
+            return(m_clients);
+        }
+
     private:
         //std::unique_ptr<dtls_context_t, decltype(&dtls_free_context)> dtls_ctx;
         dtls_context_t *m_dtls_ctx;
@@ -227,6 +288,7 @@ class DTLSAdapter {
         std::vector<std::string> m_responses;
         bool m_isClient;
         std::string m_clientState;
+        std::vector<ClientDetails> m_clients;
 };
 
 

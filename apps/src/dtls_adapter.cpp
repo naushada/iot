@@ -28,7 +28,7 @@ std::int32_t dtlsReadCb(dtls_context_t *ctx, session_t *session, uint8 *data, si
 }
 
 std::int32_t dtlsEventCb(dtls_context_t *ctx, session_t *session, dtls_alert_level_t level, unsigned short code) {
-    (void)session;
+
     DTLSAdapter &inst = *static_cast<DTLSAdapter *>(dtls_get_app_data(ctx));
     dtls_debug(" Fd: %d\n", inst.getFd());
 
@@ -39,7 +39,31 @@ std::int32_t dtlsEventCb(dtls_context_t *ctx, session_t *session, dtls_alert_lev
             case DTLS_EVENT_CONNECTED:
             {
                 dtls_info("Peer is connected\n");
-                inst.clientState("connected");
+                if(inst.isClient()) {
+                    inst.clientState("connected");
+                } else {
+                    /// @brief For dtls server, only connected event is fired and for client, first connect and then connected events are fired.
+                    auto IP = session->addr.sin.sin_addr.s_addr;
+                    auto PORT = ntohs(session->addr.sin.sin_port);
+                    struct in_addr pp;
+                    pp.s_addr = IP;
+                    std::string IPStr = inet_ntoa(pp);
+                    
+                    auto it = std::find_if(inst.clients().begin(), inst.clients().end(), [&](auto& ent) -> bool {
+                        return(IPStr == ent.peerIP() && PORT == ent.peerPort());
+                    });
+
+                    if(it != inst.clients().end()) {
+                        auto& elm = *it;
+                        elm.state("connected");
+                    } else {
+                        DTLSAdapter::ClientDetails client;
+                        client.peerIP(IPStr);
+                        client.peerPort(PORT);
+                        client.state("connected");
+                        inst.clients().push_back(client);
+                    }
+                }
             }
             break;
             case DTLS_EVENT_RENEGOTIATE:
@@ -50,7 +74,31 @@ std::int32_t dtlsEventCb(dtls_context_t *ctx, session_t *session, dtls_alert_lev
             case DTLS_EVENT_CONNECT:
             {
                 dtls_info("Peer is connect\n");
-                inst.clientState("connecting");
+                if(inst.isClient()) {
+                    inst.clientState("connecting");
+                } else {
+                    std::uint32_t IP = session->addr.sin.sin_addr.s_addr;
+                    struct in_addr pp;
+                    pp.s_addr = IP;
+                    std::string IPStr = inet_ntoa(pp);
+
+                    auto PORT = ntohs(session->addr.sin.sin_port);
+                    
+                    auto it = std::find_if(inst.clients().begin(), inst.clients().end(), [&](auto& ent) -> bool {
+                        return(IPStr == ent.peerIP() && PORT == ent.peerPort());
+                    });
+
+                    if(it != inst.clients().end()) {
+                        auto& elm = *it;
+                        elm.state("connecting");
+                    } else {
+                        DTLSAdapter::ClientDetails client;
+                        client.peerIP(IPStr);
+                        client.peerPort(PORT);
+                        client.state("connecting");
+                        inst.clients().push_back(client);
+                    }
+                }
             }
             break;
             default:
@@ -135,6 +183,8 @@ DTLSAdapter::DTLSAdapter(std::int32_t fd, log_t log_level) {
     dtls_set_log_level(log_level);
     dtls_set_handler(m_dtls_ctx, &cb);
     m_coapAdapter = std::make_shared<CoAPAdapter>();
+    isClient(false);
+    clientState("error");
 }
 
 DTLSAdapter::DTLSAdapter() : m_dtls_ctx(nullptr), device_credentials() {}
@@ -146,6 +196,8 @@ DTLSAdapter::~DTLSAdapter() {
 
 void DTLSAdapter::connect(const std::string& ip, const std::uint16_t& port) {
     session(ip, port);
+    isClient(true);
+
     auto ret = dtls_connect(dtls_ctx(), &m_session);
     if(!ret) {
         /// Channel exists
