@@ -90,6 +90,7 @@ std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtl
                 return(iden.length());
             } else {
                 iden = inst.identity();
+                ::memcpy(result, iden.data(), iden.length());
                 dtls_debug("The identity length:%d value:%s\n", iden.length(), iden.c_str());
                 
                 //dtls_warn("cannot set psk_identity -- buffer too small\n");
