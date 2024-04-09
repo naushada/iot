@@ -115,8 +115,10 @@ std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtl
                 dtls_warn("can't set psk -- buffer too small Underflow\n");
                 return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
             } else {
-                dtls_warn("PSK for unknown id requested, exiting\n");
-                return dtls_alert_fatal_create(DTLS_ALERT_ILLEGAL_PARAMETER);
+                ::memcpy(result, secret.data(), secret.size());
+                return(secret.length());
+                //dtls_warn("PSK for unknown id requested, exiting\n");
+                //return dtls_alert_fatal_create(DTLS_ALERT_ILLEGAL_PARAMETER);
             }
         }
         default:
