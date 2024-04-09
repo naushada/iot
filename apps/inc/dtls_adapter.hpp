@@ -185,6 +185,7 @@ class DTLSAdapter {
         }
 
         void session(const std::string& ip, const std::uint16_t& port) {
+            ::memset((void *)&m_session, 0, sizeof(m_session));
             m_session.addr.sin.sin_addr.s_addr = inet_addr(ip.c_str());
             m_session.addr.sin.sin_family = AF_INET;
             m_session.addr.sin.sin_port = htons(port);
