@@ -89,19 +89,27 @@ std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtl
                 ::memcpy(result, iden.data(), iden.length());
                 return(iden.length());
             } else {
-                dtls_warn("cannot set psk_identity -- buffer too small\n");
-                return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
+                iden = inst.identity();
+                dtls_debug("The identity length is %d\n", iden.length());
+                //dtls_warn("cannot set psk_identity -- buffer too small\n");
+                //return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
+                return(iden.length());
             }
         }
         case DTLS_PSK_KEY:
         {
             auto secret = inst.get_secret(in);
+            if(secret.empty()) {
+                dtls_warn("Can't retrieve PSK for an empty identity\n");
+                return dtls_alert_fatal_create(DTLS_ALERT_ILLEGAL_PARAMETER);
+            }
+
             auto secret128Bits = inst.hexToBinary(secret);
             if(secret128Bits.size() > 0 && result_length <= secret128Bits.size()) {
                 ::memcpy(result, secret128Bits.data(), secret128Bits.size());
                 return secret128Bits.size();
             } else if(result_length < secret128Bits.size()) {
-                dtls_warn("cannot set psk -- buffer too small Underflow\n");
+                dtls_warn("can't set psk -- buffer too small Underflow\n");
                 return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
             } else {
                 dtls_warn("PSK for unknown id requested, exiting\n");

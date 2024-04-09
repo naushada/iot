@@ -193,6 +193,29 @@ class DTLSAdapter {
             m_session.size = sizeof(struct sockaddr_in);
         }
 
+        void isClient(bool isClient) {
+            m_isClient = isClient;
+        }
+        bool isClient() {
+            return(m_isClient);
+        }
+
+        void  clientState(std::string st) {
+            m_clientState = st;
+        }
+        std::string clientState() {
+            return(m_clientState);
+        }
+
+        std::string identity() {
+            if(isClient() && !device_credentials.empty()) {
+                for(auto ent: device_credentials) {
+                    return(ent.first);
+                }
+            }
+            return(std::string());
+        }
+
     private:
         //std::unique_ptr<dtls_context_t, decltype(&dtls_free_context)> dtls_ctx;
         dtls_context_t *m_dtls_ctx;
@@ -202,6 +225,8 @@ class DTLSAdapter {
         session_t m_session;
         std::string m_data;
         std::vector<std::string> m_responses;
+        bool m_isClient;
+        std::string m_clientState;
 };
 
 

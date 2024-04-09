@@ -27,3 +27,224 @@ readline.cpp:435 UDP Packet sent len:52
 readline.cpp:435 UDP Packet sent len:78
 readline.cpp:279 The Command is ---> post uri="/push" uri-query="ep=A12345678ABCD" data=[{"services.lwm2m.client.enable":true},{"key":"v1"}]
 LwM2MClient-->> post uri="/push" uri-query="ep=A12345678ABCD" data=[{"services.lwm2m.client.enable":true},{"key":"v1"}]
+
+
+//// dtls server log
+
+mnahmed@mnahmed-VirtualBox:~/sw/iot/apps/build$ ./lwm2m local=coaps://192.168.0.181:5684 role=server identity=97554878B284CE3B727D8DD06E87659A secret=3894beedaa7fe0eae6597dc350a59525
+main.cpp:98 ent.first:identity ent.second:97554878B284CE3B727D8DD06E87659A
+main.cpp:98 ent.first:role ent.second:server
+main.cpp:98 ent.first:secret ent.second:3894beedaa7fe0eae6597dc350a59525
+main.cpp:98 ent.first:local ent.second:coaps://192.168.0.181:5684
+main.cpp:131 scheme:1 host:192.168.0.181 port:5684
+fn:int32_t UDPAdapter::init(const string&, const uint16_t&, const UDPAdapter::Scheme_t&, const UDPAdapter::ServiceType_t&):110 created handle:3 for service:1
+fn:int32_t UDPAdapter::init(const string&, const uint16_t&, const UDPAdapter::Scheme_t&, const UDPAdapter::ServiceType_t&):110 created handle:5 for service:0
+udp_adapter.cpp:295 evts.size: 2
+
+udp_adapter.cpp:336 EPOLLIN on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx len: 67
+Apr 09 06:33:23 DEBG got 67 bytes from port 56830
+dtls_adapter.cpp:166 got len: 67 bytes from port: 56830
+Apr 09 06:33:23 DEBG bytes from peer:: (67 bytes): 16FEFD000000000000000000360100002A000000000000002AFEFD000000007400FE60E28E3BA879F1592DEB2D2979F945992A432AEADCB5BEDEDB00000002C0A80100
+Apr 09 06:33:23 DEBG dtls_handle_message: PEER NOT FOUND
+Apr 09 06:33:23 DEBG peer addr: 192.168.0.181:56830
+Apr 09 06:33:23 DEBG got packet 22 (67 bytes)
+Apr 09 06:33:23 DEBG receive header: (13 bytes):
+00000000 16 FE FD 00 00 00 00 00  00 00 00 00 36 
+Apr 09 06:33:23 DEBG receive unencrypted: (54 bytes):
+00000000 01 00 00 2A 00 00 00 00  00 00 00 2A FE FD 00 00 
+00000010 00 00 74 00 FE 60 E2 8E  3B A8 79 F1 59 2D EB 2D 
+00000020 29 79 F9 45 99 2A 43 2A  EA DC B5 BE DE DB 00 00 
+00000030 00 02 C0 A8 01 00 
+Apr 09 06:33:23 DEBG received handshake packet of type: client_hello (1)
+Apr 09 06:33:23 DEBG handle handshake packet of type: client_hello (1)
+Apr 09 06:33:23 DEBG create cookie: (16 bytes): DDF06F36940E4DE5EE5E0CDDFF8B450C
+Apr 09 06:33:23 DEBG compare with cookie: (0 bytes): 
+Apr 09 06:33:23 DEBG cookie len is 0!
+Apr 09 06:33:23 DEBG send handshake packet of type: hello_verify_request (3)
+Apr 09 06:33:23 DEBG send header: (13 bytes):
+00000000 16 FE FD 00 00 00 00 00  00 00 00 00 1F 
+Apr 09 06:33:23 DEBG send unencrypted: (12 bytes):
+00000000 03 00 00 13 00 00 00 00  00 00 00 13 
+Apr 09 06:33:23 DEBG send unencrypted: (19 bytes):
+00000000 FE FD 10 DD F0 6F 36 94  0E 4D E5 EE 5E 0C DD FF 
+00000010 8B 45 0C 
+Apr 09 06:33:23 DEBG dtlsWriteCb --> Sending message to peer length:
+Apr 09 06:33:23 DEBG server hello verify was sent
+udp_adapter.cpp:336 EPOLLIN on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx len: 83
+Apr 09 06:33:23 DEBG got 83 bytes from port 56830
+dtls_adapter.cpp:166 got len: 83 bytes from port: 56830
+Apr 09 06:33:23 DEBG bytes from peer:: (83 bytes): 16FEFD000000000000000100460100003A000100000000003AFEFD000000007400FE60E28E3BA879F1592DEB2D2979F945992A432AEADCB5BEDEDB0010DDF06F36940E4DE5EE5E0CDDFF8B450C0002C0A80100
+Apr 09 06:33:23 DEBG dtls_handle_message: PEER NOT FOUND
+Apr 09 06:33:23 DEBG peer addr: 192.168.0.181:56830
+Apr 09 06:33:23 DEBG got packet 22 (83 bytes)
+Apr 09 06:33:23 DEBG receive header: (13 bytes):
+00000000 16 FE FD 00 00 00 00 00  00 00 01 00 46 
+Apr 09 06:33:23 DEBG receive unencrypted: (70 bytes):
+00000000 01 00 00 3A 00 01 00 00  00 00 00 3A FE FD 00 00 
+00000010 00 00 74 00 FE 60 E2 8E  3B A8 79 F1 59 2D EB 2D 
+00000020 29 79 F9 45 99 2A 43 2A  EA DC B5 BE DE DB 00 10 
+00000030 DD F0 6F 36 94 0E 4D E5  EE 5E 0C DD FF 8B 45 0C 
+00000040 00 02 C0 A8 01 00 
+Apr 09 06:33:23 DEBG received handshake packet of type: client_hello (1)
+Apr 09 06:33:23 DEBG handle handshake packet of type: client_hello (1)
+Apr 09 06:33:23 DEBG create cookie: (16 bytes): DDF06F36940E4DE5EE5E0CDDFF8B450C
+Apr 09 06:33:23 DEBG compare with cookie: (16 bytes): DDF06F36940E4DE5EE5E0CDDFF8B450C
+Apr 09 06:33:23 DEBG found matching cookie
+Apr 09 06:33:23 DEBG creating new peer
+Apr 09 06:33:23 DEBG dtls_new_peer: 192.168.0.181:56830
+Apr 09 06:33:23 DEBG DTLSv12: initialize HASH_SHA256
+Apr 09 06:33:23 DEBG clear MAC
+Apr 09 06:33:23 DEBG add MAC data: (70 bytes): 0100003A000100000000003AFEFD000000007400FE60E28E3BA879F1592DEB2D2979F945992A432AEADCB5BEDEDB0010DDF06F36940E4DE5EE5E0CDDFF8B450C0002C0A80100
+Apr 09 06:33:23 DEBG add MAC data: (12 bytes): 020000260001000000000026
+Apr 09 06:33:23 DEBG add MAC data: (38 bytes): FEFD0000000D2205F2164DF6B008F2947D10D6D4322BD8F0870B5BD565498A51053900C0A800
+Apr 09 06:33:23 DEBG send handshake packet of type: server_hello (2)
+Apr 09 06:33:23 DEBG send header: (13 bytes):
+00000000 16 FE FD 00 00 00 00 00  00 00 01 00 32 
+Apr 09 06:33:23 DEBG send unencrypted: (12 bytes):
+00000000 02 00 00 26 00 01 00 00  00 00 00 26 
+Apr 09 06:33:23 DEBG send unencrypted: (38 bytes):
+00000000 FE FD 00 00 00 0D 22 05  F2 16 4D F6 B0 08 F2 94 
+00000010 7D 10 D6 D4 32 2B D8 F0  87 0B 5B D5 65 49 8A 51 
+00000020 05 39 00 C0 A8 00 
+Apr 09 06:33:23 DEBG dtlsWriteCb --> Sending message to peer length:
+Apr 09 06:33:23 INFO In Fn dtlsGetPskInfoCb Fd: 3 identity_length: 0 result_length: 32
+Apr 09 06:33:23 DEBG add MAC data: (12 bytes): 0E0000000002000000000000
+Apr 09 06:33:23 DEBG send handshake packet of type: server_hello_done (14)
+Apr 09 06:33:23 DEBG send header: (13 bytes):
+00000000 16 FE FD 00 00 00 00 00  00 00 02 00 0C 
+Apr 09 06:33:23 DEBG send unencrypted: (12 bytes):
+00000000 0E 00 00 00 00 02 00 00  00 00 00 00 
+Apr 09 06:33:23 DEBG dtlsWriteCb --> Sending message to peer length:
+udp_adapter.cpp:336 EPOLLIN on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx len: 15
+Apr 09 06:33:23 DEBG got 15 bytes from port 56830
+dtls_adapter.cpp:166 got len: 15 bytes from port: 56830
+Apr 09 06:33:23 DEBG bytes from peer:: (15 bytes): 15FEFD000000000000000200020250
+Apr 09 06:33:23 DEBG dtls_handle_message: FOUND PEER
+Apr 09 06:33:23 DEBG got packet 21 (15 bytes)
+Apr 09 06:33:23 DEBG new packet arrived with seq_nr: 2
+Apr 09 06:33:23 DEBG new bitfield is               : 2
+Apr 09 06:33:23 DEBG receive header: (13 bytes):
+00000000 15 FE FD 00 00 00 00 00  00 00 02 00 02 
+Apr 09 06:33:23 DEBG receive unencrypted: (2 bytes):
+00000000 02 50 
+Apr 09 06:33:23 INFO ** Alert: level 2, description 80
+Apr 09 06:33:23 ALRT 80 invalidate peer
+Apr 09 06:33:23 DEBG  Fd: 3
+Apr 09 06:33:23 DEBG DTLS Alert Message level: 2  code: 80
+Apr 09 06:33:23 INFO Unhandled Alert: 80
+Apr 09 06:33:23 DEBG removed peer: 192.168.0.181:56830
+Apr 09 06:33:23 WARN received alert, peer has been invalidated
+
+
+
+///// dtls Client log
+mnahmed@mnahmed-VirtualBox:~/sw/iot/apps/build$ ./lwm2m local=coaps://192.168.0.181:56830 bs=coaps://192.168.0.181:5684 role=client identity=97554878B284CE3B727D8DD06E87659A secret=3894beedaa7fe0eae6597dc350a59525
+main.cpp:98 ent.first:identity ent.second:97554878B284CE3B727D8DD06E87659A
+main.cpp:98 ent.first:role ent.second:client
+main.cpp:98 ent.first:bs ent.second:coaps://192.168.0.181:5684
+main.cpp:98 ent.first:secret ent.second:3894beedaa7fe0eae6597dc350a59525
+main.cpp:98 ent.first:local ent.second:coaps://192.168.0.181:56830
+main.cpp:131 scheme:1 host:192.168.0.181 port:56830
+fn:int32_t UDPAdapter::init(const string&, const uint16_t&, const UDPAdapter::Scheme_t&, const UDPAdapter::ServiceType_t&):110 created handle:3 for service:4
+udp_adapter.cpp:295 evts.size: 1
+Apr 09 06:33:23 DEBG dtls_new_peer: 192.168.0.181:5684
+Apr 09 06:33:23 DEBG DTLSv12: initialize HASH_SHA256
+Apr 09 06:33:23 DEBG send handshake packet of type: client_hello (1)
+Apr 09 06:33:23 DEBG send header: (13 bytes):
+00000000 16 FE FD 00 00 00 00 00  00 00 00 00 36 
+Apr 09 06:33:23 DEBG send unencrypted: (12 bytes):
+00000000 01 00 00 2A 00 00 00 00  00 00 00 2A 
+Apr 09 06:33:23 DEBG send unencrypted: (42 bytes):
+00000000 FE FD 00 00 00 00 74 00  FE 60 E2 8E 3B A8 79 F1 
+00000010 59 2D EB 2D 29 79 F9 45  99 2A 43 2A EA DC B5 BE 
+00000020 DE DB 00 00 00 02 C0 A8  01 00 
+Apr 09 06:33:23 DEBG dtlsWriteCb --> Sending message to peer length:
+Apr 09 06:33:23 DEBG  Fd: 3
+Apr 09 06:33:23 DEBG DTLS Internal Events code: 476
+Apr 09 06:33:23 INFO Peer is connect
+Apr 09 06:33:23 DEBG DTLSAdapter::connect Establises new channel for Client Hello
+udp_adapter.cpp:336 EPOLLIN on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx len: 44
+Apr 09 06:33:23 DEBG got 44 bytes from port 5684
+dtls_adapter.cpp:166 got len: 44 bytes from port: 5684
+Apr 09 06:33:23 DEBG bytes from peer:: (44 bytes): 16FEFD0000000000000000001F030000130000000000000013FEFD10DDF06F36940E4DE5EE5E0CDDFF8B450C
+Apr 09 06:33:23 DEBG dtls_handle_message: FOUND PEER
+Apr 09 06:33:23 DEBG got packet 22 (44 bytes)
+Apr 09 06:33:23 DEBG receive header: (13 bytes):
+00000000 16 FE FD 00 00 00 00 00  00 00 00 00 1F 
+Apr 09 06:33:23 DEBG receive unencrypted: (31 bytes):
+00000000 03 00 00 13 00 00 00 00  00 00 00 13 FE FD 10 DD 
+00000010 F0 6F 36 94 0E 4D E5 EE  5E 0C DD FF 8B 45 0C 
+Apr 09 06:33:23 DEBG received handshake packet of type: hello_verify_request (3)
+Apr 09 06:33:23 DEBG handle handshake packet of type: hello_verify_request (3)
+Apr 09 06:33:23 DEBG clear MAC
+Apr 09 06:33:23 DEBG add MAC data: (12 bytes): 0100003A000100000000003A
+Apr 09 06:33:23 DEBG add MAC data: (58 bytes): FEFD000000007400FE60E28E3BA879F1592DEB2D2979F945992A432AEADCB5BEDEDB0010DDF06F36940E4DE5EE5E0CDDFF8B450C0002C0A80100
+Apr 09 06:33:23 DEBG send handshake packet of type: client_hello (1)
+Apr 09 06:33:23 DEBG send header: (13 bytes):
+00000000 16 FE FD 00 00 00 00 00  00 00 01 00 46 
+Apr 09 06:33:23 DEBG send unencrypted: (12 bytes):
+00000000 01 00 00 3A 00 01 00 00  00 00 00 3A 
+Apr 09 06:33:23 DEBG send unencrypted: (58 bytes):
+00000000 FE FD 00 00 00 00 74 00  FE 60 E2 8E 3B A8 79 F1 
+00000010 59 2D EB 2D 29 79 F9 45  99 2A 43 2A EA DC B5 BE 
+00000020 DE DB 00 10 DD F0 6F 36  94 0E 4D E5 EE 5E 0C DD 
+00000030 FF 8B 45 0C 00 02 C0 A8  01 00 
+Apr 09 06:33:23 DEBG dtlsWriteCb --> Sending message to peer length:
+udp_adapter.cpp:336 EPOLLIN on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx len: 63
+Apr 09 06:33:23 DEBG got 63 bytes from port 5684
+dtls_adapter.cpp:166 got len: 63 bytes from port: 5684
+Apr 09 06:33:23 DEBG bytes from peer:: (63 bytes): 16FEFD00000000000000010032020000260001000000000026FEFD0000000D2205F2164DF6B008F2947D10D6D4322BD8F0870B5BD565498A51053900C0A800
+Apr 09 06:33:23 DEBG dtls_handle_message: FOUND PEER
+Apr 09 06:33:23 DEBG got packet 22 (63 bytes)
+Apr 09 06:33:23 DEBG new packet arrived with seq_nr: 1
+Apr 09 06:33:23 DEBG new bitfield is               : ffffffffffffffff
+Apr 09 06:33:23 DEBG receive header: (13 bytes):
+00000000 16 FE FD 00 00 00 00 00  00 00 01 00 32 
+Apr 09 06:33:23 DEBG receive unencrypted: (50 bytes):
+00000000 02 00 00 26 00 01 00 00  00 00 00 26 FE FD 00 00 
+00000010 00 0D 22 05 F2 16 4D F6  B0 08 F2 94 7D 10 D6 D4 
+00000020 32 2B D8 F0 87 0B 5B D5  65 49 8A 51 05 39 00 C0 
+00000030 A8 00 
+Apr 09 06:33:23 DEBG received handshake packet of type: server_hello (2)
+Apr 09 06:33:23 DEBG handle handshake packet of type: server_hello (2)
+Apr 09 06:33:23 DEBG add MAC data: (50 bytes): 020000260001000000000026FEFD0000000D2205F2164DF6B008F2947D10D6D4322BD8F0870B5BD565498A51053900C0A800
+udp_adapter.cpp:336 EPOLLIN on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx on Fd: 3
+Apr 09 06:33:23 DEBG DTLSAdapter::rx len: 25
+Apr 09 06:33:23 DEBG got 25 bytes from port 5684
+dtls_adapter.cpp:166 got len: 25 bytes from port: 5684
+Apr 09 06:33:23 DEBG bytes from peer:: (25 bytes): 16FEFD0000000000000002000C0E0000000002000000000000
+Apr 09 06:33:23 DEBG dtls_handle_message: FOUND PEER
+Apr 09 06:33:23 DEBG got packet 22 (25 bytes)
+Apr 09 06:33:23 DEBG new packet arrived with seq_nr: 2
+Apr 09 06:33:23 DEBG new bitfield is               : ffffffffffffffff
+Apr 09 06:33:23 DEBG receive header: (13 bytes):
+00000000 16 FE FD 00 00 00 00 00  00 00 02 00 0C 
+Apr 09 06:33:23 DEBG receive unencrypted: (12 bytes):
+00000000 0E 00 00 00 00 02 00 00  00 00 00 00 
+Apr 09 06:33:23 DEBG received handshake packet of type: server_hello_done (14)
+Apr 09 06:33:23 DEBG handle handshake packet of type: server_hello_done (14)
+Apr 09 06:33:23 DEBG add MAC data: (12 bytes): 0E0000000002000000000000
+Apr 09 06:33:23 INFO In Fn dtlsGetPskInfoCb Fd: 3 identity_length: 0 result_length: 32
+Apr 09 06:33:23 WARN cannot set psk_identity -- buffer too small
+Apr 09 06:33:23 CRIT no psk identity set in kx
+Apr 09 06:33:23 DEBG cannot send KeyExchange message
+Apr 09 06:33:23 WARN error in check_server_hellodone err: -592
+Apr 09 06:33:23 WARN error while handling handshake packet
+Apr 09 06:33:23 DEBG send header: (13 bytes):
+00000000 15 FE FD 00 00 00 00 00  00 00 02 00 02 
+Apr 09 06:33:23 DEBG send unencrypted: (2 bytes):
+00000000 02 50 
+Apr 09 06:33:23 DEBG dtlsWriteCb --> Sending message to peer length:
+LwM2MClient-->> 
+
