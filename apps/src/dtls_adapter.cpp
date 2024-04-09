@@ -62,6 +62,7 @@ std::int32_t dtlsEventCb(dtls_context_t *ctx, session_t *session, dtls_alert_lev
                         client.peerPort(PORT);
                         client.state("connected");
                         inst.clients().push_back(client);
+                        dtls_debug("PeerIP:%s PeerPort:%d\n", client.peerIP().c_str(), client.peerPort());
                     }
                 }
             }
