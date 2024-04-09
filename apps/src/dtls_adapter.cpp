@@ -39,6 +39,7 @@ std::int32_t dtlsEventCb(dtls_context_t *ctx, session_t *session, dtls_alert_lev
             case DTLS_EVENT_CONNECTED:
             {
                 dtls_info("Peer is connected\n");
+                inst.clientState("connected");
             }
             break;
             case DTLS_EVENT_RENEGOTIATE:
@@ -49,10 +50,12 @@ std::int32_t dtlsEventCb(dtls_context_t *ctx, session_t *session, dtls_alert_lev
             case DTLS_EVENT_CONNECT:
             {
                 dtls_info("Peer is connect\n");
+                inst.clientState("connecting");
             }
             break;
             default:
                 dtls_info("Unknown code: %d\n", code);
+                inst.clientState("connect_error");
         }
     } else {
         /// This is an alert message.
@@ -92,9 +95,6 @@ std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtl
                 iden = inst.identity();
                 ::memcpy(result, iden.data(), iden.length());
                 dtls_debug("The identity length:%d value:%s\n", iden.length(), iden.c_str());
-                
-                //dtls_warn("cannot set psk_identity -- buffer too small\n");
-                //return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
                 return(iden.length());
             }
         }
