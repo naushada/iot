@@ -90,7 +90,8 @@ std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtl
                 return(iden.length());
             } else {
                 iden = inst.identity();
-                dtls_debug("The identity length is %d\n", iden.length());
+                dtls_debug("The identity length:%d value:%s\n", iden.length(), iden.c_str());
+                
                 //dtls_warn("cannot set psk_identity -- buffer too small\n");
                 //return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
                 return(iden.length());
@@ -98,6 +99,7 @@ std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtl
         }
         case DTLS_PSK_KEY:
         {
+            dtls_debug("For PSK The identity length:%d value:%s\n", identity_len, identity);
             auto secret = inst.get_secret(in);
             if(secret.empty()) {
                 dtls_warn("Can't retrieve PSK for an empty identity\n");
