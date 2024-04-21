@@ -1016,6 +1016,8 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
         out.push_back(rsp);
     } else {
         /// This is a CoAP Request
+        rsp = buildResponse(coapmessage);
+        out.push_back(rsp);
     }
 
     if(!coapmessage.ismorebitset) {
