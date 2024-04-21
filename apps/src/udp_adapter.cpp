@@ -3,7 +3,6 @@
 
 #include "udp_adapter.hpp"
 
-
 void UDPAdapter::hex_dump(const std::string& in) {
     std::stringstream oss;
     for(const auto& ent: in)
@@ -23,7 +22,7 @@ std::int32_t UDPAdapter::rx(std::int32_t fd, std::string& out, std::uint32_t& pe
     socklen_t slen = sizeof(session);
 
     len = recvfrom(fd, buf.data(), buf.size(), MSG_TRUNC, (struct sockaddr *)&session, &slen);
-    
+
     if(len < 0) {
         perror("recvfrom");
         return (-1);
@@ -35,15 +34,13 @@ std::int32_t UDPAdapter::rx(std::int32_t fd, std::string& out, std::uint32_t& pe
         peerIP = session.sin_addr.s_addr;
         return(0);
     }
-
     return(-1);  
 }
-
 
 std::int32_t UDPAdapter::tx(std::string& in, ServiceType_t& service) {
     struct sockaddr_in peerAddr;
     struct addrinfo *result;
-    
+
     auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {
         return(service == ent.second->service());
     });
@@ -56,7 +53,7 @@ std::int32_t UDPAdapter::tx(std::string& in, ServiceType_t& service) {
             printf("%x ", (unsigned char)ent);
         }
         printf("\n");
-        
+
         auto s = getaddrinfo(ctx.second->peerHost().data(), std::to_string(ctx.second->peerPort()).c_str(), nullptr, &result);
         if (!s) {
             peerAddr = *((struct sockaddr_in*)(result->ai_addr));
@@ -75,21 +72,18 @@ std::int32_t UDPAdapter::tx(std::string& in, ServiceType_t& service) {
             return(-1);
         }
     }
-
     return(0);
 }
 
 std::int32_t UDPAdapter::init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme, const ServiceType_t& service) {
     std::int32_t fd = ::socket(AF_INET, SOCK_DGRAM, 0);
-            
     if(fd < 0) {
         std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error socket creation failed error:"<< std::strerror(errno) << std::endl; 
         return(-1);
     }
-            
+
     struct sockaddr_in selfAddr;
     struct addrinfo *result;
-
     auto s = getaddrinfo(host.data(), std::to_string(port).c_str(), nullptr, &result);
     if (!s) {
         selfAddr = *((struct sockaddr_in*)(result->ai_addr));
@@ -106,7 +100,7 @@ std::int32_t UDPAdapter::init(const std::string& host, const std::uint16_t& port
         std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " bind failed error:"<< std::strerror(errno) << std::endl;
         return(-1);
     }
-                        
+
     std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " created handle:" << fd  << " for service:" << service << std::endl;
 
     std::unique_ptr<ServiceContext_t> ctx = std::make_unique<ServiceContext_t>(fd, scheme);
@@ -119,7 +113,6 @@ std::int32_t UDPAdapter::init(const std::string& host, const std::uint16_t& port
         std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Failed to add into services map" << std::endl;
         return(-1);
     }
-
     return(0);
 }
 
@@ -129,12 +122,11 @@ std::int32_t UDPAdapter::init(const std::string& host, const std::uint16_t& port
         std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " init failed for scheme:" << scheme << std::endl;
         return(ret);
     }
-
     return(ret);
 }
 
 std::int32_t UDPAdapter::add_event_handle(const Scheme_t& scheme, const ServiceType_t& svc) {
-    
+
     struct epoll_event evt;
     auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {
         return(svc == ent.second->service());
@@ -142,14 +134,13 @@ std::int32_t UDPAdapter::add_event_handle(const Scheme_t& scheme, const ServiceT
 
     if(it != services().end()) {
         auto& ent = *it;
-        evt.data.u64 = (((static_cast<std::uint64_t>(ent.second->fd())) << 32) | static_cast<std::uint32_t>(((svc & 0xFFFF) << 16) | (scheme & 0xFFFF)));
+        evt.data.u64 = (((static_cast<std::uint64_t>(ent.second->fd())) << 32) | 
+                         static_cast<std::uint32_t>(((svc & 0xFFFF) << 16) | (scheme & 0xFFFF)));
         evt.events = EPOLLHUP | EPOLLIN;
-        
         ::epoll_ctl(m_epollFd, EPOLL_CTL_ADD, ent.second->fd(), &evt);
         m_evts.push_back(evt);
         return(0);
     }
-
     return(-1);
 }
 
@@ -166,7 +157,6 @@ std::int32_t UDPAdapter::handle_io(const std::int32_t& fd, const Scheme_t& schem
             handle_io_coaps(fd, service);
         }
         break;
-    
         default:
             std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " Error unknown scheme:" << scheme << std::endl;
         break;
@@ -176,16 +166,13 @@ std::int32_t UDPAdapter::handle_io(const std::int32_t& fd, const Scheme_t& schem
 std::int32_t UDPAdapter::process_request(const std::string& in, const std::unique_ptr<UDPAdapter::ServiceContext_t>& ctx, CoAPAdapter::CoAPMessage& message) {
     if(UDPAdapter::Scheme_t::CoAP == ctx->scheme()) {
         ctx->coapAdapter()->parseRequest(in, message);
-
         std::string uris;
         std::uint32_t oid, oiid, rid, riid;
         std::vector<std::string> responses;
 
         if(!ctx->coapAdapter()->getRequestType(message.coapheader.type).compare("Acknowledgement")) {
             ctx->coapAdapter()->dumpCoAPMessage(message);
-
         } else {
-
             if(ctx->coapAdapter()->isCoAPUri(message, uris)) {
 
                 ctx->coapAdapter()->processRequest(in, responses);
@@ -204,14 +191,12 @@ std::int32_t UDPAdapter::process_request(const std::string& in, const std::uniqu
                     data.m_riid = riid;
                     ctx->coapAdapter()->lwm2mAdapter()->parseLwM2MObjects(message.payload, data, object);
                 }
-
             }
         }
     } else {
         //ctx->dtlsAdapter()->rx(ctx->fd());
     }
-
-    return(0);    
+    return(0);
 }
 
 std::int32_t UDPAdapter::handle_io_coaps(const std::int32_t& fd, const ServiceType_t& service) {
@@ -228,10 +213,8 @@ std::int32_t UDPAdapter::handle_io_coaps(const std::int32_t& fd, const ServiceTy
         for(auto& response: ctx.second->dtlsAdapter()->responses()) {
             ctx.second->dtlsAdapter()->tx(response);
         }
-
         return(0);
     }
-
     return(-1);
 }
 
@@ -257,7 +240,7 @@ std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceTyp
             CoAPAdapter::CoAPMessage message;
             process_request(out, ctx.second, message);
         }
-        
+
         if(UDPAdapter::ServiceType_t::LwM2MClient == service) {
             CoAPAdapter::CoAPMessage coapmessage;
             auto ret = ctx.second->coapAdapter()->parseRequest(out, coapmessage);
@@ -266,7 +249,6 @@ std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceTyp
                 printf("%x ", (unsigned char)ent);
             }
             printf("\n");
-
             auto response = ctx.second->coapAdapter()->buildResponse(coapmessage);
             if(response.length()) {
                 tx(response, ctx.second->service());
@@ -282,10 +264,8 @@ std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceTyp
                 }
             }
         }
-
         return(0);
     }
-    
     //rx(fd);
     return(0);
 }
@@ -321,13 +301,11 @@ std::int32_t UDPAdapter::start(Role_t role, Scheme_t scheme) {
             events.resize(eventCount);
             //for(auto it = events.begin(); it != events.end(); ++it) {
             for(auto& event: events) {
-
                 struct epoll_event ent = event;
                 std::int32_t handle = ((ent.data.u64 >> 32) & 0xFFFFFFFF);
                 ServiceType_t service = static_cast<ServiceType_t>((ent.data.u64 >> 16) & 0xFFFF);
                 Scheme_t scheme = static_cast<Scheme_t>(ent.data.u64 & 0xFFFF);
-                
-                
+
                 if(ent.events & EPOLLHUP) {
                     std::cout << "fn:" << __PRETTY_FUNCTION__ << " line:" << __LINE__ <<" ent.events: EPOLLHUP" << std::endl;
                 }

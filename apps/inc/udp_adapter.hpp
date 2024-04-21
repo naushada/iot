@@ -35,27 +35,22 @@ extern "C"
 
 class UDPAdapter {
     public:
-        
         typedef enum {
             CoAPs = 1,
             CoAP = 2,
             INVALID = 3
         } Scheme_t;
-
         typedef enum {
             SERVER = 1,
             CLIENT = 2
         } Role_t;
-
         typedef enum {
             DeviceMgmtServer  = 0,
             BootsstrapServer = 1,
             DeviceMgmtClient = 3,
             LwM2MClient = 4
         } ServiceType_t;
-
         struct ServiceContext_t  {
-
             std::int32_t m_fd;
             std::string m_peerHost;
             std::uint16_t m_peerPort;
@@ -68,14 +63,12 @@ class UDPAdapter {
             std::shared_ptr<DTLSAdapter> m_dtlsAdapter;
 
             ServiceContext_t(std::int32_t Fd, Scheme_t scheme) {
-
                 if(scheme == UDPAdapter::Scheme_t::CoAPs) {
                     m_dtlsAdapter = std::make_shared<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
                 }
 
                 m_coapAdapter = std::make_shared<CoAPAdapter>();
                 //m_lwm2mAdapter = std::make_unique<LwM2MAdapter>();
-
                 m_fd = Fd;
                 m_scheme = scheme;
             }
@@ -147,7 +140,6 @@ class UDPAdapter {
         };
 
     public:
-
         UDPAdapter(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service) {
             if(!init(host, port, scheme, service)) {
                 m_epollFd = ::epoll_create1(EPOLL_CLOEXEC);
@@ -157,7 +149,7 @@ class UDPAdapter {
         ~UDPAdapter() {
             ::close(m_epollFd);
         }
-        
+
         std::int32_t add_event_handle(const Scheme_t& scheme, const ServiceType_t& svc);
         std::int32_t init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme);
         std::int32_t init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme, const ServiceType_t& service);
@@ -167,16 +159,13 @@ class UDPAdapter {
         std::int32_t rx(std::int32_t fd, std::string& out, std::uint32_t& peerIP, std::uint16_t& peerPort);
         std::int32_t tx(std::string& in, ServiceType_t& service);
         std::int32_t process_request(const std::string& in, const std::unique_ptr<UDPAdapter::ServiceContext_t>& ctx, CoAPAdapter::CoAPMessage& message);
-
         void hex_dump(const std::string& in);
         std::int32_t handle_io_coaps(const std::int32_t& handle, const ServiceType_t& service);
         std::int32_t handle_io_coap(const std::int32_t& handle, const ServiceType_t& service);
-        std::int32_t handle_io(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t&  serverType);
-
-        std::unordered_map<UDPAdapter::ServiceType_t, std::unique_ptr<UDPAdapter::ServiceContext_t>>&  services() {
+        std::int32_t handle_io(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t& serverType);
+        std::unordered_map<UDPAdapter::ServiceType_t, std::unique_ptr<UDPAdapter::ServiceContext_t>>& services() {
             return(m_services);
         }
-
     private:
         std::int32_t m_epollFd;
         std::vector<struct epoll_event> m_evts;

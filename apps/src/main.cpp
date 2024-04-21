@@ -93,11 +93,9 @@ int main(std::int32_t argc, char *argv[]) {
     std::unordered_map<std::string, std::string> argValueMap;
     parseCommandLineArgument(argc, argv, argValueMap);
     if(!argValueMap.empty()) {
-
         for(const auto& ent: argValueMap) {
             std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.first:" << ent.first << " ent.second:" << ent.second << std::endl;
         }
-
     }
 
     UDPAdapter::Role_t role = UDPAdapter::Role_t::SERVER;
@@ -155,7 +153,6 @@ int main(std::int32_t argc, char *argv[]) {
     if(UDPAdapter::Role_t::SERVER == role) {
         app->udpAdapter()->init(selfHost, 5683, scheme, UDPAdapter::ServiceType_t::DeviceMgmtServer);
         app->udpAdapter()->add_event_handle(scheme, UDPAdapter::ServiceType_t::DeviceMgmtServer);
-
     } else {
         /// @brief role is client
         auto it = std::find_if(app->udpAdapter()->services().begin(), app->udpAdapter()->services().end(),[&](auto& ent) -> bool {
