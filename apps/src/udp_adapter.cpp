@@ -165,7 +165,7 @@ std::int32_t UDPAdapter::handle_io(const std::int32_t& fd, const Scheme_t& schem
 
 std::int32_t UDPAdapter::process_request(const std::string& in, const std::unique_ptr<UDPAdapter::ServiceContext_t>& ctx, CoAPAdapter::CoAPMessage& message) {
     if(UDPAdapter::Scheme_t::CoAP == ctx->scheme()) {
-        ctx->coapAdapter()->parseRequest(in, message);
+        //ctx->coapAdapter()->parseRequest(in, message);
         std::string uris;
         std::uint32_t oid, oiid, rid, riid;
         std::vector<std::string> responses;
@@ -230,33 +230,43 @@ std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceTyp
         std::uint32_t peerIP;
         std::uint16_t peerPort;
         std::string out;
+        std::stringstream ss;
+        std::int32_t ret;
         std::vector<std::string> responses;
-        auto ret = rx(fd, out, peerIP, peerPort);
-        if(!ret) {
-            ctx.second->peerPort(peerPort);
-            struct in_addr pp;
-            pp.s_addr = peerIP;
-            ctx.second->peerHost(inet_ntoa(pp));
-            CoAPAdapter::CoAPMessage message;
-            process_request(out, ctx.second, message);
-        }
+        CoAPAdapter::CoAPMessage message;
+        ss.str("");
+
+        do {
+
+            ret = rx(fd, out, peerIP, peerPort);
+            if(!ret) {
+                ctx.second->peerPort(peerPort);
+                struct in_addr pp;
+                pp.s_addr = peerIP;
+                ctx.second->peerHost(inet_ntoa(pp));
+                ctx.second->coapAdapter()->parseRequest(out, message);
+                ss << out;
+                //process_request(out, ctx.second, message);
+            }
+
+        } while(message.ismorebitset);
 
         if(UDPAdapter::ServiceType_t::LwM2MClient == service) {
-            CoAPAdapter::CoAPMessage coapmessage;
-            auto ret = ctx.second->coapAdapter()->parseRequest(out, coapmessage);
+            //CoAPAdapter::CoAPMessage coapmessage;
+            //auto ret = ctx.second->coapAdapter()->parseRequest(out, coapmessage);
 
             for(const auto& ent: out) {
                 printf("%x ", (unsigned char)ent);
             }
             printf("\n");
-            auto response = ctx.second->coapAdapter()->buildResponse(coapmessage);
+            auto response = ctx.second->coapAdapter()->buildResponse(message);
             if(response.length()) {
                 tx(response, ctx.second->service());
             }
 
         } else {
 
-            ret = ctx.second->coapAdapter()->processRequest(out, responses);
+            ret = ctx.second->coapAdapter()->processRequest(ss.str(), responses);
             if(responses.size()) {
                 for(auto& response: responses) {
                     std::cout << basename(__FILE__) << ":" << __LINE__ << " servie: " << ctx.second->service() << std::endl;
