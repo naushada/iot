@@ -237,6 +237,11 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
             /// This function deciphers the raw data received from peer and invokes registered callback to deliver decipher message.
             auto ret = dtls_handle_message(dtls_ctx(), &session, (unsigned char *)&buf.at(0), len);
             //dtls_debug("Message is deciphered successfully\n");
+            if(ret > 0) {
+                for(auto rsp: responses()) {
+                    tx(rsp);
+                }
+            }
             return(ret);
         } else {
             dtls_debug_dump("bytes from peer: ", buf.data(), buf.size());

@@ -1099,6 +1099,7 @@ std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in, st
     CoAPMessage coapmessage;
     auto ret = parseRequest(in, coapmessage);
     auto cf = getContentFormat(coapmessage);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " processRequest with session" << std::endl;
 
     if(cf.length() > 0 && (cf == "application/vnd.oma.lwm2m+tlv") || (cf == "text/plain;charset=utf-8")) {
 
@@ -1108,6 +1109,7 @@ std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in, st
         if(isLwm2mUri(coapmessage, uri, oid, oiid, rid, riid)) {
             /// This is LwM2M string URI rd or bs
             out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
+            return(out.size());
         }
 
     } else if(!RequestType[coapmessage.coapheader.type].compare("Acknowledgement")) {
@@ -1116,6 +1118,9 @@ std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in, st
     } else {
 
         ///This is a CoAP Request
+        dumpCoAPMessage(coapmessage);
+        auto rsp = buildResponse(coapmessage);
+        out.push_back(rsp);
     }
 
     if(!coapmessage.ismorebitset) {

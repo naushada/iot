@@ -439,7 +439,14 @@ int Readline::processCommand(const std::string& command) {
 
                 if(it != app()->udpAdapter()->services().end()) {
                     auto& elm = *it;
-                    auto len = app()->udpAdapter()->tx(ent, elm.second->service());
+                    std::int32_t len;
+                    if( UDPAdapter::Scheme_t::CoAP == elm.second->scheme()) {
+                        len = app()->udpAdapter()->tx(ent, elm.second->service());
+                    } else {
+                        for(auto item: res) {
+                            len = elm.second->dtlsAdapter()->tx(item);
+                        }
+                    }
                     if(len < 0)
                         std::cout << basename(__FILE__) << ":" << __LINE__ << " Error unable to sent topeer" << " strerror:" << std::strerror(errno)<< std::endl;
                     else 
