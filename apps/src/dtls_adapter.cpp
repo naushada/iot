@@ -7,7 +7,7 @@
 std::int32_t dtlsWriteCb(dtls_context_t *ctx, session_t *session, uint8 *data, size_t len) {
     DTLSAdapter &inst = *static_cast<DTLSAdapter *>(dtls_get_app_data(ctx));
     std::int32_t fd = inst.getFd();
-    dtls_debug("dtlsWriteCb --> Sending message to peer length:\n", len);
+    dtls_debug("dtlsWriteCb --> Sending message to peer length: %d\n", len);
     return sendto(fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
 }
 
@@ -15,6 +15,7 @@ std::int32_t dtlsReadCb(dtls_context_t *ctx, session_t *session, uint8 *data, si
     std::int32_t ret = -1;
 
     if(nullptr != session && nullptr != data && len > 0) {
+        dtls_debug("dtlsReadCb --> Received deciphered message of length: %d\n", len);
         DTLSAdapter &inst = *static_cast<DTLSAdapter *>(dtls_get_app_data(ctx));
         inst.session(*session);
         std::string deciphered(reinterpret_cast<const char*>(data), len);
@@ -229,15 +230,17 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
     } else {
         buf.resize(len);
         dtls_debug("got %d bytes from port %d\n", len, ntohs(session.addr.sin.sin_port));
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " got len: " << len << " bytes from port: " << 
-            ntohs(session.addr.sin.sin_port) << std::endl;
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " got len: " << len << " bytes from port: "
+                  << ntohs(session.addr.sin.sin_port) << std::endl;
 
         if(len <= DTLS_MAX_BUF) {
             dtls_debug_dump("bytes from peer:", buf.data(), len);
-            /// This function deciphers the raw data received from peer and invokes registered callback to deliver decipher message.
+            /// @brief This function deciphers the raw data received from peer and 
+            ///        invokes registered callback (dtlsReadCb) to deliver deciphered message.
             auto ret = dtls_handle_message(dtls_ctx(), &session, (unsigned char *)&buf.at(0), len);
-            //dtls_debug("Message is deciphered successfully\n");
+            
             if(!ret) {
+                dtls_debug("Message is deciphered successfully\n");
                 for(auto rsp: responses()) {
                     dtls_debug("Sending response to peer\n");
                     tx(rsp);
