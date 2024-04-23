@@ -1009,7 +1009,16 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
         std::string uri;
         std::uint32_t oid = 0, oiid = 0, rid = 0, riid = 0;
         if(isLwm2mUri(coapmessage, uri, oid, oiid, rid, riid)) {
-            out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
+            if("rd" == uri || "bs" == uri) {
+                //rsp = buildResponse(coapmessage);
+                std::cout << basename(__FILE__) << ":" << __LINE__ << " building an ACK" << std::endl;
+                rsp = buildRegistrationAck(coapmessage);
+                out.push_back(rsp);
+            } else {
+                out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
+            }
+        } else {
+
         }
     } else if(!RequestType[coapmessage.coapheader.type].compare("Acknowledgement")) {
         rsp = buildResponse(coapmessage);
@@ -1099,7 +1108,7 @@ std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in, st
     CoAPMessage coapmessage;
     auto ret = parseRequest(in, coapmessage);
     auto cf = getContentFormat(coapmessage);
-    std::cout << basename(__FILE__) << ":" << __LINE__ << " processRequest with session" << std::endl;
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " processRequest with session cf.length: " << cf.length() << std::endl;
 
     if(cf.length() > 0 && (cf == "application/vnd.oma.lwm2m+tlv") || (cf == "text/plain;charset=utf-8")) {
 
@@ -1107,19 +1116,27 @@ std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in, st
         std::string uri;
         std::uint32_t oid, oiid, rid, riid;
         if(isLwm2mUri(coapmessage, uri, oid, oiid, rid, riid)) {
+            if("rd" == uri || "bs" == uri) {
+                //rsp = buildResponse(coapmessage);
+                std::cout << basename(__FILE__) << ":" << __LINE__ << " building an ACK" << std::endl;
+                std::string rsp = buildRegistrationAck(coapmessage);
+                out.push_back(rsp);
+            } else {
+                out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
+            }
             /// This is LwM2M string URI rd or bs
-            out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
+            //out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
             return(out.size());
         }
 
     } else if(!RequestType[coapmessage.coapheader.type].compare("Acknowledgement")) {
         ///response is a calls variable.
-        response = buildResponse(coapmessage);
+        //response = buildResponse(coapmessage);
     } else {
 
         ///This is a CoAP Request
         dumpCoAPMessage(coapmessage);
-        auto rsp = buildResponse(coapmessage);
+        std::string rsp = buildResponse(coapmessage);
         out.push_back(rsp);
     }
 

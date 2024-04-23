@@ -443,14 +443,24 @@ int Readline::processCommand(const std::string& command) {
                     if( UDPAdapter::Scheme_t::CoAP == elm.second->scheme()) {
                         len = app()->udpAdapter()->tx(ent, elm.second->service());
                     } else {
-                        for(auto item: res) {
-                            len = elm.second->dtlsAdapter()->tx(item);
+
+                        if(elm.second->dtlsAdapter()->clientState().compare("connected")) {
+                            elm.second->dtlsAdapter()->connect(elm.second->peerHost(), elm.second->peerPort());
+                        }
+
+                        if(!elm.second->dtlsAdapter()->clientState().compare("connected")) {
+                            for(auto item: res) {
+                                len = elm.second->dtlsAdapter()->tx(item);
+                                if(len < 0)
+                                    std::cout << basename(__FILE__) << ":" << __LINE__ << " Error unable to sent topeer" << " strerror:" << std::strerror(errno)<< std::endl;
+                                else 
+                                    std::cout << basename(__FILE__) << ":" << __LINE__ << " Successfully sent bytes are " << len << std::endl;
+                            }
+                        } else {
+                            std::cout << basename(__FILE__) << ":" << __LINE__ << " Client is not connected" << std::endl;
                         }
                     }
-                    if(len < 0)
-                        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error unable to sent topeer" << " strerror:" << std::strerror(errno)<< std::endl;
-                    else 
-                        std::cout << basename(__FILE__) << ":" << __LINE__ << " Successfully sent" << std::endl;
+                    
                 }
                 
             }
