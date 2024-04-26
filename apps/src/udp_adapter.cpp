@@ -298,6 +298,8 @@ std::int32_t UDPAdapter::start(Role_t role, Scheme_t scheme) {
 
     for(;;) {
 
+        ///@brief fallback to original size of vector
+        events.resize(m_evts.size());
         if(!m_evts.size()) {
         }
 
