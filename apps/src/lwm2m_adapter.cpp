@@ -1327,6 +1327,15 @@ std::int32_t LwM2MAdapter::serialiseObjects(const json& rid, std::string& out) {
                 serialiseTLV(TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01, ent.get<std::uint32_t>(), riid, out);
                 tmpss.write(reinterpret_cast<char *>(out.data()), out.length());
 
+            } else if(rid["value"].is_binary()) {
+                ///@this must either be identity or secret
+                auto sz = rid["value"].get_binary().size();
+                auto data = rid["value"].get_binary();
+
+                std::string st(reinterpret_cast<char *>(data.data()), sz);
+                serialiseTLV(TypeBits76_ResourceWithValue_11, st, identifier, out);
+                ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
             } else {
                 std::cout << basename(__FILE__) << ":" << __LINE__ << " unsupported type" << std::endl;
             }
@@ -1348,6 +1357,15 @@ std::int32_t LwM2MAdapter::serialiseObjects(const json& rid, std::string& out) {
     } else if(rid["value"].is_number()) {
 
         serialiseTLV(TypeBits76_ResourceWithValue_11, rid["value"].get<std::uint32_t>(), identifier, out);
+        ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+    } else if(rid["value"].is_binary()) {
+        ///@this must either be identity or secret
+        auto sz = rid["value"].get_binary().size();
+        auto data = rid["value"].get_binary();
+
+        std::string st(reinterpret_cast<char *>(data.data()), sz);
+        serialiseTLV(TypeBits76_ResourceWithValue_11, st, identifier, out);
         ss.write(reinterpret_cast<char *>(out.data()), out.length());
 
     } else {
