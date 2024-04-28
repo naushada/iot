@@ -31,3 +31,53 @@ docker run -ti -p 10.203.77.36:5683:5683/udp naushada/lwm2mc:latest /opt/app/lwm
 
 docker save lwm2mc:latest | gzip > lwm2mc_latest.tar.gz
 docker load < lwm2mc_latest.tar.gz
+
+
+
+
+
+
+./lwm2m local=coap://192.168.0.181:56830 bs=coap://192.168.0.181:5684 role=client
+
+./lwm2m local=coap://192.168.0.181:5684 role=server
+
+
+post uri="/bs" uri-query="ep=A123456789BCD" content-format=0
+
+///// coaps
+
+./lwm2m local=coaps://192.168.0.181:56830 bs=coaps://192.168.0.181:5684 role=client identity=97554878B284CE3B727D8DD06E87659A secret=3894beedaa7fe0eae6597dc350a59525
+
+./lwm2m local=coaps://192.168.0.181:5684 role=server identity=97554878B284CE3B727D8DD06E87659A secret=3894beedaa7fe0eae6597dc350a59525
+
+
+post uri="/bs" uri-query="ep=A123456789BCD" content-format=0
+
+
+///// coaps
+
+./lwm2m local=coaps://192.168.0.181:56830 bs=coaps://192.168.0.181:5684 role=client identity="iamcommonidentityfromsemtechdevi" secret="thisissemtechdev"
+
+./lwm2m local=coaps://192.168.0.181:5684 role=server identity="iamcommonidentityfromsemtechdevi" secret="thisissemtechdev"
+
+
+post uri="/bs" uri-query="ep=A123456789BCD" content-format=0
+
+
+
+
+./lwm2m local=coap://192.168.0.181:56830 bs=coap://192.168.0.181:5684 role=client
+
+
+LwM2M Operation to CoAP Method
+Write    --- PUT
+Update   --- POST
+Delete   --- DELETE
+Discover --- GET 
+Bootstrap Request --- POST /bs?ep={}
+Bootstrap Finish  --- POST /bs
+Register --- POST /rd?ep={Endpoint Client Name}&lt={Lifetime}&sms={MSISDN}&lwm2m={version}&b={binding}
+Update   --- POST /{location}?lt={Lifetime}&sms={MSISDN}&b={binding}
+Deregister --- DELETE /{location}
+
+Create --- POST

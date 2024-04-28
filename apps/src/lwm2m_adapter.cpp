@@ -1410,7 +1410,6 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
                             ifs.close();
                         }
 
-
                     } else if(rid["rid"].is_number() && (rid["rid"].get<std::uint32_t>() == 5/*For PSK*/)) {
                         ///@brief secret - 128 bits
                         std::vector<std::uint8_t> sec(16);
