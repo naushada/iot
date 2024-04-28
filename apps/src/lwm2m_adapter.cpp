@@ -1398,14 +1398,15 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
                 for(auto& rid: rids) {
 
                     if(rid["rid"].is_number() && (rid["rid"].get<std::uint32_t>() == 3/*For identity*/)) {
-                        ///@brief identity - 256 bits
-                        std::vector<std::uint8_t> iden(32);
+                        ///@brief identity - 128 bits
+                        std::vector<std::uint8_t> iden(16);
                         std::ifstream ifs("/dev/urandom");
 
                         if(ifs.is_open()) {
                             if(ifs.read(reinterpret_cast<char *>(iden.data()), iden.size()).good()) {
-                                ///@brief convert base64
-                                rid["value"] = json::binary(iden, 32);
+                                ///@brief 
+                                rid["value"] = json::binary(iden, iden.size());
+                                //rid["value"] = std::string(iden.begin(), iden.end());
                             }
                             ifs.close();
                         }
@@ -1419,6 +1420,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
                             if(ifs.read(reinterpret_cast<char *>(sec.data()), sec.size()).good()) {
                                 ///@brief convert base64
                                 rid["value"] = json::binary(sec, 16);
+                                //rid["value"] = std::string(sec.begin(), sec.end());
                             }
                             ifs.close();
                         }
