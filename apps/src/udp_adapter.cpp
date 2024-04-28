@@ -174,8 +174,8 @@ std::int32_t UDPAdapter::process_request(const std::string& in, const std::uniqu
             ctx->coapAdapter()->dumpCoAPMessage(message);
         } else {
             if(ctx->coapAdapter()->isCoAPUri(message, uris)) {
-
-                ctx->coapAdapter()->processRequest(in, responses);
+                bool isAmIClient = (ctx->service() == UDPAdapter::ServiceType_t::DeviceMgmtClient)? true: false;
+                ctx->coapAdapter()->processRequest(isAmIClient, in, responses);
                 for(auto& response: responses) {
                     tx(response, ctx->service());
                 }
@@ -265,8 +265,8 @@ std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceTyp
             }
 
         } else {
-
-            ret = ctx.second->coapAdapter()->processRequest(ss.str(), responses);
+            bool isAmIClient = false;
+            ret = ctx.second->coapAdapter()->processRequest(isAmIClient, ss.str(), responses);
             if(responses.size()) {
                 for(auto& response: responses) {
                     std::cout << basename(__FILE__) << ":" << __LINE__ << " servie: " << ctx.second->service() << std::endl;

@@ -52,8 +52,8 @@ class CoAPAdapter {
          * @param in 
          * @return std::int32_t 
          */
-        std::int32_t processRequest(session_t *session, std::string &in, std::vector<std::string>& out);
-        std::int32_t processRequest(const std::string& in, std::vector<std::string>& out);
+        std::int32_t processRequest(bool isAmIClient, session_t *session, std::string &in, std::vector<std::string>& out);
+        std::int32_t processRequest(bool isAmIClient, const std::string& in, std::vector<std::string>& out);
         /**
          * @brief 
          * 

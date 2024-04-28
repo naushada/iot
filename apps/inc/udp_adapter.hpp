@@ -40,16 +40,19 @@ class UDPAdapter {
             CoAP = 2,
             INVALID = 3
         } Scheme_t;
+
         typedef enum {
             SERVER = 1,
             CLIENT = 2
         } Role_t;
+
         typedef enum {
             DeviceMgmtServer  = 0,
             BootsstrapServer = 1,
             DeviceMgmtClient = 3,
             LwM2MClient = 4
         } ServiceType_t;
+
         struct ServiceContext_t  {
             std::int32_t m_fd;
             std::string m_peerHost;

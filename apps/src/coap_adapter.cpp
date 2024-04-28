@@ -996,7 +996,7 @@ std::vector<std::string> CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAP
     return(out);
 }
 
-std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std::string>& out) {
+std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in, std::vector<std::string>& out) {
     cumulativeOptionNumber = 0;
     CoAPMessage coapmessage;
     std::string rsp;
@@ -1012,8 +1012,21 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
             if("rd" == uri || "bs" == uri) {
                 //rsp = buildResponse(coapmessage);
                 std::cout << basename(__FILE__) << ":" << __LINE__ << " building an ACK" << std::endl;
-                rsp = buildRegistrationAck(coapmessage);
-                out.push_back(rsp);
+                
+                if(!isAmIClient && !uri.compare(0, 2, "bs")) {
+                    rsp = buildRegistrationAck(coapmessage);
+                    out.push_back(rsp);
+                    auto responses = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
+                    for(auto& response: responses) {
+                        out.push_back(response);
+                    }
+                } else if(!uri.compare(0, 2, "rd")) {
+                    rsp = buildRegistrationAck(coapmessage);
+                    out.push_back(rsp);
+                } else {
+                    rsp = buildRegistrationAck(coapmessage);
+                    out.push_back(rsp);
+                }
             } else {
                 out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
             }
@@ -1102,7 +1115,7 @@ std::int32_t CoAPAdapter::processRequest(const std::string& in, std::vector<std:
     return(out.size());
 }
 
-std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in, std::vector<std::string>& out) {
+std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, std::string& in, std::vector<std::string>& out) {
     /// clear the response buffer now.
     cumulativeOptionNumber = 0;
     CoAPMessage coapmessage;
@@ -1121,6 +1134,15 @@ std::int32_t CoAPAdapter::processRequest(session_t* session, std::string& in, st
                 std::cout << basename(__FILE__) << ":" << __LINE__ << " building an ACK" << std::endl;
                 std::string rsp = buildRegistrationAck(coapmessage);
                 out.push_back(rsp);
+                if(!uri.compare(0, 2, "bs") && !isAmIClient) {
+                    ///@brief The bootstrap request
+                    auto responses = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
+                    for(auto& response: responses) {
+                        out.push_back(response);
+                    }
+                } else {
+                    ///@brief The registration or registration update
+                }
             } else {
                 out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
             }

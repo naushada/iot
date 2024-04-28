@@ -1358,7 +1358,7 @@ std::int32_t LwM2MAdapter::serialiseObjects(const json& rid, std::string& out) {
     return(0);
 }
 
-std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string oiid, const json& rids, std::string& out) {
+std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string oiid, json& rids, std::string& out) {
     
     switch (oid)
     {
@@ -1368,11 +1368,49 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
 
         if(oiid.length()) {
 
-            for(const auto& rid: rids) {
+            if(oiid == "0") {
 
-                serialiseObjects(rid, out);
-                ss.write(reinterpret_cast<char *>(out.data()), out.length());
+                for(const auto& rid: rids) {
 
+                    serialiseObjects(rid, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+                }
+            } else {
+                for(auto& rid: rids) {
+
+                    if(rid["rid"].is_number() && (rid["rid"].get<std::uint32_t>() == 3/*For identity*/)) {
+                        ///@brief identity - 256 bits
+                        std::vector<std::uint8_t> iden(32);
+                        std::ifstream ifs("/dev/urandom");
+
+                        if(ifs.is_open()) {
+                            if(ifs.read(reinterpret_cast<char *>(iden.data()), iden.size()).good()) {
+                                ///@brief convert base64
+                                rid["value"] = json::binary(iden, 32);
+                            }
+                            ifs.close();
+                        }
+
+
+                    } else if(rid["rid"].is_number() && (rid["rid"].get<std::uint32_t>() == 5/*For PSK*/)) {
+                        ///@brief secret - 128 bits
+                        std::vector<std::uint8_t> sec(16);
+                        std::ifstream ifs("/dev/urandom");
+
+                        if(ifs.is_open()) {
+                            if(ifs.read(reinterpret_cast<char *>(sec.data()), sec.size()).good()) {
+                                ///@brief convert base64
+                                rid["value"] = json::binary(sec, 16);
+                            }
+                            ifs.close();
+                        }
+                    }
+
+                    serialiseObjects(rid, out);
+                    ss.write(reinterpret_cast<char *>(out.data()), out.length());
+
+                }
             }
             out.assign(ss.str());
 
@@ -1688,6 +1726,15 @@ std::int32_t LwM2MAdapter::devicemgmtSecurityObject01(std::string& out) {
 
         json LwM2MObject01 = json::parse(ss.str());
         buildLwM2MPayload(SecurityObjectID, std::to_string(1), LwM2MObject01, out);
+        std::ofstream ofs("../config/securityObject/modified1.json");
+
+        if(ofs.is_open()) {
+            std::string out = LwM2MObject01.dump();
+            ofs.write(out.c_str(), out.length());
+        }
+
+        ofs.close();
+
         return(0);
     }
     return(-1);

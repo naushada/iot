@@ -20,7 +20,7 @@ std::int32_t dtlsReadCb(dtls_context_t *ctx, session_t *session, uint8 *data, si
         inst.session(*session);
         std::string deciphered(reinterpret_cast<const char*>(data), len);
         std::vector<std::string> out;
-        auto rsp = inst.coapAdapter()->processRequest(session, deciphered, out);
+        auto rsp = inst.coapAdapter()->processRequest(inst.isClient(), session, deciphered, out);
         inst.responses(out);
         return(out.size());
     }
@@ -75,7 +75,7 @@ std::int32_t dtlsEventCb(dtls_context_t *ctx, session_t *session, dtls_alert_lev
             break;
             case DTLS_EVENT_CONNECT:
             {
-                dtls_info("Peer is connect\n");
+                dtls_info("Peer is connecting...\n");
                 if(inst.isClient()) {
                     inst.clientState("connecting");
                 } else {
