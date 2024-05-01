@@ -207,6 +207,11 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
             std::uint8_t ct = cf;
             ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
             ss.write (reinterpret_cast <const char *>(&ct), sizeof(ct));
+        } else {
+            optdelta |= 2 /*Length of cf value (2 bytes)*/;
+            std::uint16_t ct = htons(cf);
+            ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
+            ss.write (reinterpret_cast <const char *>(&ct), sizeof(ct));
         }
 
         if(!queries.empty()) {
@@ -278,7 +283,7 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
                 std::uint16_t optlen = 0;
                 optdelta |= 14;
                 ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
-                optlen = htons(uri.length() - 269);
+                optlen = ::htons(uri.length() - 269);
                 ss.write (reinterpret_cast <const char *>(&optlen), sizeof(optlen));
                 ss.write (reinterpret_cast <const char *>(uri.data()), uri.length());
             }
@@ -296,7 +301,7 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
                 ss.write (reinterpret_cast <const char *>(&ct), sizeof(ct));
             } else {
                 optdelta |= 2 /*Length of cf value (2 bytes)*/;
-                std::uint16_t ct = htons(cf);
+                std::uint16_t ct = ::htons(cf);
                 ss.write (reinterpret_cast <const char *>(&optdelta), sizeof(optdelta));
                 ss.write (reinterpret_cast <const char *>(&ct), sizeof(ct));
             }
@@ -659,6 +664,12 @@ std::string CoAPAdapter::buildResponse(const CoAPMessage& message) {
     ///Is this a LwM2M Objects
     std::uint32_t oid = 0, oiid = 0, rid = 0, riid = 0;
     if(isLwm2mUriObject(message, oid, oiid, rid, riid)) {
+        if(RequestType[message.coapheader.type].compare("Acknowledgement")) {
+            /// Type is not an ACK, we got a request
+            return(buildPushAck(message));
+        }
+
+        #if 0
         LwM2MAdapter lwm2mAdapter;
         LwM2MObjectData data;
         LwM2MObject object;
@@ -685,6 +696,8 @@ std::string CoAPAdapter::buildResponse(const CoAPMessage& message) {
                 return(buildPushAck(message));
             }           
         }
+        #endif
+
     } else {
         std::cout <<basename(__FILE__) << ":" << __FILE__ << " This is not an LwM2M Object" << std::endl;
     }
@@ -978,24 +991,24 @@ std::vector<std::string> CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAP
         data.m_riid = riid;
         object.m_oid = oid;
 
-        for(const auto& ent: message.payload) {
-            printf("%.2X ", (unsigned char)ent);
-        }
-        printf("\n");
         auto ret = lwm2mAdapter()->parseLwM2MObjects(message.payload, data, object);
-        std::cout << basename(__FILE__) << ":"<< __LINE__ << " ret:" << ret << std::endl;
+
         if(!ret) {
             for(const auto& ent: object.m_value) {
                 std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
                           << " ent.m_rid:" << lwm2mAdapter()->resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                           << " ent.m_ridvalue:";
                 
-                for(const auto& elm: ent.m_ridvalue) {
-                    printf("%0.2X ", (std::uint8_t)elm);
+                if(oid == 0 && ent.m_rid == 0) {
+                    std::cout << std::string(ent.m_ridvalue.begin(), ent.m_ridvalue.end()) << std::endl;
+                } else {
+                    for(const auto& elm: ent.m_ridvalue) {
+                        printf("%0.2X ", (std::uint8_t)elm);
+                    }
+                    printf("\n");
                 }
-                printf("\n");
             }
-            std::cout << basename(__FILE__) << ":" << __LINE__ << " parsing LwM2MObjects" << std::endl;
+
             rsp = buildResponse(message);
             out.push_back(rsp);
         }

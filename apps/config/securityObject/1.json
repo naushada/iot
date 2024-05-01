@@ -72,7 +72,7 @@
     {
         "rid": 10,
         "description":"Short Server ID",
-        "value": 0,
+        "value": 1,
         "include": false
         
     },
