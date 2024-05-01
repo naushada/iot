@@ -402,9 +402,11 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
     std::uint8_t typeValueOf43Bits = (onebyte & 0b00011000) >> 3;
     std::uint8_t typeValueOf20Bits = (onebyte & 0b00000111) >> 0;
 #ifdef __DEBUG__
+    printf("%0.2X\n", (unsigned char)onebyte);
     std::cout << basename(__FILE__) << ":" << __LINE__ << " typeValueOf76Bits:" << std::to_string(typeValueOf76Bits) << " typeValueOf5thBit:" << std::to_string(typeValueOf5thBit)
               << " typeValueOf43Bits:" << std::to_string(typeValueOf43Bits) << " typeValueOf20Bits:" << std::to_string(typeValueOf20Bits) << std::endl;
 #endif
+
     if(typeValueOf76Bits == TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00) {
 
         /// uri has just Object Id no instance Id.
@@ -478,7 +480,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
         }
         printf("\n");
 #endif
-        parseLwM2MObjects(std::string(contents.begin(), contents.end()), data, object);
+        return(parseLwM2MObjects(std::string(contents.begin(), contents.end()), data, object));
 
     } else if(typeValueOf76Bits == TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01) {
 
@@ -566,7 +568,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
         iss.get(*rem.rdbuf(), EOF);
         object.m_value.push_back(data);
         data.clear();
-        parseLwM2MObjects(rem.str(), data, object);
+        return(parseLwM2MObjects(rem.str(), data, object));
 
     } else if(typeValueOf76Bits == TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10) {
         
@@ -643,11 +645,11 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
 #endif
         std::ostringstream rem;
         iss.get(*rem.rdbuf(), EOF);
-        parseLwM2MObjects(std::string(contents.begin(), contents.end()), data, object);
-        parseLwM2MObjects(rem.str(), data, object);
+        return(parseLwM2MObjects(std::string(contents.begin(), contents.end()), data, object));
+        return(parseLwM2MObjects(rem.str(), data, object));
         
     } else if(typeValueOf76Bits == TypeBits76_ResourceWithValue_11) {
-        
+        //// URI of format /oid/oiid
         switch(typeValueOf5thBit) {
 
             case TypeBit5_LengthOfTheIdentifier8BitsLong_0:
@@ -687,7 +689,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
             len = static_cast<std::uint32_t>(typeValueOf20Bits);
 
         } else if(typeValueOf43Bits == TypeBits43_8BitsTypeLengthField_01) {
-
+            /// one byte length
             if(!iss.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
                 std::cout <<basename(__FILE__) << ":" << __LINE__ << " Error input buffer is too small to process" << std::endl;
             }
@@ -695,7 +697,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
             len = static_cast<std::uint32_t>(onebyte);
 
         } else if(typeValueOf43Bits == TypeBits43_16BitsTypeLengthField_10) {
-
+            /// two bytes length
             std::uint16_t twobytes;
             if(!iss.read(reinterpret_cast<char *>(&twobytes), sizeof(twobytes)).good()) {
                 std::cout <<basename(__FILE__) << ":" << __LINE__ << " Error input buffer is too small to process" << std::endl;
@@ -739,7 +741,7 @@ std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MOb
         }
         printf("\n");
 #endif
-        parseLwM2MObjects(rem.str(), data, object);
+        return(parseLwM2MObjects(rem.str(), data, object));
     }
 }
 

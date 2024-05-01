@@ -978,7 +978,13 @@ std::vector<std::string> CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAP
         data.m_riid = riid;
         object.m_oid = oid;
 
-        if(!lwm2mAdapter()->parseLwM2MObjects(message.payload, data, object)) {
+        for(const auto& ent: message.payload) {
+            printf("%.2X ", (unsigned char)ent);
+        }
+        printf("\n");
+        auto ret = lwm2mAdapter()->parseLwM2MObjects(message.payload, data, object);
+        std::cout << basename(__FILE__) << ":"<< __LINE__ << " ret:" << ret << std::endl;
+        if(!ret) {
             for(const auto& ent: object.m_value) {
                 std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
                           << " ent.m_rid:" << lwm2mAdapter()->resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
@@ -989,6 +995,7 @@ std::vector<std::string> CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAP
                 }
                 printf("\n");
             }
+            std::cout << basename(__FILE__) << ":" << __LINE__ << " parsing LwM2MObjects" << std::endl;
             rsp = buildResponse(message);
             out.push_back(rsp);
         }
@@ -1028,6 +1035,7 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
                     out.push_back(rsp);
                 }
             } else {
+                /// Parsing LwM2M Objects
                 out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
             }
         } else {
@@ -1144,6 +1152,7 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
                     ///@brief The registration or registration update
                 }
             } else {
+                std::cout << basename(__FILE__) << ":" << __LINE__ << " received LwM2M Object" << " oid: " << oid << " oiid: " << oiid << std::endl;
                 out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
             }
             /// This is LwM2M string URI rd or bs

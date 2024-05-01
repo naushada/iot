@@ -160,8 +160,8 @@ TEST(LwM2MAdapterTestSuite, BootstrapBSServerSecurityObject) {
 }
 
 TEST(LwM2MAdapterTestSuite, BootstrapSecurityDMServerObject) {
-    std::string request = "c80021636f6170733a2f2f6c772e6e612e61697276616e746167652e6e65743a35363836c10100c10200c803204233373946453136353830344242453843313938334537453431424430433845c804204233373946453136353830344242453843313938334537453431424430433845c8051062f3d1394bc5bc4587db3512e85740d6c10603c007c008c009c10a01c10b01";
-    
+    //std::string request = "c80021636f6170733a2f2f6c772e6e612e61697276616e746167652e6e65743a35363836c10100c10200c803204233373946453136353830344242453843313938334537453431424430433845c804204233373946453136353830344242453843313938334537453431424430433845c8051062f3d1394bc5bc4587db3512e85740d6c10603c007c008c009c10a01c10b01";
+    std::string request = "C80014636F6170733A2F2F302E302E302E303A35363833C10100C10200C80310CAB5BDF74A92A5951AD4B1EA54C14884C10400C80510D92289EB38A61729824977FF41128623C10600C10700C10800C10900C10A00C10B00C10C00";
     LwM2MAdapter lwm2mAdapter;
     //std::vector<LwM2MObject> objects;
     LwM2MObject object;
@@ -174,7 +174,8 @@ TEST(LwM2MAdapterTestSuite, BootstrapSecurityDMServerObject) {
     data.m_oiid = oiid;
     data.m_riid = riid;
     
-    lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
+    auto ret = lwm2mAdapter.parseLwM2MObjects(bindata, data, object);
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " ret:" << ret << std::endl;
     for(const auto& ent: object.m_value) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " object.m_oid:" << object.m_oid << " ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
                   << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
