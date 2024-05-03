@@ -6,11 +6,11 @@
 
 using json = nlohmann::json;
 
-CoAPAdapter::CoAPAdapter() {
+CoAPAdapter::CoAPAdapter(UDPAdapter& udpAdapter) : m_udpAdapter(udpAdapter) {
     cumulativeOptionNumber = 0;
     response.clear();
     
-    m_lwm2mAdapter = std::make_shared<LwM2MAdapter>();
+    m_lwm2mAdapter = std::make_shared<LwM2MAdapter>(*this);
     OptionNumber = {
         {0, "Reserve"},
         {1, "If-Match"},
@@ -659,19 +659,19 @@ std::string CoAPAdapter::buildResponse(const CoAPMessage& message) {
     ///Is this a LwM2M Objects
     std::uint32_t oid = 0, oiid = 0, rid = 0, riid = 0;
     if(isLwm2mUriObject(message, oid, oiid, rid, riid)) {
-        LwM2MAdapter lwm2mAdapter;
+        //LwM2MAdapter lwm2mAdapter;
         LwM2MObjectData data;
         LwM2MObject object;
         data.m_oiid = oiid;
         data.m_rid = rid;
         data.m_riid = riid;
         object.m_oid = oid;
-        lwm2mAdapter.parseLwM2MObjects(message.payload, data, object);
+        lwm2mAdapter()->parseLwM2MObjects(message.payload, data, object);
         {
             ///Objects are extracted successfully
             for(const auto& ent: object.m_value) {
                 std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                          << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                          << " ent.m_rid:" << lwm2mAdapter()->resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                           << " ent.m_ridvalue:";
         
                 for(const auto& elm: ent.m_ridvalue) {
@@ -1193,7 +1193,7 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
                 }
             } else if(11542 /*application/vnd.oma.lwm2m+tlv*/ == ct) {
                 ///Process LwM2M Object(s)
-                LwM2MAdapter lwm2mAdapter;
+                //LwM2MAdapter lwm2mAdapter;
                 ///Build the Response for a given Request
                 std::string uri;
                 std::uint32_t oid, oiid, rid, riid;
@@ -1208,12 +1208,12 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
                     data.m_riid = riid;
                     object.m_oid = oid;
 
-                    if(!lwm2mAdapter.parseLwM2MObjects(coapmessage.payload, data, object)) {
+                    if(!lwm2mAdapter()->parseLwM2MObjects(coapmessage.payload, data, object)) {
 
                         ///Objects are extracted successfully
                         for(const auto& ent: object.m_value) {
                             std::cout << basename(__FILE__) << ":" << __LINE__ <<  " object.m_oid:" << object.m_oid <<" ent.m_oiid:" << ent.m_oiid << " ent.m_riid:" << ent.m_riid
-                                      << " ent.m_rid:" << lwm2mAdapter.resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
+                                      << " ent.m_rid:" << lwm2mAdapter()->resourceIDName(oid, ent.m_rid) << " ent.m_ridlength:" << ent.m_ridlength << " ent.m_ridvalue.size:" << ent.m_ridvalue.size()
                                       << " ent.m_ridvalue:";
         
                             for(const auto& elm: ent.m_ridvalue) {

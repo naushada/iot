@@ -103,7 +103,7 @@ std::int32_t UDPAdapter::init(const std::string& host, const std::uint16_t& port
 
     std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " created handle:" << fd  << " for service:" << service << std::endl;
 
-    std::unique_ptr<ServiceContext_t> ctx = std::make_unique<ServiceContext_t>(fd, scheme);
+    std::unique_ptr<ServiceContext_t> ctx = std::make_unique<ServiceContext_t>(fd, scheme, *this);
     ctx->selfHost(host);
     ctx->selfPort(port);
     ctx->service(service);

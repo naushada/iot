@@ -178,13 +178,13 @@ std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtl
     return(-1);
 }
 
-DTLSAdapter::DTLSAdapter(std::int32_t fd, log_t log_level) {
+DTLSAdapter::DTLSAdapter(std::int32_t fd, log_t log_level, CoAPAdapter& coapAdapter) : m_coapAdapter(coapAdapter) {
     dtlsFd = fd;
     dtls_init();
     m_dtls_ctx = dtls_new_context(this);
     dtls_set_log_level(log_level);
     dtls_set_handler(m_dtls_ctx, &cb);
-    m_coapAdapter = std::make_shared<CoAPAdapter>();
+    //m_coapAdapter = std::make_shared<CoAPAdapter>();
     isClient(false);
     clientState("error");
 }

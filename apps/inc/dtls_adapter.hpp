@@ -8,7 +8,7 @@
 #include <iostream>
 #include <unordered_map>
 
-#include "coap_adapter.hpp"
+//#include "coap_adapter.hpp"
 
 /**
  *  @brief Let the c++ compiler know not to mangle the c's functions name because this is an external functions of c not c++,
@@ -65,6 +65,8 @@ extern "C"
     */
     std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtls_credentials_type_t type, const unsigned char *identity, size_t identity_len, unsigned char *result, size_t result_length);
 }
+
+class CoAPAdapter;
 
 class DTLSAdapter {
     public:
@@ -137,8 +139,8 @@ class DTLSAdapter {
             .verify_ecdsa_key = nullptr
         };
     
-        DTLSAdapter(std::int32_t fd, log_t log_level);
-        DTLSAdapter();
+        DTLSAdapter(std::int32_t fd, log_t log_level, CoAPAdapter& coapAdapter);
+        DTLSAdapter() = delete;
         ~DTLSAdapter();
 
         std::int32_t rx(std::int32_t fd);
@@ -208,7 +210,7 @@ class DTLSAdapter {
             return binary;
         }
         
-        std::shared_ptr<CoAPAdapter>& coapAdapter() {
+        CoAPAdapter& coapAdapter() {
             return(m_coapAdapter);
         }
         
@@ -282,7 +284,8 @@ class DTLSAdapter {
         dtls_context_t *m_dtls_ctx;
         std::unordered_map<std::string, std::string> device_credentials;
         std::int32_t dtlsFd;
-        std::shared_ptr<CoAPAdapter> m_coapAdapter;
+        //std::shared_ptr<CoAPAdapter> m_coapAdapter;
+        CoAPAdapter& m_coapAdapter;
         session_t m_session;
         std::string m_data;
         std::vector<std::string> m_responses;

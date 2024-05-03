@@ -17,6 +17,8 @@ extern "C" {
     #include <libgen.h>
 }
 
+class CoAPAdapter;
+
 enum ObjectId_t : std::uint32_t {
     SecurityObjectID = 0,
     ServerObjectID = 1,
@@ -84,7 +86,7 @@ struct LwM2MObject {
 
 class LwM2MAdapter {
     public:
-        LwM2MAdapter();
+        LwM2MAdapter(CoAPAdapter& coapAdapter);
         ~LwM2MAdapter();
         
         std::vector<LwM2MObject>& objects() {
@@ -192,6 +194,10 @@ class LwM2MAdapter {
             return binary;
         }
 
+        CoAPAdapter& coapAdapter() {
+            return(m_coapAdapter);
+        }
+
     private:
         std::vector<LwM2MObject> m_objects;
         std::unordered_map<std::uint32_t, std::string> SecurityObjectResourceId2ResourceName;
@@ -210,6 +216,7 @@ class LwM2MAdapter {
         std::unordered_map<std::string, std::uint32_t> ResourceName2LocationObjectResourceId;
         std::unordered_map<std::uint32_t, std::string> ConnectivityStatsObjectResourceId2ResourceName;
         std::unordered_map<std::string, std::uint32_t> ResourceName2ConnectivityStatsObjectResourceId;
+        CoAPAdapter& m_coapAdapter;
 };
 
 #endif /*__lwm2m_adapter_hpp__*/

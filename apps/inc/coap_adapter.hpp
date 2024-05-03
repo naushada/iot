@@ -17,6 +17,8 @@ extern "C" {
     #include <zlib.h>
 }
 
+class  UDPAdapter;
+
 class CoAPAdapter {
     public:
         struct CoAPOptions {
@@ -43,7 +45,7 @@ class CoAPAdapter {
             std::string payload;
         };
 
-        CoAPAdapter();
+        CoAPAdapter(UDPAdapter& udpAdapter);
         ~CoAPAdapter();
         /**
          * @brief 
@@ -295,6 +297,9 @@ class CoAPAdapter {
 
         std::vector<std::string> handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid, 
                                                     std::uint32_t oiid, std::uint32_t rid, std::uint32_t riid);
+        UDPAdapter& udpAdapter() {
+            return(m_udpAdapter);
+        }
 
     private:
         std::unordered_map<std::uint32_t, std::string> OptionNumber;
@@ -309,6 +314,7 @@ class CoAPAdapter {
         std::uint32_t cumulativeOptionNumber;
         CBORAdapter cborAdapter;
         std::shared_ptr<LwM2MAdapter> m_lwm2mAdapter;
+        UDPAdapter& m_udpAdapter;
 
 };
 

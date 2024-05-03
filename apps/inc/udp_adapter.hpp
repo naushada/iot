@@ -32,6 +32,7 @@ extern "C"
     #include <signal.h>
 }
 
+class App;
 
 class UDPAdapter {
     public:
@@ -64,13 +65,14 @@ class UDPAdapter {
             //std::unique_ptr<LwM2MAdapter> m_lwm2mAdapter;
             std::shared_ptr<CoAPAdapter> m_coapAdapter;
             std::shared_ptr<DTLSAdapter> m_dtlsAdapter;
+            UDPAdapter& m_udpAdapter;
 
-            ServiceContext_t(std::int32_t Fd, Scheme_t scheme) {
+            ServiceContext_t(std::int32_t Fd, Scheme_t scheme, UDPAdapter& udpAdapter) : m_udpAdapter(udpAdapter) {
                 if(scheme == UDPAdapter::Scheme_t::CoAPs) {
-                    m_dtlsAdapter = std::make_shared<DTLSAdapter>(Fd, DTLS_LOG_DEBUG);
+                    m_dtlsAdapter = std::make_shared<DTLSAdapter>(Fd, DTLS_LOG_DEBUG, m_udpAdapter);
                 }
 
-                m_coapAdapter = std::make_shared<CoAPAdapter>();
+                m_coapAdapter = std::make_shared<CoAPAdapter>(m_udpAdapter);
                 //m_lwm2mAdapter = std::make_unique<LwM2MAdapter>();
                 m_fd = Fd;
                 m_scheme = scheme;
@@ -143,10 +145,11 @@ class UDPAdapter {
         };
 
     public:
-        UDPAdapter(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service) {
+        UDPAdapter(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service, App& app) : m_app(app) {
             if(!init(host, port, scheme, service)) {
                 m_epollFd = ::epoll_create1(EPOLL_CLOEXEC);
             }
+            
         }
 
         ~UDPAdapter() {
@@ -169,11 +172,20 @@ class UDPAdapter {
         std::unordered_map<UDPAdapter::ServiceType_t, std::unique_ptr<UDPAdapter::ServiceContext_t>>& services() {
             return(m_services);
         }
+
+        App& get_app() {
+            return(m_app);
+        }
+
+        UDPAdapter& udpAdapter() {
+            return(*this);
+        }
     private:
         std::int32_t m_epollFd;
         std::vector<struct epoll_event> m_evts;
         std::unordered_map<UDPAdapter::ServiceType_t, std::unique_ptr<UDPAdapter::ServiceContext_t>> m_services;
         Role_t m_role;
+        App& m_app;
 };
 
 
