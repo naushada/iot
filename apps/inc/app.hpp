@@ -35,7 +35,7 @@ class App {
         App(std::string& host, std::uint16_t& port, UDPAdapter::Scheme_t& scheme, UDPAdapter::ServiceType_t& service) : 
             m_bsState(LwM2MBootstrapState::IDLE_ST), 
             m_dmState(LwM2MDeviceManagementState::IDLE_ST), 
-            m_udpAdapter(std::make_shared<UDPAdapter>(host, port, scheme, service, *this)) {
+            m_udpAdapter(std::make_shared<UDPAdapter>(host, port, scheme, service, this)) {
         }
         
         App() = delete;
@@ -46,7 +46,7 @@ class App {
         std::int32_t start(UDPAdapter::Role_t role, UDPAdapter::Scheme_t scheme);
         std::int32_t stop();
 
-        std::shared_ptr<UDPAdapter>& udpAdapter() {
+        auto& udpAdapter() {
             return(m_udpAdapter);
         }
         

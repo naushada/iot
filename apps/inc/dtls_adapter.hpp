@@ -8,7 +8,7 @@
 #include <iostream>
 #include <unordered_map>
 
-//#include "coap_adapter.hpp"
+#include "coap_adapter.hpp"
 
 /**
  *  @brief Let the c++ compiler know not to mangle the c's functions name because this is an external functions of c not c++,
@@ -139,7 +139,7 @@ class DTLSAdapter {
             .verify_ecdsa_key = nullptr
         };
     
-        DTLSAdapter(std::int32_t fd, log_t log_level, CoAPAdapter& coapAdapter);
+        DTLSAdapter(std::int32_t fd, log_t log_level, CoAPAdapter* coapAdapter);
         DTLSAdapter() = delete;
         ~DTLSAdapter();
 
@@ -211,7 +211,7 @@ class DTLSAdapter {
         }
         
         CoAPAdapter& coapAdapter() {
-            return(m_coapAdapter);
+            return(*m_coapAdapter);
         }
         
         
@@ -285,7 +285,7 @@ class DTLSAdapter {
         std::unordered_map<std::string, std::string> device_credentials;
         std::int32_t dtlsFd;
         //std::shared_ptr<CoAPAdapter> m_coapAdapter;
-        CoAPAdapter& m_coapAdapter;
+        CoAPAdapter* m_coapAdapter;
         session_t m_session;
         std::string m_data;
         std::vector<std::string> m_responses;

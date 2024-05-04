@@ -17,10 +17,11 @@ std::int32_t dtlsReadCb(dtls_context_t *ctx, session_t *session, uint8 *data, si
     if(nullptr != session && nullptr != data && len > 0) {
         dtls_debug("dtlsReadCb --> Received deciphered message of length: %d\n", len);
         DTLSAdapter &inst = *static_cast<DTLSAdapter *>(dtls_get_app_data(ctx));
+        //auto inst = std::shared_ptr<DTLSAdapter>(dtls_get_app_data(ctx));
         inst.session(*session);
         std::string deciphered(reinterpret_cast<const char*>(data), len);
         std::vector<std::string> out;
-        auto rsp = inst.coapAdapter()->processRequest(inst.isClient(), session, deciphered, out);
+        auto rsp = inst.coapAdapter().processRequest(inst.isClient(), session, deciphered, out);
         inst.responses(out);
         return(out.size());
     }
@@ -178,7 +179,7 @@ std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtl
     return(-1);
 }
 
-DTLSAdapter::DTLSAdapter(std::int32_t fd, log_t log_level, CoAPAdapter& coapAdapter) : m_coapAdapter(coapAdapter) {
+DTLSAdapter::DTLSAdapter(std::int32_t fd, log_t log_level, CoAPAdapter* coapAdapter) : m_coapAdapter(coapAdapter) {
     dtlsFd = fd;
     dtls_init();
     m_dtls_ctx = dtls_new_context(this);
@@ -188,8 +189,6 @@ DTLSAdapter::DTLSAdapter(std::int32_t fd, log_t log_level, CoAPAdapter& coapAdap
     isClient(false);
     clientState("error");
 }
-
-DTLSAdapter::DTLSAdapter() : m_dtls_ctx(nullptr), device_credentials() {}
 
 DTLSAdapter::~DTLSAdapter() {
     dtls_free_context(m_dtls_ctx);

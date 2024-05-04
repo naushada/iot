@@ -3,7 +3,7 @@
 
 #include "lwm2m_adapter.hpp"
 
-LwM2MAdapter::LwM2MAdapter(CoAPAdapter& coapAdapter) : m_coapAdapter(coapAdapter) {
+LwM2MAdapter::LwM2MAdapter(CoAPAdapter* coapAdapter) : m_coapAdapter(coapAdapter) {
     ///LwM2M Security Object URI --> /0
     SecurityObjectResourceId2ResourceName = {
         {0, "LwM2M Server URI"},

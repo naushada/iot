@@ -86,7 +86,7 @@ struct LwM2MObject {
 
 class LwM2MAdapter {
     public:
-        LwM2MAdapter(CoAPAdapter& coapAdapter);
+        LwM2MAdapter(CoAPAdapter* coapAdapter);
         ~LwM2MAdapter();
         
         std::vector<LwM2MObject>& objects() {
@@ -195,7 +195,7 @@ class LwM2MAdapter {
         }
 
         CoAPAdapter& coapAdapter() {
-            return(m_coapAdapter);
+            return(*m_coapAdapter);
         }
 
     private:
@@ -216,7 +216,7 @@ class LwM2MAdapter {
         std::unordered_map<std::string, std::uint32_t> ResourceName2LocationObjectResourceId;
         std::unordered_map<std::uint32_t, std::string> ConnectivityStatsObjectResourceId2ResourceName;
         std::unordered_map<std::string, std::uint32_t> ResourceName2ConnectivityStatsObjectResourceId;
-        CoAPAdapter& m_coapAdapter;
+        CoAPAdapter* m_coapAdapter;
 };
 
 #endif /*__lwm2m_adapter_hpp__*/

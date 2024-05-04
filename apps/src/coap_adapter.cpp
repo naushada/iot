@@ -6,11 +6,11 @@
 
 using json = nlohmann::json;
 
-CoAPAdapter::CoAPAdapter(UDPAdapter& udpAdapter) : m_udpAdapter(udpAdapter) {
+CoAPAdapter::CoAPAdapter(UDPAdapter* udpAdapter) : m_udpAdapter(udpAdapter) {
     cumulativeOptionNumber = 0;
     response.clear();
     
-    m_lwm2mAdapter = std::make_shared<LwM2MAdapter>(*this);
+    m_lwm2mAdapter = std::make_shared<LwM2MAdapter>(this);
     OptionNumber = {
         {0, "Reserve"},
         {1, "If-Match"},
