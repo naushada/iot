@@ -65,9 +65,9 @@ class UDPAdapter {
             //std::unique_ptr<LwM2MAdapter> m_lwm2mAdapter;
             std::shared_ptr<CoAPAdapter> m_coapAdapter;
             std::shared_ptr<DTLSAdapter> m_dtlsAdapter;
-            UDPAdapter* m_udpAdapter;
+            UDPAdapter* const m_udpAdapter;
 
-            ServiceContext_t(std::int32_t Fd, Scheme_t scheme, UDPAdapter* udpAdapter) : m_udpAdapter(udpAdapter) {
+            ServiceContext_t(std::int32_t Fd, Scheme_t scheme, UDPAdapter* const udpAdapter) : m_udpAdapter(udpAdapter) {
                 m_coapAdapter = std::make_shared<CoAPAdapter>(m_udpAdapter);
 
                 if(scheme == UDPAdapter::Scheme_t::CoAPs) {
@@ -146,7 +146,7 @@ class UDPAdapter {
         };
 
     public:
-        UDPAdapter(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service, App* app) : m_app(app) {
+        UDPAdapter(std::string& host, std::uint16_t& port, Scheme_t& scheme, ServiceType_t& service, App* const app) : m_app(app) {
             if(!init(host, port, scheme, service)) {
                 m_epollFd = ::epoll_create1(EPOLL_CLOEXEC);
             }
@@ -188,7 +188,7 @@ class UDPAdapter {
         std::unordered_map<UDPAdapter::ServiceType_t, std::unique_ptr<UDPAdapter::ServiceContext_t>> m_services;
         Role_t m_role;
         ///@brief back pointer to parent
-        App* m_app;
+        App* const m_app;
 };
 
 

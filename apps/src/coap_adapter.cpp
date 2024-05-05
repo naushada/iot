@@ -6,7 +6,7 @@
 
 using json = nlohmann::json;
 
-CoAPAdapter::CoAPAdapter(UDPAdapter* udpAdapter) : m_udpAdapter(udpAdapter) {
+CoAPAdapter::CoAPAdapter(UDPAdapter* const udpAdapter) : m_udpAdapter(udpAdapter) {
     cumulativeOptionNumber = 0;
     response.clear();
     
