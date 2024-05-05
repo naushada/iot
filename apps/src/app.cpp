@@ -12,4 +12,31 @@ std::int32_t App::stop() {
     return(0);
 }
 
+std::int32_t App::init(const std::string& bsFile) {
+    std::ifstream ifs(bsFile);
+    std::stringstream ss("");
+
+    if(ifs.is_open()) {
+        ss << ifs.rdbuf();
+        ifs.close();
+
+        json bs = json::parse(ss.str());
+        for(const auto& ent: bs) {
+            for(const auto& [key, value]: ent.items()) {
+                if(!key.compare("serial_no") && value.is_string()) {
+                    auto it = devices().find(value.get<std::string>());
+                    if(it != devices().end()) {
+
+                    } else {
+
+                    }
+                }
+            }
+        }
+        return(0);
+    }
+    return(-1);
+
+}
+
 #endif /*__app_cpp__*/

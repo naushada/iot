@@ -40,7 +40,8 @@ class App {
             std::uint16_t m_port;
             std::uint32_t m_lt;
             std::string  m_lwm2m_version;
-            Devices() : m_serial(), m_identity(16), m_secret(16), m_ip(), m_port(), m_lt(1500), m_lwm2m_version("1.0") {}
+            std::string m_binding;
+            Devices() : m_serial(), m_identity(16), m_secret(16), m_ip(), m_port(), m_lt(1500), m_lwm2m_version("1.0"), m_binding("UQ") {}
             ~Devices() = default;
             
             void serial(std::string s) {
@@ -92,6 +93,13 @@ class App {
                 return(m_lwm2m_version);
             }
 
+            void binding(auto b) {
+                m_binding = b;
+            }
+            const auto& binding() const {
+                return(m_binding);
+            }
+
         };
 
         App(std::string& host, std::uint16_t& port, UDPAdapter::Scheme_t& scheme, UDPAdapter::ServiceType_t& service) : 
@@ -107,6 +115,7 @@ class App {
         
         std::int32_t start(UDPAdapter::Role_t role, UDPAdapter::Scheme_t scheme);
         std::int32_t stop();
+        std::int32_t init(const std::string& bsConfig = "../config/bs/bs.json");
 
         auto& udpAdapter() {
             return(m_udpAdapter);
