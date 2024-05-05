@@ -66,8 +66,6 @@ extern "C"
     std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtls_credentials_type_t type, const unsigned char *identity, size_t identity_len, unsigned char *result, size_t result_length);
 }
 
-class CoAPAdapter;
-
 class DTLSAdapter {
     public:
 
