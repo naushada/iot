@@ -21,7 +21,7 @@ void LwM2MAdapterTest::TestBody()
 
 TEST(LwM2MAdapterTestSuite, LwM2MUriWithOidOiid) {
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     LwM2MObject object;
     std::uint32_t oid = 0, oiid = 0,rid = 0;
     lwm2mAdapter.parseLwM2MUri("/3/0", oid, oiid, rid);
@@ -32,7 +32,7 @@ TEST(LwM2MAdapterTestSuite, LwM2MUriWithOidOiid) {
 
 TEST(LwM2MAdapterTestSuite, LwM2MUriWithOid) {
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     LwM2MObject object;
     std::uint32_t oid = 0, oiid = 0,rid = 0;
     lwm2mAdapter.parseLwM2MUri("/3", oid, oiid, rid);
@@ -44,7 +44,7 @@ TEST(LwM2MAdapterTestSuite, LwM2MUriWithOid) {
 
 TEST(LwM2MAdapterTestSuite, LwM2MUriWithOidOiidRidSecurityUri) {
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     LwM2MObject object;
     std::uint32_t oid = 0, oiid = 0,rid = 0;
     lwm2mAdapter.parseLwM2MUri("/0/1/11", oid, oiid, rid);
@@ -55,7 +55,7 @@ TEST(LwM2MAdapterTestSuite, LwM2MUriWithOidOiidRidSecurityUri) {
 
 TEST(LwM2MAdapterTestSuite, LwM2MUriWithOidOiidRidDeviceUri) {
     CoAPAdapter coapAdapter;    
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     LwM2MObject object;
     std::uint32_t oid = 0, oiid = 0,rid = 0;
     lwm2mAdapter.parseLwM2MUri("/3/1/10", oid, oiid, rid);
@@ -67,7 +67,7 @@ TEST(LwM2MAdapterTestSuite, LwM2MUriWithOidOiidRidDeviceUri) {
 TEST(LwM2MAdapterTestSuite, SingleObjectInstance) {
     std::string request = "080079C800144F70656E204D6F62696C6520416C6C69616E6365C801164C696768747765696774204D324D20436C69656E7465C80209333435303030313233C303312E30860641000141010588070842000ED842011388870841007D42010384C10964C10A0F830B410000C40D5182428FC60E2B30323A3030C11055";
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     //std::vector<LwM2MObject> objects;
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
@@ -104,7 +104,7 @@ TEST(LwM2MAdapterTestSuite, MultipleObjectInstance)
 {
     std::string request("080079C800144F70656E204D6F62696C6520416C6C69616E6365C801164C696768747765696774204D324D20436C69656E740AC80209333435303030313233C303312E30860641000141010588070842000ED84201138887084100 7D42010384C10964C10A0F830B410000C40D5182428FC60E2B30323A3030C11055");
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
     LwM2MObjectData data;
@@ -132,7 +132,7 @@ TEST(LwM2MAdapterTestSuite, MultipleObjectInstance)
 TEST(LwM2MAdapterTestSuite, BootstrapBSServerSecurityObject) {
     std::string request = "c80019636f6170733a2f2f62732e61697276616e746167652e6e6574c10101c10200c803203031646435666264623038633061373135343632373130373664373865373062c004c80510991832119482a3b5c7d730ce328cb47ac10603c007c008c009c10a00c10b01";
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     //std::vector<LwM2MObject> objects;
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
@@ -163,7 +163,7 @@ TEST(LwM2MAdapterTestSuite, BootstrapBSServerSecurityObject) {
 TEST(LwM2MAdapterTestSuite, BootstrapSecurityDMServerObject) {
     std::string request = "c80021636f6170733a2f2f6c772e6e612e61697276616e746167652e6e65743a35363836c10100c10200c803204233373946453136353830344242453843313938334537453431424430433845c804204233373946453136353830344242453843313938334537453431424430433845c8051062f3d1394bc5bc4587db3512e85740d6c10603c007c008c009c10a01c10b01";
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     //std::vector<LwM2MObject> objects;
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
@@ -194,7 +194,7 @@ TEST(LwM2MAdapterTestSuite, BootstrapSecurityDMServerObject) {
 TEST(LwM2MAdapterTestSuite, DMServerObject) {
     std::string request = "c10001c2010384c10201c10601c2075551";
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     //std::vector<LwM2MObject> objects;
     LwM2MObject object;
     auto bindata = lwm2mAdapter.hexToBinary(request);
@@ -247,7 +247,7 @@ TEST(LwM2MAdapterTestSuite, DeserialiseLwM2MObject) {
     
     std::cout << basename(__FILE__) << ":" << __LINE__ << " request: " << request.dump() << std::endl;
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     LwM2MObject object;
     LwM2MObjectData data;
     std::uint32_t oid = 0, oiid = 0,riid = 0;
@@ -334,7 +334,7 @@ TEST(LwM2MAdapterTestSuite, SerialiseLwM2MOMAObject) {
     
     std::cout << basename(__FILE__) << ":" << __LINE__ << " request: " << request.dump() << std::endl;
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     LwM2MObject object;
     LwM2MObjectData data;
     std::uint32_t oid = 0, oiid = 0,riid = 0;
@@ -421,7 +421,7 @@ TEST(LwM2MAdapterTestSuite, SerialiseLwM2MOMAMultipleObjectInstance) {
     
     std::cout << basename(__FILE__) << ":" << __LINE__ << " request: " << request.dump() << std::endl;
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     LwM2MObject object;
     LwM2MObjectData data;
     std::uint32_t oid = 0, oiid = 0,riid = 0;
@@ -443,7 +443,7 @@ TEST(LwM2MAdapterTestSuite, SerialiseLwM2MOMAMultipleObjectInstance) {
 
 TEST(LwM2MAdapterTestSuite, SerialiseLwM2MSecurityObject) {
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     std::string out = "";
     lwm2mAdapter.securityObject(out);
     for(const auto& elm: out) {
@@ -457,7 +457,7 @@ TEST(LwM2MAdapterTestSuite, SerialiseLwM2MSecurityObject) {
 
 TEST(LwM2MAdapterTestSuite, SerialiseLwM2MServerObject) {
     CoAPAdapter coapAdapter;
-    LwM2MAdapter lwm2mAdapter(coapAdapter);
+    LwM2MAdapter lwm2mAdapter(&coapAdapter);
     std::string out = "";
     lwm2mAdapter.serverObject30(out);
     for(const auto& elm: out) {
