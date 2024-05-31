@@ -1,0 +1,16 @@
+{
+    "bs": [{
+        "serial_no": "",
+        "identity": "",
+        "secret": "",
+        "lt": 6000,
+        "ext": "",
+        "lwm2m_version": "1.0",
+        "binding_mode": "UQ"
+    }],
+    "dm": [{
+        "serial_no": "",
+        "identity": "",
+        "secret": ""
+    }]
+}
