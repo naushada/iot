@@ -16,6 +16,10 @@
 class App {
 
     public:
+        using SerialNumber = std::string;
+        using Identity = std::string;
+        using Secret = std::string;
+
         enum class LwM2MBootstrapState: std::uint8_t {
             IDLE_ST,
             SECURITY_OBJECT_INSTANCE0_ST,
@@ -29,40 +33,32 @@ class App {
             IDLE_ST,
             REGISTRATION_ST,
             REGISTRATION_UPDATE_ST,
+            CONNECTED_ST,
+            CONNECTION_ERROR_ST,
             DONE_ST
         };
 
-        struct Devices {
+        struct Device {
             std::string m_serial;
-            std::vector<std::uint8_t> m_identity;
-            std::vector<std::uint8_t> m_secret;
             std::string m_ip;
             std::uint16_t m_port;
             std::uint32_t m_lt;
             std::string  m_lwm2m_version;
             std::string m_binding;
-            Devices() : m_serial(), m_identity(16), m_secret(16), m_ip(), m_port(), m_lt(1500), m_lwm2m_version("1.0"), m_binding("UQ") {}
-            ~Devices() = default;
+            LwM2MBootstrapState m_bsState;
+            LwM2MDeviceManagementState m_dmState;
+
+            Device() : m_serial(), m_ip(), m_port(), m_lt(1500), m_lwm2m_version("1.0"), m_binding("UQ"),
+                        m_bsState(LwM2MBootstrapState::IDLE_ST), 
+                        m_dmState(LwM2MDeviceManagementState::IDLE_ST) {}
+
+            virtual ~Device() = default;
             
             void serial(std::string s) {
                 m_serial = s;
             }
             const std::string& serial() const {
                 return(m_serial);
-            }
-
-            void identity(auto iden) {
-                m_identity = iden;
-            }
-            const auto& identity() const {
-                return(m_identity);
-            }
-
-            void secret(auto iden) {
-                m_secret = iden;
-            }
-            const auto& secret() const {
-                return(m_secret);
             }
 
             void ip(auto ip) {
@@ -103,8 +99,6 @@ class App {
         };
 
         App(std::string& host, std::uint16_t& port, UDPAdapter::Scheme_t& scheme, UDPAdapter::ServiceType_t& service) : 
-            m_bsState(LwM2MBootstrapState::IDLE_ST), 
-            m_dmState(LwM2MDeviceManagementState::IDLE_ST), 
             m_udpAdapter(std::make_shared<UDPAdapter>(host, port, scheme, service, this)) {
         }
         
@@ -121,16 +115,33 @@ class App {
             return(m_udpAdapter);
         }
 
-        auto& devices() {
-            return(m_devices);
+        std::shared_ptr<Device> device(const SerialNumber& srNo) {
+            auto it = std::find_if(m_devices.begin(),  m_devices.end(), [&](const auto& ent) -> bool {return(srNo == ent.first);});
+            
+            if(it != m_devices.end()) {
+                return(it->second);
+            }
+            return(nullptr);
         }
-        
+
+        void device(SerialNumber srNo, std::shared_ptr<Device> ent) {
+            if(!m_devices.insert(std::pair<SerialNumber, std::shared_ptr<Device>>(srNo, ent)).second) {
+                /// @brief Insertion Failed
+            }
+        }
+
+        Secret secret(const Identity& iden) {
+            auto it = std::find_if(m_credentials.begin(), m_credentials.end(), [&](const auto& ent) -> bool { return(iden == ent.first);});
+            if(it != m_credentials.end()) {
+                return(it->second.first);
+            }
+            return(std::string());
+        }
 
     private:
-        LwM2MBootstrapState m_bsState;
-        LwM2MDeviceManagementState m_dmState;
         std::shared_ptr<UDPAdapter> m_udpAdapter;
-        std::unordered_map<std::string, std::unique_ptr<Devices>> m_devices;
+        std::unordered_map<SerialNumber, std::shared_ptr<Device>> m_devices;
+        std::unordered_map<Identity, std::pair<Secret, SerialNumber>> m_credentials; 
 };
 
 #endif /*__app_hpp__*/

@@ -24,12 +24,8 @@ std::int32_t App::init(const std::string& bsFile) {
         for(const auto& ent: bs) {
             for(const auto& [key, value]: ent.items()) {
                 if(!key.compare("serial_no") && value.is_string()) {
-                    auto it = devices().find(value.get<std::string>());
-                    if(it != devices().end()) {
-
-                    } else {
-
-                    }
+                    std::shared_ptr<App::Device> dev;
+                    device(value.get<std::string>(), dev);
                 }
             }
         }
