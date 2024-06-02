@@ -98,21 +98,29 @@ class App {
 
         };
 
-        App(std::string& host, std::uint16_t& port, UDPAdapter::Scheme_t& scheme, UDPAdapter::ServiceType_t& service) : 
-            m_udpAdapter(std::make_shared<UDPAdapter>(host, port, scheme, service, this)) {
+        App() {
+            m_epollFd = ::epoll_create1(EPOLL_CLOEXEC);
+
         }
-        
-        App() = delete;
+
         ~App() {
+            ::close(m_epollFd);
+            m_services.clear();
+            m_devices.clear();
+            m_credentials.clear();
         }
 
         
-        std::int32_t start(UDPAdapter::Role_t role, UDPAdapter::Scheme_t scheme);
+        std::int32_t start();
         std::int32_t stop();
         std::int32_t init(const std::string& bsConfig = "../config/bs/bs.json");
+        std::int32_t add_rx_handler(const UDPAdapter::ServiceType_t& service, const UDPAdapter::Scheme_t& scheme, std::shared_ptr<UDPAdapter> ent);
+        std::int32_t handle_io_coaps(const std::int32_t& handle, const UDPAdapter::ServiceType_t& service);
+        std::int32_t handle_io_coap(const std::int32_t& handle, const UDPAdapter::ServiceType_t& service);
+        std::int32_t handle_io(const std::int32_t& fd, const UDPAdapter::ServiceType_t&  service, const UDPAdapter::Scheme_t& scheme);
 
-        auto& udpAdapter() {
-            return(m_udpAdapter);
+        std::unordered_map<UDPAdapter::ServiceType_t, std::shared_ptr<UDPAdapter>>& services() {
+            return(m_services);
         }
 
         std::shared_ptr<Device> device(const SerialNumber& srNo) {
@@ -139,9 +147,14 @@ class App {
         }
 
     private:
-        std::shared_ptr<UDPAdapter> m_udpAdapter;
+        std::int32_t m_epollFd;
+        std::vector<struct epoll_event> m_evts;
+        std::unordered_map<UDPAdapter::ServiceType_t, std::shared_ptr<UDPAdapter>> m_services;
         std::unordered_map<SerialNumber, std::shared_ptr<Device>> m_devices;
-        std::unordered_map<Identity, std::pair<Secret, SerialNumber>> m_credentials; 
+        std::unordered_map<Identity, std::pair<Secret, SerialNumber>> m_credentials;
+        
+        std::shared_ptr<CoAPAdapter> m_coapAdapter;
+        std::shared_ptr<LwM2MAdapter> m_lwm2mAdapter;
 };
 
 #endif /*__app_hpp__*/
