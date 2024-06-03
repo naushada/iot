@@ -20,10 +20,10 @@ std::int32_t dtlsReadCb(dtls_context_t *ctx, session_t *session, uint8 *data, si
         //auto inst = std::shared_ptr<DTLSAdapter>(dtls_get_app_data(ctx));
         inst.session(*session);
         std::string deciphered(reinterpret_cast<const char*>(data), len);
-        std::vector<std::string> out;
-        auto rsp = inst.coapAdapter().processRequest(inst.isClient(), session, deciphered, out);
-        inst.responses(out);
-        return(out.size());
+        //std::vector<std::string> out;
+        //auto rsp = inst.coapAdapter().processRequest(inst.isClient(), session, deciphered, out);
+        inst.request(deciphered);
+        return(deciphered.size());
     }
 
     return(ret);
@@ -212,7 +212,7 @@ void DTLSAdapter::connect(const std::string& ip, const std::uint16_t& port) {
     }
 }
 
-std::int32_t DTLSAdapter::rx(std::int32_t fd) {
+std::int32_t DTLSAdapter::rx(std::int32_t fd, std::string& IP, std::uint16_t& port) {
     std::int32_t ret = -1;
     std::vector<std::uint8_t> buf(DTLS_MAX_BUF);
     int len;
@@ -240,11 +240,11 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
             
             if(!ret) {
                 dtls_debug("Message is deciphered successfully\n");
-                for(auto rsp: responses()) {
-                    dtls_debug("Sending response to peer\n");
-                    tx(rsp);
-                }
             }
+
+            port = ::ntohs(session.addr.sin.sin_port);
+            IP = ::inet_ntoa(session.addr.sin.sin_addr);
+
             return(ret);
         } else {
             dtls_debug_dump("bytes from peer: ", buf.data(), buf.size());

@@ -141,7 +141,7 @@ class DTLSAdapter {
         DTLSAdapter() = delete;
         ~DTLSAdapter();
 
-        std::int32_t rx(std::int32_t fd);
+        std::int32_t rx(std::int32_t fd, std::string& IP, std::uint16_t& port);
         std::int32_t tx(std::string& in);
         std::int32_t tx(std::string& in, std::string peerIP, std::uint16_t peerPort);
         void connect(const std::string& ip, const std::uint16_t& port);
@@ -225,12 +225,12 @@ class DTLSAdapter {
             m_data = in;
         }
 
-        void responses(std::vector<std::string> rsps) {
-            m_responses = rsps;
+        void request(std::string rsps) {
+            m_request = rsps;
         }
 
-        std::vector<std::string> responses() {
-            return(m_responses);
+        std::string request() {
+            return(m_request);
         }
 
         void session(session_t sess) {
@@ -286,7 +286,7 @@ class DTLSAdapter {
         CoAPAdapter* m_coapAdapter;
         session_t m_session;
         std::string m_data;
-        std::vector<std::string> m_responses;
+        std::string m_request;
         bool m_isClient;
         std::string m_clientState;
         std::vector<ClientDetails> m_clients;

@@ -57,21 +57,35 @@ class UDPAdapter {
         void host(std::string h) {
             m_host = h;
         }
-        std::string& host() {
+        std::string host() const{
             return(m_host);
         }
 
         void port(std::uint16_t p) {
             m_port = p;
         }
-        std::uint16_t& port() {
+        std::uint16_t port() const {
             return(m_port);
+        }
+
+        void rHost(std::string h) {
+            m_rHost = h;
+        }
+        std::string rHost() const {
+            return(m_rHost);
+        }
+
+        void rPort(std::uint16_t p) {
+            m_rPort = p;
+        }
+        std::uint16_t rPort() const {
+            return(m_rPort);
         }
 
         void scheme(Scheme_t sc) {
             m_scheme = sc;
         }
-        Scheme_t& scheme() {
+        Scheme_t scheme() const {
             return(m_scheme);
         }
 
@@ -94,8 +108,24 @@ class UDPAdapter {
         }
 
     public:
-        UDPAdapter(const std::string& host, const std::uint16_t& port, const Role_t& role, Scheme_t& scheme, App* const app) : m_app(app) {
+        UDPAdapter(App* const app, const std::string& host, const std::uint16_t& port, const Role_t& role, Scheme_t& scheme) : m_app(app) {
 
+            init(host, port, scheme, role);
+            m_dtlsAdapter = nullptr;
+ 
+            if(scheme == UDPAdapter::Scheme_t::CoAPs) {
+                m_dtlsAdapter = std::make_shared<DTLSAdapter>(handle(), DTLS_LOG_DEBUG, this);
+            }
+
+            m_scheme = scheme;
+            
+        }
+
+        UDPAdapter(App* const app, const std::string& host, const std::uint16_t& port, const Role_t& role, Scheme_t& scheme,
+                   const std::string& rhost, const std::uint16_t& rport) : m_app(app) {
+
+            rHost(rhost);
+            rPort(rport);
             init(host, port, scheme, role);
             m_dtlsAdapter = nullptr;
  
@@ -114,8 +144,7 @@ class UDPAdapter {
         std::int32_t init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme, const Role_t& role);
         std::int32_t start(Role_t role, Scheme_t scheme);
         std::int32_t stop();
-        std::int32_t rx(std::int32_t fd);
-        std::int32_t rx(std::int32_t fd, std::string& out, std::uint32_t& peerIP, std::uint16_t& peerPort);
+        std::int32_t rx(std::int32_t fd, std::string& out, std::string& peerIP, std::uint16_t& peerPort);
         std::int32_t tx(const std::string& in, const ServiceType_t& service, const std::string& toIP, const std::uint16_t& toPort);
         void hex_dump(const std::string& in);
         
@@ -138,6 +167,10 @@ class UDPAdapter {
         std::uint16_t m_port;
         /// @brief could be coap or coaps
         Scheme_t m_scheme;
+        /// @brief The LwM2M Bootstrap Server Host or IP
+        std::string m_rHost;
+        /// @brief The LwM2M Server Bootstrap Port
+        std::uint16_t m_rPort;
         std::shared_ptr<DTLSAdapter> m_dtlsAdapter;
         ///@brief back pointer to parent
         App* const m_app;

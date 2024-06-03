@@ -3,50 +3,49 @@
 
 #include "app.hpp"
 
-std::int32_t App::start() {
-    std::cout << basename(__FILE__) << ":" << __LINE__ << " evts.size: " << m_evts.size() << std::endl;
+std::int32_t App::start(const bool& isInterruptted, const std::uint32_t& toInMs) {
+
     std::vector<struct epoll_event> events(m_evts.size());
+    std::cout << basename(__FILE__) << ":" << __LINE__ << " events.size: " << events.size() << std::endl;
 
-    if(UDPAdapter::Role_t::CLIENT == role &&  UDPAdapter::Scheme_t::CoAPs == scheme) {
-        auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {
-            return(UDPAdapter::ServiceType_t::LwM2MClient == ent.second->service());
-        });
-
-        if(it != services().end()) {
-            auto& ent = *it;
-            ent.second->dtlsAdapter()->connect(ent.second->peerHost(), ent.second->peerPort());
+    for(auto& service: services()) {
+        if((UDPAdapter::ServiceType_t::LwM2MClient == service.first) && (UDPAdapter::Scheme_t::CoAPs == service.second->scheme())) {
+            service.second->dtlsAdapter()->connect(service.second->rHost(), service.second->rPort());
+            break;
         }
     }
 
-    for(;;) {
+    for(; !isInterruptted ;) {
 
         ///@brief fallback to original size of vector
         events.resize(m_evts.size());
-        if(!m_evts.size()) {
-        }
 
-        auto eventCount = ::epoll_wait(m_epollFd, events.data(), m_evts.size(), 9000);
+        auto eventCount = ::epoll_wait(m_epollFd, events.data(), m_evts.size(), toInMs);
 
         if(!eventCount) {
-            /// Timeout of 9000ms happens.
+            /// Timeout of toInMs happens.
            
         } else if(eventCount > 0) {
             ///event is received.
             events.resize(eventCount);
-            //for(auto it = events.begin(); it != events.end(); ++it) {
+
             for(auto& event: events) {
+
                 struct epoll_event ent = event;
-                std::int32_t handle = ((ent.data.u64 >> 32) & 0xFFFFFFFF);
-                ServiceType_t service = static_cast<ServiceType_t>((ent.data.u64 >> 16) & 0xFFFF);
-                Scheme_t scheme = static_cast<Scheme_t>(ent.data.u64 & 0xFFFF);
+                std::int32_t handle = (((ent.data.u64 & 0xFFFFFFFF00000000U) >> 32) & 0xFFFFFFFFU);
+                UDPAdapter::ServiceType_t service = static_cast<UDPAdapter::ServiceType_t>(((ent.data.u64 & 0xFFFF0000U) >> 16) & 0xFFFFU);
+                UDPAdapter::Scheme_t scheme = static_cast<UDPAdapter::Scheme_t>((ent.data.u64 & 0x0000FF00 >> 8) & 0xFFU);
+                /// @brief last Octet is for Timer Service.
 
                 if(ent.events & EPOLLHUP) {
+                    /// @brief Peer has closed the connection
                     std::cout << "fn:" << __PRETTY_FUNCTION__ << " line:" << __LINE__ <<" ent.events: EPOLLHUP" << std::endl;
                 }
 
                 if(ent.events & EPOLLIN) {
+                    /// @brief Data received from Peer
                     std::cout << basename(__FILE__) << ":" << __LINE__ << " EPOLLIN on Fd: " << handle << std::endl;
-                    handle_io(handle, scheme, service);
+                    handle_io(handle, service, scheme);
                 }
 
                 if(ent.events & EPOLLERR) {
@@ -60,7 +59,7 @@ std::int32_t App::start() {
             }
         }
     }
-    return(0);
+
     return(0);
 }
 
@@ -103,7 +102,7 @@ std::int32_t App::add_rx_handler(const UDPAdapter::ServiceType_t& service, const
     }
 
     evt.data.u64 = (((static_cast<std::uint64_t>(ent->handle() & 0xFFFFFFFFU)) << 32) | 
-                      static_cast<std::uint32_t>(((service & 0xFFFFU) << 16) | (scheme & 0xFFFFU)));
+                      static_cast<std::uint32_t>(((service & 0xFFFFU) << 16) | ((scheme & 0xFFU) << 8) | 0xFF));
 
     evt.events = EPOLLHUP | EPOLLIN;
     std::int32_t channel = ent->handle();
@@ -174,32 +173,36 @@ std::int32_t UDPAdapter::process_request(const std::string& in, const std::uniqu
 }
 
 std::int32_t App::handle_io_coaps(const std::int32_t& fd, const UDPAdapter::ServiceType_t& service) {
-    auto it = std::find_if(services().begin(), services().end(), [&](const auto& ent) -> bool {return(service == ent.second->service());});
+    auto it = std::find_if(services().begin(), services().end(), [&](const auto& ent) -> bool {return(service == ent.first);});
 
     if(it != services().end()) {
+        std::string IP;
+        std::uint16_t port;
+        auto& inst = it->second;
 
-        auto& inst = *it;
-        inst.second->rx(fd);
+        auto ret = inst->dtlsAdapter()->rx(fd, IP, port);
+        if(ret) {
+            /// @brief Error in recvfrom
+            return(-1);
+        }
 
-        auto rsp = inst.second->dtlsAdapter()->responses();
+        std::string deciphered;
+        deciphered = inst->dtlsAdapter()->request();
+        if(deciphered.length()) {
 
-        for(auto& response: ctx.second->dtlsAdapter()->responses()) {
-            ctx.second->dtlsAdapter()->tx(response);
         }
         return(0);
     }
     return(-1);
 }
 
-std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceType_t& service) {
+std::int32_t App::handle_io_coap(const std::int32_t& fd, const UDPAdapter::ServiceType_t& service) {
     //std::cout << basename(__FILE__) << ":" << __LINE__ << " received packet handle_io_coap" << std::endl;
-    auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {
-        return(service == ent.second->service());
-    });
+    auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {return(service == ent.second->service());});
 
     if(it != services().end()) {
         std::cout << basename(__FILE__) << ":" << __LINE__ << " received packet handle_io_coap service: " << service << std::endl;
-        auto& ctx = *it;
+        auto& ctx = it->second;
         std::uint32_t peerIP;
         std::uint16_t peerPort;
         std::string out;

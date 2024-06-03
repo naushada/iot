@@ -110,8 +110,7 @@ class App {
             m_credentials.clear();
         }
 
-        
-        std::int32_t start();
+        std::int32_t start(const bool& isInterruptted, const std::uint32_t& toInMs);
         std::int32_t stop();
         std::int32_t init(const std::string& bsConfig = "../config/bs/bs.json");
         std::int32_t add_rx_handler(const UDPAdapter::ServiceType_t& service, const UDPAdapter::Scheme_t& scheme, std::shared_ptr<UDPAdapter> ent);
