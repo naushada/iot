@@ -212,6 +212,22 @@ void DTLSAdapter::connect(const std::string& ip, const std::uint16_t& port) {
     }
 }
 
+std::string DTLSAdapter::decipher(const std::string& cipher, const std::string& IP, const std::uint16_t& port) {
+    session_t session;
+    memset(&session, 0, sizeof(session_t));
+    session.size = sizeof(session.addr);
+    session.addr.sin.sin_addr.s_addr = inet_addr(IP.c_str());
+    session.addr.sin.sin_port = port;
+    auto ret = dtls_handle_message(dtls_ctx(), &session, (unsigned char *)&cipher.at(0), cipher.length());
+
+    if(!ret) {
+        std::cout << basename(__FILE__) << ":" << __LINE__ << " deciphered successfully" << std::endl;
+        return(request());
+    }
+
+    return(std::string());
+}
+
 std::int32_t DTLSAdapter::rx(std::int32_t fd, std::string& IP, std::uint16_t& port) {
     std::int32_t ret = -1;
     std::vector<std::uint8_t> buf(DTLS_MAX_BUF);

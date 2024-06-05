@@ -240,6 +240,7 @@ class DTLSAdapter {
         session_t session() {
             return(m_session);
         }
+        std::string decipher(const std::string& cipher, const std::string& IP, const std::uint16_t& port);
 
         void session(const std::string& ip, const std::uint16_t& port) {
             ::memset((void *)&m_session, 0, sizeof(m_session));

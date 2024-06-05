@@ -179,18 +179,21 @@ std::int32_t App::handle_io_coaps(const std::int32_t& fd, const UDPAdapter::Serv
         std::string IP;
         std::uint16_t port;
         auto& inst = it->second;
-
-        auto ret = inst->dtlsAdapter()->rx(fd, IP, port);
+        std::string rawData;
+        //auto ret = inst->dtlsAdapter()->rx(fd, IP, port);
+        auto ret = inst->rx(fd, rawData, IP, port);
         if(ret) {
             /// @brief Error in recvfrom
             return(-1);
         }
 
         std::string deciphered;
-        deciphered = inst->dtlsAdapter()->request();
-        if(deciphered.length()) {
+        deciphered = inst->dtlsAdapter()->decipher(rawData, IP, port);
 
+        if(deciphered.length()) {
+            /// @brief rawData is deciphered successfully.
         }
+
         return(0);
     }
     return(-1);
