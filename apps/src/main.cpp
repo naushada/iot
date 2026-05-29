@@ -225,15 +225,18 @@ void wire_server(std::shared_ptr<App>& app, const std::string& configDir) {
     bsServer->add_account(
         load_provisioning_from_config(configDir, "urn:dev:client-1"));
 
+    // L9 / FUP-3: attach BOTH handlers to EVERY server-side service
+    // context. processRequest's URI dispatch routes /bs → bsServer,
+    // /rd → regServer regardless of which socket the datagram arrived
+    // on. This lets a single-socket deployment (where BS and DM share
+    // a port, or one of the binds failed with EADDRINUSE) still serve
+    // both Bootstrap and Registration. A future multi-socket deploy
+    // gets both handlers per socket for free.
+    auto regServer = std::make_shared<::lwm2m::RegistrationServer>(registry);
     auto& services = app->udpAdapter()->services();
     for (auto& [type, ctx] : services) {
-        if (type == ::UDPAdapter::ServiceType_t::BootsstrapServer) {
-            ctx->coapAdapter()->bootstrapServer(bsServer);
-        }
-        if (type == ::UDPAdapter::ServiceType_t::DeviceMgmtServer) {
-            ctx->coapAdapter()->registrationServer(
-                std::make_shared<::lwm2m::RegistrationServer>(registry));
-        }
+        ctx->coapAdapter()->bootstrapServer(bsServer);
+        ctx->coapAdapter()->registrationServer(regServer);
     }
 
     // L9 stub 4 — periodic server-side DM driver. Once per
