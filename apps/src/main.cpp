@@ -244,11 +244,15 @@ void wire_server(std::shared_ptr<App>& app, const std::string& configDir) {
     // this prosaic poll is enough to prove the wiring works in
     // Leshan interop pcaps.
     using Clock = std::chrono::steady_clock;
-    constexpr auto kPollInterval = std::chrono::seconds(30);
     auto last_poll = std::make_shared<Clock::time_point>(Clock::now());
     std::weak_ptr<App> wapp_srv = app;
 
     app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll]() {
+        // Local constexpr inside the lambda body — gcc 11 wouldn't let
+        // us reference an outer-scope constexpr without an explicit
+        // capture even though it's a constant expression.
+        constexpr auto kPollInterval = std::chrono::seconds(30);
+
         auto a = wapp_srv.lock();
         if (!a) return;
         const auto now = Clock::now();
