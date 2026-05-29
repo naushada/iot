@@ -1098,8 +1098,14 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
 
         }
     } else if(!RequestType[coapmessage.coapheader.type].compare("Acknowledgement")) {
-        rsp = buildResponse(coapmessage);
-        out.push_back(rsp);
+        // L9 fix: an ACK is a response; we MUST NOT reflexively send
+        // another ACK back. The previous behavior pushed a 2.04 Changed
+        // out which Leshan logged as "received response to a request
+        // we didn't send" (frame 3 in nfr-001-coap.pcap before the fix).
+        // The FSM-level handling (RegistrationClient::on_response /
+        // DmClient response paths) is the proper consumer of an ACK;
+        // wire that in via the L9 follow-up. For now, just stop the
+        // spurious echo.
     } else {
         /// This is a CoAP Request
         rsp = buildResponse(coapmessage);
