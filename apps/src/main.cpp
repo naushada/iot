@@ -367,6 +367,19 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         const auto svc = ::UDPAdapter::ServiceType_t::LwM2MClient;
         const auto now = std::chrono::steady_clock::now();
 
+        // L9 fallback (Leshan interop) — if we never went through
+        // Bootstrap (e.g. the server is a plain LwM2M DM server with no
+        // BS account for us), fire the initial Register on the first
+        // tick after startup. After this the state transitions to
+        // AwaitingRegisterAck and the branch no longer matches.
+        if (reg->state() == ::lwm2m::RegistrationState::Unregistered) {
+            std::cout << "[lwm2m] no bootstrap; sending Register directly\n";
+            auto payload = reg->build_register_request(
+                next_msgid(),
+                std::string{static_cast<char>(0x10)});
+            tx_via(*a, payload, svc);
+        }
+
         // L9 stub 2 — Update POST when the lifetime margin elapses.
         if (reg->should_send_update(now)) {
             auto payload = reg->build_update_request(
