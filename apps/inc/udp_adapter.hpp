@@ -20,7 +20,6 @@
 #include <ace/Task.h>
 #include <ace/SOCK_Dgram.h>
 #include <ace/INET_Addr.h>
-#include <ace/Sig_Handler.h>
 #include <ace/Synch_Traits.h>
 
 #include "dtls_adapter.hpp"

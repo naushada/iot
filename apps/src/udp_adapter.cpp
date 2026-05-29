@@ -5,7 +5,7 @@
 
 #include <ace/Log_Msg.h>
 #include <ace/Reactor.h>
-#include <ace/Sig_Set.h>
+#include <ace/Signal.h>          // ACE_Sig_Set
 #include <ace/Time_Value.h>
 
 /* ───────────────────────── ServiceContext_t ─────────────────────────── */
