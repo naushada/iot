@@ -98,16 +98,17 @@ void ServiceContext_t::handle_input_coap(const std::string& bytes,
     CoAPAdapter::CoAPMessage message;
     m_coapAdapter->parseRequest(bytes, message);
 
+    // L9 fix: every service routes through processRequest so the
+    // attached handlers (m_dmClient on LwM2MClient, m_bsServer on the
+    // BootstrapServer, m_regServer on the DeviceMgmtServer) get first
+    // refusal and the ACK-echo branch (don't reply to ACKs) engages.
+    // The previous LwM2MClient path called buildResponse directly,
+    // which round-tripped a spurious 2.04 Changed back to whoever sent
+    // us an ACK (frame 3 in nfr-001-coap.pcap).
     std::vector<std::string> responses;
-    if (m_service == ServiceType_t::LwM2MClient) {
-        std::string rsp = m_coapAdapter->buildResponse(message);
-        if (!rsp.empty()) {
-            responses.push_back(std::move(rsp));
-        }
-    } else {
-        bool isClient = (m_service == ServiceType_t::DeviceMgmtClient);
-        m_coapAdapter->processRequest(isClient, bytes, responses);
-    }
+    const bool isClient = (m_service == ServiceType_t::LwM2MClient) ||
+                          (m_service == ServiceType_t::DeviceMgmtClient);
+    m_coapAdapter->processRequest(isClient, bytes, responses);
 
     char host[64] = {0};
     from.get_host_addr(host, sizeof(host));
