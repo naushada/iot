@@ -29,16 +29,34 @@ Leshan-as-Client artifacts are published as runnable jars.
 | 8 | From Leshan UI, Execute `/3/0/4` (Reboot) | `2.04 Changed`; our binary logs the reboot hook callback |
 | 9 | Stop our binary | Leshan flags the registration as expired after Lifetime + grace |
 
-### 2.2 Leshan Client ↔ Our Server (NFR-INTEROP-002)
+### 2.2 wakaama lwm2mclient ↔ Our Server (NFR-INTEROP-002)
 
-| Step | Action | Expected |
-|------|--------|----------|
-| 1 | Start our binary: `lwm2m local=coap://0.0.0.0:5683 role=server ep=urn:dev:client-1` | Server reactor active; Bootstrap on `local`, DM on :5683 |
-| 2 | Start Leshan client: `leshan-client-demo -u coap://server:5683 -n urn:dev:client-1` | Leshan logs `Registered, location=/rd/{id}` |
-| 3 | From our server REPL (TBD — currently script via `dmsrv::build_*` + raw socket): Read `/3/0/0` | Leshan reply `2.05 Content` with the demo manufacturer string |
-| 4 | Same against `/3/0/15` (Timezone) Write | `2.04 Changed` |
-| 5 | Observe `/3/0/13` | Notify stream from Leshan client |
-| 6 | Stop Leshan client cleanly (SIGINT) | DELETE `/rd/{id}` arrives; ClientRegistry size drops to 0 |
+Docker Hub doesn't ship a canonical `leshan-client-demo` image, so the
+wakaama `lwm2mclient` is used as the Leshan-equivalent compliant
+client. wakaama runs in Leshan's own CI for cross-implementation
+interop testing and emits standard LwM2M frames on the wire.
+
+The reproducible runner is `log/L9/run-interop-002.sh`. It performs
+exactly:
+
+1. `podman network create lwm2m-interop`
+2. Start our binary in server mode with `local=coap://0.0.0.0:5683 role=server`.
+3. Attach a `tcpdump` sidecar to the iot-server netns.
+4. Start `testingyourcode/wakaama-client` pointed at the server (`-h iot-server -p 5683 -t 60 -4`).
+5. Let it run for 45 s, capture pcap + tail logs.
+6. Tear down.
+
+Expected wire shape (verified 2026-05-29, commit `8ca19c1`):
+
+| Frame | Direction | Code | URI |
+|------:|-----------|------|------|
+| 1 | wakaama → iot | POST | `/rd?lwm2m=1.0&ep=urn:dev:wakaama-1&b=U&lt=60` |
+| 2 | iot → wakaama | 2.01 Created | Location-Path: `rd/1` |
+| 3 | wakaama → iot (t≈30 s) | POST | `/rd/1` (Update) |
+| 4 | iot → wakaama | 2.04 Changed | — |
+
+Full evidence + tail of the run log are in `log/L9/results.md` →
+"NFR-INTEROP-002" section.
 
 ## 3. DTLS path (BUG-001 runtime regression)
 

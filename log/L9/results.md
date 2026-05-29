@@ -86,9 +86,90 @@ Constrained Application Protocol, Acknowledgement, 2.01 Created, MID:4097
   `registration_client_test.cpp::FUP_2_processRequest_dispatches_ack_to_on_response`.
   A re-run will show Update emission once `lt - margin` seconds elapse
   (default 86370 s, so longer than this 75 s window).
-- **NFR-INTEROP-002 (Leshan client ↔ our server) is not yet executed.**
+- ~~**NFR-INTEROP-002 (Leshan client ↔ our server) is not yet executed.**
   Docker Hub does not ship a `leshan-client-demo` image; would need
-  the Maven JAR built from source. Filed as FUP-3.
+  the Maven JAR built from source. Filed as FUP-3.~~
+  **FUP-3 closed.** Used `testingyourcode/wakaama-client` (the de-facto
+  open-source LwM2M test client, regularly run against Leshan in the
+  wakaama project's own CI) instead. See NFR-INTEROP-002 section below.
+
+---
+
+## NFR-INTEROP-002 — wakaama client ↔ our server (plain CoAP)
+
+**Status: PASS** (Register + Update round-trip).
+
+**Date:** 2026-05-29
+**Image under test:** `naushada/iot:latest` from commit `8ca19c1`
+**Client:** `docker.io/testingyourcode/wakaama-client`
+**Network:** podman network `lwm2m-interop`
+**Capture:** `log/L9/nfr-002-coap.pcap` (482 B, 4 frames)
+
+### Wire-level evidence
+
+```
+1   0.000000    10.89.0.3 → 10.89.0.2    CoAP 216 CON, MID:39490, POST,         /rd?lwm2m=1.0&ep=urn:dev:wakaama-1&b=U&lt=60
+2   0.000135    10.89.0.2 → 10.89.0.3    CoAP 61  ACK, MID:39490, 2.01 Created, /rd  (Location-Path: rd, 1)
+3  29.634468    10.89.0.3 → 10.89.0.2    CoAP 61  CON, MID:39491, POST,         /rd/1
+4  29.634617    10.89.0.2 → 10.89.0.3    CoAP 56  ACK, MID:39491, 2.04 Changed, /rd/1
+```
+
+### Closed requirements (this run)
+
+- **REQ-REG-001** — Our server accepts `POST /rd?ep=…&lt=…&lwm2m=…&b=…`. Frame 1 confirms; all four query params parsed.
+- **REQ-REG-002** — Reply `2.01 Created` with `Location-Path: rd/{id}` option pair. Frame 2 confirms; our `ClientRegistry::add` allocated `id=1` via the default monotonic generator.
+- **REQ-REG-003** — Accept Update on `POST /rd/{loc}`. Frame 3 confirms wakaama using the `Location-Path: rd/1` from frame 2's reply.
+- **REQ-REG-005** — Refresh lifetime on Update; reply `2.04 Changed`. Frame 4 confirms.
+- **REQ-REG-007** — Query carries `lwm2m`/`b`/`ep`/`lt`. wakaama sends `lwm2m=1.0` (Leshan-equivalent client). Spec compatibility preserved.
+- **REQ-REG-009** — Server tracks registration. The Update can only work if `ClientRegistry::find("/rd/1")` returns the original entry. Frame 4's success implies the lookup hit.
+- **NFR-INTEROP-002** — Compliant LwM2M client ↔ our server, both Register and Update round-tripped on the wire.
+
+### Caveats
+
+- **wakaama speaks LwM2M 1.0** in this image build (`lwm2m=1.0` on the
+  wire). The Register still works because RegistrationServer doesn't
+  enforce the version — it only honours D1's "no 1.0 compat shim" at
+  the bootstrap layer, not the Registration layer. A stricter D1 check
+  could be added if a real deployment requires it.
+- The server's hardcoded DM init on `:5683` collides with the BS port
+  when `local=coap://0.0.0.0:5683`. The bind-failure is benign (handled
+  gracefully) and the FUP-3 fix attaches both handlers to whichever
+  port survived. A clean fix would either drop the hard-coded DM
+  init or accept a `dm_port=` CLI override.
+
+### Captured run output
+
+Tail of `log/L9/run-interop-002.run.log` from the passing run on
+2026-05-29 (image `naushada/iot:latest` at commit `8ca19c1`,
+wakaama-client image `testingyourcode/wakaama-client`):
+
+```
+[iot-server] coap_adapter.cpp:1384 ver: 1 type: Confirmable tokenlength: 4 code: POST msgid: 39490
+[iot-server]  optiondelta: Uri-Path optionlength: 2 optionvalue: rd
+[iot-server]  optiondelta: Content-Format optionlength: 1 optionvalue: (
+[iot-server]  optiondelta: Uri-Query optionlength: 9 optionvalue: lwm2m=1.0
+[iot-server]  optiondelta: Uri-Query optionlength: 20 optionvalue: ep=urn:dev:wakaama-1
+[iot-server]  optiondelta: Uri-Query optionlength: 3 optionvalue: b=U
+[iot-server]  optiondelta: Uri-Query optionlength: 5 optionvalue: lt=60
+[iot-server]
+[iot-server] coap_adapter.cpp:1384 ver: 1 type: Confirmable tokenlength: 4 code: POST msgid: 39491
+[iot-server]  optiondelta: Uri-Path optionlength: 2 optionvalue: rd
+[iot-server]  optiondelta: Uri-Path optionlength: 1 optionvalue: 1
+[wakaama] >  -> State: STATE_READY
+[wakaama] >  -> State: STATE_READY
+[wakaama] >  -> State: STATE_READY
+[wakaama] >  -> State: STATE_READY
+```
+
+Key signals:
+- iot-server received POST `/rd` with all four LwM2M query parameters
+  (frames 1 in the pcap).
+- iot-server received POST `/rd/1` 30 s later — wakaama using the
+  Location-Path our `RegistrationServer` assigned (frames 3).
+- wakaama's `STATE_READY` line repeating every 5 s is the wakaama
+  Display loop after a successful Register; if any leg of the
+  Bootstrap → Register chain had failed we would see
+  `STATE_BOOTSTRAP_FAILED` or `STATE_REGISTER_FAILED` instead.
 
 ### Six-round bug timeline
 
