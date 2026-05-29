@@ -508,9 +508,22 @@ int main(std::int32_t argc, char *argv[]) {
         // App::start activates the reactor on its own ACE_Task thread and
         // returns immediately so the main thread can drive readline.
         app->start(role, scheme);
-        Readline rline(app);
-        rline.init();
-        rline.start();
+
+        // Readline requires a TTY on stdin. In container/CI runs stdin
+        // is typically /dev/null (`-d` detached mode), so reading would
+        // hit EOF immediately and the process would exit before any
+        // bootstrap/register traffic completes. Detect that and just
+        // park the main thread on the reactor task instead.
+        if (::isatty(STDIN_FILENO)) {
+            Readline rline(app);
+            rline.init();
+            rline.start();
+        } else {
+            std::cout << "[lwm2m] stdin is not a TTY; running in "
+                      << "non-interactive mode (reactor only).\n";
+            // ACE_Task::wait() blocks until svc() returns.
+            app->udpAdapter()->wait();
+        }
         app->stop();
     } else {
         // Server: reactor runs on the main thread inside App::start.

@@ -356,10 +356,21 @@ int UDPAdapter::svc() {
 
     ::signal(SIGPIPE, SIG_IGN);
 
+    // ACE_Select_Reactor requires the calling thread to own the reactor
+    // before handle_events() will dispatch. Without this, handle_events
+    // returns -1 instantly from a worker thread and svc() exits before
+    // it processes any datagram. Equivalent setup on the server path is
+    // unnecessary because main() drives handle_events directly.
+    ACE_Reactor::instance()->owner(ACE_Thread::self());
+
     ACE_Time_Value to(1, 0);
     while (!m_stop.load()) {
         int ret = ACE_Reactor::instance()->handle_events(to);
         if (ret < 0) {
+            ACE_DEBUG((LM_DEBUG,
+                       ACE_TEXT("%D [UDPAdapter:%t] %M %N:%l "
+                                "handle_events ret=%d errno=%d\n"),
+                       ret, errno));
             break;
         }
     }
