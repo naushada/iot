@@ -3,6 +3,7 @@
 #include "coap_adapter.hpp"
 #include "lwm2m_codec_linkformat.hpp"
 #include "lwm2m_codec_plaintext.hpp"
+#include "lwm2m_codec_registry.hpp"      // CF_PlainText
 #include "lwm2m_codec_tlv.hpp"
 #include "lwm2m_dm_client.hpp"
 #include "lwm2m_dm_server.hpp"
