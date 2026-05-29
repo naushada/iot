@@ -24,9 +24,23 @@ $PODMAN network rm -f $NET >/dev/null 2>&1 || true
 $PODMAN network create $NET >/dev/null
 
 echo "[L9] starting Leshan server (corfr/leshan, amd64 via QEMU)"
+# FUP-1: corfr/leshan:latest (built 2021) ships a Gson that uses
+# unsafe reflection on java.util internals. JDK 17+'s module system
+# blocks that, surfacing as InaccessibleObjectException in the
+# EventServlet web-UI callback after every successful Register. The
+# --add-opens flags below relax the module boundaries enough for Gson
+# to JSON-serialize a Registration record. LwM2M protocol semantics
+# are unaffected; this is purely a JVM/Gson compatibility patch.
 $PODMAN run -d --rm --name $SRV --network $NET \
+    --entrypoint sh \
     -p 8080:8080 -p 5683:5683/udp -p 5684:5684/udp \
-    docker.io/corfr/leshan:latest >/dev/null
+    docker.io/corfr/leshan:latest \
+    -c 'cd /opt/leshan && exec java \
+        --add-opens java.base/java.util=ALL-UNNAMED \
+        --add-opens java.base/java.lang=ALL-UNNAMED \
+        --add-opens java.base/java.util.regex=ALL-UNNAMED \
+        --add-opens java.base/java.text=ALL-UNNAMED \
+        -jar ./leshan-server-demo.jar' >/dev/null
 
 # Give Leshan ~15 s to boot under QEMU.
 sleep 18

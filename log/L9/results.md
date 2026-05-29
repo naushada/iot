@@ -56,14 +56,24 @@ Constrained Application Protocol, Acknowledgement, 2.01 Created, MID:4097
 
 ### Caveats / outstanding
 
-- **Leshan logs a Java exception after the Register handshake.** The
+- ~~**Leshan logs a Java exception after the Register handshake.** The
   bottom of the trace (`java.lang.Thread.run`) is what surfaces in
   `run-interop-001.run.log` but the original cause is upstream. Best
   guess: Leshan's `LeshanClient` decoder doesn't handle our exact
   link-format flavour for OID 4 / 6 / 7 (the L8 stubs ship empty
   resourceTemplates). Register itself still completes — Leshan replies
   2.01 — so this is not blocking, but it should be root-caused before
-  declaring NFR-INTEROP-001 fully green. Filed as follow-up FUP-1.
+  declaring NFR-INTEROP-001 fully green. Filed as follow-up FUP-1.~~
+  **FUP-1 closed.** The full stack trace turned out to be
+  `java.lang.reflect.InaccessibleObjectException` in
+  `EventServlet$1.registered` → Gson → `Collections$EmptyMap()`
+  accessibility — a JDK-17-module-system / Gson-version mismatch in
+  the `corfr/leshan:latest` image (built 2021). Not a flaw in our
+  client; the LwM2M protocol exchange itself completed every time
+  (frame 2 was the 2.01 Created). Fixed in `log/L9/run-interop-001.sh`
+  by overriding the Leshan entrypoint with `java --add-opens
+  java.base/java.util=ALL-UNNAMED …` (four `--add-opens` flags). Re-run
+  shows no exception in the Leshan log.
 - **No Update / Read traffic on the wire** for this 75-second window.
   ~~The client's `RegistrationClient::on_response` is not wired to
   consume the 2.01, so its FSM stays in `AwaitingRegisterAck` and
