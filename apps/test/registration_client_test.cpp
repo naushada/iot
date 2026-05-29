@@ -118,6 +118,39 @@ TEST(RegistrationClient, REQ_REG_002_consumes_2_01_with_location_path) {
     EXPECT_EQ(outcome.location, cli.location());
 }
 
+/* ─────────────────────────── FUP-2 dispatch wiring ───────────────────── */
+
+TEST(RegistrationClient, FUP_2_processRequest_dispatches_ack_to_on_response) {
+    // The L9 ACK short-circuit in CoAPAdapter::processRequest must
+    // forward Acknowledgement-typed frames to the attached
+    // RegistrationClient so its FSM advances. Without this dispatch the
+    // client would stay in AwaitingRegisterAck forever and the Update
+    // tick would never fire (see log/L9/results.md FUP-2).
+    auto store = minimal_store();
+    auto registry = std::make_shared<ClientRegistry>();
+    RegistrationServer srv(registry);
+    CoAPAdapter coap;
+    auto cli = std::make_shared<RegistrationClient>(minimal_cfg(), store);
+
+    auto wire = cli->build_register_request(0x4321, std::string{0x99});
+    CoAPAdapter::CoAPMessage parsed;
+    coap.parseRequest(wire, parsed);
+    auto outcome = srv.handle(parsed, coap, "10.0.0.5", 56830);
+    ASSERT_FALSE(outcome.response.empty());
+
+    // FUP-2: attach the client to the adapter, then route the 2.01 reply
+    // through processRequest (which is what the live wire path does).
+    coap.registrationClient(cli);
+    std::vector<std::string> out;
+    coap.processRequest(/*isAmIClient*/ true, outcome.response, out);
+
+    // ACK short-circuit must produce no outbound bytes…
+    EXPECT_TRUE(out.empty());
+    // …and the FSM must have advanced.
+    EXPECT_EQ(RegistrationState::Registered, cli->state());
+    EXPECT_EQ(outcome.location, cli->location());
+}
+
 /* ─────────────────────────── REQ-REG-003 / REQ-REG-006 ───────────────── */
 
 TEST(RegistrationClient, REQ_REG_006_should_send_update_at_margin) {

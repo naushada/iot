@@ -5,6 +5,7 @@
 #include "lwm2m_bootstrap_client.hpp"
 #include "lwm2m_bootstrap_server.hpp"
 #include "lwm2m_dm_client.hpp"
+#include "lwm2m_registration_client.hpp"
 #include "lwm2m_registration_server.hpp"
 #include "nlohmann/json.hpp"
 
@@ -1026,15 +1027,17 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
     std::string rsp;
     auto ret = parseRequest(in, coapmessage);
 
-    // L9 — short-circuit Acknowledgement-typed frames before any of the
-    // L4/L5/legacy handlers run. An ACK is a response to one of *our*
-    // outbound CON requests (Register, Update, Read, …). The proper
-    // consumer is the FSM that originated the request
-    // (RegistrationClient::on_response / DmClient response paths) —
-    // wiring that is the L9 follow-up. Until then, just stop the
-    // spurious echo so Leshan doesn't see a 2.04 reflected back at it
-    // for every 2.01 Created it sends us.
+    // L9 / FUP-2 — Acknowledgement-typed frames are responses to one of
+    // *our* outbound CON requests (Register, Update, Deregister, …).
+    // Forward them to the RegistrationClient FSM if one is attached so
+    // its state advances past AwaitingRegisterAck (FUP-2); regardless,
+    // we never ship a reply back at the wire layer — that would echo
+    // the ACK back to whoever sent it and trigger an exception trace
+    // in Leshan.
     if (!RequestType[coapmessage.coapheader.type].compare("Acknowledgement")) {
+        if (isAmIClient && m_regClient) {
+            m_regClient->on_response(coapmessage, *this);
+        }
         return 0;
     }
 
@@ -1204,6 +1207,15 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
     auto ret = parseRequest(in, coapmessage);
     auto cf = getContentFormat(coapmessage);
     std::cout << basename(__FILE__) << ":" << __LINE__ << " processRequest with session cf.length: " << cf.length() << std::endl;
+
+    // L9 / FUP-2 — Acknowledgement short-circuit + dispatch to
+    // RegistrationClient FSM. Same shape as the no-DTLS overload above.
+    if (!RequestType[coapmessage.coapheader.type].compare("Acknowledgement")) {
+        if (isAmIClient && m_regClient) {
+            m_regClient->on_response(coapmessage, *this);
+        }
+        return 0;
+    }
 
     // L4 hot path: if a Bootstrap Server is attached, give it first
     // refusal on /bs CoAP messages.

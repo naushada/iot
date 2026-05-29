@@ -18,6 +18,7 @@ extern "C" {
 }
 
 namespace lwm2m { class RegistrationServer; }
+namespace lwm2m { class RegistrationClient; }
 namespace lwm2m { class DmClient; }
 namespace lwm2m { namespace bootstrap { class Server; } }
 namespace lwm2m { namespace bootstrap { class Client; } }
@@ -342,6 +343,18 @@ class CoAPAdapter {
             return m_bsClient;
         }
 
+        /// L9 / FUP-2: optional Registration client. processRequest's
+        /// ACK short-circuit forwards Acknowledgement-typed inbound
+        /// frames here so the FSM advances past AwaitingRegisterAck on
+        /// receipt of Leshan's 2.01 Created. nullptr → ACKs are still
+        /// dropped silently (matching the pre-FUP-2 behaviour).
+        void registrationClient(std::shared_ptr<lwm2m::RegistrationClient> rc) {
+            m_regClient = std::move(rc);
+        }
+        std::shared_ptr<lwm2m::RegistrationClient>& registrationClient() {
+            return m_regClient;
+        }
+
         std::vector<std::string> handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid,
                                                     std::uint32_t oiid, std::uint32_t rid, std::uint32_t riid);
 
@@ -350,6 +363,7 @@ class CoAPAdapter {
         std::shared_ptr<lwm2m::bootstrap::Server>     m_bsServer;
         std::shared_ptr<lwm2m::DmClient>              m_dmClient;
         std::shared_ptr<lwm2m::bootstrap::Client>     m_bsClient;
+        std::shared_ptr<lwm2m::RegistrationClient>    m_regClient;
 
         std::unordered_map<std::uint32_t, std::string> OptionNumber;
         std::unordered_map<std::uint32_t, std::string> ContentFormat;

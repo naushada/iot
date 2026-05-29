@@ -65,12 +65,17 @@ Constrained Application Protocol, Acknowledgement, 2.01 Created, MID:4097
   2.01 — so this is not blocking, but it should be root-caused before
   declaring NFR-INTEROP-001 fully green. Filed as follow-up FUP-1.
 - **No Update / Read traffic on the wire** for this 75-second window.
-  The client's `RegistrationClient::on_response` is not wired to
+  ~~The client's `RegistrationClient::on_response` is not wired to
   consume the 2.01, so its FSM stays in `AwaitingRegisterAck` and
   `should_send_update` never fires (which depends on
   `note_update_sent`). Filed as follow-up FUP-2 — this is the L9
   follow-up noted in `apps/docs/leshan-interop.md` §8 ("wire FSM-level
-  response").
+  response").~~ **FUP-2 closed**: `CoAPAdapter` grew a
+  `registrationClient()` slot; the ACK short-circuit forwards the ACK
+  to `RegistrationClient::on_response` before returning. Coverage:
+  `registration_client_test.cpp::FUP_2_processRequest_dispatches_ack_to_on_response`.
+  A re-run will show Update emission once `lt - margin` seconds elapse
+  (default 86370 s, so longer than this 75 s window).
 - **NFR-INTEROP-002 (Leshan client ↔ our server) is not yet executed.**
   Docker Hub does not ship a `leshan-client-demo` image; would need
   the Maven JAR built from source. Filed as FUP-3.

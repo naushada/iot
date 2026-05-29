@@ -173,7 +173,7 @@ explicitly so they are preserved through the LwM2M build-out.
 | NFR-PERF-001 | Bootstrap → Register round-trip SHALL complete in ≤ 2 s over loopback with PSK. | M |
 | NFR-PERF-002 | A single LwM2M Server instance SHALL handle ≥ 100 concurrent registered clients with ≤ 64 MiB RSS and < 5 % CPU at idle. | S |
 | NFR-PERF-003 | Notify latency from `Resource::write()` to wire SHALL be ≤ 50 ms at p99 under the NFR-PERF-002 load. | S |
-| NFR-INTEROP-001 | Our Client SHALL pass an end-to-end Bootstrap + Register + Read/Write round-trip against Eclipse Leshan ≥ v2.0. **Register + 2.01 Created verified on the wire (2026-05-29, `log/L9/nfr-001-coap.pcap`, commit 292a848). Bootstrap and Read/Write round-trip deferred to FUP-1/FUP-2 — see log/L9/results.md.** | M |
+| NFR-INTEROP-001 | Our Client SHALL pass an end-to-end Bootstrap + Register + Read/Write round-trip against Eclipse Leshan ≥ v2.0. **Register + 2.01 Created verified on the wire (2026-05-29, `log/L9/nfr-001-coap.pcap`, commit 292a848). FUP-2 closed (FSM advances past AwaitingRegisterAck via the CoAPAdapter::registrationClient slot). Bootstrap + Read/Write + Update round-trip remain on FUP-1/FUP-3 — see log/L9/results.md.** | M |
 | NFR-INTEROP-002 | Our Server SHALL pass the equivalent test with Leshan as client. | M |
 | NFR-INTEROP-003 | DTLS handshake bytes SHALL remain byte-identical to the captured baseline (`log/dtlsc.txt`, `log/dtlss.txt`) so the cryptographic behavior of tinydtls is not perturbed by the refactor. | M |
 | NFR-SEC-001 | No PSK material SHALL be emitted in log output at INFO level or below. (`DTLSAdapter::dtlsGetPskInfoCb` currently logs identity at INFO — see `log.txt:114, 238`.) | M |

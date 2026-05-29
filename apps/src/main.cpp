@@ -335,6 +335,11 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         if (type != ::UDPAdapter::ServiceType_t::LwM2MClient) continue;
         ctx->coapAdapter()->dmClient(plumb.dm);
         ctx->coapAdapter()->bootstrapClient(plumb.bs);
+        // FUP-2 — feed inbound ACKs to the Registration FSM so the
+        // 2.01 Created from Leshan transitions us from
+        // AwaitingRegisterAck → Registered (which is what makes
+        // should_send_update return true at the lifetime margin).
+        ctx->coapAdapter()->registrationClient(plumb.reg);
     }
 
     // L9 stub 1 — Register POST after bootstrap commit. Runs on the

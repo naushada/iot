@@ -133,6 +133,14 @@ as of the L9 follow-up PR:
   peerHost, peerPort)`. A real REPL is a future follow-up; this prosaic
   poll is enough to prove the wiring ("L9 stub 4").
 
+- **✅ FUP-2: FSM-level ACK dispatch.** `CoAPAdapter` grew a
+  `registrationClient()` slot; the L9 Acknowledgement short-circuit now
+  forwards the ACK to `RegistrationClient::on_response` before
+  returning. With this, our client transitions
+  AwaitingRegisterAck → Registered on Leshan's 2.01 reply and the
+  Update tick fires at the lifetime margin. Coverage in
+  `registration_client_test.cpp::FUP_2_processRequest_dispatches_ack_to_on_response`.
+
 - **⏳ RegistryMirror** — the worker is built but not started by
   `main.cpp` because the DB schema PR is still pending. When DB writes
   land, construct `RegistryMirror(&dbClient)` in `wire_server`, attach
