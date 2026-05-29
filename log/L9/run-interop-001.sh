@@ -36,6 +36,7 @@ echo "[L9] starting tcpdump sniffer attached to Leshan netns"
 $PODMAN run -d --rm --name $SNIFF \
     --net=container:$SRV \
     --user=root \
+    --cap-add=NET_RAW --cap-add=NET_ADMIN \
     -v "$PWD/log/L9":/cap \
     docker.io/nicolaka/netshoot:latest \
     tcpdump -i any -U -w /cap/nfr-001-coap.pcap "udp port 5683 or udp port 5684" \

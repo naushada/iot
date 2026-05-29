@@ -1,0 +1,34 @@
+[L9] (re)creating podman network lwm2m-interop
+[L9] starting Leshan server (corfr/leshan, amd64 via QEMU)
+WARNING: image platform (linux/amd64) does not match the expected platform (linux/arm64)
+[leshan] + java -jar ./leshan-server-demo.jar
+[leshan] 2026-05-29 13:22:32,309 INFO LeshanServer - LWM2M server started at coap:///[0:0:0:0:0:0:0:0]:5683 coaps:///[0:0:0:0:0:0:0:0]:5684
+[leshan] 2026-05-29 13:22:33,389 INFO LeshanServerDemo - Web server started at http://0.0.0.0:8080/.
+[L9] starting tcpdump sniffer attached to Leshan netns
+[L9] starting iot client → Leshan
+[L9] running for 75 s (Register + initial tick window)
+[L9] sample of iot client log:
+[iot] 2026-05-29 13:22:47.250464 [UdpSvc:1] LM_DEBUG /tmp/source/iot/apps/src/udp_adapter.cpp:56 bound fd:3 host:0.0.0.0 port:56830 scheme:2 service:4
+[iot] 2026-05-29 13:22:47.251445 [UDPAdapter:2] LM_DEBUG /tmp/source/iot/apps/src/udp_adapter.cpp:355 reactor thread started
+[iot] [lwm2m] stdin is not a TTY; running in non-interactive mode (reactor only).
+[iot] [lwm2m] no bootstrap; sending Register directly
+[iot] 
+[iot] coap_adapter.cpp:1372 ver: 1 type: Acknowledgement tokenlength: 1 code: 2.01 Created msgid: 4097
+[iot]  optiondelta: Location-Path optionlength: 2 optionvalue: rd
+[iot]  optiondelta: Location-Path optionlength: 10 optionvalue: txcP1CQDlz
+[iot] 
+[iot] coap_adapter.cpp:1372 ver: 1 type: Acknowledgement tokenlength: 1 code: 2.01 Created msgid: 4097
+[iot]  optiondelta: Location-Path optionlength: 2 optionvalue: rd
+[iot]  optiondelta: Location-Path optionlength: 10 optionvalue: txcP1CQDlz
+[L9] sample of Leshan server log:
+[leshan] 	at org.eclipse.californium.core.network.stack.AbstractLayer.receiveRequest(AbstractLayer.java:84)
+[leshan] 	at org.eclipse.californium.core.network.stack.BaseCoapStack.receiveRequest(BaseCoapStack.java:137)
+[leshan] 	at org.eclipse.californium.core.network.CoapEndpoint$1.receiveRequest(CoapEndpoint.java:309)
+[leshan] 	at org.eclipse.californium.core.network.UdpMatcher$2.run(UdpMatcher.java:270)
+[leshan] 	at org.eclipse.californium.elements.util.SerialExecutor$1.run(SerialExecutor.java:289)
+[leshan] 	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1135)
+[leshan] 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+[leshan] 	at java.base/java.lang.Thread.run(Thread.java:831)
+[L9] tearing down (pcap closed)
+[L9] pcap → log/L9/nfr-001-coap.pcap
+-rw-r--r--  1 naushada  staff  302 29 May 18:52 log/L9/nfr-001-coap.pcap
