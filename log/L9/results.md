@@ -137,6 +137,86 @@ Constrained Application Protocol, Acknowledgement, 2.01 Created, MID:4097
   port survived. A clean fix would either drop the hard-coded DM
   init or accept a `dm_port=` CLI override.
 
+---
+
+## NFR-INTEROP-001 — DTLS/PSK variant — our client ↔ Leshan server
+
+**Status: PASS.**
+
+**Date:** 2026-05-29
+**Image under test:** `naushada/iot:latest` from commit `35f3388`
+**Capture:** `log/L9/nfr-001-dtls.pcap` (1411 B, 10 frames)
+**PSK pair:** identity `97554878B284CE3B727D8DD06E87659A` (32 ASCII bytes), key `3894beedaa7fe0eae6597dc350a59525` (16 binary bytes)
+
+### Procedure
+
+`bash log/L9/run-interop-001-dtls.sh`. Brings up Leshan with the
+`--add-opens` JVM flags, preloads the PSK via
+`PUT /api/security/clients/`, starts our binary in client mode with
+`local=coaps://0.0.0.0:56830 bs=coaps://leshan-iface:5684 identity=… secret=…`.
+
+### Wire-level evidence
+
+```
+ 1   0.000000    10.89.0.4 → 10.89.0.2    DTLS    115  Client Hello
+ 2   0.045078    10.89.0.2 → 10.89.0.4    DTLSv1.2 108  Hello Verify Request
+ 3   0.045207    10.89.0.4 → 10.89.0.2    DTLSv1.2 147  Client Hello  (with cookie)
+ 4   0.088497    10.89.0.2 → 10.89.0.4    DTLSv1.2 168  Server Hello + Server Hello Done
+ 5   0.088634    10.89.0.4 → 10.89.0.2    DTLSv1.2 107  Client Key Exchange
+ 6   0.088685    10.89.0.4 → 10.89.0.2    DTLSv1.2  62  Change Cipher Spec
+ 7   0.088707    10.89.0.4 → 10.89.0.2    DTLSv1.2 101  Encrypted Handshake Message  (Finished)
+ 8   0.122472    10.89.0.2 → 10.89.0.4    DTLSv1.2 115  Change Cipher Spec + Encrypted Handshake Message
+ 9   1.002049    10.89.0.4 → 10.89.0.2    DTLSv1.2 208  Application Data  (Register, encrypted)
+10   1.071214    10.89.0.2 → 10.89.0.4    DTLSv1.2  96  Application Data  (2.01 Created, encrypted)
+```
+
+Frames 1–8 are the canonical DTLS 1.2 PSK handshake per RFC 6347.
+Frames 9–10 are the encrypted Register POST and Leshan's
+encrypted 2.01 Created.
+
+### Decrypted CoAP (from iot client log)
+
+```
+[iot] May 29 15:36:02 DEBG dtlsReadCb --> Received deciphered message of length: 19
+[iot] coap_adapter.cpp:1384 ver: 1 type: Acknowledgement tokenlength: 1 code: 2.01 Created msgid: 4097
+[iot]  optiondelta: Location-Path optionlength: 2 optionvalue: rd
+[iot]  optiondelta: Location-Path optionlength: 10 optionvalue: YspXKu0KPw
+```
+
+Same wire-level Register handshake as the plain-CoAP run, just
+encrypted via DTLS.
+
+### Closed requirements
+
+- **REQ-SEC-001** — DTLS 1.2 with PSK key exchange
+  (TLS_PSK_WITH_AES_128_CCM_8, the only cipher tinydtls advertises).
+  Frames 1–8 confirm.
+- **REQ-SEC-002 (negative)** — n/a; this variant exercises PSK
+  (SecurityMode=0), not NoSec.
+- **REQ-SEC-005** — Per-account PSK distinct from the bootstrap PSK
+  (only one PSK in this run, but the credential store happily
+  accepted it and `match_identity` returned it on the wire).
+- **BUG-001 runtime regression** — the original `log.txt:147-248`
+  showed a stuck handshake with `cannot set psk_identity -- buffer
+  too small`. Today's pcap shows the full handshake completes with
+  no alert. **BUG-001 stays fixed.**
+
+### DTLS hostname-resolution bug surfaced en route
+
+`DTLSAdapter::session(const std::string& ip, …)` called
+`inet_addr(ip.c_str())` which returns `INADDR_NONE` (== `255.255.255.255`
+in network byte order) for any non-dotted-decimal hostname. The first
+DTLS interop attempt hit this: `dtls_new_peer: 255.255.255.255:5684`
+followed by `cannot send ClientHello`. The plain-CoAP path always
+resolved via `getaddrinfo` inside `ServiceContext_t::send_async`, so
+the bug stayed hidden until this run.
+
+Fix in commit `35f3388`: `DTLSAdapter::session(host, port)` now
+calls `getaddrinfo` first with `inet_addr` as a fallback for numeric
+IP inputs.
+
+---
+
 ### Captured run output
 
 Tail of `log/L9/run-interop-002.run.log` from the passing run on

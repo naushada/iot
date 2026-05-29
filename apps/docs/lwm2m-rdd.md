@@ -111,7 +111,7 @@ Priority is MoSCoW: **M**ust / **S**hould / **C**ould / **W**on't.
 
 | ID | Requirement | Pri | Spec | Design |
 |----|-------------|:--:|------|--------|
-| REQ-SEC-001 | Client SHALL support DTLS 1.2 with PSK key exchange (`TLS_PSK_WITH_AES_128_CCM_8`) per Tx §5.1. | M | Tx §5.1 | §6 |
+| REQ-SEC-001 | Client SHALL support DTLS 1.2 with PSK key exchange (`TLS_PSK_WITH_AES_128_CCM_8`) per Tx §5.1. **Verified end-to-end against Leshan on 2026-05-29 (`log/L9/nfr-001-dtls.pcap`, 10-frame DTLS handshake + encrypted Register/Created). BUG-001 stays fixed.** | M | Tx §5.1 | §6 |
 | REQ-SEC-002 | NoSec mode (Security Object RID 2 = 3) SHALL be honored — the client uses plain CoAP toward the Server URI. | M | Tx §5.1.7 | §6 |
 | REQ-SEC-003 | PSK credentials SHALL be sourced from the committed Security Object (post-Bootstrap), not from the CLI, for production runs. CLI override allowed in dev. | M | Core §6.3 | §6 |
 | REQ-SEC-004 | RPK and Certificate modes are explicitly **W**on't for v1. | W | — | §1 |
