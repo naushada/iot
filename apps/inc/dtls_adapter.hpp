@@ -18,6 +18,7 @@
  */
 extern "C"
 {
+    #include <netdb.h>     // getaddrinfo for DTLSAdapter::session(host, port)
     #include "glob.h"
     #include "tinydtls.h"
     #include "dtls_debug.h"
@@ -251,7 +252,25 @@ class DTLSAdapter {
 
         void session(const std::string& ip, const std::uint16_t& port) {
             ::memset((void *)&m_session, 0, sizeof(m_session));
-            m_session.addr.sin.sin_addr.s_addr = inet_addr(ip.c_str());
+            // L9 / DTLS interop: inet_addr() returns INADDR_NONE for any
+            // non-dotted-decimal input, which the next assignment treats
+            // as 255.255.255.255 (broadcast) and tinydtls then fails to
+            // send to. Resolve hostnames via getaddrinfo first; fall
+            // back to inet_addr only when getaddrinfo fails so existing
+            // numeric-IP callers stay correct.
+            struct addrinfo hints;
+            ::memset(&hints, 0, sizeof(hints));
+            hints.ai_family   = AF_INET;
+            hints.ai_socktype = SOCK_DGRAM;
+            struct addrinfo* result = nullptr;
+            int gai = ::getaddrinfo(ip.c_str(), nullptr, &hints, &result);
+            if (gai == 0 && result) {
+                auto* sin = reinterpret_cast<struct sockaddr_in*>(result->ai_addr);
+                m_session.addr.sin.sin_addr = sin->sin_addr;
+                ::freeaddrinfo(result);
+            } else {
+                m_session.addr.sin.sin_addr.s_addr = inet_addr(ip.c_str());
+            }
             m_session.addr.sin.sin_family = AF_INET;
             m_session.addr.sin.sin_port = htons(port);
             ::memset(m_session.addr.sin.sin_zero, 0, sizeof(m_session.addr.sin.sin_zero));

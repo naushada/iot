@@ -1,0 +1,42 @@
+[L9] (re)creating podman network lwm2m-interop
+[L9] starting Leshan server (corfr/leshan, amd64 via QEMU) with --add-opens
+WARNING: image platform (linux/amd64) does not match the expected platform (linux/arm64)
+[leshan] 2026-05-29 15:24:57,166 INFO LeshanServer - LWM2M server started at coap:///[0:0:0:0:0:0:0:0]:5683 coaps:///[0:0:0:0:0:0:0:0]:5684
+[leshan] 2026-05-29 15:24:57,649 INFO LeshanServerDemo - Web server started at http://0.0.0.0:8080/.
+[L9] registering PSK credential for urn:dev:client-1 on Leshan via REST
+[leshan-psk] http=200
+[L9] starting tcpdump sniffer attached to Leshan netns
+[L9] starting iot CoAPS client → Leshan (PSK handshake)
+[L9] running for 30 s (DTLS handshake + Register window)
+[L9] iot client log (last 25 lines):
+[iot] main.cpp:421 ent.first:bs ent.second:coaps://leshan-iface:5684
+[iot] main.cpp:421 ent.first:secret ent.second:3894beedaa7fe0eae6597dc350a59525
+[iot] main.cpp:421 ent.first:local ent.second:coaps://0.0.0.0:56830
+[iot] main.cpp:453 scheme:1 host:0.0.0.0 port:56830
+[iot] 2026-05-29 15:25:12.515482 [UdpSvc:1] LM_DEBUG /tmp/source/iot/apps/src/udp_adapter.cpp:56 bound fd:3 host:0.0.0.0 port:56830 scheme:1 service:4
+[iot] May 29 15:25:12 DEBG dtls_new_peer: 255.255.255.255:5684
+[iot] May 29 15:25:12 DEBG DTLSv12: initialize HASH_SHA256
+[iot] May 29 15:25:12 DEBG send handshake packet of type: client_hello (1)
+[iot] May 29 15:25:12 DEBG send header: (13 bytes):
+[iot] 00000000 16 FE FD 00 00 00 00 00  00 00 00 00 36 
+[iot] May 29 15:25:12 DEBG send unencrypted: (12 bytes):
+[iot] 00000000 01 00 00 2A 00 00 00 00  00 00 00 2A 
+[iot] May 29 15:25:12 DEBG send unencrypted: (42 bytes):
+[iot] 00000000 FE FD 00 00 00 00 51 CD  64 2F 08 55 B6 1F DF 67 
+[iot] 00000010 37 C7 23 49 05 40 D6 ED  F5 14 70 52 7B 9C AA 6E 
+[iot] 00000020 AF 20 00 00 00 02 C0 A8  01 00 
+[iot] May 29 15:25:12 DEBG dtlsWriteCb --> Sending message to peer length: 67
+[iot] May 29 15:25:12 WARN cannot send ClientHello
+[iot] May 29 15:25:12 DEBG DTLSAdapter::connect Error in establishes Channel
+[iot] 2026-05-29 15:25:12.516320 [UDPAdapter:2] LM_DEBUG /tmp/source/iot/apps/src/udp_adapter.cpp:355 reactor thread started
+[iot] [lwm2m] stdin is not a TTY; running in non-interactive mode (reactor only).
+[iot] [lwm2m] no bootstrap; sending Register directly
+[iot] May 29 15:25:13 DEBG found peer, try to re-connect
+[iot] May 29 15:25:13 DEBG DTLSAdapter::connect Error in establishes Channel
+[iot] 2026-05-29 15:25:13.520054 [UdpSvc:2] LM_DEBUG /tmp/source/iot/apps/src/udp_adapter.cpp:170 DTLS not connected, dropping tx
+[L9] Leshan log tail:
+[leshan] 2026-05-29 15:24:57,166 INFO LeshanServer - LWM2M server started at coap:///[0:0:0:0:0:0:0:0]:5683 coaps:///[0:0:0:0:0:0:0:0]:5684
+[leshan] 2026-05-29 15:24:57,649 INFO LeshanServerDemo - Web server started at http://0.0.0.0:8080/.
+[L9] tearing down (pcap closed)
+[L9] pcap → log/L9/nfr-001-dtls.pcap
+-rw-r--r--  1 naushada  staff  24 29 May 20:55 log/L9/nfr-001-dtls.pcap
