@@ -196,6 +196,14 @@ class DTLSAdapter {
             return(dtlsFd);
         }
 
+        /// Patch in the UDP socket descriptor after the bound socket is
+        /// known. Used by ServiceContext_t::open() so tinydtls' send
+        /// callback can ::sendto on the right fd. Safe to call from the
+        /// reactor thread only.
+        void setFd(std::int32_t fd) {
+            dtlsFd = fd;
+        }
+
         std::string hexToBinary(const std::string &hex) {
             std::string binary;
             for (size_t i = 0; i < hex.size()/2; ++i) {

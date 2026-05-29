@@ -2,6 +2,10 @@
 #define __coap_adapter_cpp__
 
 #include "coap_adapter.hpp"
+#include "lwm2m_bootstrap_client.hpp"
+#include "lwm2m_bootstrap_server.hpp"
+#include "lwm2m_dm_client.hpp"
+#include "lwm2m_registration_server.hpp"
 #include "nlohmann/json.hpp"
 
 using json = nlohmann::json;
@@ -1022,6 +1026,45 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
     std::string rsp;
     auto ret = parseRequest(in, coapmessage);
 
+    // L4 hot path: Bootstrap dispatch (no DTLS session variant).
+    if (!isAmIClient && m_bsServer) {
+        auto bsr = m_bsServer->handle(coapmessage, *this);
+        if (bsr.handled) {
+            for (auto& f : bsr.frames) out.push_back(std::move(f));
+            return static_cast<std::int32_t>(out.size());
+        }
+    }
+
+    // L3 hot path (no DTLS session variant). Peer address is unknown
+    // here, so the registry records empty peerHost/peerPort; the
+    // UDP-only path is mostly used by tests and the plain-CoAP push
+    // plane today.
+    if (!isAmIClient && m_regServer) {
+        auto outcome = m_regServer->handle(coapmessage, *this, std::string{}, 0);
+        if (outcome.kind != ::lwm2m::RegistrationOutcome::None) {
+            if (!outcome.response.empty()) out.push_back(std::move(outcome.response));
+            return static_cast<std::int32_t>(out.size());
+        }
+    }
+
+    // L5 hot path: client-side DM dispatcher (no DTLS variant).
+    if (isAmIClient && m_dmClient) {
+        auto dmOut = m_dmClient->handle(coapmessage, *this);
+        if (dmOut.kind != ::lwm2m::DmOutcome::None) {
+            if (!dmOut.response.empty()) out.push_back(std::move(dmOut.response));
+            return static_cast<std::int32_t>(out.size());
+        }
+    }
+
+    // L9 hot path: client-side Bootstrap dispatcher (no DTLS variant).
+    if (isAmIClient && m_bsClient) {
+        auto rsp = m_bsClient->handle_bs_traffic(coapmessage, *this);
+        if (!rsp.empty()) {
+            out.push_back(std::move(rsp));
+            return static_cast<std::int32_t>(out.size());
+        }
+    }
+
     auto cf = getContentFormat(coapmessage);
     //std::cout << basename(__FILE__) << ":" << __LINE__ << " value of cf: "  << cf << std::endl;
     if(cf.length() > 0 && (cf == "application/vnd.oma.lwm2m+tlv") || (cf == "text/plain;charset=utf-8")) {
@@ -1143,6 +1186,52 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
     auto ret = parseRequest(in, coapmessage);
     auto cf = getContentFormat(coapmessage);
     std::cout << basename(__FILE__) << ":" << __LINE__ << " processRequest with session cf.length: " << cf.length() << std::endl;
+
+    // L4 hot path: if a Bootstrap Server is attached, give it first
+    // refusal on /bs CoAP messages.
+    if (!isAmIClient && m_bsServer) {
+        auto bsr = m_bsServer->handle(coapmessage, *this);
+        if (bsr.handled) {
+            for (auto& f : bsr.frames) out.push_back(std::move(f));
+            return static_cast<std::int32_t>(out.size());
+        }
+    }
+
+    // L3 hot path: if a RegistrationServer is attached, give it first
+    // refusal on /rd-family URIs. It returns kind==None for non-/rd
+    // requests; otherwise it produces the CoAP response and we are done.
+    if (!isAmIClient && m_regServer && session != nullptr) {
+        std::string peerHost(inet_ntoa(session->addr.sin.sin_addr));
+        std::uint16_t peerPort = ntohs(session->addr.sin.sin_port);
+        auto outcome = m_regServer->handle(coapmessage, *this, peerHost, peerPort);
+        if (outcome.kind != ::lwm2m::RegistrationOutcome::None) {
+            if (!outcome.response.empty()) out.push_back(std::move(outcome.response));
+            return static_cast<std::int32_t>(out.size());
+        }
+    }
+
+    // L5 hot path: client-side DM dispatcher. Handles /{oid}[/...] coming
+    // from the registered LwM2M Server. Returns kind==None when the URI
+    // isn't a numeric DM path.
+    if (isAmIClient && m_dmClient) {
+        auto dmOut = m_dmClient->handle(coapmessage, *this);
+        if (dmOut.kind != ::lwm2m::DmOutcome::None) {
+            if (!dmOut.response.empty()) out.push_back(std::move(dmOut.response));
+            return static_cast<std::int32_t>(out.size());
+        }
+    }
+
+    // L9 hot path: client-side Bootstrap dispatcher. Handles inbound
+    // bootstrap-write / delete / finish coming from the BootstrapServer
+    // during the bootstrap window. handle_bs_traffic returns an empty
+    // string when the message is unrelated, so the caller falls through.
+    if (isAmIClient && m_bsClient) {
+        auto rsp = m_bsClient->handle_bs_traffic(coapmessage, *this);
+        if (!rsp.empty()) {
+            out.push_back(std::move(rsp));
+            return static_cast<std::int32_t>(out.size());
+        }
+    }
 
     if(cf.length() > 0 && (cf == "application/vnd.oma.lwm2m+tlv") || (cf == "text/plain;charset=utf-8")) {
 

@@ -14,11 +14,21 @@ CBORAdapter::~CBORAdapter() {
 }
 
 std::int32_t CBORAdapter::json2cbor(const std::string& in, std::string& out) {
-    std::int32_t ret = 0;
-    auto ents = json::parse(in);
-    auto cbor = json::to_cbor(ents);
-    out = std::string(cbor.begin(), cbor.end());
-    return(ret);
+    // BUG-002 side fix: nlohmann::json::parse throws on malformed input.
+    // The original code propagated the throw up through readline, killing
+    // the process (log.txt:9-11). Now we catch and return non-zero so the
+    // caller can surface the error and the request is simply not built.
+    out.clear();
+    try {
+        auto ents = json::parse(in);
+        auto cbor = json::to_cbor(ents);
+        out.assign(cbor.begin(), cbor.end());
+        return 0;
+    } catch (const std::exception& e) {
+        std::cout << basename(__FILE__) << ":" << __LINE__
+                  << " json2cbor parse error: " << e.what() << std::endl;
+        return -1;
+    }
 }
 
 std::string CBORAdapter::getJson(const std::string& fileName) {

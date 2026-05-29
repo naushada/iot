@@ -17,6 +17,12 @@ extern "C" {
     #include <libgen.h>
 }
 
+// TLV wire-format types and the LwM2MObject / LwM2MObjectData in-memory
+// shape live in the codec module after the L1 carve-out. Including it
+// here keeps all existing callers (coap_adapter.cpp, udp_adapter.cpp,
+// the test suite) source-compatible.
+#include "lwm2m_codec_tlv.hpp"
+
 enum ObjectId_t : std::uint32_t {
     SecurityObjectID = 0,
     ServerObjectID = 1,
@@ -27,59 +33,6 @@ enum ObjectId_t : std::uint32_t {
     LocationObjectID = 6,
     ConnectivityStatisticsObjectID = 7,
 
-};
-
-enum TypeFieldOfTLV_t : std::uint8_t {
-  TypeBits76_ObjectInstance_OneOrMoreResourceTLV_00 = 0,
-  TypeBits76_ResourceInstance_OneOrMultipleResourceTLV_01 = 1,
-  TypeBits76_MultipleResource_OneOrMoreResourceInstanceTLV_10 = 2,
-  TypeBits76_ResourceWithValue_11 = 3
-};
-
-enum LengthOfTheIdentifier_t : std::uint8_t {
-    TypeBit5_LengthOfTheIdentifier8BitsLong_0 = 0,
-    TypeBit5_LengthOfTheIdentifier16BitsLong_1 = 1,
-};
-
-enum LengthOfTheType_t : std::uint8_t {
-    TypeBits43_NoTypeLengthField_00 = 0,
-    TypeBits43_8BitsTypeLengthField_01 = 1,
-    TypeBits43_16BitsTypeLengthField_10 = 2,
-    TypeBits43_24BitsTypeLengthField_11 = 3,
-};
-
-struct LwM2MObjectData {
-    std::uint32_t m_oiid;
-    std::uint32_t m_rid;
-    std::uint32_t m_riid;
-    std::uint32_t m_ridlength;
-    std::vector<std::uint8_t> m_ridvalue;
-
-    LwM2MObjectData() : m_oiid(0), m_rid(0), m_riid(0), m_ridlength(0), m_ridvalue(0) {}
-    ~LwM2MObjectData() = default;
-
-    LwM2MObjectData& clear() {
-        m_oiid = 0;
-        m_riid = 0;
-        //m_rid = 0;
-        m_ridlength = 0;
-        m_ridvalue.clear();
-        return(*this);
-    }
-};
-
-struct LwM2MObject {
-    /// @brief Object ID
-    std::uint32_t m_oid;
-    std::vector<LwM2MObjectData>m_value;
-    LwM2MObject() : m_oid(0), m_value(0) {}
-    ~LwM2MObject() = default;
-
-    LwM2MObject& clear() {
-        m_oid = 0;
-        m_value.clear();
-        return(*this);
-    }
 };
 
 class LwM2MAdapter {

@@ -3,378 +3,369 @@
 
 #include "udp_adapter.hpp"
 
-void UDPAdapter::hex_dump(const std::string& in) {
-    std::stringstream oss;
-    for(const auto& ent: in)
+#include <ace/Log_Msg.h>
+#include <ace/Reactor.h>
+#include <ace/Sig_Set.h>
+#include <ace/Time_Value.h>
+
+/* ───────────────────────── ServiceContext_t ─────────────────────────── */
+
+ServiceContext_t::ServiceContext_t(Scheme_t scheme,
+                                   ServiceType_t service,
+                                   const std::string& host,
+                                   std::uint16_t port)
+    : m_selfAddr(port, host.c_str()),
+      m_selfHost(host),
+      m_selfPort(port),
+      m_scheme(scheme),
+      m_service(service),
+      m_coapAdapter(std::make_shared<CoAPAdapter>()) {
+    if (m_scheme == Scheme_t::CoAPs) {
+        // DTLSAdapter takes the raw fd because tinydtls' read/write
+        // callbacks ::sendto/::recvfrom on it directly. The fd is filled
+        // in inside open() once the socket is actually bound.
+        m_dtlsAdapter = std::make_shared<DTLSAdapter>(ACE_INVALID_HANDLE, DTLS_LOG_DEBUG);
+    }
+}
+
+ServiceContext_t::~ServiceContext_t() {
+    if (m_sock.get_handle() != ACE_INVALID_HANDLE) {
+        ACE_DEBUG((LM_DEBUG,
+                   ACE_TEXT("%D [UdpSvc:%t] %M %N:%l closing fd:%d service:%d\n"),
+                   m_sock.get_handle(), m_service));
+        m_sock.close();
+    }
+}
+
+int ServiceContext_t::open() {
+    if (m_sock.open(m_selfAddr) == -1) {
+        ACE_ERROR_RETURN((LM_ERROR,
+                          ACE_TEXT("%D [UdpSvc:%t] %M %N:%l bind failed host:%s port:%d errno:%d\n"),
+                          m_selfHost.c_str(), m_selfPort, errno),
+                         -1);
+    }
+
+    if (m_scheme == Scheme_t::CoAPs && m_dtlsAdapter) {
+        // Patch in the bound fd so tinydtls' send callback can ::sendto.
+        // DTLSAdapter exposes its dtlsFd via getFd(); we update it via the
+        // session() helper isn't appropriate here, so reach the field via
+        // a dedicated setter added in dtls_adapter.hpp.
+        m_dtlsAdapter->setFd(m_sock.get_handle());
+    }
+
+    ACE_DEBUG((LM_DEBUG,
+               ACE_TEXT("%D [UdpSvc:%t] %M %N:%l bound fd:%d host:%s port:%d scheme:%d service:%d\n"),
+               m_sock.get_handle(), m_selfHost.c_str(), m_selfPort, m_scheme, m_service));
+    return 0;
+}
+
+ACE_HANDLE ServiceContext_t::get_handle() const {
+    return const_cast<ACE_SOCK_Dgram&>(m_sock).get_handle();
+}
+
+int ServiceContext_t::handle_input(ACE_HANDLE /*handle*/) {
+    if (m_scheme == Scheme_t::CoAPs) {
+        // Don't consume the datagram here — DTLSAdapter::rx() does its own
+        // recvfrom and then drives dtls_handle_message(). The DTLS read
+        // callback in turn fills in m_peerHost / m_peerPort via session_t.
+        handle_input_coaps(/*unused*/ {}, ACE_INET_Addr{});
+        return 0;
+    }
+
+    std::vector<std::uint8_t> buf(2048);
+    ACE_INET_Addr from;
+    ssize_t n = m_sock.recv(buf.data(), buf.size(), from);
+    if (n < 0) {
+        ACE_ERROR_RETURN((LM_ERROR,
+                          ACE_TEXT("%D [UdpSvc:%t] %M %N:%l recv failed errno:%d\n"),
+                          errno),
+                         0);
+    }
+    buf.resize(static_cast<std::size_t>(n));
+
+    char host[64] = {0};
+    from.get_host_addr(host, sizeof(host));
+    m_peerHost.assign(host);
+    m_peerPort = from.get_port_number();
+
+    std::string bytes(reinterpret_cast<const char*>(buf.data()), buf.size());
+    handle_input_coap(bytes, from);
+    return 0;
+}
+
+void ServiceContext_t::handle_input_coap(const std::string& bytes,
+                                         const ACE_INET_Addr& from) {
+    CoAPAdapter::CoAPMessage message;
+    m_coapAdapter->parseRequest(bytes, message);
+
+    std::vector<std::string> responses;
+    if (m_service == ServiceType_t::LwM2MClient) {
+        std::string rsp = m_coapAdapter->buildResponse(message);
+        if (!rsp.empty()) {
+            responses.push_back(std::move(rsp));
+        }
+    } else {
+        bool isClient = (m_service == ServiceType_t::DeviceMgmtClient);
+        m_coapAdapter->processRequest(isClient, bytes, responses);
+    }
+
+    char host[64] = {0};
+    from.get_host_addr(host, sizeof(host));
+    for (auto& rsp : responses) {
+        ssize_t sent = m_sock.send(rsp.data(), rsp.size(), from);
+        if (sent < 0) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [UdpSvc:%t] %M %N:%l CoAP send failed to %s:%d errno:%d\n"),
+                       host, from.get_port_number(), errno));
+        }
+    }
+}
+
+void ServiceContext_t::handle_input_coaps(const std::vector<std::uint8_t>& bytes,
+                                          const ACE_INET_Addr& /*from*/) {
+    if (!m_dtlsAdapter) {
+        return;
+    }
+    // Feed tinydtls. tinydtls' read callback will populate
+    // m_dtlsAdapter->responses(); we forward those to the wire here so
+    // there is no shared queue across threads.
+    m_dtlsAdapter->rx(m_sock.get_handle());
+    for (auto& rsp : m_dtlsAdapter->responses()) {
+        m_dtlsAdapter->tx(rsp);
+    }
+    m_dtlsAdapter->responses(std::vector<std::string>{});
+}
+
+int ServiceContext_t::handle_exception(ACE_HANDLE /*handle*/) {
+    drain_tx_queue();
+    return 0;
+}
+
+void ServiceContext_t::drain_tx_queue() {
+    std::deque<OutboundFrame> local;
     {
-        oss << ent << ' ';
+        std::lock_guard<std::mutex> lock(m_txMutex);
+        local.swap(m_txQueue);
     }
 
-    std::string hexDump = oss.str();
-    std::cout << hexDump << std::endl;
-}
+    for (auto& frame : local) {
+        std::string host = frame.haveExplicitPeer ? frame.peerHost : m_peerHost;
+        std::uint16_t port = frame.haveExplicitPeer ? frame.peerPort : m_peerPort;
 
-std::int32_t UDPAdapter::rx(std::int32_t fd, std::string& out, std::uint32_t& peerIP, std::uint16_t& peerPort) {
-    std::vector<std::uint8_t> buf(1400);
-    std::int32_t len;
-    struct sockaddr_in session;
-    memset(&session, 0, sizeof(session));
-    socklen_t slen = sizeof(session);
-
-    len = recvfrom(fd, buf.data(), buf.size(), MSG_TRUNC, (struct sockaddr *)&session, &slen);
-
-    if(len < 0) {
-        perror("recvfrom");
-        return (-1);
-    } else {
-        buf.resize(len);
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " got len: " << len << " bytes from port: " << ntohs(session.sin_port) << std::endl;
-        out.assign(std::string(buf.begin(), buf.end()));
-        peerPort = ntohs(session.sin_port);
-        peerIP = session.sin_addr.s_addr;
-        return(0);
-    }
-    return(-1);  
-}
-
-std::int32_t UDPAdapter::tx(std::string& in, ServiceType_t& service) {
-    struct sockaddr_in peerAddr;
-    struct addrinfo *result;
-
-    auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {
-        return(service == ent.second->service());
-    });
-
-    if(it != services().end()) {
-        auto& ctx = *it;
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " peerHost: " << ctx.second->peerHost() << " peerPort: " << ctx.second->peerPort() << " service: " << service << std::endl;
-
-        for(const auto& ent: in) {
-            printf("%x ", (unsigned char)ent);
+        if (host.empty() || port == 0) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [UdpSvc:%t] %M %N:%l drop tx, no peer for service:%d\n"),
+                       m_service));
+            continue;
         }
-        printf("\n");
 
-        auto s = getaddrinfo(ctx.second->peerHost().data(), std::to_string(ctx.second->peerPort()).c_str(), nullptr, &result);
-        if (!s) {
-            peerAddr = *((struct sockaddr_in*)(result->ai_addr));
-            freeaddrinfo(result);
+        if (m_scheme == Scheme_t::CoAPs && m_dtlsAdapter) {
+            if (m_dtlsAdapter->clientState() != "connected") {
+                m_dtlsAdapter->connect(host, port);
+            }
+            if (m_dtlsAdapter->clientState() == "connected") {
+                m_dtlsAdapter->tx(frame.payload);
+            } else {
+                ACE_DEBUG((LM_DEBUG,
+                           ACE_TEXT("%D [UdpSvc:%t] %M %N:%l DTLS not connected, dropping tx\n")));
+            }
         } else {
-            std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Unable to get addrinfo for bs:"<< std::strerror(errno) << std::endl;
-            return(-1); 
-        }
-
-        socklen_t len = sizeof(peerAddr);
-        std::int32_t ret = sendto(ctx.second->fd(), (const void *)in.data(), (size_t)in.length(), 0, (struct sockaddr *)&peerAddr, len);
-        if(ret < 0) {
-            std::cout << basename(__FILE__) << ":" << __LINE__ << " Error: sendto peer failed for Fd:" << ctx.second->fd() << " bs:" << ctx.second->peerHost()
-                      << " localIP:" << ctx.second->selfHost() << " selfPort:" << std::to_string(ctx.second->selfPort())
-                      << " peerPort:" << std::to_string(ctx.second->peerPort()) << std::endl;
-            return(-1);
-        }
-    }
-    return(0);
-}
-
-std::int32_t UDPAdapter::init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme, const ServiceType_t& service) {
-    std::int32_t fd = ::socket(AF_INET, SOCK_DGRAM, 0);
-    if(fd < 0) {
-        std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error socket creation failed error:"<< std::strerror(errno) << std::endl; 
-        return(-1);
-    }
-
-    struct sockaddr_in selfAddr;
-    struct addrinfo *result;
-    auto s = getaddrinfo(host.data(), std::to_string(port).c_str(), nullptr, &result);
-    if (!s) {
-        selfAddr = *((struct sockaddr_in*)(result->ai_addr));
-        freeaddrinfo(result);
-    } else {
-        ::close(fd);
-        std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " Error getaddrinfo failed error:"<< std::strerror(errno) << std::endl; 
-        return(-1);
-    }
-
-    socklen_t len = sizeof(selfAddr);
-    auto status = ::bind(fd, (struct sockaddr *)&selfAddr, len);
-    if(status < 0) {
-        std::cout << "fn:"<<__PRETTY_FUNCTION__ << ":" << __LINE__ << " bind failed error:"<< std::strerror(errno) << std::endl;
-        return(-1);
-    }
-
-    std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " created handle:" << fd  << " for service:" << service << std::endl;
-
-    std::unique_ptr<ServiceContext_t> ctx = std::make_unique<ServiceContext_t>(fd, scheme);
-    ctx->selfHost(host);
-    ctx->selfPort(port);
-    ctx->service(service);
-
-    if(!services().insert(std::pair(service, std::move(ctx))).second) {
-        ///Insertion failed.
-        std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " Error Failed to add into services map" << std::endl;
-        return(-1);
-    }
-    return(0);
-}
-
-std::int32_t UDPAdapter::init(const std::string& host, const std::uint16_t& port, const Scheme_t& scheme) {
-    auto ret = init(host, port, scheme, ServiceType_t::LwM2MClient);
-    if(ret) {
-        std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " init failed for scheme:" << scheme << std::endl;
-        return(ret);
-    }
-    return(ret);
-}
-
-std::int32_t UDPAdapter::add_event_handle(const Scheme_t& scheme, const ServiceType_t& svc) {
-
-    struct epoll_event evt;
-    auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {
-        return(svc == ent.second->service());
-    });
-
-    if(it != services().end()) {
-        auto& ent = *it;
-        evt.data.u64 = (((static_cast<std::uint64_t>(ent.second->fd())) << 32) | 
-                         static_cast<std::uint32_t>(((svc & 0xFFFF) << 16) | (scheme & 0xFFFF)));
-        evt.events = EPOLLHUP | EPOLLIN;
-        ::epoll_ctl(m_epollFd, EPOLL_CTL_ADD, ent.second->fd(), &evt);
-        m_evts.push_back(evt);
-        return(0);
-    }
-    return(-1);
-}
-
-std::int32_t UDPAdapter::handle_io(const std::int32_t& fd, const Scheme_t& scheme, const ServiceType_t&  service) {
-    switch (scheme) {
-        case UDPAdapter::Scheme_t::CoAP:
-        {
-            //std::cout << basename(__FILE__) << ":" << __LINE__ << " scheme: "<< scheme << " service: " << service << std::endl;
-            handle_io_coap(fd, service);
-        }
-        break;
-        case UDPAdapter::Scheme_t::CoAPs:
-        {
-            handle_io_coaps(fd, service);
-        }
-        break;
-        default:
-            std::cout << "fn:" << __PRETTY_FUNCTION__ << ":" << __LINE__ << " Error unknown scheme:" << scheme << std::endl;
-        break;
-    }
-}
-
-std::int32_t UDPAdapter::process_request(const std::string& in, const std::unique_ptr<UDPAdapter::ServiceContext_t>& ctx, CoAPAdapter::CoAPMessage& message) {
-    if(UDPAdapter::Scheme_t::CoAP == ctx->scheme()) {
-        //ctx->coapAdapter()->parseRequest(in, message);
-        std::string uris;
-        std::uint32_t oid, oiid, rid, riid;
-        std::vector<std::string> responses;
-
-        if(!ctx->coapAdapter()->getRequestType(message.coapheader.type).compare("Acknowledgement")) {
-            ctx->coapAdapter()->dumpCoAPMessage(message);
-        } else {
-            if(ctx->coapAdapter()->isCoAPUri(message, uris)) {
-                bool isAmIClient = (ctx->service() == UDPAdapter::ServiceType_t::DeviceMgmtClient)? true: false;
-                ctx->coapAdapter()->processRequest(isAmIClient, in, responses);
-                for(auto& response: responses) {
-                    tx(response, ctx->service());
-                }
-
-            } else if(ctx->coapAdapter()->isLwm2mUri(message, uris, oid, oiid, rid, riid)) {
-
-                LwM2MObject object;
-                LwM2MObjectData data;
-                if(uris.empty()) {
-                    object.m_oid = oid;
-                    data.m_oiid = oiid;
-                    data.m_rid = rid;
-                    data.m_riid = riid;
-                    ctx->coapAdapter()->lwm2mAdapter()->parseLwM2MObjects(message.payload, data, object);
-                }
-            }
-        }
-    } else {
-        //ctx->dtlsAdapter()->rx(ctx->fd());
-    }
-    return(0);
-}
-
-std::int32_t UDPAdapter::handle_io_coaps(const std::int32_t& fd, const ServiceType_t& service) {
-    auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {
-        return(service == ent.second->service());
-    });
-
-    if(it != services().end()) {
-
-        auto& ctx = *it;
-        ctx.second->dtlsAdapter()->rx(fd);
-        auto rsp = ctx.second->dtlsAdapter()->responses();
-
-        for(auto& response: ctx.second->dtlsAdapter()->responses()) {
-            ctx.second->dtlsAdapter()->tx(response);
-        }
-        return(0);
-    }
-    return(-1);
-}
-
-std::int32_t UDPAdapter::handle_io_coap(const std::int32_t& fd, const ServiceType_t& service) {
-    //std::cout << basename(__FILE__) << ":" << __LINE__ << " received packet handle_io_coap" << std::endl;
-    auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {
-        return(service == ent.second->service());
-    });
-
-    if(it != services().end()) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " received packet handle_io_coap service: " << service << std::endl;
-        auto& ctx = *it;
-        std::uint32_t peerIP;
-        std::uint16_t peerPort;
-        std::string out;
-        std::stringstream ss;
-        std::int32_t ret;
-        std::vector<std::string> responses;
-        CoAPAdapter::CoAPMessage message;
-        ss.str("");
-
-        do {
-
-            ret = rx(fd, out, peerIP, peerPort);
-            if(!ret) {
-                ctx.second->peerPort(peerPort);
-                struct in_addr pp;
-                pp.s_addr = peerIP;
-                ctx.second->peerHost(inet_ntoa(pp));
-                ctx.second->coapAdapter()->parseRequest(out, message);
-                ss << out;
-                //process_request(out, ctx.second, message);
-            }
-
-        } while(message.ismorebitset);
-
-        if(UDPAdapter::ServiceType_t::LwM2MClient == service) {
-            //CoAPAdapter::CoAPMessage coapmessage;
-            //auto ret = ctx.second->coapAdapter()->parseRequest(out, coapmessage);
-
-            for(const auto& ent: out) {
-                printf("%x ", (unsigned char)ent);
-            }
-            printf("\n");
-            auto response = ctx.second->coapAdapter()->buildResponse(message);
-            if(response.length()) {
-                tx(response, ctx.second->service());
-            }
-
-        } else {
-            bool isAmIClient = false;
-            ret = ctx.second->coapAdapter()->processRequest(isAmIClient, ss.str(), responses);
-            if(responses.size()) {
-                for(auto& response: responses) {
-                    std::cout << basename(__FILE__) << ":" << __LINE__ << " servie: " << ctx.second->service() << std::endl;
-                    tx(response, ctx.second->service());
-                }
-            }
-        }
-        return(0);
-    }
-    //rx(fd);
-    return(0);
-}
-
-std::int32_t UDPAdapter::start(Role_t role, Scheme_t scheme) {
-
-    std::cout << basename(__FILE__) << ":" << __LINE__ << " evts.size: " << m_evts.size() << std::endl;
-    std::vector<struct epoll_event> events(m_evts.size());
-
-    if(UDPAdapter::Role_t::CLIENT == role &&  UDPAdapter::Scheme_t::CoAPs == scheme) {
-        auto it = std::find_if(services().begin(), services().end(), [&](auto& ent) -> bool {
-            return(UDPAdapter::ServiceType_t::LwM2MClient == ent.second->service());
-        });
-
-        if(it != services().end()) {
-            auto& ent = *it;
-            ent.second->dtlsAdapter()->connect(ent.second->peerHost(), ent.second->peerPort());
-        }
-    }
-
-    for(;;) {
-
-        ///@brief fallback to original size of vector
-        events.resize(m_evts.size());
-        if(!m_evts.size()) {
-        }
-
-        auto eventCount = ::epoll_wait(m_epollFd, events.data(), m_evts.size(), 9000);
-
-        if(!eventCount) {
-            /// Timeout of 9000ms happens.
-           
-        } else if(eventCount > 0) {
-            ///event is received.
-            events.resize(eventCount);
-            //for(auto it = events.begin(); it != events.end(); ++it) {
-            for(auto& event: events) {
-                struct epoll_event ent = event;
-                std::int32_t handle = ((ent.data.u64 >> 32) & 0xFFFFFFFF);
-                ServiceType_t service = static_cast<ServiceType_t>((ent.data.u64 >> 16) & 0xFFFF);
-                Scheme_t scheme = static_cast<Scheme_t>(ent.data.u64 & 0xFFFF);
-
-                if(ent.events & EPOLLHUP) {
-                    std::cout << "fn:" << __PRETTY_FUNCTION__ << " line:" << __LINE__ <<" ent.events: EPOLLHUP" << std::endl;
-                }
-
-                if(ent.events & EPOLLIN) {
-                    std::cout << basename(__FILE__) << ":" << __LINE__ << " EPOLLIN on Fd: " << handle << std::endl;
-                    handle_io(handle, scheme, service);
-                }
-
-                if(ent.events & EPOLLERR) {
-                    ///Error on socket.
-                    std::cout << "ent.events: EPOLLERR" << std::endl;
-                }
-
-                if(ent.events & EPOLLET) {
-                    std::cout << "ent.events: EPOLLET" << std::endl;
-                }
+            ACE_INET_Addr to(port, host.c_str());
+            ssize_t sent = m_sock.send(frame.payload.data(), frame.payload.size(), to);
+            if (sent < 0) {
+                ACE_ERROR((LM_ERROR,
+                           ACE_TEXT("%D [UdpSvc:%t] %M %N:%l raw UDP send failed errno:%d\n"),
+                           errno));
             }
         }
     }
-    return(0);
 }
 
-std::int32_t UDPAdapter::stop() {
-    std::cout << basename(__FILE__) << ":" << __LINE__ << " Not implemented yet" << std::endl;
-    return(0);
+int ServiceContext_t::send_async(const std::string& payload) {
+    {
+        std::lock_guard<std::mutex> lock(m_txMutex);
+        m_txQueue.push_back({payload, false, {}, 0});
+    }
+    ACE_Reactor::instance()->notify(this);
+    return 0;
 }
 
+int ServiceContext_t::send_async(const std::string& payload,
+                                 const std::string& host,
+                                 std::uint16_t port) {
+    {
+        std::lock_guard<std::mutex> lock(m_txMutex);
+        m_txQueue.push_back({payload, true, host, port});
+    }
+    ACE_Reactor::instance()->notify(this);
+    return 0;
+}
 
+int ServiceContext_t::send_raw(const ACE_INET_Addr& to,
+                               const std::uint8_t* data, std::size_t len) {
+    return static_cast<int>(m_sock.send(data, len, to));
+}
 
+int ServiceContext_t::handle_close(ACE_HANDLE /*handle*/, ACE_Reactor_Mask /*mask*/) {
+    if (m_sock.get_handle() != ACE_INVALID_HANDLE) {
+        m_sock.close();
+    }
+    return 0;
+}
 
+/* ───────────────────────────── UDPAdapter ───────────────────────────── */
 
+UDPAdapter::UDPAdapter(std::string& host, std::uint16_t& port,
+                       Scheme_t& scheme, ServiceType_t& service) {
+    init(host, port, scheme, service);
+}
 
+UDPAdapter::~UDPAdapter() {
+    stop();
+    // unique_ptr<ServiceContext_t> destructors close fds and remove
+    // themselves from the reactor.
+    m_services.clear();
+}
 
+int UDPAdapter::init(const std::string& host, const std::uint16_t& port,
+                     const Scheme_t& scheme, const ServiceType_t& service) {
+    auto ctx = std::make_unique<ServiceContext_t>(scheme, service, host, port);
+    if (ctx->open() == -1) {
+        return -1;
+    }
+    if (!m_services.insert({service, std::move(ctx)}).second) {
+        ACE_ERROR_RETURN((LM_ERROR,
+                          ACE_TEXT("%D [UDPAdapter:%t] %M %N:%l duplicate service:%d\n"),
+                          service),
+                         -1);
+    }
+    return 0;
+}
 
+int UDPAdapter::init(const std::string& host, const std::uint16_t& port,
+                     const Scheme_t& scheme) {
+    return init(host, port, scheme, ServiceType_t::LwM2MClient);
+}
 
+int UDPAdapter::add_event_handle(const Scheme_t& /*scheme*/, const ServiceType_t& svc) {
+    auto it = m_services.find(svc);
+    if (it == m_services.end()) {
+        return -1;
+    }
+    if (ACE_Reactor::instance()->register_handler(
+            it->second.get(),
+            ACE_Event_Handler::READ_MASK) == -1) {
+        ACE_ERROR_RETURN((LM_ERROR,
+                          ACE_TEXT("%D [UDPAdapter:%t] %M %N:%l register_handler "
+                                   "failed for service:%d errno:%d\n"),
+                          svc, errno),
+                         -1);
+    }
+    return 0;
+}
 
+int UDPAdapter::tx(std::string& payload, ServiceType_t& service) {
+    auto it = m_services.find(service);
+    if (it == m_services.end()) {
+        ACE_ERROR_RETURN((LM_ERROR,
+                          ACE_TEXT("%D [UDPAdapter:%t] %M %N:%l tx: unknown service:%d\n"),
+                          service),
+                         -1);
+    }
+    return it->second->send_async(payload);
+}
 
+int UDPAdapter::start(Role_t role, Scheme_t scheme) {
+    m_role = role;
 
+    if (role == CLIENT && scheme == Scheme_t::CoAPs) {
+        // Kick off the DTLS handshake against the bootstrap server.
+        auto it = std::find_if(m_services.begin(), m_services.end(),
+                               [](const auto& kv) {
+                                   return kv.second->service() == ServiceType_t::LwM2MClient;
+                               });
+        if (it != m_services.end()) {
+            auto& ctx = it->second;
+            ctx->dtlsAdapter()->connect(ctx->peerHost(), ctx->peerPort());
+        }
+    }
 
+    // L3 / REQ-IO-005: 1 Hz periodic timer drives lifetime + Update ticks
+    // and (later) the Observe pmax timer. Scheduled here so it is alive
+    // for both server (main-thread reactor) and client (ACE_Task reactor)
+    // modes. First tick after 1 s; subsequent every 1 s.
+    ACE_Time_Value delay(1, 0);
+    ACE_Time_Value interval(1, 0);
+    ACE_Reactor::instance()->schedule_timer(this, nullptr, delay, interval);
 
+    if (role == SERVER) {
+        // Run reactor directly on the calling (main) thread.
+        ACE_Sig_Set sigs;
+        sigs.empty_set();
+        sigs.sig_add(SIGINT);
+        sigs.sig_add(SIGTERM);
+        // Note: PIPE on UDP is harmless; ignore it so a torn-down peer
+        // does not kill the process.
+        ::signal(SIGPIPE, SIG_IGN);
 
+        ACE_Time_Value to(1, 0);
+        while (!m_stop.load()) {
+            int ret = ACE_Reactor::instance()->handle_events(to);
+            if (ret < 0) {
+                break;
+            }
+        }
+        return 0;
+    }
 
+    // CLIENT: spawn a reactor thread so the main thread can run Readline.
+    return open();
+}
 
+int UDPAdapter::handle_timeout(const ACE_Time_Value& /*tv*/, const void* /*act*/) {
+    // Fired by ACE on the reactor thread, so callbacks may freely touch
+    // ServiceContext / DTLSAdapter / ClientRegistry state without locks.
+    if (m_role == SERVER && m_tickServer) {
+        m_tickServer();
+    } else if (m_role == CLIENT && m_tickClient) {
+        m_tickClient();
+    }
+    return 0;
+}
 
+int UDPAdapter::stop() {
+    m_stop.store(true);
+    ACE_Reactor::instance()->end_reactor_event_loop();
+    msg_queue()->deactivate();
+    wait();
+    return 0;
+}
 
+int UDPAdapter::open(void* /*args*/) {
+    if (activate(THR_NEW_LWP | THR_JOINABLE, 1) == -1) {
+        ACE_ERROR_RETURN((LM_ERROR,
+                          ACE_TEXT("%D [UDPAdapter:%t] %M %N:%l activate failed\n")),
+                         -1);
+    }
+    return 0;
+}
 
+int UDPAdapter::svc() {
+    ACE_DEBUG((LM_DEBUG,
+               ACE_TEXT("%D [UDPAdapter:%t] %M %N:%l reactor thread started\n")));
 
+    ::signal(SIGPIPE, SIG_IGN);
 
-
-
-
-
-
-
-
-
-
+    ACE_Time_Value to(1, 0);
+    while (!m_stop.load()) {
+        int ret = ACE_Reactor::instance()->handle_events(to);
+        if (ret < 0) {
+            break;
+        }
+    }
+    ACE_DEBUG((LM_DEBUG,
+               ACE_TEXT("%D [UDPAdapter:%t] %M %N:%l reactor thread exiting\n")));
+    return 0;
+}
 
 #endif /*__udp_adapter_cpp__*/

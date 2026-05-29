@@ -1,6 +1,23 @@
 FROM ubuntu:jammy
 RUN apt-get update && apt-get -y upgrade && \
-    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev python3-dev autoconf
+    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev python3-dev autoconf wget pkg-config
+
+# ACE/TAO 7.0.0 — same install prefix as the xpmile project so the include
+# / link paths in apps/CMakeLists.txt resolve. `ssl=1` is load-bearing; without
+# it ACE_SSL is not built and downstream links would fail if we ever add TLS
+# helpers on top of ACE.
+ENV ACE_SRC=/root/ACE_wrappers ACE_PREFIX=/usr/local/ACE_TAO-7.0.0
+WORKDIR /root
+RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_0/ACE+TAO-7.0.0.tar.gz \
+    && tar -xzf ACE+TAO-7.0.0.tar.gz \
+    && rm ACE+TAO-7.0.0.tar.gz \
+    && echo '#include "ace/config-linux.h"' > /root/ACE_wrappers/ace/config.h \
+    && echo 'include $(ACE_SRC)/include/makeinclude/platform_linux.GNU' \
+          > /root/ACE_wrappers/include/makeinclude/platform_macros.GNU
+WORKDIR /root/ACE_wrappers
+RUN make install ssl=1 INSTALL_PREFIX=${ACE_PREFIX} ACE_ROOT=${ACE_SRC} SSL_ROOT=/usr/include/openssl \
+    && echo "${ACE_PREFIX}/lib" > /etc/ld.so.conf.d/ace-tao.conf \
+    && ldconfig
 
 # Building openssl 3.1.1
 RUN git clone -b openssl-3.1.1 https://github.com/naushada/openssl.git

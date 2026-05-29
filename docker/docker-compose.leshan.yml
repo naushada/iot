@@ -1,0 +1,76 @@
+# L9 Leshan interop harness — see apps/docs/leshan-interop.md.
+#
+#   docker compose -f docker/docker-compose.leshan.yml up \
+#       leshan-server iot-client          # NFR-INTEROP-001
+#
+#   docker compose -f docker/docker-compose.leshan.yml up \
+#       iot-server leshan-client          # NFR-INTEROP-002
+#
+# The Leshan demo images are published at hub.docker.com/r/dre/leshan.
+
+version: "3.8"
+
+services:
+  leshan-server:
+    image: dre/leshan-server-demo:latest
+    container_name: leshan-server
+    ports:
+      - "8080:8080"           # web UI
+      - "5683:5683/udp"       # CoAP DM
+      - "5684:5684/udp"       # CoAPS DM
+      - "5783:5783/udp"       # CoAP BS
+      - "5784:5784/udp"       # CoAPS BS
+    networks:
+      - lwm2m-net
+
+  iot-client:
+    image: naushada/iot:latest
+    container_name: iot-client
+    command: >
+      /opt/app/lwm2m
+      local=coap://0.0.0.0:56830
+      bs=coap://leshan-server:5783
+      role=client
+      ep=urn:dev:client-1
+      config=/opt/app/config
+    volumes:
+      - ../apps/config:/opt/app/config:ro
+      - ./pcaps/iot-client:/var/lib/tcpdump
+    networks:
+      - lwm2m-net
+    depends_on:
+      - leshan-server
+
+  iot-server:
+    image: naushada/iot:latest
+    container_name: iot-server
+    command: >
+      /opt/app/lwm2m
+      local=coap://0.0.0.0:5783
+      role=server
+      ep=urn:dev:client-1
+      config=/opt/app/config
+    ports:
+      - "5783:5783/udp"       # BS port
+      - "5683:5683/udp"       # DM port
+    volumes:
+      - ../apps/config:/opt/app/config:ro
+      - ./pcaps/iot-server:/var/lib/tcpdump
+    networks:
+      - lwm2m-net
+
+  leshan-client:
+    image: dre/leshan-client-demo:latest
+    container_name: leshan-client
+    command: >
+      -u coap://iot-server:5683
+      -n urn:dev:client-1
+      -lh /
+    networks:
+      - lwm2m-net
+    depends_on:
+      - iot-server
+
+networks:
+  lwm2m-net:
+    driver: bridge

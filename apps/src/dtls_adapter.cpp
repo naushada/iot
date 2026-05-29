@@ -128,48 +128,65 @@ std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtl
     (void)session;
     std::string in(reinterpret_cast<const char*>(identity), identity_len);
     DTLSAdapter &inst = *static_cast<DTLSAdapter *>(dtls_get_app_data(ctx));
-    dtls_info("In Fn dtlsGetPskInfoCb Fd: %d identity_length: %d result_length: %d\n", inst.getFd(), identity_len, result_length);
+    // BUG-001 / NFR-SEC-001: do not log identity bytes or the PSK on
+    // INFO. The handshake state is sufficient for debugging; DEBUG
+    // captures the rest under operator control.
+    dtls_debug("dtlsGetPskInfoCb Fd:%d type:%d id_len:%zu result_len:%zu\n",
+               inst.getFd(), type, identity_len, result_length);
 
     switch(type) {
         case DTLS_PSK_HINT:
         {
+            // No hint to advertise; return 0 (length) and 0 bytes written.
             return(0);
         }
         case DTLS_PSK_IDENTITY:
         {
+            // BUG-001 fix:
+            //   * Use match_identity only when the server sent a real hint
+            //     (id_len > 0). Empty hint → fall back to our configured
+            //     identity directly; do not look up an empty key.
+            //   * Buffer-fit check is `identity_len <= result_length` (the
+            //     ORIGINAL code had this backwards: `result_length <= iden.length()`
+            //     was the *success* branch instead of the *failure* branch).
             std::string iden;
-            if(inst.match_identity(in, iden) && result_length <= iden.length()) {
-                ::memcpy(result, iden.data(), iden.length());
-                return(iden.length());
-            } else {
+            const bool serverGaveHint = identity_len > 0;
+            if (!serverGaveHint || !inst.match_identity(in, iden)) {
                 iden = inst.identity();
-                ::memcpy(result, iden.data(), iden.length());
-                dtls_debug("The identity length:%d value:%s\n", iden.length(), iden.c_str());
-                return(iden.length());
             }
+            if (iden.empty()) {
+                dtls_warn("No PSK identity configured\n");
+                return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
+            }
+            if (iden.length() > result_length) {
+                dtls_warn("PSK identity (%zu B) exceeds caller buffer (%zu B)\n",
+                          iden.length(), result_length);
+                return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
+            }
+            ::memcpy(result, iden.data(), iden.length());
+            return static_cast<std::int32_t>(iden.length());
         }
         case DTLS_PSK_KEY:
         {
-            dtls_debug("For PSK The identity length:%d value:%s\n", identity_len, identity);
             auto secret = inst.get_secret(in);
-            if(secret.empty()) {
-                dtls_warn("Can't retrieve PSK for an empty identity\n");
+            if (secret.empty()) {
+                dtls_warn("PSK for unknown identity requested\n");
                 return dtls_alert_fatal_create(DTLS_ALERT_ILLEGAL_PARAMETER);
             }
-
-            auto secret128Bits = inst.hexToBinary(secret);
-            if(secret128Bits.size() > 0 && result_length <= secret128Bits.size()) {
-                ::memcpy(result, secret128Bits.data(), secret128Bits.size());
-                return secret128Bits.size();
-            } else if(result_length < secret128Bits.size()) {
-                dtls_warn("can't set psk -- buffer too small Underflow\n");
+            // Secrets are stored as hex strings; convert to binary.
+            auto bin = inst.hexToBinary(secret);
+            if (bin.empty()) {
+                dtls_warn("PSK hex decode failed\n");
                 return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
-            } else {
-                ::memcpy(result, secret.data(), secret.size());
-                return(secret.length());
-                //dtls_warn("PSK for unknown id requested, exiting\n");
-                //return dtls_alert_fatal_create(DTLS_ALERT_ILLEGAL_PARAMETER);
             }
+            // BUG-001 fix: correct buffer-fit direction.
+            if (bin.size() > result_length) {
+                dtls_warn("PSK (%zu B) exceeds caller buffer (%zu B)\n",
+                          bin.size(), result_length);
+                return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
+            }
+            ::memcpy(result, bin.data(), bin.size());
+            return static_cast<std::int32_t>(bin.size());
         }
         default:
             dtls_warn("unsupported request type: %d\n", type);
@@ -189,7 +206,7 @@ DTLSAdapter::DTLSAdapter(std::int32_t fd, log_t log_level) {
     clientState("error");
 }
 
-DTLSAdapter::DTLSAdapter() : m_dtls_ctx(nullptr), device_credentials() {}
+DTLSAdapter::DTLSAdapter() : m_dtls_ctx(nullptr), device_credentials(), dtlsFd(-1) {}
 
 DTLSAdapter::~DTLSAdapter() {
     dtls_free_context(m_dtls_ctx);

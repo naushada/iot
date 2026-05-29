@@ -10,10 +10,26 @@ include_directories(test)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++2a -g -Wall -Wextra")
 
 #However, the file(GLOB...) allows for wildcard additions:
-file(GLOB SOURCES "*.cpp"  
+file(GLOB SOURCES "*.cpp"
                     "../src/coap_adapter.cpp"
                     "../src/cbor_adapter.cpp"
-                    "../src/lwm2m_adapter.cpp")
+                    "../src/lwm2m_adapter.cpp"
+                    "../src/lwm2m_codec_tlv.cpp"
+                    "../src/lwm2m_codec_registry.cpp"
+                    "../src/lwm2m_codec_linkformat.cpp"
+                    "../src/lwm2m_codec_plaintext.cpp"
+                    "../src/lwm2m_object_store.cpp"
+                    "../src/lwm2m_registration.cpp"
+                    "../src/lwm2m_registration_server.cpp"
+                    "../src/lwm2m_registration_client.cpp"
+                    "../src/lwm2m_bootstrap_server.cpp"
+                    "../src/lwm2m_bootstrap_client.cpp"
+                    "../src/lwm2m_dm_client.cpp"
+                    "../src/lwm2m_dm_server.cpp"
+                    "../src/lwm2m_observe.cpp"
+                    "../src/lwm2m_codec_senml.cpp"
+                    "../src/lwm2m_object_3_device.cpp"
+                    "../src/lwm2m_object_stubs.cpp")
 
 enable_testing()
 

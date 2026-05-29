@@ -17,6 +17,11 @@ extern "C" {
     #include <zlib.h>
 }
 
+namespace lwm2m { class RegistrationServer; }
+namespace lwm2m { class DmClient; }
+namespace lwm2m { namespace bootstrap { class Server; } }
+namespace lwm2m { namespace bootstrap { class Client; } }
+
 class CoAPAdapter {
     public:
         struct CoAPOptions {
@@ -293,10 +298,59 @@ class CoAPAdapter {
             return(m_lwm2mAdapter);
         }
 
-        std::vector<std::string> handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid, 
+        /// L3: optional Registration handler. When set, processRequest()
+        /// forwards /rd-family CoAP messages here before falling back to
+        /// the legacy buildRegistrationAck path. Set by the wrapping
+        /// ServiceContext_t at startup; nullptr means "no Registration
+        /// support" (e.g. the LwM2MClient context on the client side).
+        void registrationServer(std::shared_ptr<lwm2m::RegistrationServer> rs) {
+            m_regServer = std::move(rs);
+        }
+        std::shared_ptr<lwm2m::RegistrationServer>& registrationServer() {
+            return m_regServer;
+        }
+
+        /// L4: optional Bootstrap server. Attached on the
+        /// BootstrapServer ServiceContext_t. Same dispatch shape as
+        /// `registrationServer()`.
+        void bootstrapServer(std::shared_ptr<lwm2m::bootstrap::Server> bs) {
+            m_bsServer = std::move(bs);
+        }
+        std::shared_ptr<lwm2m::bootstrap::Server>& bootstrapServer() {
+            return m_bsServer;
+        }
+
+        /// L5: optional DM client. Attached on the LwM2MClient
+        /// ServiceContext_t. Handles inbound /{oid}[…] requests from the
+        /// registered LwM2M Server.
+        void dmClient(std::shared_ptr<lwm2m::DmClient> dm) {
+            m_dmClient = std::move(dm);
+        }
+        std::shared_ptr<lwm2m::DmClient>& dmClient() {
+            return m_dmClient;
+        }
+
+        /// L9: optional Bootstrap client. Attached on the LwM2MClient
+        /// ServiceContext_t once the client kicks off bootstrap. Handles
+        /// inbound PUT /0/{iid}, PUT /1/{iid}, DELETE /, and POST /bs
+        /// during the bootstrap window. Dispatch order in processRequest
+        /// is /bs server → /rd → /{oid}* DM → bootstrap-client → legacy.
+        void bootstrapClient(std::shared_ptr<lwm2m::bootstrap::Client> bc) {
+            m_bsClient = std::move(bc);
+        }
+        std::shared_ptr<lwm2m::bootstrap::Client>& bootstrapClient() {
+            return m_bsClient;
+        }
+
+        std::vector<std::string> handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid,
                                                     std::uint32_t oiid, std::uint32_t rid, std::uint32_t riid);
 
     private:
+        std::shared_ptr<lwm2m::RegistrationServer>    m_regServer;
+        std::shared_ptr<lwm2m::bootstrap::Server>     m_bsServer;
+        std::shared_ptr<lwm2m::DmClient>              m_dmClient;
+        std::shared_ptr<lwm2m::bootstrap::Client>     m_bsClient;
+
         std::unordered_map<std::uint32_t, std::string> OptionNumber;
         std::unordered_map<std::uint32_t, std::string> ContentFormat;
         std::unordered_map<std::string, std::uint32_t> ContentFormatByName;

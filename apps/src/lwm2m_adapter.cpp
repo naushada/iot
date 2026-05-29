@@ -389,6 +389,17 @@ std::int32_t LwM2MAdapter::parseLwM2MUri(const std::string& uri, std::uint32_t& 
 }
 
 std::int32_t LwM2MAdapter::parseLwM2MObjects(const std::string& payload, LwM2MObjectData& data, LwM2MObject& object) {
+    // L1 carve-out: delegate to the codec module so callers (coap_adapter,
+    // udp_adapter, the test suite) keep their existing call sites while the
+    // cursor-based parser fixes BUG-003 (truncated frames) and the multi-
+    // resource riid-propagation gap. See apps/docs/lwm2m-rdd.md REQ-ENC-001/002.
+    return ::lwm2m::tlv::decode_container(payload, data, object);
+}
+
+// ─── Original recursive parser kept below in a dormant branch so the diff
+//     stays small. To be deleted in the L1 follow-up cleanup once the new
+//     decoder has been exercised on the live bootstrap path.
+[[maybe_unused]] static std::int32_t parseLwM2MObjects_legacy(const std::string& payload, LwM2MObjectData& data, LwM2MObject& object) {
     std::istringstream iss;
     iss.rdbuf()->pubsetbuf(const_cast<char *>(payload.data()), payload.length());
     std::uint8_t onebyte;
@@ -1146,161 +1157,18 @@ std::int32_t LwM2MAdapter::parseLwM2MPayload(const std::string& uri, const std::
 }
 
 std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::string value, std::uint16_t id, std::string& out) {
-    std::uint8_t type;
-    std::stringstream ss;
-
-    /// id could be any of these --- The Object Instance, Resource, or Resource Instance ID as indicated by the Type field
-    type = bits76 << 6;
-
-    if(id >=0 && id <= 255) {
-        type |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
-    } else {
-        type |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
-    }
-
-    if(value.length() >= 0 && value.length() < 8) {
-
-        type |= TypeBits43_NoTypeLengthField_00 << 3;
-        type |= value.length() & 0b111;
-
-    } else if(value.length() > 0 && value.length() <= 255) {
-
-        type |= TypeBits43_8BitsTypeLengthField_01 << 3;
-        type |= value.length() & 0b000;
-
-    } else if(value.length() > 255 && value.length() <= 65535) {
-
-        type |= TypeBits43_16BitsTypeLengthField_10 << 3;
-        type |= value.length() & 0b000;
-
-    } else {
-        ///length is24 bits
-    }
-
-    ss.write(reinterpret_cast<char*>(&type), sizeof(type));
-    if(id >= 0 && id <=255) {
-        ss.write(reinterpret_cast<char*>(&id), 1);
-    } else {
-        std::uint16_t tmpid = htons(id);
-        ss.write(reinterpret_cast<char*>(&tmpid), sizeof(tmpid));
-    }
-
-    if(value.length() >= 0 && value.length() < 8) {
-
-        ss.write(reinterpret_cast<char*>(value.data()), value.length());
-
-    } else if(value.length() > 0 && value.length() <= 255) {
-
-        std::uint8_t len = value.length();
-        ss.write(reinterpret_cast<char*>(&len), sizeof(len));
-        ss.write(reinterpret_cast<char*>(value.data()), value.length());
-
-    } else if(value.length() > 255 && value.length() <= 65535) {
-
-        std::uint16_t len = value.length();
-        ss.write(reinterpret_cast<char*>(&len), sizeof(len));
-        ss.write(reinterpret_cast<char*>(value.data()), value.length());
-
-    } else {
-        ///length is24 bits
-    }
-    
-    out.assign(ss.str());
-    return(0);
+    // L1 carve-out: delegate to lwm2m::tlv::encode_string. Behavior is
+    // byte-identical to the original on the bootstrap payload (verified by
+    // SerialiseLwM2MSecurityObject / SerialiseLwM2MServerObject tests).
+    return ::lwm2m::tlv::encode_string(bits76, value, id, out);
 }
 
 std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, std::uint32_t value, std::uint16_t id, std::string& out) {
-    std::uint8_t type = 0;
-    std::stringstream ss;
-
-    /// id could be any of these --- The Object Instance, Resource, or Resource Instance ID as indicated by the Type field
-    type = bits76 << 6;
-
-    if(id >=0 && id <= 255) {
-        type |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
-    } else {
-        type |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
-    }
-
-    if(value >= 0 && value < 8) {
-
-        type |= TypeBits43_NoTypeLengthField_00 << 3;
-        type |= 1 & 0b111;
-
-    } else if(value > 0 && value <= 255) {
-
-        type |= TypeBits43_NoTypeLengthField_00 << 3;
-        type |= 1 & 0b111;
-
-    } else if(value > 255 && value <= 65535) {
-
-        type |= TypeBits43_NoTypeLengthField_00 << 3;
-        type |= 2 & 0b111;
-
-    } else {
-
-        type |= TypeBits43_NoTypeLengthField_00 << 3;
-        type |= 4 & 0b111;
-    }
-
-    ss.write(reinterpret_cast<char*>(&type), sizeof(type));
-    if(id >= 0 && id <=255) {
-        ss.write(reinterpret_cast<char*>(&id), 1);
-    } else {
-        std::uint16_t tmpid = htons(id);
-        ss.write(reinterpret_cast<char*>(&tmpid), 2);
-    }
-
-    if(value >= 0 && value < 8) {
-
-        ss.write(reinterpret_cast<char*>(&value), 1);
-
-    } else if(value > 0 && value <= 255) {
-
-        ss.write(reinterpret_cast<char*>(&value), 1);
-
-    } else if(value > 255 && value <= 65535) {
-
-        std::uint16_t tmpvalue = htons(value);
-        ss.write(reinterpret_cast<char*>(&tmpvalue), sizeof(tmpvalue));
-
-    } else {
-
-        std::uint32_t tmpvalue = htonl(value);
-        ss.write(reinterpret_cast<char*>(&tmpvalue), sizeof(tmpvalue));
-    }
-    
-    out.assign(ss.str());
-    return(0);
+    return ::lwm2m::tlv::encode_uint(bits76, value, id, out);
 }
 
 std::int32_t LwM2MAdapter::serialiseTLV(const TypeFieldOfTLV_t& bits76, bool value, std::uint16_t id, std::string& out) {
-    std::uint8_t type;
-    std::stringstream ss;
-
-    /// id could be any of these --- The Object Instance, Resource, or Resource Instance ID as indicated by the Type field
-    type = bits76 << 6;
-
-    if(id >=0 && id <= 255) {
-        type |= TypeBit5_LengthOfTheIdentifier8BitsLong_0 << 5;
-    } else {
-        type |= TypeBit5_LengthOfTheIdentifier16BitsLong_1 << 5;
-    }
-
-    type |= TypeBits43_NoTypeLengthField_00 << 3;
-    type |= 1 & 0b111;
-
-    ss.write(reinterpret_cast<char*>(&type), sizeof(type));
-    if(id >= 0 && id <= 255) {
-        ss.write(reinterpret_cast<char*>(&id), 1);
-    } else {
-        std::uint16_t tmpid = htons(id);
-        ss.write(reinterpret_cast<char*>(&tmpid), sizeof(tmpid));
-    }
-
-    ss.write(reinterpret_cast<char*>(&value), 1);
-    out.assign(ss.str());
-    return(0);
+    return ::lwm2m::tlv::encode_bool(bits76, value, id, out);
 }
 
 std::int32_t LwM2MAdapter::serialiseObjects(const json& rid, std::string& out) {

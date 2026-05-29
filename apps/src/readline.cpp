@@ -396,21 +396,28 @@ int Readline::processCommand(const std::string& command) {
             cf = std::stoi(keyValueMap["content-format"]);
         }
 
+        // BUG-002 fix (RDD §3.10): the payload vector must start empty.
+        // The previous code seeded it with a literal JSON string which
+        // shipped out unchanged whenever the data=/file= branches did
+        // not run, producing a wire packet that declared a CBOR
+        // content-format with literal JSON bytes inside. The data= /
+        // file= branches now write the payload exclusively; if neither
+        // is supplied, the CoAP request ships with no payload (which is
+        // valid for many uses, e.g. POST /bs?ep=).
         std::vector<std::string> cbor;
-        cbor.push_back("[{\"key\": \"v1\"}]");
         if(!keyValueMap["data"].empty() && keyValueMap["data"].length() <= 1024) {
             std::string content;
-            cbor.clear();
             cborAdapter().json2cbor(keyValueMap["data"], content);
-            cbor.push_back(content);
+            if(!content.empty()) {
+                cbor.push_back(std::move(content));
+            }
         }
-        
+
         if(!keyValueMap["file"].empty()) {
-            ///Read data from File
-            std::string content;
+            ///Read data from File. file= takes precedence over data= if both supplied.
             cbor.clear();
-            content = cborAdapter().getJson(keyValueMap["file"]);
-            coapAdapter.buildRequest(content, cbor); 
+            std::string content = cborAdapter().getJson(keyValueMap["file"]);
+            coapAdapter.buildRequest(content, cbor);
         }
 
         ///Method type...
@@ -439,28 +446,14 @@ int Readline::processCommand(const std::string& command) {
 
                 if(it != app()->udpAdapter()->services().end()) {
                     auto& elm = *it;
-                    std::int32_t len;
-                    if( UDPAdapter::Scheme_t::CoAP == elm.second->scheme()) {
-                        len = app()->udpAdapter()->tx(ent, elm.second->service());
-                    } else {
-
-                        if(elm.second->dtlsAdapter()->clientState().compare("connected")) {
-                            elm.second->dtlsAdapter()->connect(elm.second->peerHost(), elm.second->peerPort());
-                        }
-
-                        if(!elm.second->dtlsAdapter()->clientState().compare("connected")) {
-                            for(auto item: res) {
-                                len = elm.second->dtlsAdapter()->tx(item);
-                                if(len < 0)
-                                    std::cout << basename(__FILE__) << ":" << __LINE__ << " Error unable to sent topeer" << " strerror:" << std::strerror(errno)<< std::endl;
-                                else 
-                                    std::cout << basename(__FILE__) << ":" << __LINE__ << " Successfully sent bytes are " << len << std::endl;
-                            }
-                        } else {
-                            std::cout << basename(__FILE__) << ":" << __LINE__ << " Client is not connected" << std::endl;
-                        }
+                    /// Single tx path for both CoAP and CoAPs — UDPAdapter::tx
+                    /// queues the frame and notifies the reactor thread, which
+                    /// runs the DTLS handshake and dtls_write off the readline
+                    /// thread. See apps/docs/ace-refactor.md §4.
+                    auto svc = elm.second->service();
+                    if(app()->udpAdapter()->tx(ent, svc) < 0) {
+                        std::cout << basename(__FILE__) << ":" << __LINE__ << " enqueue tx failed for svc:" << svc << std::endl;
                     }
-                    
                 }
                 
             }

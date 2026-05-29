@@ -9,6 +9,7 @@ std::int32_t App::start(UDPAdapter::Role_t role, UDPAdapter::Scheme_t scheme) {
 }
 
 std::int32_t App::stop() {
+    udpAdapter()->stop();
     return(0);
 }
 
