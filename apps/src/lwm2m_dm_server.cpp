@@ -3,6 +3,7 @@
 #include <sstream>
 
 #include "lwm2m_coap_builder.hpp"
+#include "lwm2m_codec_registry.hpp"   // ContentFormat enum: CF_LinkFormat, CF_LwM2MTlv
 
 namespace lwm2m { namespace dmsrv {
 
