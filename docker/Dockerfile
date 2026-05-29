@@ -64,6 +64,10 @@ RUN git clone -b r1.19 https://github.com/mongodb/mongo-c-driver.git && \
 #RUN ldconfig
 
 WORKDIR /tmp
+# GIT_REF lets the L9 interop pipeline pin a specific commit and bust
+# the layer cache deterministically. Default `main` is fine for the
+# usual one-off run.
+ARG GIT_REF=main
 RUN git clone https://github.com/google/googletest/ && \
     cd /tmp/googletest && \
     mkdir build && cd build && cmake .. && make install &&\
@@ -71,6 +75,7 @@ RUN git clone https://github.com/google/googletest/ && \
     mkdir source && \
     cd source && \
     git clone https://github.com/naushada/iot.git && \
+    cd /tmp/source/iot && git checkout ${GIT_REF} && \
     cd /tmp/source/iot/apps/3rdparty/tinydtls && \
     autoconf && autoheader && ./configure &&  make && \
     cd /tmp/source/iot/apps && \
