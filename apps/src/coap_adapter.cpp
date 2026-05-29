@@ -1026,6 +1026,18 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
     std::string rsp;
     auto ret = parseRequest(in, coapmessage);
 
+    // L9 — short-circuit Acknowledgement-typed frames before any of the
+    // L4/L5/legacy handlers run. An ACK is a response to one of *our*
+    // outbound CON requests (Register, Update, Read, …). The proper
+    // consumer is the FSM that originated the request
+    // (RegistrationClient::on_response / DmClient response paths) —
+    // wiring that is the L9 follow-up. Until then, just stop the
+    // spurious echo so Leshan doesn't see a 2.04 reflected back at it
+    // for every 2.01 Created it sends us.
+    if (!RequestType[coapmessage.coapheader.type].compare("Acknowledgement")) {
+        return 0;
+    }
+
     // L4 hot path: Bootstrap dispatch (no DTLS session variant).
     if (!isAmIClient && m_bsServer) {
         auto bsr = m_bsServer->handle(coapmessage, *this);
