@@ -105,9 +105,28 @@ void parsePeerOption(const std::string& in, UDPAdapter::Scheme_t& scheme, std::s
 
 /* ───────────────────────── L9 wiring helpers ─────────────────────────── */
 
+#include <atomic>
+#include "lwm2m_dm_server.hpp"
+
 namespace {
 
 using json = nlohmann::json;
+
+/// Monotonic CoAP message-id allocator shared by every send site. CoAP
+/// §4.4 requires uniqueness within the session window; a 16-bit counter
+/// wrapping after ~64K outgoing messages is well within spec.
+std::atomic<std::uint16_t> g_next_msgid{0x1000};
+inline std::uint16_t next_msgid() { return ++g_next_msgid; }
+
+/// Convenience tx wrapper — UDPAdapter::tx takes non-const lvalue refs
+/// for historical reasons, so callers need locals.
+inline void tx_via(App& app,
+                   const std::string& payload,
+                   ::UDPAdapter::ServiceType_t serviceType) {
+    auto local = payload;                       // need non-const lvalue
+    auto svc   = serviceType;
+    app.udpAdapter()->tx(local, svc);
+}
 
 /// Read the existing security/server-object JSON files under
 /// `apps/config/{securityObject,serverObject}/` and synthesise one
@@ -217,15 +236,51 @@ void wire_server(std::shared_ptr<App>& app, const std::string& configDir) {
         }
     }
 
-    app->udpAdapter()->on_tick_server([registry]() {
-        auto now = std::chrono::steady_clock::now();
+    // L9 stub 4 — periodic server-side DM driver. Once per
+    // `kPollInterval`, walk the registry and issue a Read /3/0/0
+    // (Manufacturer) against each registered client. This exercises
+    // dmsrv::build_read going out through the existing DeviceMgmtServer
+    // ServiceContext_t outbound queue. A real REPL is a follow-up;
+    // this prosaic poll is enough to prove the wiring works in
+    // Leshan interop pcaps.
+    using Clock = std::chrono::steady_clock;
+    constexpr auto kPollInterval = std::chrono::seconds(30);
+    auto last_poll = std::make_shared<Clock::time_point>(Clock::now());
+    std::weak_ptr<App> wapp_srv = app;
+
+    app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll]() {
+        auto a = wapp_srv.lock();
+        if (!a) return;
+        const auto now = Clock::now();
+
         auto expired = registry->expire(now);
         if (!expired.empty()) {
             std::cout << "[lwm2m] expired " << expired.size()
                       << " registration(s)\n";
+            // L3 follow-up: forward expired locations to the RegistryMirror
+            // when the Mongo schema PR lands.
         }
-        // L3 follow-up: forward expired locations to the RegistryMirror
-        // when the worker is wired in.
+
+        if (now - *last_poll < kPollInterval) return;
+        *last_poll = now;
+
+        // Walk services to find the DeviceMgmtServer ServiceContext;
+        // its send_async takes an explicit peer so one outbound socket
+        // serves every registered client.
+        for (auto& kv : a->udpAdapter()->services()) {
+            if (kv.first != ::UDPAdapter::ServiceType_t::DeviceMgmtServer) continue;
+            auto& ctx = kv.second;
+            for (const auto& reg_kv : registry->all()) {
+                const auto& reg = reg_kv.second;
+                if (reg.peerHost.empty()) continue;
+                std::string token{static_cast<char>(0x03)};
+                auto req = ::lwm2m::dmsrv::build_read(
+                    next_msgid(), token,
+                    /*oid*/ 3, /*iid*/ 0, /*rid*/ 0,
+                    /*accept*/ -1);
+                ctx->send_async(req, reg.peerHost, reg.peerPort);
+            }
+        }
     });
 }
 
@@ -278,12 +333,20 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         ctx->coapAdapter()->bootstrapClient(plumb.bs);
     }
 
-    // On bootstrap completion, log + leave the reg client ready. The
-    // actual Register POST is triggered by the next on_tick_client
-    // call so we don't block the reactor thread inside the on_done
-    // callback.
-    plumb.bs->on_done([](const ::lwm2m::bootstrap::StagingBuffer&) {
-        std::cout << "[lwm2m] bootstrap commit done; registration pending\n";
+    // L9 stub 1 — Register POST after bootstrap commit. Runs on the
+    // reactor thread (handle_bs_traffic invoked it); the tx itself
+    // queues via send_async + notify so we don't recurse into the I/O
+    // path inside the callback.
+    std::weak_ptr<App>                          wapp_bs = app;
+    std::weak_ptr<::lwm2m::RegistrationClient>  wreg_bs = plumb.reg;
+    plumb.bs->on_done([wapp_bs, wreg_bs](const ::lwm2m::bootstrap::StagingBuffer&) {
+        auto a = wapp_bs.lock();
+        auto r = wreg_bs.lock();
+        if (!a || !r) return;
+        std::cout << "[lwm2m] bootstrap commit done; sending Register\n";
+        auto payload = r->build_register_request(next_msgid(),
+                                                 std::string{static_cast<char>(0x01)});
+        tx_via(*a, payload, ::UDPAdapter::ServiceType_t::LwM2MClient);
     });
 
     // 1 Hz ticker: drives Update emission + Observe pmax + (TODO) initial
@@ -297,17 +360,25 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         auto a   = wapp.lock();
         if (!reg || !dm || !a) return;
 
-        auto now = std::chrono::steady_clock::now();
+        const auto svc = ::UDPAdapter::ServiceType_t::LwM2MClient;
+        const auto now = std::chrono::steady_clock::now();
+
+        // L9 stub 2 — Update POST when the lifetime margin elapses.
         if (reg->should_send_update(now)) {
-            std::cout << "[lwm2m] registration update due\n";
-            // Caller code would build_update_request + tx via UDPAdapter::tx
-            // here; left for the L9 follow-up that observes Leshan timing.
+            auto payload = reg->build_update_request(
+                next_msgid(),
+                std::string{static_cast<char>(0x02)},
+                /*withAdvertisedSet*/ false);
+            tx_via(*a, payload, svc);
+            reg->note_update_sent(now);
         }
-        // Observe pmax ticker.
+
+        // L9 stub 3 — Notify dispatch. DmClient::tick returns ready-to-
+        // ship CoAP frames (NON by default, every-10th CON per D4);
+        // we just ship each in order.
         auto frames = dm->tick(now);
-        if (!frames.empty()) {
-            std::cout << "[lwm2m] notify burst: " << frames.size() << " frames\n";
-            // ship via UDPAdapter::tx on the LwM2MClient service.
+        for (auto& frame : frames) {
+            tx_via(*a, frame, svc);
         }
     });
 

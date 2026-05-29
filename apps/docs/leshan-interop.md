@@ -110,29 +110,31 @@ The test plan is considered passed once:
 - BUG-001 / BUG-002 regression rows in the RDD §3.10 carry a date
   stamp confirming they didn't reappear.
 
-## 8. Known gaps in the current wiring
+## 8. Wiring follow-ups
 
-The L9 main.cpp wiring is the minimum to make a binary that boots and
-exchanges DTLS handshakes + initial Bootstrap. The pieces that still
-need direct caller code (i.e. not exercised by the reactor alone) are
-called out here so the test plan stays honest:
+The L9 main.cpp wiring boots the binary, drives the DTLS handshake, and
+exchanges Bootstrap. Four small follow-ups extend the send loop so the
+binary is actually exchanging LwM2M traffic, not just Bootstrap. Status
+as of the L9 follow-up PR:
 
-- **Outbound Register POST** must be triggered after bootstrap commits.
-  The current `bootstrap::Client::on_done` callback only logs; the
-  follow-up wires `regClient->build_register_request()` and ships it
-  via `udpAdapter()->tx()`.
-- **Outbound Update POST** is detected by `RegistrationClient::should_send_update`
-  inside the 1 Hz tick but the build-and-ship step is logged, not done.
-  Same shape as Register above.
-- **Observe notify dispatch** — `dmClient->tick()` returns frames in the
-  ticker but nothing ships them yet. The send loop is one `for (auto& f
-  : frames) udp->tx(f, LwM2MClient)` away.
-- **Server-side outbound DM** — `dmsrv::build_*` produces request bytes
-  but the server doesn't have a thread driving them. Adding a tiny CLI
-  shell (à la readline on the client) is the planned shape, deferred.
-- **RegistryMirror** — the worker is built but not started by `main.cpp`
-  because the DB schema is still pending. When DB writes land,
-  construct `RegistryMirror(&dbClient)` in `wire_server`, attach via
-  `regServer->on_event(...)` to post events, and `mirror->open()`.
+- **✅ Outbound Register POST** — `bootstrap::Client::on_done` now
+  builds the Register request via `RegistrationClient::build_register_request`
+  and ships it through `UDPAdapter::tx` (see
+  `apps/src/main.cpp::wire_client`, "L9 stub 1").
+- **✅ Outbound Update POST** — the 1 Hz client tick now builds and
+  ships the Update when `RegistrationClient::should_send_update` returns
+  true, then calls `note_update_sent` so the next due time is recomputed
+  ("L9 stub 2").
+- **✅ Observe notify dispatch** — frames produced by `DmClient::tick`
+  are shipped in order via `UDPAdapter::tx` ("L9 stub 3").
+- **✅ Server-side outbound DM** — periodic 30 s driver walks
+  `ClientRegistry::all()` and issues `dmsrv::build_read /3/0/0` against
+  each registered client through `ServiceContext_t::send_async(payload,
+  peerHost, peerPort)`. A real REPL is a future follow-up; this prosaic
+  poll is enough to prove the wiring ("L9 stub 4").
 
-All four are < 50 LOC each and don't require new architecture.
+- **⏳ RegistryMirror** — the worker is built but not started by
+  `main.cpp` because the DB schema PR is still pending. When DB writes
+  land, construct `RegistryMirror(&dbClient)` in `wire_server`, attach
+  via `regServer->on_event(...)` to post events, and `mirror->open()`.
+  This is the only remaining wiring gap.
