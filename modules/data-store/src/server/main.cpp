@@ -8,6 +8,7 @@
 /// Defaults come from data_store::proto::kDefaultSocketPath and
 /// kDefaultStorePath. Both are operator-overridable.
 
+#include "lua_persistor.hpp"
 #include "server.hpp"
 #include "worker_pool.hpp"
 
@@ -59,6 +60,22 @@ int main(int argc, char** argv) {
               << " store=" << storePath << "\n";
 
     auto store = std::make_shared<data_store::server::DataStore>();
+
+    // Lua-backed persistor (D4). Load the on-disk chunk into the
+    // store before any worker can mutate it. Missing file → start
+    // empty; corrupted file → exit 3 (REQ-DS-016).
+    data_store::server::LuaPersistor persistor(storePath);
+    try {
+        store->load_from(persistor.load());
+    } catch (const data_store::server::CorruptStoreError& e) {
+        std::cerr << "[ds-server] corrupt store at " << storePath
+                  << ": " << e.what()
+                  << " — refusing to start (exit 3)\n";
+        return 3;
+    }
+    store->set_persistor(&persistor);
+    std::cout << "[ds-server] loaded " << store->size()
+              << " key(s) from " << storePath << "\n";
 
     // Active-object worker pool — N=5 threads, round-robin. Same
     // shape as xpmile MicroService pool. Must be open()ed before the

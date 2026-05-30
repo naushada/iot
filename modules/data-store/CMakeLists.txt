@@ -16,10 +16,27 @@ set(DS_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(NLOHMANN_JSON_INCLUDE
     ${DS_MODULE_DIR}/../../apps/3rdparty/json/single_include)
 
+# Lua — required by src/server/lua_persistor.cpp. Prefer the static
+# archive so the runtime image doesn't need liblua5.3.so.0.
+find_package(Lua REQUIRED)
+find_library(LUA_STATIC_LIB
+             NAMES liblua5.3.a liblua.a
+             PATHS /usr/lib/aarch64-linux-gnu
+                   /usr/lib/x86_64-linux-gnu
+                   /usr/lib /usr/local/lib
+             NO_DEFAULT_PATH)
+if(LUA_STATIC_LIB)
+    message(STATUS "data-store: static-linking ${LUA_STATIC_LIB}")
+    set(LUA_LINK_LIBS ${LUA_STATIC_LIB} dl m)
+else()
+    set(LUA_LINK_LIBS ${LUA_LIBRARIES})
+endif()
+
 include_directories(
     ${DS_MODULE_DIR}/inc
     ${ACE_ROOT}/include
-    ${NLOHMANN_JSON_INCLUDE})
+    ${NLOHMANN_JSON_INCLUDE}
+    ${LUA_INCLUDE_DIR})
 
 link_directories(${ACE_ROOT}/lib)
 
@@ -46,13 +63,15 @@ add_executable(ds-server
     src/server/server.cpp
     src/server/session.cpp
     src/server/data_store.cpp
+    src/server/lua_persistor.cpp
     src/server/worker.cpp
     src/server/worker_pool.cpp
     src/proto/proto.cpp)
 
 target_link_libraries(ds-server
     ACE
-    pthread)
+    pthread
+    ${LUA_LINK_LIBS})
 
 # --------------------------------------------------------------------
 # ds-cli — minimal debugging client. Links the client lib.
@@ -77,9 +96,11 @@ if(BUILD_DATA_STORE_TESTS)
         test/server_integration_test.cpp
         test/worker_pool_test.cpp
         test/protocol_test.cpp
+        test/lua_persistor_test.cpp
         src/server/server.cpp
         src/server/session.cpp
         src/server/data_store.cpp
+        src/server/lua_persistor.cpp
         src/server/worker.cpp
         src/server/worker_pool.cpp
         src/proto/proto.cpp
@@ -89,7 +110,8 @@ if(BUILD_DATA_STORE_TESTS)
         gtest_main
         gtest
         ACE
-        pthread)
+        pthread
+        ${LUA_LINK_LIBS})
 
     add_test(NAME ds-tests COMMAND ds-tests)
 endif()

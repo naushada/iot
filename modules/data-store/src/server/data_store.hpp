@@ -22,6 +22,7 @@
 
 namespace data_store::server {
 
+class LuaPersistor;
 class Session;   // fwd; defined in session.hpp
 
 /// Result of a `set` call. `changed` is true iff the new value
@@ -40,6 +41,14 @@ public:
     DataStore() = default;
     DataStore(const DataStore&)            = delete;
     DataStore& operator=(const DataStore&) = delete;
+
+    /// Attach an (optional) Lua-backed persistor. set() / remove()
+    /// will flush to disk after every successful state-changing call.
+    /// Pass nullptr (or skip) for an in-memory-only store.
+    void set_persistor(LuaPersistor* p) { m_persistor = p; }
+
+    /// Bulk replace — called at startup after LuaPersistor::load().
+    void load_from(std::unordered_map<std::string, std::string> data);
 
     std::size_t size() const;
 
@@ -60,9 +69,14 @@ public:
     void unwatch_all(Session* s);
 
 private:
+    /// Persist the current map to disk (called from set/remove after
+    /// the in-memory mutation, with the mutex released).
+    void flush_locked_release(std::unordered_map<std::string, std::string> snapshot);
+
     mutable std::mutex                                              m_mtx;
     std::unordered_map<std::string, std::string>                    m_data;
     std::unordered_map<std::string, std::unordered_set<Session*>>   m_watchers;
+    LuaPersistor*                                                   m_persistor = nullptr;
 };
 
 } // namespace data_store::server
