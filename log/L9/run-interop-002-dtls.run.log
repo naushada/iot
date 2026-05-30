@@ -1,0 +1,38 @@
+[L9] (re)creating podman network lwm2m-interop
+[L9] starting iot CoAPS server
+[iot-server] main.cpp:453 scheme:1 host:0.0.0.0 port:5684
+[iot-server] 2026-05-29 16:39:46.158629 [UdpSvc:1] LM_DEBUG /tmp/source/iot/apps/src/udp_adapter.cpp:56 bound fd:3 host:0.0.0.0 port:5684 scheme:1 service:1
+[iot-server] 2026-05-29 16:39:46.158871 [UdpSvc:1] LM_DEBUG /tmp/source/iot/apps/src/udp_adapter.cpp:56 bound fd:6 host:0.0.0.0 port:5683 scheme:1 service:0
+[L9] starting tcpdump sniffer attached to iot-server netns
+[L9] starting wakaama DTLS client → iot CoAPS server
+[L9] running for 30 s (PSK handshake + Register)
+[L9] iot server log:
+[iot-server] main.cpp:421 ent.first:ep ent.second:urn:dev:wakaama-1
+[iot-server] main.cpp:421 ent.first:role ent.second:server
+[iot-server] main.cpp:421 ent.first:secret ent.second:3894beedaa7fe0eae6597dc350a59525
+[iot-server] main.cpp:421 ent.first:local ent.second:coaps://0.0.0.0:5684
+[iot-server] main.cpp:453 scheme:1 host:0.0.0.0 port:5684
+[iot-server] 2026-05-29 16:39:46.158629 [UdpSvc:1] LM_DEBUG /tmp/source/iot/apps/src/udp_adapter.cpp:56 bound fd:3 host:0.0.0.0 port:5684 scheme:1 service:1
+[iot-server] 2026-05-29 16:39:46.158871 [UdpSvc:1] LM_DEBUG /tmp/source/iot/apps/src/udp_adapter.cpp:56 bound fd:6 host:0.0.0.0 port:5683 scheme:1 service:0
+[iot-server] May 29 16:39:52 DEBG DTLSAdapter::rx on Fd: 3
+[iot-server] May 29 16:39:52 DEBG DTLSAdapter::rx len: 77
+[iot-server] May 29 16:39:52 DEBG got 77 bytes from port 56830
+[iot-server] dtls_adapter.cpp:250 got len: 77 bytes from port: 56830
+[iot-server] May 29 16:39:52 DEBG bytes from peer:: (77 bytes): 16FEFF00000000000000000040010000340000000000000034FEFD3C0556DD166C50D68C2A7016656975A11F61C3C9C4739DF203BA4BFA908FF15700000006C0A8C0A400FF0100000400170000
+[iot-server] May 29 16:39:52 DEBG dtls_handle_message: PEER NOT FOUND
+[iot-server] May 29 16:39:52 DEBG peer addr: 10.89.0.3:56830
+[iot-server] May 29 16:39:52 DEBG Message is deciphered successfully
+[L9] wakaama client log:
+[wakaama] >  -> State: STATE_REGISTERING
+[wakaama] 
+[wakaama] >  -> State: STATE_REGISTERING
+[wakaama] 
+[wakaama] >  -> State: STATE_REGISTERING
+[wakaama] 
+[wakaama] >  -> State: STATE_REGISTERING
+[wakaama] 
+[wakaama] >  -> State: STATE_REGISTERING
+[wakaama] 
+[L9] tearing down (pcap closed)
+[L9] pcap → log/L9/nfr-002-dtls.pcap
+-rw-r--r--  1 naushada  staff  165 29 May 22:09 log/L9/nfr-002-dtls.pcap

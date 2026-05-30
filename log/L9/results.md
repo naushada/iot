@@ -277,3 +277,105 @@ The L9 risk gate per RDD §6 reads: *"Pcaps recorded and checked in to
 that artifact. **L9 essentials closed.** Full green requires resolving
 FUP-1 (Leshan exception root-cause) and FUP-2 (FSM-level response
 wiring) which are 1-day items.
+
+---
+
+## NFR-INTEROP-002 — DTLS/PSK variant — wakaama client ↔ our server
+
+**Status: PARTIAL.** ClientHello reaches our server and is parsed by
+tinydtls 0.8.6; no HelloVerifyRequest is observed on the wire, so the
+handshake does not complete and wakaama stays in `STATE_REGISTERING`.
+Captured as an honest baseline for follow-up FUP-4 below.
+
+**Date:** 2026-05-29
+**Image under test:** `naushada/iot:latest` from commit `292a848`
+**Client image:** `localhost/wakaama-dtls:latest` (ID `ff6a5ab1bf4b`),
+built locally from `docker/Dockerfile.wakaama-dtls`. Docker Hub
+`testingyourcode/wakaama-client` ships a CoAP-only build
+(`option(DTLS "Enable DTLS" OFF)` in
+`examples/client/CMakeLists.txt`); the local image rebuilds wakaama
+with `DTLS=ON` and statically links eclipse/tinydtls `master`.
+**Capture:** `log/L9/nfr-002-dtls.pcap` (165 B, 1 frame).
+**Runner:** `log/L9/run-interop-002-dtls.sh`.
+**Run log:** `log/L9/run-interop-002-dtls.run.log`.
+
+### Wire-level evidence
+
+```
+1   0.000000    10.89.0.3 → 10.89.0.2    DTLS 125 Client Hello
+```
+
+That single ClientHello is all that wakaama emitted; the pcap shows no
+HelloVerifyRequest, no second ClientHello with cookie, no encrypted
+Register. The ClientHello hex (server-side log, fd 3, port 5684):
+
+```
+16 FE FF 0000000000000000 0040  01 00 00 34 0000 00000000 0034
+   FE FD                                                ^^^^^ DTLS 1.2 handshake-layer version
+   ^^ ^^                                                       record-layer version (DTLS 1.0)
+   3C 0556 DD 16 6C 50 D6 8C 2A 70 16 65 69 75 A1 1F 61 C3 C9 C4 73 9D F2 03 BA 4B FA 90 8F F1 57
+                                                       random
+   00 00 0006 C0 A8 C0 A4 00 FF 01 00 00 04 00 17 00 00
+        ^^^^                                              cipher-suites length = 6
+        C0 A8 = TLS_PSK_WITH_AES_128_CCM_8  ← matches our offered cipher
+        C0 A4 = TLS_PSK_WITH_AES_128_CBC_SHA256
+        00 FF = TLS_EMPTY_RENEGOTIATION_INFO_SCSV
+        compression: null only
+        extensions: extended_master_secret only
+```
+
+### Server-side trace
+
+```
+[iot-server] DTLSAdapter::rx on Fd: 3
+[iot-server] DTLSAdapter::rx len: 77
+[iot-server] got 77 bytes from port 56830
+[iot-server] dtls_adapter.cpp:250 got len: 77 bytes from port: 56830
+[iot-server] bytes from peer:: (77 bytes): 16FEFF00…  ← ClientHello hex above
+[iot-server] dtls_handle_message: PEER NOT FOUND
+[iot-server] peer addr: 10.89.0.3:56830
+[iot-server] Message is deciphered successfully  ← misleading log line —
+                                                    it just means the
+                                                    inbound record was
+                                                    parsed; tinydtls
+                                                    did not queue a
+                                                    response on the
+                                                    write side.
+```
+
+No outbound packet follows on the wire. Wakaama keeps retransmitting
+its initial ClientHello and prints `STATE_REGISTERING` every
+retransmission window.
+
+### Analysis (root cause TBD)
+
+Two notable mismatches between the two tinydtls builds in play:
+
+- **Record-layer version.** Wakaama (eclipse/tinydtls `master`) emits
+  the ClientHello in a DTLS 1.0-versioned record (`16 FE FF …`) with
+  the handshake-layer message version pinned to DTLS 1.2
+  (`… FE FD …`). Our vendored tinydtls 0.8.6 may not accept that
+  combination on the cookie-less first ClientHello path.
+- **Stateless cookie path.** Even when 0.8.6 logs
+  `dtls_handle_message: PEER NOT FOUND` it should still emit a
+  HelloVerifyRequest via `dtlsWriteCb`. The reactor `tx` log is silent
+  for the ten-second handshake window, suggesting tinydtls returned
+  early without populating the write callback for this record shape.
+
+The plain-CoAP variant of NFR-INTEROP-002 (wakaama → our server) and
+the DTLS variant of NFR-INTEROP-001 (our client → Leshan, DTLS) both
+PASS. The gap is specifically between our **server** tinydtls 0.8.6
+and the **wakaama** eclipse/tinydtls `master` builds.
+
+### Follow-up FUP-4
+
+- **Goal:** complete the wakaama-DTLS handshake against our server, or
+  document the protocol-level reason why tinydtls 0.8.6 cannot.
+- **First step:** enable `dtls_set_log_level(DTLS_LOG_DEBUG)` on our
+  server build and re-capture; inspect whether 0.8.6 logs
+  `dtls_handle_message: unsupported version` or similar.
+- **Fallback:** upgrade our vendored tinydtls to `master` (same source
+  the wakaama-DTLS image uses) and rerun. Risk: 0.8.6 → master changes
+  the public `dtls_set_psk_info` shape used in our wrappers.
+- **Filed:** 2026-05-29. Not blocking the other NFR-INTEROP-001 /
+  NFR-INTEROP-002 closures.

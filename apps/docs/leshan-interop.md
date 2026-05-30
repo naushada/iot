@@ -58,6 +58,30 @@ Expected wire shape (verified 2026-05-29, commit `8ca19c1`):
 Full evidence + tail of the run log are in `log/L9/results.md` →
 "NFR-INTEROP-002" section.
 
+### 2.3 wakaama lwm2mclient (DTLS/PSK) ↔ Our Server (NFR-INTEROP-002, DTLS)
+
+The published `testingyourcode/wakaama-client` ships a CoAP-only build
+(`option(DTLS "Enable DTLS" OFF)` in `examples/client/CMakeLists.txt`).
+For the DTLS pass we build a local image
+(`docker/Dockerfile.wakaama-dtls`, tag `localhost/wakaama-dtls:latest`)
+that compiles wakaama with `DTLS=ON` against eclipse/tinydtls `master`.
+
+Runner: `log/L9/run-interop-002-dtls.sh`. Procedure mirrors §2.2 with
+two changes:
+
+- iot server binds `coaps://0.0.0.0:5684` and is started with
+  `identity=` / `secret=` so its PSK store carries the test pair.
+- wakaama is launched with `-i <identity> -s <hex-key> -p 5684 -4`.
+
+Current status (2026-05-29, commit `292a848`): **PARTIAL.** Wakaama's
+ClientHello reaches our server and is parsed (server log:
+`Message is deciphered successfully`), but no HelloVerifyRequest
+appears on the wire — our vendored tinydtls 0.8.6 likely rejects the
+DTLS-1.0-record / DTLS-1.2-handshake-layer combination wakaama's
+tinydtls master emits, or fails to populate the stateless-cookie write
+callback. See `log/L9/results.md` → "NFR-INTEROP-002 — DTLS/PSK
+variant" and follow-up FUP-4 for the root-cause investigation plan.
+
 ## 3. DTLS path (BUG-001 runtime regression)
 
 Both matrices repeat with `coaps://` URIs:
@@ -164,3 +188,10 @@ as of the L9 follow-up PR:
   land, construct `RegistryMirror(&dbClient)` in `wire_server`, attach
   via `regServer->on_event(...)` to post events, and `mirror->open()`.
   This is the only remaining wiring gap.
+
+- **⏳ FUP-4: wakaama-DTLS handshake completion.** Server side never
+  emits HelloVerifyRequest for wakaama's master-branch tinydtls
+  ClientHello. Trace, root-cause, and either patch our vendored
+  tinydtls 0.8.6 or upgrade to master. See `log/L9/results.md` →
+  "NFR-INTEROP-002 — DTLS/PSK variant" for the full hex dump and
+  proposed first steps.

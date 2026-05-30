@@ -1,0 +1,36 @@
+# wakaama lwm2mclient with DTLS=ON for the L9 NFR-INTEROP-002 DTLS pass.
+# The published wakaama-client images on Docker Hub ship CoAP-only builds
+# (option(DTLS "Enable DTLS" OFF) in examples/client/CMakeLists.txt) so
+# we rebuild from source here.
+FROM ubuntu:jammy AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc g++ git make cmake autoconf automake libtool \
+        pkg-config libcunit1-dev \
+        ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# wakaama upstream. The main branch is the canonical build target.
+RUN git clone --depth 1 https://github.com/eclipse/wakaama.git wakaama
+
+# Use eclipse/tinydtls master rather than our vendored 0.8.6 — wakaama's
+# build (transport/tinydtls/tinydtls.cmake) expects post-0.8.x source
+# layout (dtls_prng.c split out). Wakaama wires it as a git submodule
+# at transport/tinydtls/third_party/tinydtls; --depth 1 keeps the
+# checkout small. autogen.sh is already in upstream tinydtls master so
+# no synthesis needed.
+RUN git clone --depth 1 https://github.com/eclipse/tinydtls.git \
+        /src/wakaama/transport/tinydtls/third_party/tinydtls
+
+WORKDIR /src/wakaama/examples/client/tinydtls/build
+RUN cmake .. && make -j
+
+FROM ubuntu:jammy
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/wakaama/examples/client/tinydtls/build/lwm2mclient_tinydtls \
+                  /usr/local/bin/lwm2mclient
+ENTRYPOINT ["/usr/local/bin/lwm2mclient"]
