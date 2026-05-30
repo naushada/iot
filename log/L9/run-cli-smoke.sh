@@ -74,13 +74,16 @@ $PODMAN run -d --name $CLI --network $NET \
         sleep 2;  echo 'device read=0';
         sleep 2;  echo 'server write=1 value=120';
         sleep 2;  echo 'firmware exec=2';
+        sleep 2;  echo 'security read=0';
+        sleep 2;  echo 'access-control read=3';
+        sleep 2;  echo 'firmware read=7';
         sleep 2;  echo 'quit';
         sleep 1;
     } | script -qc '/opt/app/lwm2m local=coap://0.0.0.0:56830 bs=coap://$SRV:5683 role=client ep=$EP config=/opt/app/config' /dev/null" \
     >/dev/null
 
-# Wait for natural exit (heredoc EOF → quit) or hard cap at 35s.
-for i in $(seq 1 35); do
+# Wait for natural exit (heredoc EOF → quit) or hard cap at 50s.
+for i in $(seq 1 50); do
     if ! $PODMAN ps --format '{{.Names}}' | grep -q "^$CLI$"; then break; fi
     sleep 1
 done
