@@ -1,0 +1,17 @@
+[smoke] starting ds-server in podman (ds-smoke)
+----- ds-cli welcome -----
+{"ok":true,"hello":"data-store-server","v":1}
+----- ds-cli set foo bar -----
+ok
+----- ds-cli get foo missing -----
+foo=bar
+missing=(null)
+----- ds-cli watch foo (bg) -----
+----- ds-cli set foo baz (triggers event) -----
+ok
+----- watch output -----
+watching 1 key(s); count=1
+[event] foo = baz  (prev=bar)
+----- ds-cli unwatch foo -----
+ok
+[smoke] transcript → log/L10/ds-smoke.txt
