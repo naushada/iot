@@ -1,6 +1,7 @@
 #include "server.hpp"
 
 #include "data_store/proto.hpp"
+#include "worker.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -14,8 +15,12 @@
 
 namespace data_store::server {
 
-Server::Server(std::shared_ptr<DataStore> store, std::string socketPath)
-  : m_store(std::move(store)), m_socketPath(std::move(socketPath)) {
+Server::Server(std::shared_ptr<DataStore> store,
+               WorkerPool*               pool,
+               std::string               socketPath)
+  : m_store(std::move(store)),
+    m_pool(pool),
+    m_socketPath(std::move(socketPath)) {
 }
 
 Server::~Server() {
@@ -84,10 +89,11 @@ int Server::close() {
 }
 
 int Server::handle_input(ACE_HANDLE /*fd*/) {
-    // D1: accept → welcome → close. The session class with
-    // line-delimited JSON parsing lands in D2.
-    ACE_LSOCK_Stream stream;
-    if (m_acceptor.accept(stream) == -1) {
+    // Reactor-thread: accept, package, enqueue. The active-object
+    // worker pool picks up from here — xpmile MicroService shape.
+    auto* req = new WorkRequest;
+    if (m_acceptor.accept(req->stream) == -1) {
+        delete req;
         ACE_ERROR_RETURN((LM_ERROR,
                           ACE_TEXT("%D [DS:%t] %M %N:%l accept "
                                    "failed errno=%d\n"),
@@ -95,17 +101,22 @@ int Server::handle_input(ACE_HANDLE /*fd*/) {
                          0);     // stay registered
     }
 
-    const std::size_t len = std::strlen(proto::kWelcomeLine);
-    ssize_t wrote = stream.send_n(proto::kWelcomeLine, len);
-    if (wrote < 0 || static_cast<std::size_t>(wrote) != len) {
-        ACE_ERROR((LM_WARNING,
-                   ACE_TEXT("%D [DS:%t] %M %N:%l welcome short write "
-                            "(%d/%d) errno=%d\n"),
-                   static_cast<int>(wrote),
-                   static_cast<int>(len),
-                   errno));
+    Worker* w = m_pool ? m_pool->next() : nullptr;
+    if (!w) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [DS:%t] %M %N:%l no worker pool; "
+                            "dropping connection\n")));
+        req->stream.close();
+        delete req;
+        return 0;
     }
-    stream.close();
+    if (w->enqueue(req) == -1) {
+        // enqueue() already cleaned up req on failure.
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [DS:%t] %M %N:%l enqueue to worker %d "
+                            "failed; connection dropped\n"),
+                   w->id()));
+    }
     return 0;
 }
 

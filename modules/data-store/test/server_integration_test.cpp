@@ -26,6 +26,7 @@
 #include "data_store/proto.hpp"
 #include "../src/server/data_store.hpp"
 #include "../src/server/server.hpp"
+#include "../src/server/worker_pool.hpp"
 
 namespace ds = data_store;
 
@@ -63,7 +64,9 @@ TEST(ServerIntegration, DS_REQ_DS_011_one_client_gets_welcome) {
     std::string sock = dir + "/ds.sock";
 
     auto store = std::make_shared<ds::server::DataStore>();
-    ds::server::Server server(store, sock);
+    ds::server::WorkerPool pool(store);
+    ASSERT_EQ(0, pool.open());
+    ds::server::Server server(store, &pool, sock);
     ASSERT_EQ(0, server.open());
 
     // Connect from the test thread; the reactor pump below services
@@ -84,6 +87,7 @@ TEST(ServerIntegration, DS_REQ_DS_011_one_client_gets_welcome) {
 
     EXPECT_EQ(std::string(ds::proto::kWelcomeLine), got);
     server.close();
+    pool.close();
     ::unlink(sock.c_str());
     ::rmdir(dir.c_str());
 }
@@ -94,7 +98,9 @@ TEST(ServerIntegration, DS_REQ_DS_011_concurrent_sessions) {
     std::string sock = dir + "/ds.sock";
 
     auto store = std::make_shared<ds::server::DataStore>();
-    ds::server::Server server(store, sock);
+    ds::server::WorkerPool pool(store);
+    ASSERT_EQ(0, pool.open());
+    ds::server::Server server(store, &pool, sock);
     ASSERT_EQ(0, server.open());
 
     constexpr int N = 16;
@@ -129,6 +135,7 @@ TEST(ServerIntegration, DS_REQ_DS_011_concurrent_sessions) {
     EXPECT_EQ(N, ok);
 
     server.close();
+    pool.close();
     ::unlink(sock.c_str());
     ::rmdir(dir.c_str());
 }
@@ -141,7 +148,9 @@ TEST(ServerIntegration, DS_NFR_DS_004_socket_mode_is_0660) {
     std::string sock = dir + "/ds.sock";
 
     auto store = std::make_shared<ds::server::DataStore>();
-    ds::server::Server server(store, sock);
+    ds::server::WorkerPool pool(store);
+    ASSERT_EQ(0, pool.open());
+    ds::server::Server server(store, &pool, sock);
     ASSERT_EQ(0, server.open());
 
     struct stat st{};
@@ -151,6 +160,7 @@ TEST(ServerIntegration, DS_NFR_DS_004_socket_mode_is_0660) {
         << "got mode 0" << std::oct << (st.st_mode & 0777u);
 
     server.close();
+    pool.close();
     ::unlink(sock.c_str());
     ::rmdir(dir.c_str());
 }

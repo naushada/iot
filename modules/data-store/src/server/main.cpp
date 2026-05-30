@@ -9,6 +9,7 @@
 /// kDefaultStorePath. Both are operator-overridable.
 
 #include "server.hpp"
+#include "worker_pool.hpp"
 
 #include "data_store/proto.hpp"
 
@@ -58,10 +59,22 @@ int main(int argc, char** argv) {
               << " store=" << storePath << "\n";
 
     auto store = std::make_shared<data_store::server::DataStore>();
-    data_store::server::Server server(store, socketPath);
+
+    // Active-object worker pool — N=5 threads, round-robin. Same
+    // shape as xpmile MicroService pool. Must be open()ed before the
+    // server starts accepting so the first handle_input has a place
+    // to enqueue.
+    data_store::server::WorkerPool pool(store);
+    if (pool.open() != 0) {
+        std::cerr << "[ds-server] worker pool open failed; exit 1\n";
+        return 1;
+    }
+
+    data_store::server::Server server(store, &pool, socketPath);
 
     if (server.open() != 0) {
         std::cerr << "[ds-server] open failed; exit 1\n";
+        pool.close();
         return 1;
     }
 
@@ -85,6 +98,7 @@ int main(int argc, char** argv) {
     }
 
     server.close();
+    pool.close();
     std::cout << "[ds-server] clean exit\n";
     return 0;
 }

@@ -34,6 +34,8 @@ add_executable(ds-server
     src/server/main.cpp
     src/server/server.cpp
     src/server/data_store.cpp
+    src/server/worker.cpp
+    src/server/worker_pool.cpp
     src/proto/proto.cpp)
 
 target_link_libraries(ds-server
@@ -61,8 +63,11 @@ if(BUILD_DATA_STORE_TESTS)
     add_executable(ds-tests
         test/data_store_test.cpp
         test/server_integration_test.cpp
+        test/worker_pool_test.cpp
         src/server/server.cpp
         src/server/data_store.cpp
+        src/server/worker.cpp
+        src/server/worker_pool.cpp
         src/proto/proto.cpp
         src/client/client.cpp)
 
