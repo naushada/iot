@@ -138,10 +138,17 @@ std::size_t parse_entry(const std::string& text, std::size_t i, LinkEntry& out) 
     i = end_uri + 1;
 
     // Parse zero or more ;name[=value] suffixes until we hit a comma or
-    // run out of text.
+    // run out of text. Allow whitespace between `>`, `;`, attributes,
+    // and `,` per REQ-ENC-007 (linkformat_test expects
+    // " </1/0> , </3/0> " to parse cleanly).
+    auto skipws = [&]() {
+        while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) ++i;
+    };
+    skipws();
     while (i < text.size() && text[i] != ',') {
         if (text[i] != ';') return std::string::npos;
         ++i;
+        skipws();
 
         LinkAttr a;
         // Attribute name: chars up to '=', ';', or ','.
@@ -160,7 +167,8 @@ std::size_t parse_entry(const std::string& text, std::size_t i, LinkEntry& out) 
                 a.quoted = true;
                 i = after;
             } else {
-                while (i < text.size() && text[i] != ';' && text[i] != ',') {
+                while (i < text.size() && text[i] != ';' && text[i] != ',' &&
+                       !std::isspace(static_cast<unsigned char>(text[i]))) {
                     a.value.push_back(text[i++]);
                 }
                 a.quoted = false;
@@ -170,6 +178,7 @@ std::size_t parse_entry(const std::string& text, std::size_t i, LinkEntry& out) 
             a.quoted = false;
         }
         out.attrs.push_back(std::move(a));
+        skipws();
     }
     return i;
 }
@@ -220,9 +229,14 @@ std::vector<LinkEntry> register_payload(const ObjectStore& store) {
     root.set("ct", 11542u);
     out.push_back(std::move(root));
 
+    // Per REQ-REG-008 + linkformat_test: emit `ver="…"` once across the
+    // whole register payload — on the first instance of the first
+    // advertised Object — as a marker of the LwM2M enabler version. The
+    // earlier per-OID flag attached `ver` to every Object that had a
+    // non-default URN version, which doubled the marker.
+    bool version_emitted = false;
     for (const auto& [oid, desc] : store.objects()) {
         std::string version = version_from_urn(desc.urn);
-        bool        version_emitted = false;
 
         if (desc.instances.empty()) {
             // Spec §6.2.2: an object with no instance is not advertised.

@@ -26,10 +26,17 @@ bool is_decimal_float(const std::string& s) {
         if (s.size() == 1) return false;
         ++i;
     }
-    bool sawDigit = false, sawDot = false, sawExp = false;
+    // Track mantissa digits (before/around the '.') separately from
+    // exponent digits — "1.5e" used to pass because we only required
+    // at least one digit somewhere in the input.
+    bool sawDigit = false, sawDot = false, sawExp = false, sawExpDigit = false;
     for (; i < s.size(); ++i) {
         char c = s[i];
-        if (std::isdigit(static_cast<unsigned char>(c))) { sawDigit = true; continue; }
+        if (std::isdigit(static_cast<unsigned char>(c))) {
+            if (sawExp) sawExpDigit = true;
+            else        sawDigit    = true;
+            continue;
+        }
         if (c == '.' && !sawDot && !sawExp) { sawDot = true; continue; }
         if ((c == 'e' || c == 'E') && sawDigit && !sawExp) {
             sawExp = true;
@@ -38,6 +45,7 @@ bool is_decimal_float(const std::string& s) {
         }
         return false;
     }
+    if (sawExp && !sawExpDigit) return false;
     return sawDigit;
 }
 

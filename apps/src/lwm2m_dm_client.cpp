@@ -645,7 +645,16 @@ DmOutcome DmClient::handle_observe_register(const CoAPAdapter::CoAPMessage& msg,
     ctx.hasIid        = true;
     ctx.hasRid        = true;
     ctx.attrs         = snapshot_attrs(*res, m_callerSsid);
-    ctx.observeCritical = res->observable;     // initial heuristic; D4 hook
+    // D4 / REQ-IR-002: observeCritical defaults false. Auto-setting it
+    // from `res->observable` (the "is this resource observable at all"
+    // flag) was wrong — it promoted EVERY notify to CON for any
+    // observable resource, which broke the every-10th-CON cadence
+    // (D4_every_10th_notify_is_con) and forced the first notify in
+    // REQ_IR_002_value_changed_emits_notify to CON instead of the
+    // default NON. The flag is now opt-in: ObservationServer (or a
+    // test) explicitly sets observer->observeCritical = true when the
+    // value MUST not be lost.
+    ctx.observeCritical = false;
     ctx.lastSentAt    = std::chrono::steady_clock::now();
 
     auto& stored = m_observers.add(std::move(ctx));
