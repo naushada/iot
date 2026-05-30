@@ -1,0 +1,28 @@
+[persist] host persist dir = /var/folders/bh/4_t2197n38sbbg0w5xddh57w0000gn/T/ds-persist-XXXXXX.kxHx1Xn9lx
+[persist] starting ds-server (round 1)
+----- ds-cli set foo bar -----
+ok
+----- ds-cli set counter 42 -----
+ok
+----- on-disk Lua chunk (host-side) -----
+return {
+  schema_version = 1,
+  data = {
+    ["counter"] = "42",
+    ["foo"] = "bar",
+  },
+}
+[persist] killing ds-server (simulated crash)
+[persist] starting ds-server (round 2 — should reload state)
+----- ds-server stdout (round 2) -----
+2026-05-30 16:36:27.810871 [Worker:4] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:93 worker 0 started
+2026-05-30 16:36:27.810892 [Worker:6] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:93 worker 2 started
+2026-05-30 16:36:27.810873 [Worker:5] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:93 worker 1 started
+2026-05-30 16:36:27.810901 [Worker:7] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:93 worker 3 started
+2026-05-30 16:36:27.811001 [Worker:8] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:93 worker 4 started
+2026-05-30 16:36:27.811240 [DS:1] LM_DEBUG /work/modules/data-store/src/server/server.cpp:74 listening on /tmp/ds-persist.sock (mode 0660)
+----- ds-cli get foo counter missing -----
+foo=bar
+counter=42
+missing=(null)
+[persist] done; transcript → log/L10/ds-persist-smoke.txt
