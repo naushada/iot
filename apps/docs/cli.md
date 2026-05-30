@@ -417,6 +417,58 @@ To inject CLI-style commands in a non-interactive run, either:
 
 ---
 
+## Smoke test (wire-verified evidence)
+
+`log/L9/run-cli-smoke.sh` exercises every command end-to-end against a
+local iot server, capturing `log/L9/cli-smoke.pcap`. Latest pass
+(commit `55c5f32`) carries 20 frames covering all 13 typed commands
+plus the auto-Register fallback:
+
+| # | Command | Wire frame |
+|--:|---------|-----------|
+| 1–2 | (auto-Register) | POST `/rd?ep=…&lt=86400&lwm2m=1.1&b=U` → `2.01` |
+| 3–4 | `register ep=… lt=60` | POST `/rd?ep=…&lt=60&…` → `2.01` |
+| 5–6 | `read path=/3/0/0` | GET `/3/0/0` → `2.01` |
+| 7 | `write path=/3/0/15 value=Europe/Berlin` | PUT `/3/0/15 (text/plain)` |
+| 8–9 | `execute path=/3/0/4` | POST `/3/0/4` → `2.01` |
+| 10–11 | `observe path=/3/0/13` | GET `/3/0/13` → `2.01` |
+| 12–13 | `delete path=/3/0` | DELETE `/3/0` → `2.01` |
+| 14–15 | `bootstrap ep=…` | POST `/bs?ep=…` → `4.04` |
+| 16 | `push ep=A12345 data=…` | POST `/push?ep=A12345 (text/plain)` |
+| 17 | `set ep=A12345 data=…` | POST `/set?ep=A12345 (text/plain)` |
+| 18 | `get ep=A12345 data=…` | POST `/get?ep=A12345 (text/plain)` |
+| 19 | `exec ep=A12345 data=…` | POST `/execute?ep=A12345 (text/plain)` |
+| 20 | `post uri=/push uri-query=ep=B67890` | POST `/push?ep=B67890` |
+
+Process exit after `quit` is clean — no segfault, no leaked fds.
+
+## Recent fixes (do not regress)
+
+- **BUG-003 — `cli::split` spin on leading-delim input** (commit
+  `7f8bbb7`). Any LwM2M-path command after `register`
+  (`read path=/3/0/0`, `write path=/3/0/15 …`, etc.) used to wedge
+  the binary at 198 % CPU with no further commands processed. Root
+  cause: `istream::get(streambuf, '/')` set `failbit` on zero-char
+  extraction when the input started with the delimiter, after which
+  the loop's `iss.get()` refused to consume. The legacy stream-based
+  split hid the bug because callers wrote `uri="/push"` (quoted) —
+  the leading `"` shifted the first iteration off the delim. The
+  fix in `apps/src/cli/coap_dispatch.cpp::split` is a plain
+  character loop with quote-stripping and correct handling of
+  leading/trailing/consecutive delims. Any new `split`-style helper
+  should follow the same shape.
+
+- **FUP-5 — quit-time segfault** (commit `55c5f32`). `UDPAdapter::stop()`
+  used to call `end_reactor_event_loop()` + `wait()` without first
+  cancelling the periodic 1 Hz timer or removing the per-service
+  `READ_MASK` handlers; the reactor's later singleton teardown then
+  dereferenced freed `ServiceContext_t` pointers. Fix: `stop()`
+  guards against double-stop, then `cancel_timer(this)` and
+  `remove_handler(ALL_EVENTS_MASK | DONT_CALL)` for every service
+  before ending the reactor loop.
+
+---
+
 ## Related docs
 
 - [`leshan-interop.md`](leshan-interop.md) — end-to-end wire tests
