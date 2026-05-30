@@ -71,6 +71,9 @@ $PODMAN run -d --name $CLI --network $NET \
         sleep 2;  echo 'get ep=A12345 data=[\"x\"]';
         sleep 2;  echo 'exec ep=A12345 data={\"action\":\"reboot\"}';
         sleep 2;  echo 'post uri=/push uri-query=ep=B67890';
+        sleep 2;  echo 'device read=0';
+        sleep 2;  echo 'server write=1 value=120';
+        sleep 2;  echo 'firmware exec=2';
         sleep 2;  echo 'quit';
         sleep 1;
     } | script -qc '/opt/app/lwm2m local=coap://0.0.0.0:56830 bs=coap://$SRV:5683 role=client ep=$EP config=/opt/app/config' /dev/null" \

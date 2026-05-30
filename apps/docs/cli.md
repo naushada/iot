@@ -205,6 +205,56 @@ LwM2MClient-->> observe path=/3/0/13 cancel=true
 
 ---
 
+### Per-Object aliases
+
+Shortcuts so users don't have to remember the OMA OID numbering.
+Each one wraps the same `cli::dispatch` call as the generic
+`read`/`write`/`execute`/`observe`/`delete` commands but bakes the
+Object id in, so `device read=0` is identical on the wire to
+`read path=/3/0/0`.
+
+| Alias            | OID | Object name (OMA)                |
+|------------------|----:|----------------------------------|
+| `security`       |  0  | Security                         |
+| `server`         |  1  | Server                           |
+| `access-control` |  2  | Access Control                   |
+| `device`         |  3  | Device                           |
+| `connmon`        |  4  | Connectivity Monitoring          |
+| `firmware`       |  5  | Firmware Update                  |
+| `location`       |  6  | Location                         |
+| `connstat`       |  7  | Connectivity Statistics          |
+
+Every alias supports the same key set:
+
+```
+<alias>                                     read /<OID>/<iid>           (whole instance)
+<alias> read=<rid>                          GET   /<OID>/<iid>/<rid>
+<alias> write=<rid> value=<text>            PUT   /<OID>/<iid>/<rid>
+<alias> exec=<rid> [args=<text>]            POST  /<OID>/<iid>/<rid>
+<alias> observe=<rid> [cancel=true]         GET   /<OID>/<iid>/<rid>  (Observe option)
+<alias> delete[=<rid>]                      DELETE /<OID>/<iid>[/<rid>]
+```
+
+`iid=N` overrides the default instance (0).
+
+Examples (wire-verified in `log/L9/cli-smoke.pcap` — see frames 21–25):
+
+```
+LwM2MClient-->> device read=0                  # GET  /3/0/0   Manufacturer
+LwM2MClient-->> device write=15 value=Europe/Berlin   # PUT /3/0/15 Timezone
+LwM2MClient-->> device exec=4                  # POST /3/0/4   Reboot
+LwM2MClient-->> server write=1 value=120       # PUT  /1/0/1   Lifetime
+LwM2MClient-->> firmware exec=2                # POST /5/0/2   Update
+LwM2MClient-->> security iid=1 read=0          # GET  /0/1/0   Server URI
+```
+
+Implementation: a single `ObjectAliasCmd` class (apps/inc/cli/commands/
+`object_alias_cmd.hpp`) instantiated 8 times in
+`CommandRegistry::build_default`. Adding a new Object alias is one
+extra `r.add(std::make_unique<ObjectAliasCmd>("foo", N));` line.
+
+---
+
 ### Data-plane commands (push plane)
 
 These map onto the custom OMA-style push plane (project memory:

@@ -6,6 +6,7 @@
 #include "cli/commands/execute_cmd.hpp"
 #include "cli/commands/get_cmd.hpp"
 #include "cli/commands/help_cmd.hpp"
+#include "cli/commands/object_alias_cmd.hpp"
 #include "cli/commands/observe_cmd.hpp"
 #include "cli/commands/post_cmd.hpp"
 #include "cli/commands/push_cmd.hpp"
@@ -43,6 +44,17 @@ CommandRegistry CommandRegistry::build_default() {
     r.add(std::make_unique<ExecuteCmd>());
     r.add(std::make_unique<DeleteCmd>());
     r.add(std::make_unique<ObserveCmd>());
+    // Per-OMA-Object name aliases — let users type `device read=0`
+    // instead of remembering /3/0/0. iid= defaults to 0; bare command
+    // reads the whole instance.
+    r.add(std::make_unique<ObjectAliasCmd>("security",       0));
+    r.add(std::make_unique<ObjectAliasCmd>("server",         1));
+    r.add(std::make_unique<ObjectAliasCmd>("access-control", 2));
+    r.add(std::make_unique<ObjectAliasCmd>("device",         3));
+    r.add(std::make_unique<ObjectAliasCmd>("connmon",        4));
+    r.add(std::make_unique<ObjectAliasCmd>("firmware",       5));
+    r.add(std::make_unique<ObjectAliasCmd>("location",       6));
+    r.add(std::make_unique<ObjectAliasCmd>("connstat",       7));
     // Data-plane commands (custom OMA-style push plane).
     r.add(std::make_unique<PushCmd>());
     r.add(std::make_unique<SetCmd>());
