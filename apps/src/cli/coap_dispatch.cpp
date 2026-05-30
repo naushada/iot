@@ -83,33 +83,26 @@ std::vector<std::string> build_payload(
 }
 
 std::vector<std::string> split(const std::string& in, char delim) {
+    // Plain character-loop split. The legacy stream-based version (lifted
+    // from the old Readline::str2Vector) spun forever when the input
+    // started with the delimiter: istream::get(streambuf, delim) sets
+    // failbit on zero-char extraction, after which iss.get() (single char)
+    // refuses to consume. The old callers hid the bug by quoting paths
+    // (uri="/push") so the leading char was '"' not '/', shifting the
+    // first iteration off the delim. The new CLI parser doesn't strip
+    // quotes, so uri=/push hit the spin directly.
     std::vector<std::string> out;
-    if (in.empty()) return out;
-
-    std::istringstream  iss(in);
-    std::ostringstream  buf;
-    while (!iss.get(*buf.rdbuf(), delim).eof()) {
-        if (buf.str().empty()) {
-            iss.get();
-        } else {
-            if (buf.str().at(0) == '"' && buf.str().substr(1).length() > 0) {
-                out.push_back(buf.str().substr(1));
-            } else if (buf.str().at(0) != '"') {
-                out.push_back(buf.str());
-            }
-            buf.str("");
-            iss.get();
+    std::string seg;
+    seg.reserve(in.size());
+    for (char c : in) {
+        if (c == '"') continue;              // strip quotes for legacy compat
+        if (c == delim) {
+            if (!seg.empty()) { out.push_back(std::move(seg)); seg.clear(); }
+            continue;
         }
+        seg.push_back(c);
     }
-
-    if (!buf.str().empty()) {
-        std::string tail = buf.str();
-        if (tail.at(0) == '"') tail = tail.substr(1);
-        std::istringstream iss2(tail);
-        std::ostringstream key;
-        iss2.get(*key.rdbuf(), '"');
-        out.push_back(key.str());
-    }
+    if (!seg.empty()) out.push_back(std::move(seg));
     return out;
 }
 

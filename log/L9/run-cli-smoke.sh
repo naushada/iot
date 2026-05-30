@@ -1,25 +1,29 @@
 #!/usr/bin/env bash
-# CLI smoke test for the polymorphic CommandRegistry refactor.
-# One fresh client invocation per command (each typing the command
-# then `quit`). Captures pcap to log/L9/cli-smoke.pcap. Server stays
-# up across all probes so frames concentrate in one file.
+# CLI smoke test for the polymorphic CommandRegistry. One client, one
+# heredoc piped through script(1) for a real PTY, all 13 typed commands
+# inside the same Readline loop. After a fixed wall window the client
+# container is killed by name (NOT by local bash pid — that leaks
+# containers). Server stays up for the whole run so all frames land
+# in one pcap.
 #
-# Each command should yield ONE CON request from client → server.
-# Verifies the canonical request shape per command.
+# Verifies each command emits its canonical CoAP request.
 #
 # Usage:  bash log/L9/run-cli-smoke.sh
 set -euo pipefail
 
 NET=lwm2m-smoke
 SRV=smoke-server
+CLI=smoke-client
 SNIFF=smoke-sniff
 PCAP=log/L9/cli-smoke.pcap
 PODMAN=/opt/homebrew/bin/podman
 
+EP=urn:dev:smoke-1
+
 cleanup() {
-    $PODMAN kill -s SIGKILL $SNIFF $SRV >/dev/null 2>&1 || true
-    $PODMAN rm   -f         $SNIFF $SRV >/dev/null 2>&1 || true
-    $PODMAN network rm -f   $NET        >/dev/null 2>&1 || true
+    $PODMAN kill -s SIGKILL $SNIFF $CLI $SRV >/dev/null 2>&1 || true
+    $PODMAN rm   -f         $SNIFF $CLI $SRV >/dev/null 2>&1 || true
+    $PODMAN network rm -f   $NET             >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -32,67 +36,64 @@ $PODMAN run -d --rm --name $SRV --network $NET \
     -v "$PWD/apps/config":/opt/app/config \
     -v "$PWD/apps/build/lwm2m":/opt/app/lwm2m \
     naushada/iot:latest \
-    /opt/app/lwm2m \
-    "local=coap://0.0.0.0:5683" \
-    "role=server" \
-    "ep=urn:dev:smoke-server" \
-    "config=/opt/app/config" >/dev/null
-sleep 3
-
-echo "[smoke] starting tcpdump sniffer"
-$PODMAN run -d --rm --name $SNIFF \
-    --net=container:$SRV \
-    --user=root \
-    --cap-add=NET_RAW --cap-add=NET_ADMIN \
-    -v "$PWD/log/L9":/cap \
-    docker.io/nicolaka/netshoot:latest \
-    tcpdump -i any -U -w /cap/cli-smoke.pcap "udp port 5683" \
-    >/dev/null
+    /opt/app/lwm2m "local=coap://0.0.0.0:5683" "role=server" \
+                   "ep=urn:dev:smoke-server" "config=/opt/app/config" >/dev/null
 sleep 2
 
-# One-shot client. Starts up, types one command + quit, exits. Brings
-# its own ephemeral local port so frames don't collide across probes.
-probe() {
-    local probe_name=$1
-    local probe_cmd=$2
-    local probe_port=$3
-    local probe_ep="urn:dev:smoke-${probe_name}"
-    local cli_log="log/L9/cli-smoke-${probe_name}.log"
-    echo "[smoke:${probe_name}] ${probe_cmd}"
-    $PODMAN run -i --rm --network $NET \
-        -v "$PWD/apps/config":/opt/app/config \
-        -v "$PWD/apps/build/lwm2m":/opt/app/lwm2m \
-        --entrypoint /bin/bash \
-        naushada/iot:latest \
-        -c "{ sleep 1; echo '${probe_cmd}'; sleep 2; echo 'quit'; sleep 1; } | \
-            script -qc '/opt/app/lwm2m local=coap://0.0.0.0:${probe_port} bs=coap://${SRV}:5683 role=client ep=${probe_ep} config=/opt/app/config' /dev/null" \
-        >"${cli_log}" 2>&1 &
-    # Bound each probe to 8s wall — long enough for handshake + one CoAP exchange
-    local pid=$!
-    sleep 8
-    kill $pid 2>/dev/null || true
-    wait $pid 2>/dev/null || true
-}
+echo "[smoke] starting tcpdump sniffer"
+$PODMAN run -d --rm --name $SNIFF --net=container:$SRV --user=root \
+    --cap-add=NET_RAW -v "$PWD/log/L9":/cap \
+    docker.io/nicolaka/netshoot:latest \
+    tcpdump -i any -U -w /cap/cli-smoke.pcap "udp port 5683" >/dev/null
+sleep 2
 
-# Run each command in its own short-lived client. Skip register
-# (the auto-Register fallback already fires before our prompt).
-probe register  "register ep=urn:dev:smoke-1 lt=60"                       56831
-probe read      "read path=/3/0/0"                                         56832
-probe write     "write path=/3/0/15 value=Europe/Berlin"                   56833
-probe execute   "execute path=/3/0/4"                                      56834
-probe observe   "observe path=/3/0/13"                                     56835
-probe delete    "delete path=/3/0"                                         56836
-probe bootstrap "bootstrap ep=urn:dev:smoke-1"                             56837
-probe post      "post uri=/push uri-query=ep=A12345"                       56838
+# 13 typed commands, 2s pacing, then `quit`. Total heredoc wall ≈ 28s.
+# script(1) supplies a PTY so isatty() is true; the binary's Readline
+# activates and reads from PTY slave. Per probe-readline.sh, this
+# loop iterates correctly across many commands.
+echo "[smoke] running 13-command client (≈30s window)"
+$PODMAN run -d --name $CLI --network $NET \
+    -v "$PWD/apps/config":/opt/app/config \
+    -v "$PWD/apps/build/lwm2m":/opt/app/lwm2m \
+    --entrypoint /bin/bash \
+    naushada/iot:latest \
+    -c "{
+        sleep 2;  echo 'help';
+        sleep 2;  echo 'register ep=$EP lt=60';
+        sleep 2;  echo 'read path=/3/0/0';
+        sleep 2;  echo 'write path=/3/0/15 value=Europe/Berlin';
+        sleep 2;  echo 'execute path=/3/0/4';
+        sleep 2;  echo 'observe path=/3/0/13';
+        sleep 2;  echo 'delete path=/3/0';
+        sleep 2;  echo 'bootstrap ep=$EP';
+        sleep 2;  echo 'push ep=A12345 data=[{\"k\":\"v\"}]';
+        sleep 2;  echo 'set ep=A12345 data={\"x\":1}';
+        sleep 2;  echo 'get ep=A12345 data=[\"x\"]';
+        sleep 2;  echo 'exec ep=A12345 data={\"action\":\"reboot\"}';
+        sleep 2;  echo 'post uri=/push uri-query=ep=B67890';
+        sleep 2;  echo 'quit';
+        sleep 1;
+    } | script -qc '/opt/app/lwm2m local=coap://0.0.0.0:56830 bs=coap://$SRV:5683 role=client ep=$EP config=/opt/app/config' /dev/null" \
+    >/dev/null
 
-echo "[smoke] last 3 lines of each client log:"
-for f in log/L9/cli-smoke-*.log; do
-    echo "===== $f ====="
-    tail -3 "$f" | sed 's/^/  /'
+# Wait for natural exit (heredoc EOF → quit) or hard cap at 35s.
+for i in $(seq 1 35); do
+    if ! $PODMAN ps --format '{{.Names}}' | grep -q "^$CLI$"; then break; fi
+    sleep 1
 done
+$PODMAN kill -s SIGKILL $CLI >/dev/null 2>&1 || true
+$PODMAN logs $CLI >log/L9/cli-smoke-client.log 2>&1 || true
+
+echo "[smoke] last 25 lines of client log:"
+tail -25 log/L9/cli-smoke-client.log | sed 's/^/[client] /'
 
 echo "[smoke] tearing down (pcap closed)"
 $PODMAN kill $SNIFF $SRV >/dev/null 2>&1 || true
+sleep 1
 
 echo "[smoke] pcap → $PCAP"
 ls -la $PCAP
+
+echo "[smoke] wire frames:"
+$PODMAN run --rm -v "$PWD/log/L9":/cap docker.io/nicolaka/netshoot:latest \
+    tshark -r /cap/cli-smoke.pcap -nn 2>/dev/null | sed 's/^/  /'
