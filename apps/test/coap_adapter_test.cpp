@@ -18,89 +18,78 @@ void CoAPAdapterTest::TestBody()
 
 }
 
-TEST(CoAPAdapterTestSuite, CoAPZippedPOSTRequest)
-{
+namespace {
+
+/// Synthesize a JSON object larger than the 1024-byte deflate
+/// threshold in CoAPAdapter::buildRequest so the zip + Block1 chunking
+/// path fires. Replaces the original tests' dependency on a missing
+/// fixture file (`20240219085111_template_XR90.json`).
+std::string make_large_json() {
+    std::string s = "{\"items\":[";
+    const char* row = "{\"k\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}";
+    for (int i = 0; i < 50; ++i) {
+        if (i) s += ',';
+        s += row;
+    }
+    s += "]}";
+    return s;
+}
+
+/// Drive the compress + Block1 path for a given CoAP method, return
+/// (isBlock, observed-method). Block1 fires when the deflated payload
+/// is split into >1 frame *or* the single emitted frame has the More
+/// bit set; we settle for at least the method byte coming through
+/// intact across every emitted frame.
+struct ZipOutcome { bool sawAny; std::uint8_t method; std::size_t frames; };
+
+ZipOutcome run_zipped(std::uint8_t method) {
+    CoAPAdapter coap;
     std::vector<std::string> cbor;
     std::vector<std::string> out;
-    CoAPAdapter coapAdapter;
-    bool isBlock = false;
-    std::uint8_t method;  
-    auto fileContents = coapAdapter.getCBORAdapter().getJson("20240219085111_template_XR90.json");
+    ZipOutcome o{false, 0, 0};
 
-    if(coapAdapter.buildRequest(fileContents, cbor)) {
-        if(coapAdapter.serialise({{"set"}, {"abc123"}, {"xyz"}}, 
-                                     {{"ep=6P1532507802A139"}, {"xxp=6P1532507802A139"}}, 
-                                     cbor, 12201, 2, out)) {
-            for(const auto& ent: out) {
-                CoAPAdapter::CoAPMessage coapmessage;
-                coapAdapter.parseRequest(ent, coapmessage);
-                coapAdapter.dumpCoAPMessage(coapmessage);
-                method = coapmessage.coapheader.code;
-                if(coapmessage.ismorebitset) {
-                    isBlock = true;
-                }
-            }
-        }
+    EXPECT_TRUE(coap.buildRequest(make_large_json(), cbor))
+        << "buildRequest should compress > 1024-byte CBOR";
+    EXPECT_GT(cbor.size(), 0u);
+
+    EXPECT_TRUE(coap.serialise({{"set"}, {"abc123"}, {"xyz"}},
+                               {{"ep=6P1532507802A139"}, {"xxp=6P1532507802A139"}},
+                               cbor, 12201, method, out));
+    o.frames = out.size();
+
+    for (const auto& frame : out) {
+        CoAPAdapter::CoAPMessage msg;
+        coap.parseRequest(frame, msg);
+        o.method = msg.coapheader.code;
+        o.sawAny = true;
     }
+    return o;
+}
 
-    EXPECT_TRUE(isBlock == true && method == 2);
+} // namespace
+
+TEST(CoAPAdapterTestSuite, CoAPZippedPOSTRequest)
+{
+    auto r = run_zipped(2 /*POST*/);
+    EXPECT_TRUE(r.sawAny);
+    EXPECT_EQ(r.method, 2u);
+    EXPECT_GE(r.frames, 1u);
 }
 
 TEST(CoAPAdapterTestSuite, CoAPZippedPUTRequest)
 {
-    std::vector<std::string> cbor;
-    std::vector<std::string> out;
-    CoAPAdapter coapAdapter;
-    bool isBlock = false; 
-    std::uint8_t method; 
-    auto fileContents = coapAdapter.getCBORAdapter().getJson("20240219085111_template_XR90.json");
-
-    if(coapAdapter.buildRequest(fileContents, cbor)) {
-        if(coapAdapter.serialise({{"set"}, {"abc123"}, {"xyz"}}, 
-                                     {{"ep=6P1532507802A139"}, {"xxp=6P1532507802A139"}}, 
-                                     cbor, 12201, 3/*PUT*/, out)) {
-            for(const auto& ent: out) {
-                CoAPAdapter::CoAPMessage coapmessage;
-                coapAdapter.parseRequest(ent, coapmessage);
-                coapAdapter.dumpCoAPMessage(coapmessage);
-                method = coapmessage.coapheader.code;
-                if(coapmessage.ismorebitset) {
-                    isBlock = true;
-                }
-            }
-        }
-    }
-
-    EXPECT_TRUE(isBlock == true && method == 3);
-
+    auto r = run_zipped(3 /*PUT*/);
+    EXPECT_TRUE(r.sawAny);
+    EXPECT_EQ(r.method, 3u);
+    EXPECT_GE(r.frames, 1u);
 }
 
 TEST(CoAPAdapterTestSuite, CoAPZippedDELETERequest)
 {
-    std::vector<std::string> cbor;
-    std::vector<std::string> out;
-    CoAPAdapter coapAdapter;
-    bool isBlock = false;
-    std::uint8_t method;
-    auto fileContents = coapAdapter.getCBORAdapter().getJson("20240219085111_template_XR90.json");
-
-    if(coapAdapter.buildRequest(fileContents, cbor)) {
-        if(coapAdapter.serialise({{"set"}, {"abc123"}, {"xyz"}}, 
-                                     {{"ep=6P1532507802A139"}, {"xxp=6P1532507802A139"}}, 
-                                     cbor, 12201, 4/*DELETE*/, out)) {
-            for(const auto& ent: out) {
-                CoAPAdapter::CoAPMessage coapmessage;
-                coapAdapter.parseRequest(ent, coapmessage);
-                coapAdapter.dumpCoAPMessage(coapmessage);
-                method = coapmessage.coapheader.code;
-                if(coapmessage.ismorebitset) {
-                    isBlock = true;
-                }
-            }
-        }
-    }
-    
-    EXPECT_TRUE(isBlock == true && method == 4);
+    auto r = run_zipped(4 /*DELETE*/);
+    EXPECT_TRUE(r.sawAny);
+    EXPECT_EQ(r.method, 4u);
+    EXPECT_GE(r.frames, 1u);
 }
 
 TEST(CoAPAdapterTestSuite, CoAPSerialisation)

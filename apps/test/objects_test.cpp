@@ -19,20 +19,36 @@ namespace objects = ::lwm2m::objects;
 
 namespace {
 
-/// Create a throwaway config tree under /tmp containing deviceObject/0.json
-/// with the supplied contents. Returns the configDir (no trailing slash).
-std::string write_config(const std::string& json) {
+/// Create a throwaway config tree under /tmp containing deviceObject/0.lua
+/// with `resourcesBody` plugged into the canonical envelope:
+///   return { deviceObject = { instance = 0, resources = { <body> } } }
+/// Returns the configDir (no trailing slash).
+std::string write_config(const std::string& resourcesBody) {
     char dirTemplate[] = "/tmp/iot-l8-XXXXXX";
     char* dir = mkdtemp(dirTemplate);
     std::string configDir(dir);
     std::string subDir = configDir + "/deviceObject";
     ::mkdir(subDir.c_str(), 0755);
-    std::ofstream(subDir + "/0.json") << json;
+    std::ofstream(subDir + "/0.lua")
+        << "return { deviceObject = { instance = 0, resources = {"
+        << resourcesBody
+        << "} } }\n";
+    return configDir;
+}
+
+/// Write a raw Lua string verbatim — for the malformed-config test.
+std::string write_config_raw(const std::string& body) {
+    char dirTemplate[] = "/tmp/iot-l8-XXXXXX";
+    char* dir = mkdtemp(dirTemplate);
+    std::string configDir(dir);
+    std::string subDir = configDir + "/deviceObject";
+    ::mkdir(subDir.c_str(), 0755);
+    std::ofstream(subDir + "/0.lua") << body;
     return configDir;
 }
 
 void cleanup(const std::string& dir) {
-    std::string f = dir + "/deviceObject/0.json";
+    std::string f = dir + "/deviceObject/0.lua";
     std::remove(f.c_str());
     std::remove((dir + "/deviceObject").c_str());
     std::remove(dir.c_str());
@@ -88,10 +104,9 @@ TEST(Objects, REQ_OBJ_003_default_constants_when_json_missing) {
 }
 
 TEST(Objects, REQ_OBJ_003_json_override_replaces_default) {
-    auto cfg = write_config(R"([
-        {"rid": 0, "value": "Acme Corp", "include": true},
-        {"rid": 17, "value": "Test Device", "include": true}
-    ])");
+    auto cfg = write_config(
+        "[0]  = { value = 'Acme Corp',   include = true },"
+        "[17] = { value = 'Test Device', include = true },");
 
     ObjectStore store;
     objects::install_device(store, cfg);
@@ -102,9 +117,8 @@ TEST(Objects, REQ_OBJ_003_json_override_replaces_default) {
 }
 
 TEST(Objects, REQ_OBJ_003_json_include_false_keeps_default) {
-    auto cfg = write_config(R"([
-        {"rid": 0, "value": "Should Not Apply", "include": false}
-    ])");
+    auto cfg = write_config(
+        "[0] = { value = 'Should Not Apply', include = false },");
     ObjectStore store;
     objects::install_device(store, cfg);
     EXPECT_EQ("Sierra Wireless", store.find(3, 0, 0)->read());
@@ -112,7 +126,7 @@ TEST(Objects, REQ_OBJ_003_json_include_false_keeps_default) {
 }
 
 TEST(Objects, REQ_OBJ_003_malformed_json_falls_back_silently) {
-    auto cfg = write_config("this is not json");
+    auto cfg = write_config_raw("this is not lua");
     ObjectStore store;
     objects::install_device(store, cfg);
     EXPECT_EQ("Sierra Wireless", store.find(3, 0, 0)->read());
@@ -120,8 +134,10 @@ TEST(Objects, REQ_OBJ_003_malformed_json_falls_back_silently) {
 }
 
 TEST(Objects, REQ_OBJ_003_type_mismatch_in_json_falls_back) {
-    // Manufacturer must be a string; a numeric override is rejected.
-    auto cfg = write_config(R"([{"rid": 0, "value": 42, "include": true}])");
+    // Manufacturer must be a string; a numeric override is rejected
+    // (string_or falls through to the default when the value variant
+    // doesn't hold std::string).
+    auto cfg = write_config("[0] = { value = 42, include = true },");
     ObjectStore store;
     objects::install_device(store, cfg);
     EXPECT_EQ("Sierra Wireless", store.find(3, 0, 0)->read());
