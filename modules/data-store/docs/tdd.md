@@ -49,7 +49,7 @@ Out-of-scope today: cross-host replication, TLS over the unix socket
 | REQ-DS-016 | A corrupted on-disk Lua chunk MUST cause the server to log an ERROR and exit with a distinct exit code (3), not start with stale or empty state. | M |
 | ~~REQ-DS-017~~ | ~~In-process accessor~~ — **dropped** after the separate-binary pivot (design §2). All clients, including the iot binary, go through the unix socket via `libdatastore_client`. |  |
 | REQ-DS-018 | `ds-server`, `ds-cli`, and `libdatastore_client.a` MUST build as independent targets under `modules/data-store/` with no edits to `apps/CMakeLists.txt`. | M |
-| REQ-DS-019 | The client library MUST NOT pull ACE or nlohmann::json into its public ABI; downstream apps see only `<string>`, `<optional>`, `<cstdint>`. | M |
+| REQ-DS-019 | The client library MAY use ACE internally (LSOCK_Connector / LSOCK_Stream / Time_Value) but MUST keep ACE types out of the public header `inc/data_store/client.hpp` via pimpl. Downstream apps see only `<string>` / `<memory>` / `<cstdint>` in the header; ACE is linked transitively from the static lib. | M |
 
 ---
 
@@ -90,7 +90,7 @@ test artifact. Each row is closed when the linked phase merges.
 | REQ-DS-015  | §4.3    | D4   | `DS_REQ_DS_015_load_on_startup`                        |
 | REQ-DS-016  | §4.3    | D4   | `DS_REQ_DS_016_corrupted_state_exits`                  |
 | REQ-DS-018  | §2      | D1   | manual: `modules/data-store && cmake .. && make` produces all three targets |
-| REQ-DS-019  | §2      | D1   | `client.hpp` includes only `<cstdint>`/`<string>`/`<optional>`/`<system_error>` |
+| REQ-DS-019  | §2      | D1   | `client.hpp` includes only `<cstdint>`/`<memory>`/`<string>`; ACE includes confined to `client.cpp` via pimpl |
 | NFR-DS-003  | §4.2    | D4   | smoke: `log/L10/ds-crash-safe.sh` kills mid-write      |
 | NFR-DS-004  | §8      | D1   | `DS_NFR_DS_004_socket_mode`                            |
 

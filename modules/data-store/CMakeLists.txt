@@ -18,7 +18,10 @@ include_directories(
 link_directories(${ACE_ROOT}/lib)
 
 # --------------------------------------------------------------------
-# libdatastore_client — dependency-light, no ACE in the public ABI.
+# libdatastore_client — ACE-backed I/O internally (LSOCK_Connector +
+# LSOCK_Stream + Time_Value), but the public header (inc/data_store/
+# client.hpp) stays free of ACE includes via a pimpl. Apps linking
+# this static lib pull in ACE transitively at link time only.
 # --------------------------------------------------------------------
 add_library(datastore_client STATIC
     src/client/client.cpp
@@ -26,6 +29,8 @@ add_library(datastore_client STATIC
 
 target_include_directories(datastore_client
     PUBLIC ${DS_MODULE_DIR}/inc)
+
+target_link_libraries(datastore_client PUBLIC ACE pthread)
 
 # --------------------------------------------------------------------
 # ds-server — standalone daemon. Links ACE.

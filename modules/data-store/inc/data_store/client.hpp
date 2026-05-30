@@ -4,17 +4,18 @@
 /// Public client API for the data-store unix-socket service.
 ///
 /// Applications link `libdatastore_client.a` and use this header to
-/// talk to the running `ds-server` daemon. The library is intentionally
-/// dependency-light: just POSIX sockets + std::string. No ACE, no
-/// nlohmann::json in the public interface.
+/// talk to the running `ds-server` daemon. The header itself only
+/// depends on the C++ standard library — ACE primitives live behind
+/// a pimpl in `client.cpp`, so downstream apps don't need ACE on
+/// their compile line (only on their link line, transitively from
+/// the static lib).
 ///
 /// Wire details live in proto.hpp; the design is in
 /// modules/data-store/docs/design.md.
 
 #include <cstdint>
-#include <optional>
+#include <memory>
 #include <string>
-#include <system_error>
 
 namespace data_store {
 
@@ -29,12 +30,12 @@ struct Status {
 };
 
 /// Stream-socket client. Single-connection per instance; not
-/// thread-safe. Holds an AF_UNIX stream socket fd for the lifetime
-/// of the object.
+/// thread-safe. Internally uses ACE_LSOCK_Stream + ACE_Time_Value
+/// for I/O so it shares the same timeout semantics as the rest of
+/// the iot stack; the public ABI stays POSIX-clean via pimpl.
 ///
-/// D1 only exposes `connect()` and `recv_welcome()` to prove the
-/// round-trip; `set()`, `get()`, `watch()`, `unwatch()` land in
-/// D3/D5.
+/// D1 exposes `connect()` + `recv_welcome()`; D2/D3/D5 add `set()`,
+/// `get()`, `watch()`, `unwatch()`, and the async push receive loop.
 class Client {
 public:
     Client();
@@ -47,24 +48,23 @@ public:
 
     /// Open the connection. `path` is the server's listening socket
     /// (defaults to data_store::proto::kDefaultSocketPath when empty).
-    /// Returns a Status describing the outcome.
     Status connect(std::string path = "");
 
     /// Read the single welcome line the server emits on accept.
-    /// Returns the line (including its trailing '\n') in `out` and
-    /// `Status{ok=true}`; on parse / I/O error returns ok=false and
-    /// leaves `out` untouched.
+    /// Returns the line (including trailing '\n') in `out`. Times
+    /// out after `timeout_ms`.
     Status recv_welcome(std::string& out, std::int32_t timeout_ms = 1000);
 
     /// Close the connection. Idempotent.
     void close();
 
-    /// Underlying fd. Tests use this for poll(2); production code
-    /// should not need it.
-    int fd() const { return m_fd; }
+    /// Underlying ACE_HANDLE / fd. `-1` when not connected. Tests
+    /// use this; production code should not need it.
+    int fd() const;
 
 private:
-    int m_fd = -1;
+    class Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace data_store
