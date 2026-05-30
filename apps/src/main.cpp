@@ -25,7 +25,7 @@
 #include "lwm2m_registration_client.hpp"
 #include "lwm2m_registration_server.hpp"
 
-#include "nlohmann/json.hpp"
+#include "lua_config.hpp"
 
 
 std::unordered_map<std::string, UDPAdapter::Scheme_t> schemeMap = {
@@ -110,8 +110,6 @@ void parsePeerOption(const std::string& in, UDPAdapter::Scheme_t& scheme, std::s
 
 namespace {
 
-using json = nlohmann::json;
-
 /// Monotonic CoAP message-id allocator shared by every send site. CoAP
 /// §4.4 requires uniqueness within the session window; a 16-bit counter
 /// wrapping after ~64K outgoing messages is well within spec.
@@ -142,72 +140,38 @@ load_provisioning_from_config(const std::string& configDir,
     ::lwm2m::bootstrap::AccountProvisioning a;
     a.endpoint = endpoint;
 
-    auto loadFile = [&](const std::string& path, json& doc) -> bool {
-        std::ifstream ifs(path);
-        if (!ifs.is_open()) return false;
-        try { ifs >> doc; } catch (...) { return false; }
-        return doc.is_array();
-    };
+    using iot::lua_config::bool_or;
+    using iot::lua_config::load_object_resources;
+    using iot::lua_config::string_or;
+    using iot::lua_config::uint_or;
 
-    auto stringRid = [](const json& arr, std::uint32_t rid,
-                        const std::string& def) -> std::string {
-        for (const auto& rec : arr) {
-            if (!rec.is_object() || !rec.contains("rid")) continue;
-            if (rec["rid"].get<std::uint32_t>() != rid) continue;
-            if (!rec.contains("value") || !rec["value"].is_string()) return def;
-            return rec["value"].get<std::string>();
-        }
-        return def;
-    };
-    auto intRid = [](const json& arr, std::uint32_t rid,
-                     std::uint32_t def) -> std::uint32_t {
-        for (const auto& rec : arr) {
-            if (!rec.is_object() || !rec.contains("rid")) continue;
-            if (rec["rid"].get<std::uint32_t>() != rid) continue;
-            if (!rec.contains("value") || !rec["value"].is_number_unsigned()) return def;
-            return rec["value"].get<std::uint32_t>();
-        }
-        return def;
-    };
-    auto boolRid = [](const json& arr, std::uint32_t rid,
-                      bool def) -> bool {
-        for (const auto& rec : arr) {
-            if (!rec.is_object() || !rec.contains("rid")) continue;
-            if (rec["rid"].get<std::uint32_t>() != rid) continue;
-            if (!rec.contains("value") || !rec["value"].is_boolean()) return def;
-            return rec["value"].get<bool>();
-        }
-        return def;
-    };
-
-    // Security Object instances: file naming mirrors today's "0.json", "1.json"
-    // and the loaded order maps directly to the wire iid.
+    // Security Object instances: file naming mirrors today's "0.lua",
+    // "1.lua" and the loaded order maps directly to the wire iid.
     for (std::uint16_t iid : {0, 1}) {
-        json doc;
-        std::string p = configDir + "/securityObject/" +
-                        std::to_string(iid) + ".json";
-        if (!loadFile(p, doc)) continue;
+        auto m = load_object_resources(
+            configDir + "/securityObject/" + std::to_string(iid) + ".lua");
+        if (m.empty()) continue;
 
         ::lwm2m::bootstrap::SecurityInstance s;
         s.iid               = iid;
-        s.serverUri         = stringRid(doc, 0, "");
-        s.isBootstrapServer = boolRid(doc, 1, iid == 0);
-        s.securityMode      = static_cast<std::uint8_t>(intRid(doc, 2, 3));
-        s.identity          = stringRid(doc, 3, "");
-        s.secretKey         = stringRid(doc, 5, "");
-        s.shortServerId     = static_cast<std::uint16_t>(intRid(doc, 10, iid + 1));
+        s.serverUri         = string_or(m, 0, "");
+        s.isBootstrapServer = bool_or(m, 1, iid == 0);
+        s.securityMode      = static_cast<std::uint8_t>(uint_or(m, 2, 3));
+        s.identity          = string_or(m, 3, "");
+        s.secretKey         = string_or(m, 5, "");
+        s.shortServerId     = static_cast<std::uint16_t>(uint_or(m, 10, iid + 1));
         a.security.push_back(std::move(s));
     }
 
     // Server Object instance 0 is the canonical DM-server account.
-    json srvDoc;
-    if (loadFile(configDir + "/serverObject/0.json", srvDoc)) {
-        ::lwm2m::bootstrap::ServerInstance srv;
-        srv.iid           = 0;
-        srv.shortServerId = static_cast<std::uint16_t>(intRid(srvDoc, 0, 1));
-        srv.lifetime      = intRid(srvDoc, 1, 86400);
-        srv.binding       = stringRid(srvDoc, 7, "U");
-        a.server.push_back(std::move(srv));
+    auto srv = load_object_resources(configDir + "/serverObject/0.lua");
+    if (!srv.empty()) {
+        ::lwm2m::bootstrap::ServerInstance row;
+        row.iid           = 0;
+        row.shortServerId = static_cast<std::uint16_t>(uint_or(srv, 0, 1));
+        row.lifetime      = uint_or(srv, 1, 86400);
+        row.binding       = string_or(srv, 7, "U");
+        a.server.push_back(std::move(row));
     }
     return a;
 }

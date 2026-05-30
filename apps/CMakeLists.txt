@@ -14,12 +14,34 @@ if(NOT DEFINED ACE_ROOT)
     set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
 endif()
 
+# Lua — required for apps/src/lua_config.cpp which now backs the
+# apps/config/**/*.lua object-resource files (see apps/docs/cli.md).
+# Prefer the static archive so the iot binary doesn't need
+# liblua5.3.so.0 at runtime in stripped images (the iot:latest image
+# isn't rebuilt yet to include liblua5.3-0). Falls back to whatever
+# find_package(Lua) hands us if the .a isn't on disk.
+find_package(Lua REQUIRED)
+find_library(LUA_STATIC_LIB
+             NAMES liblua5.3.a liblua.a
+             PATHS /usr/lib/aarch64-linux-gnu
+                   /usr/lib/x86_64-linux-gnu
+                   /usr/lib
+                   /usr/local/lib
+             NO_DEFAULT_PATH)
+if(LUA_STATIC_LIB)
+    message(STATUS "Lua: static-linking ${LUA_STATIC_LIB}")
+    set(LUA_LINK_LIBS ${LUA_STATIC_LIB} dl m)
+else()
+    set(LUA_LINK_LIBS ${LUA_LIBRARIES})
+endif()
+
 # Include External cmake file
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
 include_directories(/usr/local/include/mongocxx/v_noabi)
 include_directories(/usr/local/include/bsoncxx/v_noabi)
 include_directories(${ACE_ROOT}/include)
+include_directories(${LUA_INCLUDE_DIR})
 
 include_directories(inc)
 
@@ -39,7 +61,8 @@ target_link_libraries(lwm2m
                         bsoncxx
                         mongocxx
                         ssl
-                        crypto)
+                        crypto
+                        ${LUA_LINK_LIBS})
 
 add_subdirectory(test)
 

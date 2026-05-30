@@ -1,6 +1,6 @@
 FROM ubuntu:jammy
 RUN apt-get update && apt-get -y upgrade && \
-    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev python3-dev autoconf wget pkg-config
+    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev liblua5.3-dev python3-dev autoconf wget pkg-config
 
 # ACE/TAO 7.0.0 — same install prefix as the xpmile project so the include
 # / link paths in apps/CMakeLists.txt resolve. `ssl=1` is load-bearing; without
@@ -99,7 +99,7 @@ RUN git clone https://github.com/google/googletest/ && \
 
 #FROM ubuntu:jammy
 RUN apt-get update && apt-get -y upgrade && \
-    apt-get install -y gcc g++ git make cmake patch gdb openssh-server bash vim
+    apt-get install -y gcc g++ git make cmake patch gdb openssh-server bash vim liblua5.3-0
 
 # SSH server configuration
 # TODO: SECURITY: here we enable root login WITHOUT PASSWORD in the container, useful for dev use case

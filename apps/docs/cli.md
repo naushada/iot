@@ -500,6 +500,50 @@ Process exit after `quit` is clean — no segfault, no leaked fds.
 
 ---
 
+## Config files (Lua)
+
+`apps/config/{deviceObject,serverObject,securityObject}/*.lua` carry
+the runtime LwM2M Object resource state. Each file follows the
+grace-server-style `return { <name> = { ... } }` shape:
+
+```lua
+return {
+  deviceObject = {
+    instance  = 0,
+    resources = {
+      [0]  = { description = "Manufacturer", value = "Sierra Wireless", include = true },
+      [1]  = { description = "Model Number", value = "LwM2M Client",    include = true },
+      ...
+    },
+  },
+}
+```
+
+Value vocabulary: `bool`, integer, float, string, or a sub-table
+`{ bytes = { 107, 77, ... }, subtype = 16 }` for opaque/binary
+resources.
+
+The loader is `apps/inc/lua_config.hpp` →
+`iot::lua_config::load_object_resources(path)`. Typed accessors
+`string_or(map, rid, default)`, `uint_or(...)`, `bool_or(...)` mirror
+the lambdas the old JSON loader used. Missing file or parse error
+yields an empty map; the caller's per-RID compiled-in defaults take
+over.
+
+Callers today:
+
+- `apps/src/lwm2m_object_3_device.cpp::load_overrides` — reads
+  `deviceObject/0.lua` for per-RID Device Object overrides.
+- `apps/src/main.cpp::load_provisioning_from_config` — reads
+  `securityObject/{0,1}.lua` and `serverObject/0.lua` to build the
+  bootstrap `AccountProvisioning`.
+
+The legacy `.json` files are kept in-tree as a reference for the
+historical shape and may be deleted once Lua is the only loader in
+use elsewhere.
+
+---
+
 ## Related docs
 
 - [`leshan-interop.md`](leshan-interop.md) — end-to-end wire tests

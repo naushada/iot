@@ -6,13 +6,11 @@
 #include <sstream>
 #include <unordered_map>
 
-#include "nlohmann/json.hpp"
+#include "lua_config.hpp"
 
 namespace lwm2m { namespace objects {
 
 namespace {
-
-using json = nlohmann::json;
 
 /// Per-RID compiled-in default values for the static metadata RIDs.
 /// JSON file overrides these per RID; missing or malformed JSON file
@@ -52,52 +50,24 @@ std::string default_time() {
     return std::to_string(static_cast<long long>(std::time(nullptr)));
 }
 
-/// Load JSON overrides keyed by RID. Returns an empty map on missing
-/// file / parse error and logs a warning. Per-RID type mismatches inside
-/// the map are tolerated downstream — the caller falls back per RID.
-std::unordered_map<std::uint32_t, json>
+/// Load deviceObject/0.lua overrides keyed by RID. Returns an empty
+/// map on missing file / parse error (lua_config logs the error
+/// itself). Per-RID type mismatches are tolerated downstream — the
+/// override_or helper falls back per RID.
+iot::lua_config::ResourceMap
 load_overrides(const std::string& configDir) {
-    std::unordered_map<std::uint32_t, json> out;
     std::string path = configDir;
     if (!path.empty() && path.back() != '/') path.push_back('/');
-    path += "deviceObject/0.json";
-
-    std::ifstream ifs(path);
-    if (!ifs.is_open()) {
-        // D6: missing file is OK; defaults apply.
-        return out;
-    }
-    json doc;
-    try {
-        ifs >> doc;
-    } catch (const std::exception& e) {
-        std::cerr << "[lwm2m] deviceObject/0.json parse error: "
-                  << e.what() << " — using compiled defaults\n";
-        return out;
-    }
-    if (!doc.is_array()) {
-        std::cerr << "[lwm2m] deviceObject/0.json: expected array, ignoring\n";
-        return out;
-    }
-    for (const auto& rec : doc) {
-        if (!rec.is_object() || !rec.contains("rid") || !rec.contains("value")) continue;
-        if (!rec["rid"].is_number_integer()) continue;
-        bool include = !rec.contains("include") ||
-                       (rec["include"].is_boolean() && rec["include"].get<bool>());
-        if (!include) continue;
-        out[rec["rid"].get<std::uint32_t>()] = rec["value"];
-    }
-    return out;
+    path += "deviceObject/0.lua";
+    return iot::lua_config::load_object_resources(path);
 }
 
 /// Read a per-RID override as a string. Returns the default if the
-/// override is absent or not a string.
-std::string override_or(const std::unordered_map<std::uint32_t, json>& m,
+/// override is absent, excluded by include=false, or not a string.
+std::string override_or(const iot::lua_config::ResourceMap& m,
                         std::uint32_t rid,
                         const std::string& def) {
-    auto it = m.find(rid);
-    if (it == m.end() || !it->second.is_string()) return def;
-    return it->second.get<std::string>();
+    return iot::lua_config::string_or(m, rid, def);
 }
 
 /// Build a Resource value-only descriptor with a fixed read string. The
