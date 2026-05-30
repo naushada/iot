@@ -1,0 +1,4 @@
+-- Lua: static-linking /usr/lib/aarch64-linux-gnu/liblua5.3.a
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /work/apps/build

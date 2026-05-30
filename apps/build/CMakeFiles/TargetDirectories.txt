@@ -1,0 +1,14 @@
+/work/apps/build/CMakeFiles/lwm2m.dir
+/work/apps/build/CMakeFiles/edit_cache.dir
+/work/apps/build/CMakeFiles/rebuild_cache.dir
+/work/apps/build/CMakeFiles/list_install_components.dir
+/work/apps/build/CMakeFiles/install.dir
+/work/apps/build/CMakeFiles/install/local.dir
+/work/apps/build/CMakeFiles/install/strip.dir
+/work/apps/build/test/CMakeFiles/lwm2m_test.dir
+/work/apps/build/test/CMakeFiles/edit_cache.dir
+/work/apps/build/test/CMakeFiles/rebuild_cache.dir
+/work/apps/build/test/CMakeFiles/list_install_components.dir
+/work/apps/build/test/CMakeFiles/install.dir
+/work/apps/build/test/CMakeFiles/install/local.dir
+/work/apps/build/test/CMakeFiles/install/strip.dir

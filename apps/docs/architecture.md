@@ -62,15 +62,15 @@ External:
 
 Config:
 
-- `apps/config/securityObject/{0,1,modified1}.json` — Security Object (OID 0)
+- `apps/config/securityObject/{0,1,modified1}.lua` — Security Object (OID 0)
   bootstrap payloads.
-- `apps/config/serverObject/{0,1}.json` — Server Object (OID 1) bootstrap
+- `apps/config/serverObject/{0,1}.lua` — Server Object (OID 1) bootstrap
   payloads.
-- `apps/config/deviceObject/0.json` — Device Object (OID 3) per-RID
+- `apps/config/deviceObject/0.lua` — Device Object (OID 3) per-RID
   overrides for the static metadata (Manufacturer, Model, Serial,
   Firmware Version, …). Compiled-in defaults apply per-RID when this
-  file is missing or a particular RID is absent / `include: false`. See
-  RDD D6.
+  file is missing or a particular RID is absent / `include = false`. See
+  RDD D6 and apps/docs/cli.md "Config files (Lua)".
 
 The L1–L8 LwM2M build adds the modules in `apps/inc/lwm2m_*.hpp`
 (object store, TLV / SenML / link-format / plain text / opaque codecs,

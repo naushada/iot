@@ -1,0 +1,62 @@
+main.cpp:421 ent.first:ep ent.second:urn:dev:rl-client
+main.cpp:421 ent.first:role ent.second:client
+main.cpp:421 ent.first:config ent.second:/opt/app/config
+main.cpp:421 ent.first:bs ent.second:coap://rl-server:5683
+main.cpp:421 ent.first:local ent.second:coap://0.0.0.0:56830
+main.cpp:453 scheme:2 host:0.0.0.0 port:56830
+2026-05-30 05:30:31.002384 [UdpSvc:6] LM_DEBUG /work/apps/src/udp_adapter.cpp:56 bound fd:3 host:0.0.0.0 port:56830 scheme:2 service:4
+[rl] iter=1 pre-readline
+2026-05-30 05:30:31.003081 [UDPAdapter:7] LM_DEBUG /work/apps/src/udp_adapter.cpp:340 reactor thread started
+LwM2MClient-->> [lwm2m] no bootstrap; sending Register directly
+
+coap_adapter.cpp:1384 ver: 1 type: Acknowledgement tokenlength: 1 code: 2.01 Created msgid: 4097
+ optiondelta: Location-Path optionlength: 2 optionvalue: rd
+ optiondelta: Location-Path optionlength: 1 optionvalue: 1
+
+coap_adapter.cpp:1384 ver: 1 type: Acknowledgement tokenlength: 1 code: 2.01 Created msgid: 4097
+ optiondelta: Location-Path optionlength: 2 optionvalue: rd
+ optiondelta: Location-Path optionlength: 1 optionvalue: 1
+register ep=urn:dev:probe-a lt=60
+[rl] iter=1 got line=33 chars
+[rl] iter=1 executeLine begin
+coap_adapter.cpp:275 uri: rd
+coap_adapter.cpp:329 query: ep=urn:dev:probe-a
+coap_adapter.cpp:329 query: lt=60
+coap_adapter.cpp:329 query: lwm2m=1.1
+coap_adapter.cpp:329 query: b=U
+[rl] iter=1 executeLine end
+[rl] iter=2 pre-readline
+LwM2MClient-->> 
+coap_adapter.cpp:1384 ver: 1 type: Acknowledgement tokenlength: 4 code: 2.01 Created msgid: 17767
+ optiondelta: Location-Path optionlength: 2 optionvalue: rd
+ optiondelta: Location-Path optionlength: 1 optionvalue: 2
+
+coap_adapter.cpp:1384 ver: 1 type: Acknowledgement tokenlength: 4 code: 2.01 Created msgid: 17767
+ optiondelta: Location-Path optionlength: 2 optionvalue: rd
+ optiondelta: Location-Path optionlength: 1 optionvalue: 2
+register ep=urn:dev:probe-b lt=60
+[rl] iter=2 got line=33 chars
+[rl] iter=2 executeLine begin
+coap_adapter.cpp:275 uri: rd
+coap_adapter.cpp:329 query: ep=urn:dev:probe-b
+coap_adapter.cpp:329 query: lt=60
+coap_adapter.cpp:329 query: lwm2m=1.1
+coap_adapter.cpp:329 query: b=U
+[rl] iter=2 executeLine end
+[rl] iter=3 pre-readline
+LwM2MClient-->> 
+coap_adapter.cpp:1384 ver: 1 type: Acknowledgement tokenlength: 4 code: 2.01 Created msgid: 39017
+ optiondelta: Location-Path optionlength: 2 optionvalue: rd
+ optiondelta: Location-Path optionlength: 1 optionvalue: 3
+
+coap_adapter.cpp:1384 ver: 1 type: Acknowledgement tokenlength: 4 code: 2.01 Created msgid: 39017
+ optiondelta: Location-Path optionlength: 2 optionvalue: rd
+ optiondelta: Location-Path optionlength: 1 optionvalue: 3
+quit
+[rl] iter=3 got line=4 chars
+[rl] iter=3 executeLine begin
+[rl] iter=3 executeLine end
+[rl] loop exit (should_quit=1)
+2026-05-30 05:30:41.000841 [UDPAdapter:7] LM_DEBUG /work/apps/src/udp_adapter.cpp:364 reactor thread exiting
+2026-05-30 05:30:41.000899 [UdpSvc:6] LM_DEBUG /work/apps/src/udp_adapter.cpp:33 closing fd:3 service:4
+Segmentation fault (core dumped)

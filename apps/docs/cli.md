@@ -538,9 +538,9 @@ Callers today:
   `securityObject/{0,1}.lua` and `serverObject/0.lua` to build the
   bootstrap `AccountProvisioning`.
 
-The legacy `.json` files are kept in-tree as a reference for the
-historical shape and may be deleted once Lua is the only loader in
-use elsewhere.
+The legacy `.json` files were removed on 2026-05-30 — the Lua
+loader has been smoke-confirmed (`log/L9/cli-smoke.pcap`) and the
+JSON path is no longer reached anywhere in the binary.
 
 ---
 

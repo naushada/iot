@@ -1,17 +1,15 @@
 -- LwM2M Object 0 (Security), Instance 1 — scratch DM-server account
--- with opaque identity + secret-key bytes. Mirrors the existing
--- apps/config/securityObject/modified1.json which is not loaded by
--- the active code path (load_provisioning_from_config only consumes
--- 0.json / 1.json). Kept in-tree as a sample of the opaque-value
--- shape:
+-- with opaque identity + secret-key bytes. Not loaded by the active
+-- code path (load_provisioning_from_config only consumes 0.lua /
+-- 1.lua). Kept in-tree as a sample of the opaque-value shape:
 --
 --   value = { bytes = { 107, 77, ... }, subtype = 16 }
 --
--- bytes is the raw byte sequence (decimal); subtype = 16 means
--- application/octet-stream in the underlying nlohmann::json binary
--- subtype field. Lua callers can read this back as a table; the
--- proposed loader collapses { bytes, subtype } back into a binary
--- string before handing it to the C++ provisioning code.
+-- bytes is the raw byte sequence (decimal); subtype = 16 echoes the
+-- nlohmann::json binary subtype field the legacy `.json` form used.
+-- The Lua loader (iot::lua_config) recognises this sub-table and
+-- collapses it into a std::vector<uint8_t> before handing it to the
+-- C++ provisioning code.
 --
 -- Schema: see apps/config/deviceObject/0.lua header.
 

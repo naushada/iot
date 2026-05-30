@@ -1,0 +1,5 @@
+if(EXISTS "/work/apps/build/test/lwm2m_test[1]_tests.cmake")
+  include("/work/apps/build/test/lwm2m_test[1]_tests.cmake")
+else()
+  add_test(lwm2m_test_NOT_BUILT lwm2m_test_NOT_BUILT)
+endif()

@@ -19,10 +19,10 @@
  *   - Static metadata RIDs (0 Manufacturer, 1 Model, 2 Serial, 3 Firmware
  *     Version, 16 Supported Binding, 17 Device Type, 18 Hardware
  *     Version, 19 Software Version) come from
- *     `apps/config/deviceObject/0.json` with compiled-in fallbacks
+ *     `apps/config/deviceObject/0.lua` with compiled-in fallbacks
  *     applied per-RID.
  *   - Live RIDs (10 Memory Free, 13 Current Time, 21 Memory Total)
- *     bind to Linux platform readers regardless of JSON content.
+ *     bind to Linux platform readers regardless of Lua content.
  *   - Executable RIDs (4 Reboot, 5 Factory Reset) install no-op
  *     callbacks by default. Callers wire in real platform hooks via
  *     the `DeviceHooks` struct below.
@@ -49,7 +49,7 @@ struct DeviceHooks {
 };
 
 /// Install OID 3 into `store`. `configDir` is the path under which the
-/// installer looks for `deviceObject/0.json`; pass `apps/config/` for
+/// installer looks for `deviceObject/0.lua`; pass `apps/config/` for
 /// the in-repo run or wherever the operator stages config.
 /// Returns 0 on success, -1 if the store rejected the registration.
 int install_device(ObjectStore& store,

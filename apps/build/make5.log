@@ -1,0 +1,83 @@
+/usr/bin/cmake -S/work/apps -B/work/apps/build --check-build-system CMakeFiles/Makefile.cmake 0
+/usr/bin/cmake -E cmake_progress_start /work/apps/build/CMakeFiles /work/apps/build//CMakeFiles/progress.marks
+make  -f CMakeFiles/Makefile2 all
+make[1]: Entering directory '/work/apps/build'
+make  -f CMakeFiles/lwm2m.dir/build.make CMakeFiles/lwm2m.dir/depend
+make  -f test/CMakeFiles/lwm2m_test.dir/build.make test/CMakeFiles/lwm2m_test.dir/depend
+make[2]: Entering directory '/work/apps/build'
+cd /work/apps/build && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /work/apps /work/apps/test /work/apps/build /work/apps/build/test /work/apps/build/test/CMakeFiles/lwm2m_test.dir/DependInfo.cmake --color=
+make[2]: Entering directory '/work/apps/build'
+cd /work/apps/build && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /work/apps /work/apps /work/apps/build /work/apps/build /work/apps/build/CMakeFiles/lwm2m.dir/DependInfo.cmake --color=
+make[2]: Leaving directory '/work/apps/build'
+make  -f test/CMakeFiles/lwm2m_test.dir/build.make test/CMakeFiles/lwm2m_test.dir/build
+make[2]: Entering directory '/work/apps/build'
+make[2]: Nothing to be done for 'test/CMakeFiles/lwm2m_test.dir/build'.
+make[2]: Leaving directory '/work/apps/build'
+[ 48%] Built target lwm2m_test
+Consolidate compiler generated dependencies of target lwm2m
+make[2]: Leaving directory '/work/apps/build'
+make  -f CMakeFiles/lwm2m.dir/build.make CMakeFiles/lwm2m.dir/build
+make[2]: Entering directory '/work/apps/build'
+[ 49%] Building CXX object CMakeFiles/lwm2m.dir/src/cli/coap_dispatch.cpp.o
+/usr/bin/c++ -DLWM2M_LITTLE_ENDIAN -I/work/apps/3rdparty/tinydtls -I/work/apps/3rdparty/json/single_include -I/usr/local/include/mongocxx/v_noabi -I/usr/local/include/bsoncxx/v_noabi -I/usr/local/ACE_TAO-7.0.0/include -I/work/apps/inc -std=c++17 -g -Wall -Wextra -O0 -MD -MT CMakeFiles/lwm2m.dir/src/cli/coap_dispatch.cpp.o -MF CMakeFiles/lwm2m.dir/src/cli/coap_dispatch.cpp.o.d -o CMakeFiles/lwm2m.dir/src/cli/coap_dispatch.cpp.o -c /work/apps/src/cli/coap_dispatch.cpp
+[ 50%] Building CXX object CMakeFiles/lwm2m.dir/src/main.cpp.o
+/usr/bin/c++ -DLWM2M_LITTLE_ENDIAN -I/work/apps/3rdparty/tinydtls -I/work/apps/3rdparty/json/single_include -I/usr/local/include/mongocxx/v_noabi -I/usr/local/include/bsoncxx/v_noabi -I/usr/local/ACE_TAO-7.0.0/include -I/work/apps/inc -std=c++17 -g -Wall -Wextra -O0 -MD -MT CMakeFiles/lwm2m.dir/src/main.cpp.o -MF CMakeFiles/lwm2m.dir/src/main.cpp.o.d -o CMakeFiles/lwm2m.dir/src/main.cpp.o -c /work/apps/src/main.cpp
+In file included from /work/apps/inc/dtls_adapter.hpp:11,
+                 from /work/apps/inc/udp_adapter.hpp:25,
+                 from /work/apps/inc/app.hpp:14,
+                 from /work/apps/src/main.cpp:13:
+/work/apps/inc/coap_adapter.hpp: In member function 'std::string CoAPAdapter::getContentFormat(const CoAPAdapter::CoAPMessage&)':
+/work/apps/inc/coap_adapter.hpp:291:39: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  291 |                 std::cout << basename(__FILE__) << ":" << __LINE__ <<  " value:" << it->optionvalue << " cf: " << ::ntohs(atoi(it->optionvalue.c_str())) << std::endl;
+      |                                       ^~~~~~~~
+In file included from /work/apps/inc/dtls_adapter.hpp:11,
+                 from /work/apps/inc/udp_adapter.hpp:25,
+                 from /work/apps/inc/app.hpp:14,
+                 from /work/apps/src/cli/coap_dispatch.cpp:7:
+/work/apps/inc/coap_adapter.hpp: In member function 'std::string CoAPAdapter::getContentFormat(const CoAPAdapter::CoAPMessage&)':
+/work/apps/inc/coap_adapter.hpp:291:39: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  291 |                 std::cout << basename(__FILE__) << ":" << __LINE__ <<  " value:" << it->optionvalue << " cf: " << ::ntohs(atoi(it->optionvalue.c_str())) << std::endl;
+      |                                       ^~~~~~~~
+/work/apps/src/main.cpp: In function 'void parsePeerOption(const string&, UDPAdapter::Scheme_t&, std::string&, uint16_t&)':
+/work/apps/src/main.cpp:70:31: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   70 |         std::cout << basename(__FILE__) << ":" << __LINE__ << " Error input is empty" << std::endl;
+      |                               ^~~~~~~~
+/work/apps/src/main.cpp: In function 'int main(int32_t, char**)':
+/work/apps/src/main.cpp:421:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  421 |             std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.first:" << ent.first << " ent.second:" << ent.second << std::endl;
+      |                                   ^~~~~~~~
+/work/apps/src/main.cpp:429:31: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  429 |         std::cout << basename(__FILE__) << ":" << __LINE__ << " Error Invalid Option for role" << std::endl;
+      |                               ^~~~~~~~
+/work/apps/src/main.cpp:439:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  439 |             std::cout << basename(__FILE__) << ":" << __LINE__ << " Error bs=value is missing in command line argument" << std::endl;
+      |                                   ^~~~~~~~
+/work/apps/src/main.cpp:448:31: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  448 |         std::cout << basename(__FILE__) << ":" << __LINE__ << " Error local=value is missing in command line argument" << std::endl;
+      |                               ^~~~~~~~
+/work/apps/src/main.cpp:453:27: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  453 |     std::cout << basename(__FILE__) << ":" << __LINE__ << " scheme:" << std::to_string(scheme) << " host:" << selfHost << " port:" << std::to_string(selfPort) << std::endl;
+      |                           ^~~~~~~~
+/work/apps/src/main.cpp:459:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  459 |             std::cout << basename(__FILE__) << ":" << __LINE__ << " Error either identity or secret missing for coaps" << std::endl;
+      |                                   ^~~~~~~~
+[ 52%] Building CXX object CMakeFiles/lwm2m.dir/src/udp_adapter.cpp.o
+/usr/bin/c++ -DLWM2M_LITTLE_ENDIAN -I/work/apps/3rdparty/tinydtls -I/work/apps/3rdparty/json/single_include -I/usr/local/include/mongocxx/v_noabi -I/usr/local/include/bsoncxx/v_noabi -I/usr/local/ACE_TAO-7.0.0/include -I/work/apps/inc -std=c++17 -g -Wall -Wextra -O0 -MD -MT CMakeFiles/lwm2m.dir/src/udp_adapter.cpp.o -MF CMakeFiles/lwm2m.dir/src/udp_adapter.cpp.o.d -o CMakeFiles/lwm2m.dir/src/udp_adapter.cpp.o -c /work/apps/src/udp_adapter.cpp
+In file included from /work/apps/inc/dtls_adapter.hpp:11,
+                 from /work/apps/inc/udp_adapter.hpp:25,
+                 from /work/apps/src/udp_adapter.cpp:4:
+/work/apps/inc/coap_adapter.hpp: In member function 'std::string CoAPAdapter::getContentFormat(const CoAPAdapter::CoAPMessage&)':
+/work/apps/inc/coap_adapter.hpp:291:39: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  291 |                 std::cout << basename(__FILE__) << ":" << __LINE__ <<  " value:" << it->optionvalue << " cf: " << ::ntohs(atoi(it->optionvalue.c_str())) << std::endl;
+      |                                       ^~~~~~~~
+/work/apps/src/udp_adapter.cpp: In member function 'void ServiceContext_t::handle_input_coaps(const std::vector<unsigned char>&, const ACE_INET_Addr&)':
+/work/apps/src/udp_adapter.cpp:125:76: warning: unused parameter 'bytes' [-Wunused-parameter]
+  125 | void ServiceContext_t::handle_input_coaps(const std::vector<std::uint8_t>& bytes,
+      |                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~
+[ 53%] Linking CXX executable lwm2m
+/usr/bin/cmake -E cmake_link_script CMakeFiles/lwm2m.dir/link.txt --verbose=1
+/usr/bin/c++  -std=c++17 -g -Wall -Wextra -O0 CMakeFiles/lwm2m.dir/src/app.cpp.o CMakeFiles/lwm2m.dir/src/cbor_adapter.cpp.o CMakeFiles/lwm2m.dir/src/cli/coap_dispatch.cpp.o CMakeFiles/lwm2m.dir/src/cli/command_registry.cpp.o CMakeFiles/lwm2m.dir/src/cli/commands/bootstrap_cmd.cpp.o CMakeFiles/lwm2m.dir/src/cli/commands/delete_cmd.cpp.o CMakeFiles/lwm2m.dir/src/cli/commands/execute_cmd.cpp.o CMakeFiles/lwm2m.dir/src/cli/commands/help_cmd.cpp.o CMakeFiles/lwm2m.dir/src/cli/commands/observe_cmd.cpp.o CMakeFiles/lwm2m.dir/src/cli/commands/post_cmd.cpp.o CMakeFiles/lwm2m.dir/src/cli/commands/quit_cmd.cpp.o CMakeFiles/lwm2m.dir/src/cli/commands/read_cmd.cpp.o CMakeFiles/lwm2m.dir/src/cli/commands/register_cmd.cpp.o CMakeFiles/lwm2m.dir/src/cli/commands/write_cmd.cpp.o CMakeFiles/lwm2m.dir/src/coap_adapter.cpp.o CMakeFiles/lwm2m.dir/src/db_adapter.cpp.o CMakeFiles/lwm2m.dir/src/dtls_adapter.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_adapter.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_bootstrap_client.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_bootstrap_server.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_codec_linkformat.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_codec_plaintext.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_codec_registry.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_codec_senml.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_codec_tlv.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_dm_client.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_dm_server.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_object_3_device.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_object_store.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_object_stubs.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_observe.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_registration.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_registration_client.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_registration_server.cpp.o CMakeFiles/lwm2m.dir/src/lwm2m_registry_mirror.cpp.o CMakeFiles/lwm2m.dir/src/main.cpp.o CMakeFiles/lwm2m.dir/src/readline.cpp.o CMakeFiles/lwm2m.dir/src/udp_adapter.cpp.o -o lwm2m   -L/work/apps/3rdparty/tinydtls  -L/usr/local/ACE_TAO-7.0.0/lib  -Wl,-rpath,/work/apps/3rdparty/tinydtls:/usr/local/ACE_TAO-7.0.0/lib: ../3rdparty/tinydtls/libtinydtls.a -lACE -lz -lreadline -lpthread -lbsoncxx -lmongocxx -lssl -lcrypto 
+make[2]: Leaving directory '/work/apps/build'
+[100%] Built target lwm2m
+make[1]: Leaving directory '/work/apps/build'
+/usr/bin/cmake -E cmake_progress_start /work/apps/build/CMakeFiles 0

@@ -22,7 +22,7 @@ Leshan-as-Client artifacts are published as runnable jars.
 | 1 | Start Leshan demo server | Web UI listening on :8080; CoAP/UDP on :5683; CoAPS/DTLS on :5684 |
 | 2 | Start our binary: `lwm2m local=coap://0.0.0.0:56830 bs=coap://leshan:5683 role=client ep=urn:dev:client-1` | Reactor active; readline prompt visible |
 | 3 | Trigger Bootstrap from the client side (Leshan demo also accepts Register without BS — we want both paths exercised) | Leshan UI lists `urn:dev:client-1`; Lifetime visible |
-| 4 | From Leshan UI, Read `/3/0/0` (Manufacturer) | "Sierra Wireless" (or whatever `apps/config/deviceObject/0.json` overrides) |
+| 4 | From Leshan UI, Read `/3/0/0` (Manufacturer) | "Sierra Wireless" (or whatever `apps/config/deviceObject/0.lua` overrides) |
 | 5 | From Leshan UI, Read `/3/0` | TLV reply containing Manufacturer, Model, Serial, Firmware Version |
 | 6 | From Leshan UI, Write `/3/0/15` = "Europe/Berlin" | `2.04 Changed`; subsequent Read returns "Europe/Berlin" |
 | 7 | From Leshan UI, Observe `/3/0/13` (Current Time) | Initial 2.05 + Observe seq=0; periodic Notify (NON) every ~1 s |

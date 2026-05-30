@@ -1,0 +1,53 @@
+/usr/bin/cmake -S/work/apps -B/work/apps/build --check-build-system CMakeFiles/Makefile.cmake 0
+/usr/bin/cmake -E cmake_progress_start /work/apps/build/CMakeFiles /work/apps/build//CMakeFiles/progress.marks
+make  -f CMakeFiles/Makefile2 all
+make[1]: Entering directory '/work/apps/build'
+make  -f CMakeFiles/lwm2m.dir/build.make CMakeFiles/lwm2m.dir/depend
+make  -f test/CMakeFiles/lwm2m_test.dir/build.make test/CMakeFiles/lwm2m_test.dir/depend
+make[2]: Entering directory '/work/apps/build'
+cd /work/apps/build && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /work/apps /work/apps /work/apps/build /work/apps/build /work/apps/build/CMakeFiles/lwm2m.dir/DependInfo.cmake --color=
+make[2]: Entering directory '/work/apps/build'
+cd /work/apps/build && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /work/apps /work/apps/test /work/apps/build /work/apps/build/test /work/apps/build/test/CMakeFiles/lwm2m_test.dir/DependInfo.cmake --color=
+make[2]: Leaving directory '/work/apps/build'
+make[2]: Leaving directory '/work/apps/build'
+make  -f test/CMakeFiles/lwm2m_test.dir/build.make test/CMakeFiles/lwm2m_test.dir/build
+make  -f CMakeFiles/lwm2m.dir/build.make CMakeFiles/lwm2m.dir/build
+make[2]: Entering directory '/work/apps/build'
+make[2]: Entering directory '/work/apps/build'
+[  2%] Building CXX object test/CMakeFiles/lwm2m_test.dir/__/src/cbor_adapter.cpp.o
+[  2%] Building CXX object CMakeFiles/lwm2m.dir/src/app.cpp.o
+cd /work/apps/build/test && /usr/bin/c++ -DLWM2M_LITTLE_ENDIAN -I/work/apps/3rdparty/tinydtls -I/work/apps/3rdparty/json/single_include -I/usr/local/include/mongocxx/v_noabi -I/usr/local/include/bsoncxx/v_noabi -I/usr/local/ACE_TAO-7.0.0/include -I/work/apps/inc -I/work/apps/test/../inc -I/work/apps/test/test -std=c++17 -g -Wall -Wextra -O0 -std=c++2a -g -Wall -Wextra -MD -MT test/CMakeFiles/lwm2m_test.dir/__/src/cbor_adapter.cpp.o -MF CMakeFiles/lwm2m_test.dir/__/src/cbor_adapter.cpp.o.d -o CMakeFiles/lwm2m_test.dir/__/src/cbor_adapter.cpp.o -c /work/apps/src/cbor_adapter.cpp
+/usr/bin/c++ -DLWM2M_LITTLE_ENDIAN -I/work/apps/3rdparty/tinydtls -I/work/apps/3rdparty/json/single_include -I/usr/local/include/mongocxx/v_noabi -I/usr/local/include/bsoncxx/v_noabi -I/usr/local/ACE_TAO-7.0.0/include -I/work/apps/inc -std=c++17 -g -Wall -Wextra -O0 -MD -MT CMakeFiles/lwm2m.dir/src/app.cpp.o -MF CMakeFiles/lwm2m.dir/src/app.cpp.o.d -o CMakeFiles/lwm2m.dir/src/app.cpp.o -c /work/apps/src/app.cpp
+In file included from /work/apps/3rdparty/tinydtls/dtls.h:29,
+                 from /work/apps/inc/coap_adapter.hpp:15,
+                 from /work/apps/inc/dtls_adapter.hpp:11,
+                 from /work/apps/inc/udp_adapter.hpp:25,
+                 from /work/apps/inc/app.hpp:14,
+                 from /work/apps/src/app.cpp:4:
+/work/apps/3rdparty/tinydtls/tinydtls.h:28:10: fatal error: dtls_config.h: No such file or directory
+   28 | #include "dtls_config.h"
+      |          ^~~~~~~~~~~~~~~
+compilation terminated.
+make[2]: *** [CMakeFiles/lwm2m.dir/build.make:79: CMakeFiles/lwm2m.dir/src/app.cpp.o] Error 1
+make[2]: Leaving directory '/work/apps/build'
+make[1]: *** [CMakeFiles/Makefile2:103: CMakeFiles/lwm2m.dir/all] Error 2
+make[1]: *** Waiting for unfinished jobs....
+[  4%] Building CXX object test/CMakeFiles/lwm2m_test.dir/__/src/coap_adapter.cpp.o
+cd /work/apps/build/test && /usr/bin/c++ -DLWM2M_LITTLE_ENDIAN -I/work/apps/3rdparty/tinydtls -I/work/apps/3rdparty/json/single_include -I/usr/local/include/mongocxx/v_noabi -I/usr/local/include/bsoncxx/v_noabi -I/usr/local/ACE_TAO-7.0.0/include -I/work/apps/inc -I/work/apps/test/../inc -I/work/apps/test/test -std=c++17 -g -Wall -Wextra -O0 -std=c++2a -g -Wall -Wextra -MD -MT test/CMakeFiles/lwm2m_test.dir/__/src/coap_adapter.cpp.o -MF CMakeFiles/lwm2m_test.dir/__/src/coap_adapter.cpp.o.d -o CMakeFiles/lwm2m_test.dir/__/src/coap_adapter.cpp.o -c /work/apps/src/coap_adapter.cpp
+In file included from /work/apps/3rdparty/tinydtls/dtls.h:29,
+                 from /work/apps/inc/coap_adapter.hpp:15,
+                 from /work/apps/src/coap_adapter.cpp:4:
+/work/apps/3rdparty/tinydtls/tinydtls.h:28:10: fatal error: dtls_config.h: No such file or directory
+   28 | #include "dtls_config.h"
+      |          ^~~~~~~~~~~~~~~
+compilation terminated.
+make[2]: *** [test/CMakeFiles/lwm2m_test.dir/build.make:93: test/CMakeFiles/lwm2m_test.dir/__/src/coap_adapter.cpp.o] Error 1
+make[2]: *** Waiting for unfinished jobs....
+/work/apps/src/cbor_adapter.cpp: In member function 'int32_t CBORAdapter::getCBOR(const string&, std::string&)':
+/work/apps/src/cbor_adapter.cpp:66:10: warning: unused variable 'ret' [-Wunused-variable]
+   66 |     auto ret = json2cbor(data, cbor);
+      |          ^~~
+make[2]: Leaving directory '/work/apps/build'
+make[1]: *** [CMakeFiles/Makefile2:129: test/CMakeFiles/lwm2m_test.dir/all] Error 2
+make[1]: Leaving directory '/work/apps/build'
+make: *** [Makefile:139: all] Error 2
