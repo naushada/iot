@@ -320,8 +320,30 @@ int UDPAdapter::handle_timeout(const ACE_Time_Value& /*tv*/, const void* /*act*/
 }
 
 int UDPAdapter::stop() {
-    m_stop.store(true);
-    ACE_Reactor::instance()->end_reactor_event_loop();
+    if (m_stop.exchange(true)) {
+        // Already stopped (e.g. ~UDPAdapter calling stop() after
+        // App::stop already ran). Nothing more to undo.
+        return 0;
+    }
+    // Cancel the periodic 1 Hz timer registered against `this`
+    // (UDPAdapter) in start(), and unregister every ServiceContext_t
+    // event handler before tearing the reactor down. Without this,
+    // the reactor's internal handle map keeps raw pointers to
+    // ServiceContext_t objects that are about to be destroyed in
+    // m_services.clear() — touching them during late ACE singleton
+    // shutdown was the post-quit segfault. DONT_CALL prevents a
+    // late handle_close() callback from also reaching the dying
+    // object.
+    ACE_Reactor* r = ACE_Reactor::instance();
+    if (r) {
+        r->cancel_timer(this);
+        for (auto& kv : m_services) {
+            r->remove_handler(kv.second.get(),
+                              ACE_Event_Handler::ALL_EVENTS_MASK |
+                              ACE_Event_Handler::DONT_CALL);
+        }
+        r->end_reactor_event_loop();
+    }
     msg_queue()->deactivate();
     wait();
     return 0;
