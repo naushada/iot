@@ -26,12 +26,28 @@ Command::Result dispatch(CommandContext& ctx,
     }
 
     auto& udp = ctx.app->udpAdapter();
-    auto it = std::find_if(udp->services().begin(), udp->services().end(),
-                           [](auto& ent) {
-                               return UDPAdapter::ServiceType_t::LwM2MClient == ent.second->service();
-                           });
+    // Try ServiceContexts in priority order: client-side first
+    // (LwM2MClient is what the legacy code used), then DM client,
+    // then DM server, then bootstrap server. The fallback chain lets
+    // the same `post` command work whether the binary is a client or
+    // a server. LwM2M-level commands (read/write/observe) on a pure
+    // server still need to know which registered client to target —
+    // that's a separate follow-up; for now they ship through whatever
+    // ServiceContext the chain finds.
+    static const UDPAdapter::ServiceType_t kOrder[] = {
+        UDPAdapter::ServiceType_t::LwM2MClient,
+        UDPAdapter::ServiceType_t::DeviceMgmtClient,
+        UDPAdapter::ServiceType_t::DeviceMgmtServer,
+        UDPAdapter::ServiceType_t::BootsstrapServer,
+    };
+    auto it = udp->services().end();
+    for (auto svc : kOrder) {
+        it = std::find_if(udp->services().begin(), udp->services().end(),
+                          [svc](auto& ent) { return ent.second->service() == svc; });
+        if (it != udp->services().end()) break;
+    }
     if (it == udp->services().end()) {
-        std::cout << "cli/coap_dispatch: no LwM2MClient ServiceContext registered\n";
+        std::cout << "cli/coap_dispatch: no ServiceContext registered\n";
         return Command::Result::DispatchFailed;
     }
 
@@ -45,6 +61,25 @@ Command::Result dispatch(CommandContext& ctx,
         any_ok = true;
     }
     return any_ok ? Command::Result::Ok : Command::Result::DispatchFailed;
+}
+
+std::vector<std::string> build_payload(
+        const std::unordered_map<std::string, std::string>& kv,
+        CommandContext& ctx) {
+    auto it_data = kv.find("data");
+    auto it_file = kv.find("file");
+    std::vector<std::string> payload;
+    if (it_file != kv.end() && !it_file->second.empty()) {
+        CoAPAdapter coap;
+        std::string content = ctx.cbor.getJson(it_file->second);
+        coap.buildRequest(content, payload);
+    } else if (it_data != kv.end() && !it_data->second.empty() &&
+               it_data->second.length() <= 1024) {
+        std::string encoded;
+        ctx.cbor.json2cbor(it_data->second, encoded);
+        if (!encoded.empty()) payload.push_back(std::move(encoded));
+    }
+    return payload;
 }
 
 std::vector<std::string> split(const std::string& in, char delim) {

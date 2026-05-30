@@ -299,27 +299,12 @@ int UDPAdapter::start(Role_t role, Scheme_t scheme) {
     ACE_Time_Value interval(1, 0);
     ACE_Reactor::instance()->schedule_timer(this, nullptr, delay, interval);
 
-    if (role == SERVER) {
-        // Run reactor directly on the calling (main) thread.
-        ACE_Sig_Set sigs;
-        sigs.empty_set();
-        sigs.sig_add(SIGINT);
-        sigs.sig_add(SIGTERM);
-        // Note: PIPE on UDP is harmless; ignore it so a torn-down peer
-        // does not kill the process.
-        ::signal(SIGPIPE, SIG_IGN);
-
-        ACE_Time_Value to(1, 0);
-        while (!m_stop.load()) {
-            int ret = ACE_Reactor::instance()->handle_events(to);
-            if (ret < 0) {
-                break;
-            }
-        }
-        return 0;
-    }
-
-    // CLIENT: spawn a reactor thread so the main thread can run Readline.
+    // Both roles spawn the reactor on its own ACE_Task thread so the
+    // main thread is free to host the Readline REPL (or block on
+    // wait() in non-TTY runs). The server path used to run the
+    // reactor inline on main(); pushing it onto svc() unifies the two
+    // and unlocks the CLI on server binaries.
+    ::signal(SIGPIPE, SIG_IGN);
     return open();
 }
 
@@ -360,8 +345,9 @@ int UDPAdapter::svc() {
     // ACE_Select_Reactor requires the calling thread to own the reactor
     // before handle_events() will dispatch. Without this, handle_events
     // returns -1 instantly from a worker thread and svc() exits before
-    // it processes any datagram. Equivalent setup on the server path is
-    // unnecessary because main() drives handle_events directly.
+    // it processes any datagram. Both client and server now go through
+    // this svc() path (see UDPAdapter::start) so the owner() call is
+    // unconditional.
     ACE_Reactor::instance()->owner(ACE_Thread::self());
 
     ACE_Time_Value to(1, 0);

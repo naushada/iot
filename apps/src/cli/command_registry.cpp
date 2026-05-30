@@ -2,13 +2,17 @@
 
 #include "cli/commands/bootstrap_cmd.hpp"
 #include "cli/commands/delete_cmd.hpp"
+#include "cli/commands/exec_cmd.hpp"
 #include "cli/commands/execute_cmd.hpp"
+#include "cli/commands/get_cmd.hpp"
 #include "cli/commands/help_cmd.hpp"
 #include "cli/commands/observe_cmd.hpp"
 #include "cli/commands/post_cmd.hpp"
+#include "cli/commands/push_cmd.hpp"
 #include "cli/commands/quit_cmd.hpp"
 #include "cli/commands/read_cmd.hpp"
 #include "cli/commands/register_cmd.hpp"
+#include "cli/commands/set_cmd.hpp"
 #include "cli/commands/write_cmd.hpp"
 
 void CommandRegistry::add(std::unique_ptr<Command> cmd) {
@@ -39,6 +43,11 @@ CommandRegistry CommandRegistry::build_default() {
     r.add(std::make_unique<ExecuteCmd>());
     r.add(std::make_unique<DeleteCmd>());
     r.add(std::make_unique<ObserveCmd>());
+    // Data-plane commands (custom OMA-style push plane).
+    r.add(std::make_unique<PushCmd>());
+    r.add(std::make_unique<SetCmd>());
+    r.add(std::make_unique<GetCmd>());
+    r.add(std::make_unique<ExecCmd>());
     // Low-level CoAP escape hatch.
     r.add(std::make_unique<PostCmd>());
     // Meta.

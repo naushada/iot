@@ -525,31 +525,38 @@ int main(std::int32_t argc, char *argv[]) {
     // handled by the ACE reactor loop inside UDPAdapter::start().
     ::signal(SIGPIPE, SIG_IGN);
 
+    // Readline is wired for both roles. Client-side the CLI drives
+    // outbound CoAP toward the configured server; server-side the
+    // same registry is available for hand-crafted /push / /set frames
+    // via the low-level `post` command (LwM2M-level commands like
+    // `read`/`write`/`observe` require an LwM2MClient ServiceContext
+    // and will emit a clear error otherwise).
     if(UDPAdapter::CLIENT == role) {
-        // App::start activates the reactor on its own ACE_Task thread and
-        // returns immediately so the main thread can drive readline.
+        // App::start activates the reactor on its own ACE_Task thread
+        // so the main thread can drive readline.
         app->start(role, scheme);
-
-        // Readline requires a TTY on stdin. In container/CI runs stdin
-        // is typically /dev/null (`-d` detached mode), so reading would
-        // hit EOF immediately and the process would exit before any
-        // bootstrap/register traffic completes. Detect that and just
-        // park the main thread on the reactor task instead.
-        if (::isatty(STDIN_FILENO)) {
-            Readline rline(app);
-            rline.init();
-            rline.start();
-        } else {
-            std::cout << "[lwm2m] stdin is not a TTY; running in "
-                      << "non-interactive mode (reactor only).\n";
-            // ACE_Task::wait() blocks until svc() returns.
-            app->udpAdapter()->wait();
-        }
-        app->stop();
     } else {
-        // Server: reactor runs on the main thread inside App::start.
+        // Server: reactor runs on its own thread via App::start so the
+        // main thread can host the REPL just like the client path.
         app->start(role, scheme);
     }
+
+    // Readline requires a TTY on stdin. In container/CI runs stdin is
+    // typically /dev/null (`-d` detached mode), so reading would hit
+    // EOF immediately and the process would exit before any traffic
+    // completes. Detect that and just park the main thread on the
+    // reactor task instead.
+    if (::isatty(STDIN_FILENO)) {
+        Readline rline(app);
+        rline.init();
+        rline.start();
+    } else {
+        std::cout << "[lwm2m] stdin is not a TTY; running in "
+                  << "non-interactive mode (reactor only).\n";
+        // ACE_Task::wait() blocks until svc() returns.
+        app->udpAdapter()->wait();
+    }
+    app->stop();
 
     return(0);
 }

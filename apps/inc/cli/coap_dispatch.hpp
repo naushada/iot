@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "cli/command.hpp"
@@ -35,6 +36,14 @@ Command::Result dispatch(CommandContext& ctx,
 /// old Readline::str2Vector so every command can parse uri= and
 /// uri-query= identically.
 std::vector<std::string> split(const std::string& in, char delim);
+
+/// Build a request payload from the `data=` / `file=` slots of the
+/// argument map. `file=` takes precedence; returns 0 or 1 entries (the
+/// shape CoAPAdapter::serialise expects). Empty vector when neither is
+/// supplied — leaving the CoAP frame body-less.
+std::vector<std::string> build_payload(
+    const std::unordered_map<std::string, std::string>& kv,
+    CommandContext& ctx);
 
 } // namespace cli
 
