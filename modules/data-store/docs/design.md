@@ -1,16 +1,24 @@
 # Local Data Store — Design
 
-A persistent key-value store exposed over a Unix-domain socket. Built
-to be the single source-of-truth for runtime state that survives an
-iot binary restart — bootstrap account material, LwM2M observe
-attributes, application counters, push-plane subscription tokens, and
-so on. Backed by a Lua chunk on disk (same shape as
-`apps/config/**/*.lua`) so operators can inspect and hand-edit the
-state with the same toolchain.
+A persistent key-value store delivered as a **separate module** under
+`modules/data-store/`, built into three deliverables:
+
+| Target                          | Kind          | Audience                                  |
+|---------------------------------|---------------|-------------------------------------------|
+| `libdatastore_client.a`         | static lib    | Any C++ app that wants store access       |
+| `ds-server`                     | binary        | Standalone daemon (systemd service)       |
+| `ds-cli`                        | binary        | Operator debugging client                 |
+
+The iot binary, when it wants store access, links
+`libdatastore_client.a` and talks to a running `ds-server` over the
+unix socket — same protocol, same boundary, no in-process shortcut.
+
+Backed by a Lua chunk on disk (same shape as `apps/config/**/*.lua`)
+so operators can inspect and hand-edit the state with the same
+toolchain.
 
 This doc is the design half of the deliverable; the
-phase / requirement plan lives in
-[`data-store-tdd.md`](data-store-tdd.md).
+phase / requirement plan lives in [`tdd.md`](tdd.md).
 
 ---
 
@@ -20,18 +28,22 @@ phase / requirement plan lives in
 1. **Key-value with notifications.** Clients can `set`, `get`,
    `remove` keys, and `register` for value-change notifications on
    one or more keys.
-2. **Persistent.** Survives binary restart with no data loss for
+2. **Persistent.** Survives daemon restart with no data loss for
    committed sets. Recovery is a single `luaL_dofile` of the on-disk
    chunk.
-3. **In-process, single-host.** No network exposure, no
-   authentication beyond the Unix-socket filesystem permissions.
-4. **ACE-native.** Reuses the same reactor that drives UDPAdapter
-   so a single thread owns every fd and no extra locking is needed.
+3. **Single-host, separate-binary.** `ds-server` is a standalone
+   daemon. No network exposure; auth is unix-socket DAC.
+4. **Reactor-driven.** The daemon owns an ACE_Reactor on the main
+   thread; every fd lives on that thread so no locking inside the
+   server. Clients are independent processes.
 5. **Multi-client.** N concurrent client sessions; one notify push
    per registered key per session.
 6. **Vectorised ops.** A single request can carry an array of keys
    so a client doesn't pay N round-trips to set/get/register N
    values.
+7. **Light client lib.** `libdatastore_client.a` ships with no ACE
+   dependency — POSIX sockets + std::string only — so it can drop
+   into any C++17 app without inheriting the daemon's toolchain.
 
 ### Non-goals (v1)
 - Transactions, conditional writes, CAS.
@@ -46,39 +58,58 @@ phase / requirement plan lives in
 ## 2. Architecture
 
 ```
-                ┌──────────────────────────────────────────┐
-                │                  iot binary              │
-                │                                          │
-   client app ──┼─AF_UNIX───┐                              │
-   client app ──┼─AF_UNIX───┤  DataStoreServer             │
-   client app ──┼─AF_UNIX───┘   ├─ ACE_LSOCK_Acceptor      │
-                │               └─ N × DataStoreSession    │
-                │                     ├─ ACE_LSOCK_Stream  │
-                │                     └─ Subscription set  │
-                │                          │               │
-                │                          ▼               │
-                │                  DataStore (in-mem map)  │
-                │                          │ on-change     │
-                │                          ▼               │
-                │                  LuaPersistor (file)     │
-                │                          │ atomic write  │
-                │                          ▼               │
-                │             /var/lib/iot/data_store.lua  │
-                └──────────────────────────────────────────┘
+   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+   │ app process  │    │ iot binary   │    │ ds-cli       │
+   │ (links       │    │ (optionally  │    │              │
+   │ libdatastore_│    │ links the    │    │              │
+   │ client.a)    │    │ same lib)    │    │              │
+   └──────┬───────┘    └──────┬───────┘    └──────┬───────┘
+          │ AF_UNIX           │ AF_UNIX           │ AF_UNIX
+          │ /var/run/iot/data_store.sock          │
+          └──────────────┬────┴───────────────────┘
+                         ▼
+                ┌──────────────────────────────────┐
+                │  ds-server  (separate binary)    │
+                │  ┌────────────────────────────┐  │
+                │  │ Server (ACE_LSOCK_Acceptor)│  │
+                │  └────────────────────────────┘  │
+                │             │                    │
+                │             ▼ accept             │
+                │  ┌────────────────────────────┐  │
+                │  │ Session ×N (ACE_LSOCK_     │  │
+                │  │ Stream + sub set)          │  │
+                │  └────────────────────────────┘  │
+                │             │                    │
+                │             ▼                    │
+                │  ┌────────────────────────────┐  │
+                │  │ DataStore (in-mem map)     │  │
+                │  └────────────────────────────┘  │
+                │             │ on change          │
+                │             ▼                    │
+                │  ┌────────────────────────────┐  │
+                │  │ LuaPersistor               │  │
+                │  └────────────────────────────┘  │
+                │             │ atomic write       │
+                │             ▼                    │
+                │  /var/lib/iot/data_store.lua     │
+                └──────────────────────────────────┘
 ```
 
-Three layers, all in the same module (`apps/src/data_store.cpp`):
+Layer map across the repo:
 
-| Layer | Role |
-|-------|------|
-| **`DataStore`** | In-memory `std::unordered_map<std::string,std::string>`. Exposes `get`, `set`, `remove`, and an `on_change` callback hook. Single-threaded; no locks. |
-| **`LuaPersistor`** | Loads the on-disk Lua chunk into the map at startup; flushes the map back as Lua on every successful `set`/`remove`. Uses temp-file + `rename(2)` for crash-safety. |
-| **`DataStoreServer` / `DataStoreSession`** | ACE_Event_Handlers driving an `ACE_LSOCK_Acceptor` and N `ACE_LSOCK_Stream` sessions. Parses the line-delimited JSON protocol and fans notifications back to registered sessions. |
+| Layer                          | Location                                                       |
+|--------------------------------|----------------------------------------------------------------|
+| Public client API              | `modules/data-store/inc/data_store/client.hpp`                 |
+| Client lib impl                | `modules/data-store/src/client/`                               |
+| Shared wire-protocol constants | `modules/data-store/inc/data_store/proto.hpp` + `src/proto/`   |
+| Daemon (`ds-server`)           | `modules/data-store/src/server/{main,server,data_store}.cpp`   |
+| CLI debug client (`ds-cli`)    | `modules/data-store/src/cli/ds_cli.cpp`                        |
 
-`DataStoreServer::open(path)` is called from `wire_server` /
-`wire_client` in `apps/src/main.cpp`. Socket path defaults to
-`/var/run/iot/data_store.sock`, overridable via the `ds-socket=` CLI
-arg.
+Build: `cd modules/data-store && mkdir build && cd build && cmake .. && make`.
+Top-level `apps/CMakeLists.txt` is untouched — the iot binary
+doesn't currently depend on the data store; when it does, it'll
+`target_link_libraries(lwm2m datastore_client)` and use the public
+header.
 
 ---
 
@@ -331,13 +362,14 @@ directly.
 |-----|---------------------------------------------------|-------------------------------------------|
 | Q1  | Should `remove` (key un-register) imply a final notify-of-removal? | Default no per §6. Re-open if a client team asks. |
 | Q2  | Per-key max value size?                            | Pick after the first real consumer lands; default cap 64 KiB until then. |
-| Q3  | Do we expose the data store to bootstrap / DM modules in-process via a direct API (vs. unix socket)? | Yes — `DataStore&` accessor on the App class so in-process callers skip the JSON parse. Wire is for external clients only. |
+| Q3  | ~~In-process accessor for bootstrap / DM?~~        | **Closed: no.** Architecture pivoted to a separate-binary model. The iot binary talks to `ds-server` via the same unix-socket path as any other client; no in-process shortcut. |
 
 ---
 
 ## 12. Related docs
 
-- [`data-store-tdd.md`](data-store-tdd.md) — phase plan + tests.
-- [`architecture.md`](architecture.md) — high-level binary layout
-  (adds a "DataStore" box once landed).
-- [`cli.md`](cli.md) — config-file Lua shape (we reuse the loader).
+- [`tdd.md`](tdd.md) — phase plan + tests.
+- [`../../../apps/docs/architecture.md`](../../../apps/docs/architecture.md) —
+  iot-binary layout (adds a `ds-server` box once D1 lands).
+- [`../../../apps/docs/cli.md`](../../../apps/docs/cli.md) —
+  config-file Lua shape we reuse for the persistor.

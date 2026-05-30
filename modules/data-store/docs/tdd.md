@@ -47,7 +47,9 @@ Out-of-scope today: cross-host replication, TLS over the unix socket
 | REQ-DS-014 | Protocol errors (bad JSON, unknown op, missing fields) MUST yield `ok=false` with a single-line `err` string and MUST NOT close the session. | M |
 | REQ-DS-015 | On startup, the server MUST load the on-disk Lua chunk into the in-memory map atomically with `luaL_dofile`. Missing file = empty map (not an error). | M |
 | REQ-DS-016 | A corrupted on-disk Lua chunk MUST cause the server to log an ERROR and exit with a distinct exit code (3), not start with stale or empty state. | M |
-| REQ-DS-017 | In-process callers (bootstrap, DM, app modules) MUST be able to use the store via a `DataStore&` accessor on `App` without going through the unix socket. | S |
+| ~~REQ-DS-017~~ | ~~In-process accessor~~ — **dropped** after the separate-binary pivot (design §2). All clients, including the iot binary, go through the unix socket via `libdatastore_client`. |  |
+| REQ-DS-018 | `ds-server`, `ds-cli`, and `libdatastore_client.a` MUST build as independent targets under `modules/data-store/` with no edits to `apps/CMakeLists.txt`. | M |
+| REQ-DS-019 | The client library MUST NOT pull ACE or nlohmann::json into its public ABI; downstream apps see only `<string>`, `<optional>`, `<cstdint>`. | M |
 
 ---
 
@@ -87,7 +89,8 @@ test artifact. Each row is closed when the linked phase merges.
 | REQ-DS-014  | §7      | D2   | `DS_REQ_DS_014_bad_json_yields_err`                    |
 | REQ-DS-015  | §4.3    | D4   | `DS_REQ_DS_015_load_on_startup`                        |
 | REQ-DS-016  | §4.3    | D4   | `DS_REQ_DS_016_corrupted_state_exits`                  |
-| REQ-DS-017  | §2      | D1   | `DS_REQ_DS_017_in_process_accessor`                    |
+| REQ-DS-018  | §2      | D1   | manual: `modules/data-store && cmake .. && make` produces all three targets |
+| REQ-DS-019  | §2      | D1   | `client.hpp` includes only `<cstdint>`/`<string>`/`<optional>`/`<system_error>` |
 | NFR-DS-003  | §4.2    | D4   | smoke: `log/L10/ds-crash-safe.sh` kills mid-write      |
 | NFR-DS-004  | §8      | D1   | `DS_NFR_DS_004_socket_mode`                            |
 
@@ -103,6 +106,7 @@ test artifact. Each row is closed when the linked phase merges.
 | 2026-05-30 | DS-D4 | **Single reactor thread owns every fd + the store.** No locks. fsync is on the reactor thread.                                                                                                                                                                                                       | Matches UDPAdapter's threading. Reactor jitter from fsync is acceptable in v1 because the binary's other paths (CoAP, registry) tolerate ms-class blips. If they stop tolerating it, move fsync to ACE_Task. | §5                     |
 | 2026-05-30 | DS-D5 | **`remove` does NOT emit a `removed` notification.** Only `changed` events fire today.                                                                                                                                                                                                                | Keeps the wire model simple; no consumer has asked for `removed` yet. Reserved in §3.4 so v2 can add it.                                                                                                  | §3.4, §6, Q1           |
 | 2026-05-30 | DS-D6 | **Auth is filesystem DAC on the socket path.** Socket created at `0660 root:<group>`; group membership is the gate.                                                                                                                                                                                   | Matches the deployment model — iot binary as a system service, clients as group members. Avoids an in-protocol token scheme that adds key-management cost.                                                 | §8, NFR-DS-004         |
+| 2026-05-30 | DS-D7 | **Separate-binary architecture.** `ds-server` is a standalone daemon; the iot binary (or any other app) links `libdatastore_client.a` and talks to it over the socket. No in-process accessor. | Reverses the original "same process as iot" plan after the operator asked for proper module separation. Cleaner blast radius: a crashing iot doesn't take the store down, and clients can be in any language that speaks AF_UNIX. Adds a daemon to deploy. | §2, REQ-DS-017 (dropped), REQ-DS-018/019 |
 
 ---
 
@@ -114,7 +118,7 @@ next phase begins.
 
 | Phase | Goal                                                              | Closes                                                          | Risk gate                                                                                                  |
 |-------|-------------------------------------------------------------------|-----------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
-| **D1** | ACE_LSOCK_Acceptor scaffolding; bind unix socket; accept N sessions; no I/O yet (each session sends a `{"ok":true}` welcome and closes). | REQ-DS-011, NFR-DS-004, REQ-DS-017                              | `DS_REQ_DS_011_concurrent_sessions` connects 16 clients in parallel; all receive welcome.                  |
+| **D1** | Module scaffold + `ds-server` (LSOCK acceptor → welcome → close) + `libdatastore_client.a` (connect → recv_welcome) + `ds-cli`. | REQ-DS-011, REQ-DS-018, REQ-DS-019, NFR-DS-004                  | `DS_REQ_DS_011_concurrent_sessions` connects 16 clients in parallel; all receive welcome.                  |
 | **D2** | Line-delimited JSON parser + dispatch; `ok=false,err=…` for unknown ops; vectorised arg shape parsed.                                  | REQ-DS-010, REQ-DS-012, REQ-DS-014                              | `DS_REQ_DS_014_bad_json_yields_err` survives malformed input + session stays open.                         |
 | **D3** | In-memory `DataStore` with get/set/remove; protocol wires up; no persistence yet.                                                       | REQ-DS-003                                                      | `DS_REQ_DS_003_get_returns_latest` + missing-key case.                                                     |
 | **D4** | LuaPersistor: load at startup, write-through on set/remove; corrupted-state exit.                                                       | REQ-DS-001, REQ-DS-002, REQ-DS-015, REQ-DS-016, NFR-DS-001/003 | `DS_REQ_DS_001_set_persists` + manual `log/L10/ds-crash-safe.sh` (kill -9 mid-write, restart, verify state). |

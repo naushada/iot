@@ -34,6 +34,7 @@
 
 # Build artifacts
 apps/build/
+modules/*/build/
 
 # tinydtls autoconf output (regenerated on every build)
 apps/3rdparty/tinydtls/Makefile
