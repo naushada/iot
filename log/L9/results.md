@@ -397,6 +397,48 @@ trailing it. 20-frame `log/L9/cli-smoke.pcap` unchanged.
 
 ---
 
+### Compressed payload round-trip — verified
+
+**Status: VERIFIED 2026-05-30** via `log/L9/run-cli-zip-smoke.sh` →
+`log/L9/cli-zip-smoke.pcap`.
+
+Exercises `CoAPAdapter::buildRequest`'s zlib deflate (fires when the
+CBOR-encoded payload is ≥ 1024 bytes) and the matching
+`CoAPAdapter::uncompress` on the server side.
+
+Procedure:
+
+1. Synthesize a 2151-byte JSON on host (50 `{kN:"<32B>"}` entries),
+   bind-mount as `/tmp/big.json` in the client container.
+2. Type `post uri=/push uri-query=ep=A12345 file=/tmp/big.json
+   content-format=12201` (CF=12201 is UCBORZ — see "discovery"
+   below).
+3. Capture pcap, inspect both client and server logs.
+
+Evidence:
+
+- Client log: `coap_adapter.cpp:944 compression ratio
+  input/output: 12.7386, output size: 153`.
+- Pcap frame 3: `CoAP 228 CON POST /push?ep=A12345` — 228 bytes
+  total = ~153 bytes deflated body + CoAP header/options.
+- Server log: `coap_adapter.cpp:902 uncompression ratio
+  input/output: 0.0785018` — the inverse ratio confirms the
+  153-byte body inflated back to ~1948 bytes of CBOR, matching the
+  client's pre-deflate length.
+
+Discovery:
+
+`buildRequest` deflates **unconditionally** at the 1024-byte
+threshold, regardless of the Content-Format the user supplies.
+Server-side `uncompress` is gated on CF == 12201 (UCBORZ) or 12203
+(SUCBORZ) — sending a deflated body under CF=60 (plain CBOR), as my
+first attempt did, reaches the server intact but is then parsed as
+plain CBOR (which fails) instead of inflated. The cli.md doc was
+updated with this requirement and the full CF=12200..12203 mapping
+under `post`'s `content-format=` arg.
+
+---
+
 ### CLI smoke regression — BUG-009 (closed)
 
 **Status: CLOSED 2026-05-30** (commit `7f8bbb7`, RDD §3.10 BUG-009;

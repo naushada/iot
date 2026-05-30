@@ -310,6 +310,35 @@ Field semantics:
   - `60` application/cbor
   - `110` application/senml+json
   - `11542` application/vnd.oma.lwm2m+tlv
+  - `12200` UCBOR (uncompressed proprietary CBOR)
+  - `12201` UCBORZ (zlib-deflated CBOR; required to trigger
+    server-side `CoAPAdapter::uncompress`)
+  - `12202` SUCBOR (signed)
+  - `12203` SUCBORZ (signed + deflated)
+
+### Compressed payload round-trip
+
+`CoAPAdapter::buildRequest` zlib-deflates the CBOR payload whenever
+its length is ≥ 1024 bytes and chunks the result into 1024-byte
+CoAP frames. Compression is **unconditional** at that size — the
+Content-Format the user passes is *not* a switch for compression on
+the request side.
+
+Server-side decompression, however, only fires when the inbound
+Content-Format == `12201` (UCBORZ). Sending a deflated body under
+CF=60 (plain CBOR) reaches the server intact but is then parsed as
+plain CBOR, which fails. To get the full round-trip, send
+`content-format=12201` whenever the payload may exceed 1024 bytes:
+
+```
+post uri=/push uri-query=ep=A12345 file=/etc/big.json content-format=12201
+```
+
+Wire-verified in `log/L9/cli-zip-smoke.pcap` (commit recorded in
+`log/L9/results.md` → "Compressed payload round-trip"): a 2151-byte
+JSON deflates to a 153-byte payload (ratio 12.7×); server's
+`uncompress` log line at `coap_adapter.cpp:902` reports the inverse
+ratio 0.0785 on receipt.
 
 Examples:
 ```
