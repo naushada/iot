@@ -2,7 +2,9 @@
 #define __data_store_server_server_hpp__
 
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_set>
 
 #include <ace/Event_Handler.h>
 #include <ace/LSOCK_Acceptor.h>
@@ -12,11 +14,13 @@
 
 namespace data_store::server {
 
+class Session;
+
 /// AF_UNIX stream acceptor. Per design.md §2, every accepted
-/// connection is wrapped as a WorkRequest and handed to the next
-/// Worker in a round-robin pool of N (default 5) active objects.
-/// D1 worker bodies write a welcome line and close; D2+ replaces
-/// that body with the JSON op dispatcher.
+/// connection is wrapped as a Session and registered with the main
+/// reactor for reads; reads enqueue ProcessRequest messages onto
+/// the session's owner Worker (picked round-robin from the pool at
+/// accept time).
 ///
 /// Lifetime is owned by ds-server's main(): one Server + one
 /// WorkerPool per process, both opened before the reactor loop
@@ -40,12 +44,20 @@ public:
 
     const std::string& socket_path() const { return m_socketPath; }
 
+    /// Reactor-thread call from Session::handle_close: drop the
+    /// session pointer from our registry. The Session itself is
+    /// freed by its owner Worker once the SessionClosed message
+    /// drains.
+    void note_session_closed(Session* s);
+
 private:
-    std::shared_ptr<DataStore> m_store;
-    WorkerPool*                m_pool;
-    std::string                m_socketPath;
-    ACE_LSOCK_Acceptor         m_acceptor;
-    bool                       m_open = false;
+    std::shared_ptr<DataStore>      m_store;
+    WorkerPool*                     m_pool;
+    std::string                     m_socketPath;
+    ACE_LSOCK_Acceptor              m_acceptor;
+    bool                            m_open = false;
+    std::mutex                      m_sessionsMtx;
+    std::unordered_set<Session*>    m_sessions;
 };
 
 } // namespace data_store::server

@@ -11,9 +11,15 @@ endif()
 
 set(DS_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
+# nlohmann::json header-only, vendored under apps/3rdparty/json/.
+# Used by ds-server only — the client lib stays JSON-free.
+set(NLOHMANN_JSON_INCLUDE
+    ${DS_MODULE_DIR}/../../apps/3rdparty/json/single_include)
+
 include_directories(
     ${DS_MODULE_DIR}/inc
-    ${ACE_ROOT}/include)
+    ${ACE_ROOT}/include
+    ${NLOHMANN_JSON_INCLUDE})
 
 link_directories(${ACE_ROOT}/lib)
 
@@ -38,6 +44,7 @@ target_link_libraries(datastore_client PUBLIC ACE pthread)
 add_executable(ds-server
     src/server/main.cpp
     src/server/server.cpp
+    src/server/session.cpp
     src/server/data_store.cpp
     src/server/worker.cpp
     src/server/worker_pool.cpp
@@ -69,7 +76,9 @@ if(BUILD_DATA_STORE_TESTS)
         test/data_store_test.cpp
         test/server_integration_test.cpp
         test/worker_pool_test.cpp
+        test/protocol_test.cpp
         src/server/server.cpp
+        src/server/session.cpp
         src/server/data_store.cpp
         src/server/worker.cpp
         src/server/worker_pool.cpp

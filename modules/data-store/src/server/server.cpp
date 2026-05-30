@@ -1,6 +1,7 @@
 #include "server.hpp"
 
 #include "data_store/proto.hpp"
+#include "session.hpp"
 #include "worker.hpp"
 
 #include <cerrno>
@@ -82,6 +83,23 @@ int Server::close() {
     if (!m_open) return 0;
     ACE_Reactor::instance()->remove_handler(
         this, ACE_Event_Handler::ACCEPT_MASK | ACE_Event_Handler::DONT_CALL);
+
+    // Tear down any sessions still alive — reactor-thread shutdown
+    // means we own these pointers exclusively. Worker shutdown
+    // drains their queues so a session pointer can be freed here
+    // safely (no in-flight DeliverNotify can race).
+    std::unordered_set<Session*> alive;
+    {
+        std::lock_guard<std::mutex> g(m_sessionsMtx);
+        alive.swap(m_sessions);
+    }
+    for (Session* s : alive) {
+        ACE_Reactor::instance()->remove_handler(
+            s, ACE_Event_Handler::READ_MASK |
+               ACE_Event_Handler::DONT_CALL);
+        delete s;
+    }
+
     m_acceptor.close();
     ::unlink(m_socketPath.c_str());
     m_open = false;
@@ -89,11 +107,11 @@ int Server::close() {
 }
 
 int Server::handle_input(ACE_HANDLE /*fd*/) {
-    // Reactor-thread: accept, package, enqueue. The active-object
-    // worker pool picks up from here — xpmile MicroService shape.
-    auto* req = new WorkRequest;
-    if (m_acceptor.accept(req->stream) == -1) {
-        delete req;
+    // Reactor thread: accept, pin to a worker, register the session
+    // with the reactor for reads. Session::handle_input → enqueue
+    // request lines to the owner worker for parsing + dispatch.
+    ACE_LSOCK_Stream stream;
+    if (m_acceptor.accept(stream) == -1) {
         ACE_ERROR_RETURN((LM_ERROR,
                           ACE_TEXT("%D [DS:%t] %M %N:%l accept "
                                    "failed errno=%d\n"),
@@ -106,18 +124,41 @@ int Server::handle_input(ACE_HANDLE /*fd*/) {
         ACE_ERROR((LM_ERROR,
                    ACE_TEXT("%D [DS:%t] %M %N:%l no worker pool; "
                             "dropping connection\n")));
-        req->stream.close();
-        delete req;
+        stream.close();
         return 0;
     }
-    if (w->enqueue(req) == -1) {
-        // enqueue() already cleaned up req on failure.
+
+    auto* s = new Session(stream, w, m_store.get(), this);
+    {
+        std::lock_guard<std::mutex> g(m_sessionsMtx);
+        m_sessions.insert(s);
+    }
+
+    // Send welcome inline so the client knows the connection is live
+    // before issuing any request. ProcessRequest messages can already
+    // follow asynchronously.
+    s->send(proto::kWelcomeLine);
+
+    if (ACE_Reactor::instance()->register_handler(
+            s, ACE_Event_Handler::READ_MASK) == -1) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [DS:%t] %M %N:%l enqueue to worker %d "
-                            "failed; connection dropped\n"),
-                   w->id()));
+                   ACE_TEXT("%D [DS:%t] %M %N:%l register_handler for "
+                            "session failed errno=%d\n"),
+                   errno));
+        {
+            std::lock_guard<std::mutex> g(m_sessionsMtx);
+            m_sessions.erase(s);
+        }
+        delete s;
+        return 0;
     }
     return 0;
+}
+
+void Server::note_session_closed(Session* s) {
+    if (!s) return;
+    std::lock_guard<std::mutex> g(m_sessionsMtx);
+    m_sessions.erase(s);
 }
 
 ACE_HANDLE Server::get_handle() const {

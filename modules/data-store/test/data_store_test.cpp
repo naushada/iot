@@ -44,8 +44,10 @@ TEST(DataStore, empty_get_returns_nullopt) {
 
 TEST(DataStore, set_then_get_returns_value) {
     DataStore s;
-    auto prev = s.set("k", "v");
-    EXPECT_FALSE(prev.has_value());
+    auto r = s.set("k", "v");
+    EXPECT_TRUE(r.changed);
+    EXPECT_FALSE(r.prev.has_value());        // new key
+    EXPECT_TRUE(r.watchers.empty());
     EXPECT_EQ(1u, s.size());
     auto v = s.get("k");
     ASSERT_TRUE(v.has_value());
@@ -55,11 +57,21 @@ TEST(DataStore, set_then_get_returns_value) {
 TEST(DataStore, second_set_returns_previous) {
     DataStore s;
     s.set("k", "v1");
-    auto prev = s.set("k", "v2");
-    ASSERT_TRUE(prev.has_value());
-    EXPECT_EQ("v1", *prev);
+    auto r = s.set("k", "v2");
+    EXPECT_TRUE(r.changed);
+    ASSERT_TRUE(r.prev.has_value());
+    EXPECT_EQ("v1", *r.prev);
     EXPECT_EQ("v2", *s.get("k"));
     EXPECT_EQ(1u, s.size());
+}
+
+TEST(DataStore, unchanged_set_reports_not_changed) {
+    DataStore s;
+    s.set("k", "v");
+    auto r = s.set("k", "v");
+    EXPECT_FALSE(r.changed);                 // REQ-DS-006
+    EXPECT_FALSE(r.prev.has_value());        // no notify, no snapshot
+    EXPECT_TRUE(r.watchers.empty());
 }
 
 TEST(DataStore, remove_returns_true_only_when_present) {

@@ -16,8 +16,12 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace data_store {
+
+using KV = std::pair<std::string, std::string>;
 
 /// Result of a connect() / recv_welcome() / send_request() call.
 /// `ok` is true when the call completed successfully. On failure
@@ -54,6 +58,62 @@ public:
     /// Returns the line (including trailing '\n') in `out`. Times
     /// out after `timeout_ms`.
     Status recv_welcome(std::string& out, std::int32_t timeout_ms = 1000);
+
+    /// Read one '\n'-terminated line from the socket. Useful for
+    /// consuming notify events (and for tests). Returns the line
+    /// without the trailing newline in `out`.
+    Status recv_line(std::string& out, std::int32_t timeout_ms = 1000);
+
+    // --- ops --------------------------------------------------------
+
+    /// `set` one or more key/value pairs atomically. Returns when
+    /// the server's `{"ok":...}` ack is received; `id` correlates
+    /// the response with the request.
+    Status set(const std::vector<KV>& pairs, std::int32_t timeout_ms = 1000);
+    Status set(const std::string& k, const std::string& v,
+               std::int32_t timeout_ms = 1000) {
+        return set(std::vector<KV>{{k, v}}, timeout_ms);
+    }
+
+    /// `get` one or more keys. `out` is filled in the same order as
+    /// `keys`; missing keys come back with `has_value=false`.
+    struct GetResult {
+        std::string key;
+        std::string value;
+        bool        has_value = false;
+    };
+    Status get(const std::vector<std::string>& keys,
+               std::vector<GetResult>&         out,
+               std::int32_t                    timeout_ms = 1000);
+
+    /// `register` for change notifications on one or more keys.
+    /// Notifications arrive asynchronously and are read via
+    /// `recv_line` / `recv_event` after the ack.
+    Status watch(const std::vector<std::string>& keys,
+                 std::int32_t                    timeout_ms = 1000);
+    Status watch(const std::string& key, std::int32_t timeout_ms = 1000) {
+        return watch(std::vector<std::string>{key}, timeout_ms);
+    }
+
+    /// `remove` one or more keys from the calling session's watch
+    /// set (other sessions' watches on the same keys are unaffected).
+    Status unwatch(const std::vector<std::string>& keys,
+                   std::int32_t                    timeout_ms = 1000);
+    Status unwatch(const std::string& key, std::int32_t timeout_ms = 1000) {
+        return unwatch(std::vector<std::string>{key}, timeout_ms);
+    }
+
+    /// Parsed notification event. `prev_has_value` distinguishes a
+    /// real previous value from a freshly-created key.
+    struct Event {
+        std::string key;
+        std::string value;
+        std::string prev;
+        bool        prev_has_value = false;
+    };
+    /// Read the next notify line and parse it. Returns ok=false with
+    /// err="not an event" if the line was a response, not a push.
+    Status recv_event(Event& out, std::int32_t timeout_ms = 1000);
 
     /// Close the connection. Idempotent.
     void close();
