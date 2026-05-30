@@ -367,6 +367,69 @@ the DTLS variant of NFR-INTEROP-001 (our client → Leshan, DTLS) both
 PASS. The gap is specifically between our **server** tinydtls 0.8.6
 and the **wakaama** eclipse/tinydtls `master` builds.
 
+### Follow-up FUP-5 (closed)
+
+**Status: CLOSED 2026-05-30** (commit `55c5f32`, RDD §3.10 BUG-010).
+
+Post-quit segfault surfaced by the 13-command CLI smoke
+(`log/L9/run-cli-smoke.sh`). After typing `quit` the binary unwound
+cleanly through the Readline loop and called `app->stop()`, but
+`UDPAdapter::stop()` only did `end_reactor_event_loop()` + `wait()`
+— the periodic 1 Hz timer was still scheduled on `this` (UDPAdapter)
+and every `ServiceContext_t` was still registered as a `READ_MASK`
+event handler. `~UDPAdapter` then cleared `m_services`; the
+reactor singleton's late teardown subsequently dereferenced freed
+`ServiceContext_t` pointers and crashed.
+
+Fix in `UDPAdapter::stop()`:
+- guard against double-stop with `m_stop.exchange(true)` so the
+  destructor's follow-up call is a no-op
+- `cancel_timer(this)` cancels the periodic tick
+- `remove_handler(ALL_EVENTS_MASK | DONT_CALL)` for every service so
+  the reactor forgets them without firing `handle_close` on a dying
+  object
+- only then `end_reactor_event_loop` / `deactivate` / `wait`
+
+Regression coverage: `log/L9/run-cli-smoke.sh` exits 0 after `quit`;
+the client log's last line is the `ServiceContext_t` destructor
+"closing fd:3 service:4" with no "Segmentation fault (core dumped)"
+trailing it. 20-frame `log/L9/cli-smoke.pcap` unchanged.
+
+---
+
+### CLI smoke regression — BUG-009 (closed)
+
+**Status: CLOSED 2026-05-30** (commit `7f8bbb7`, RDD §3.10 BUG-009;
+commit message mislabels the id as "BUG-003" — the canonical id is
+BUG-009 since BUG-003 in the RDD is the pre-existing
+`CoAPAdapter::parseRequest` Block1 defect).
+
+Symptom: typing any LwM2M-path command after `register`
+(`read path=/3/0/0`, `write path=/3/0/15 …`, etc.) wedged the CLI;
+the smoke client log showed subsequent typed lines piling up in the
+PTY without ever being processed; binary at 198 % CPU with both
+reactor and main threads pegged.
+
+Root cause (via `[rl]` and `[disp]` instrumentation, then a
+narrow probe `log/L9/probe-readline.sh`): `cli::split` lifted the
+old `Readline::str2Vector` verbatim, including a subtle bug —
+`istream::get(streambuf, '/')` on input `"/3/0/0"` extracts zero
+characters (the first char IS the delim) and sets `failbit`; the
+subsequent single-char `iss.get()` refuses to consume because of
+the failbit, so the while loop runs forever on empty extractions.
+The legacy code never hit this because callers wrote `uri="/push"`
+quoted — the leading `"` shifted the first iteration off the delim.
+
+Fix: replaced the stream-based split with a plain character loop
+(`apps/src/cli/coap_dispatch.cpp::split`) that handles
+leading/trailing/consecutive delims correctly and still strips quote
+characters for legacy compatibility.
+
+Regression coverage: `log/L9/cli-smoke.pcap` carries 20 frames now,
+covering all 13 typed commands plus the auto-Register fallback.
+
+---
+
 ### Follow-up FUP-4
 
 - **Goal:** complete the wakaama-DTLS handshake against our server, or

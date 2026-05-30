@@ -444,8 +444,10 @@ Process exit after `quit` is clean — no segfault, no leaked fds.
 
 ## Recent fixes (do not regress)
 
-- **BUG-003 — `cli::split` spin on leading-delim input** (commit
-  `7f8bbb7`). Any LwM2M-path command after `register`
+- **BUG-009 — `cli::split` spin on leading-delim input** (commit
+  `7f8bbb7`; that commit message mislabels it "BUG-003" — see
+  `lwm2m-rdd.md` §3.10, BUG-003 is the pre-existing Block1 parser
+  defect). Any LwM2M-path command after `register`
   (`read path=/3/0/0`, `write path=/3/0/15 …`, etc.) used to wedge
   the binary at 198 % CPU with no further commands processed. Root
   cause: `istream::get(streambuf, '/')` set `failbit` on zero-char

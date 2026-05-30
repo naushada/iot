@@ -195,3 +195,11 @@ as of the L9 follow-up PR:
   tinydtls 0.8.6 or upgrade to master. See `log/L9/results.md` →
   "NFR-INTEROP-002 — DTLS/PSK variant" for the full hex dump and
   proposed first steps.
+
+- **✅ FUP-5: post-quit segfault.** Closed 2026-05-30 (commit
+  `55c5f32`). `UDPAdapter::stop()` now cancels the periodic timer
+  and removes every service handler (`DONT_CALL`) before ending the
+  reactor loop, so the singleton's late teardown can't deref freed
+  `ServiceContext_t` pointers. Smoke (`log/L9/run-cli-smoke.sh`)
+  exits cleanly after `quit`. Tracked in `lwm2m-rdd.md` §3.10 as
+  BUG-010.
