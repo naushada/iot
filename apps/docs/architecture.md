@@ -307,3 +307,31 @@ under `~/.claude/projects/-Users-naushada-repo-iot/memory/` records the
 six binding decisions (D1 spec version, D2 short-server-id keying,
 D3 registry storage, D4 notify transport, D5 push plane, D6 device
 backing).
+
+## Data-store module
+
+Sibling at `modules/data-store/`. A standalone persistent
+key-value store delivered as three targets:
+
+- `ds-server` — AF_UNIX daemon. ACE reactor on the main thread, pool
+  of 5 `ACE_Task<ACE_MT_SYNCH>` workers (xpmile MicroService shape)
+  draining work via `getq/putq`. Backed by a Lua chunk on disk
+  (`return { schema_version = 1, data = {...} }`) with write-through
+  on every set/remove via temp + fsync + rename.
+- `libdatastore_client.a` — POSIX-clean public header (pimpl over
+  ACE internally). Apps link this and talk over the unix socket;
+  there is **no in-process accessor** — clean blast-radius
+  separation between iot and the store.
+- `ds-cli` — operator debug client, supports
+  `welcome / set / get / watch / unwatch` subcommands.
+
+Wire protocol is line-delimited JSON
+(`{"op":"set","keys":[...],"id":N}` / `{"ok":true,...}` /
+`{"ev":"changed","k":"...","v":"...","prev":...}`); per-key watch
+fan-out is dispatched cross-Worker via the same `WorkMsg` queue used
+for requests, so the only socket writer is always the session's
+owning Worker — no socket locking anywhere.
+
+Docs: [`modules/data-store/docs/design.md`](../../modules/data-store/docs/design.md)
++ [`tdd.md`](../../modules/data-store/docs/tdd.md). L10 closure
+record: [`log/L10/results.md`](../../log/L10/results.md).
