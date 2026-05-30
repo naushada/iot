@@ -31,3 +31,31 @@
 *.exe
 *.out
 *.app
+
+# Build artifacts
+apps/build/
+
+# tinydtls autoconf output (regenerated on every build)
+apps/3rdparty/tinydtls/Makefile
+apps/3rdparty/tinydtls/aes/Makefile
+apps/3rdparty/tinydtls/doc/
+apps/3rdparty/tinydtls/ecc/Makefile
+apps/3rdparty/tinydtls/platform-specific/Makefile
+apps/3rdparty/tinydtls/sha2/Makefile
+apps/3rdparty/tinydtls/tests/Makefile
+apps/3rdparty/tinydtls/autom4te.cache/
+apps/3rdparty/tinydtls/config.log
+apps/3rdparty/tinydtls/config.status
+apps/3rdparty/tinydtls/configure
+apps/3rdparty/tinydtls/dtls_config.h
+apps/3rdparty/tinydtls/dtls_config.h.in
+
+# Local Claude state
+.claude/
+
+# Per-run smoke + probe logs (only the .pcap committed for evidence)
+log/L9/cli-smoke-*.log
+log/L9/cli-zip-smoke-*.log
+log/L9/probe-readline.*
+log/L9/run-cli-smoke.run.log
+log/L9/.cli-zip-big.json
