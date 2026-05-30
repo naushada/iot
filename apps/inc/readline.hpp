@@ -1,122 +1,66 @@
 #ifndef __readline_hpp__
 #define __readline_hpp__
 
-#include <iostream>
-#include <vector>
-#include <algorithm>
 #include <memory>
-#include <sstream>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "app.hpp"
 #include "cbor_adapter.hpp"
+#include "cli/command_registry.hpp"
 
 extern "C" {
-	#include <readline/readline.h>
-	#include <readline/history.h>
+    #include <readline/readline.h>
+    #include <readline/history.h>
 }
 
-class Readline
-{
-  public:
-    struct command
-    {
-        std::string command;
-        std::vector<std::string> argv;
-        std::string commandUsages;  
-    };
+/// Thin shell over GNU readline + libhistory. Owns a CommandRegistry
+/// and dispatches each typed line through it. Per-command behaviour
+/// lives in apps/{inc,src}/cli/commands/ — see CommandRegistry.
+///
+/// The free-function tab-completion callbacks rl_attempted_completion_function
+/// expects are C-linkage, so they live as friends and reach the
+/// registry via a static pointer set in init().
+class Readline {
+public:
+    explicit Readline(std::shared_ptr<App> app);
+    ~Readline() = default;
 
-    static std::int32_t m_offset;
-    static std::int32_t m_len;
-    static std::string m_cmdName;
-    static std::int32_t m_argOffset;
-    static std::vector<Readline::command> commands;
-    static Readline::command selected_command;
-    static std::vector<std::string>::iterator command_arg_iter;
-    static std::vector<Readline::command>::iterator commands_iter;
+    int  init();
+    bool start(std::string prompt = "LwM2MClient-->> ");
 
-  public:
-    Readline(std::shared_ptr<App> a);
-    ~Readline();
-    int init(void);
+    std::shared_ptr<App>& app()         { return m_app; }
+    CBORAdapter&          cborAdapter() { return m_cbor; }
+    CommandRegistry&      registry()    { return m_registry; }
 
-    /**
-     * @brief 
-     * 
-     * @param text 
-     * @param start 
-     * @param end 
-     * @return char** 
-     */
-    friend char **commandCompletion(const char *text, int start, int end);
-    /**
-     * @brief 
-     * 
-     * @param text 
-     * @param state 
-     * @return char* 
-     */
-    friend char *commandGenerator(const char *text, int state);
-    /**
-     * @brief 
-     * 
-     * @param text 
-     * @param state 
-     * @return char* 
-     */
-    friend char *commandArgGenerator(const char *text, int state);
-    /**
-     * @brief 
-     * 
-     * @param text 
-     * @param state 
-     * @return char* 
-     */
-    friend char *commandArgListGenerator(const char *text, int state);
-    /**
-     * @brief 
-     * 
-     * @param command 
-     */
-    void prompt(std::string command);
-    std::string prompt(void);
-    int executeLine(std::string line);
-    /**
-     * @brief 
-     * 
-     * @param command 
-     * @return int 
-     */
-    int processCommand(const std::string& command);
-    int processResponse(char *rsp, int len);
-    std::string rtrim(const std::string &s);
-    std::string ltrim(const std::string &s);
-    std::string trim(const std::string &s);
-    bool isValid(const std::string& cmd);
-    void help(const std::string& cmd);
-    void quit(void);
-    bool continueStatus(void);
-    void continueStatus(bool status);
-    static void cmdName(std::string cmdName);
-    static std::string cmdName(void);
-    bool start(std::string prompt="LwM2MClient-->> ");
+    /// Completion callbacks need static access — these are populated
+    /// by init() and read by the friend functions below.
+    static CommandRegistry* s_registry;
+    /// Iterators reset across rl_completion_matches invocations.
+    static std::size_t s_name_idx;
+    static std::size_t s_arg_idx;
+    static std::string s_current_cmd;
 
-    std::shared_ptr<App>& app() {
-        return(m_app);
-    }
+private:
+    friend char** commandCompletion(const char* text, int start, int end);
+    friend char*  commandGenerator(const char* text, int state);
+    friend char*  commandArgGenerator(const char* text, int state);
 
-    CBORAdapter& cborAdapter() {
-        return(m_cborAdapter);
-    }
+    static std::string trim(const std::string& s);
+    /// Parse "post uri=/rd ep=foo" into ("post", {{"uri","/rd"},{"ep","foo"}}).
+    /// Bare tokens (no '=') land in the map with empty value.
+    static void parseLine(const std::string& line,
+                          std::string& cmdName,
+                          std::unordered_map<std::string, std::string>& kv);
 
-    std::vector<std::string> str2Vector(const std::string& in, char delim='/');
- 
-  private:
-    std::string m_prompt;
-    bool m_continueStatus;
-    std::vector<command> m_commands;
-    std::shared_ptr<App> m_app;
-    CBORAdapter m_cborAdapter;
+    int executeLine(const std::string& line);
+
+    std::shared_ptr<App>  m_app;
+    CBORAdapter           m_cbor;
+    CommandRegistry       m_registry;
+    bool                  m_should_quit;
+    std::string           m_prompt;
 };
 
-#endif /*__readline_hpp__*/
+#endif /* __readline_hpp__ */

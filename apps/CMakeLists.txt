@@ -26,8 +26,8 @@ include_directories(inc)
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
 link_directories(${ACE_ROOT}/lib)
 
-#all files from src directory, the file(GLOB...) allows for wildcard additions:
-file(GLOB SOURCES "src/*.cpp")
+#all files from src directory (recursive — picks up src/cli/**/*.cpp too).
+file(GLOB_RECURSE SOURCES "src/*.cpp")
 
 add_executable(lwm2m ${SOURCES})
 target_link_libraries(lwm2m
