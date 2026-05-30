@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <string>
 #include <sys/stat.h>
@@ -19,13 +20,36 @@ namespace objects = ::lwm2m::objects;
 
 namespace {
 
-/// Create a throwaway config tree under /tmp containing deviceObject/0.lua
-/// with `resourcesBody` plugged into the canonical envelope:
+/// Pick a writable parent dir for the throwaway config tree. Minimal
+/// container images (e.g. the iot:latest runtime stage) don't always
+/// ship a `/tmp`, in which case mkdtemp returns nullptr and the
+/// fixture used to crash with "std::string null". Now we try /tmp,
+/// auto-create it, and fall back to $PWD. Returns nullptr only when
+/// every candidate fails; callers SKIP rather than fail in that case.
+char* make_temp_dir(char* dirTemplate, std::size_t cap) {
+    auto attempt = [&](const char* tmpl) -> char* {
+        std::strncpy(dirTemplate, tmpl, cap - 1);
+        dirTemplate[cap - 1] = '\0';
+        return mkdtemp(dirTemplate);
+    };
+    if (char* d = attempt("/tmp/iot-l8-XXXXXX")) return d;
+    // /tmp absent or unwritable — create it (mkdir is a no-op if it
+    // already exists with permission issues, in which case attempt #3
+    // below catches the failure).
+    ::mkdir("/tmp", 01777);
+    if (char* d = attempt("/tmp/iot-l8-XXXXXX")) return d;
+    return attempt("./iot-l8-XXXXXX");
+}
+
+/// Create a throwaway config tree containing deviceObject/0.lua with
+/// `resourcesBody` plugged into the canonical envelope:
 ///   return { deviceObject = { instance = 0, resources = { <body> } } }
-/// Returns the configDir (no trailing slash).
+/// Returns the configDir (no trailing slash), or "" if no writable
+/// scratch directory could be created (callers SKIP the test).
 std::string write_config(const std::string& resourcesBody) {
-    char dirTemplate[] = "/tmp/iot-l8-XXXXXX";
-    char* dir = mkdtemp(dirTemplate);
+    char dirTemplate[64];
+    char* dir = make_temp_dir(dirTemplate, sizeof(dirTemplate));
+    if (!dir) return {};
     std::string configDir(dir);
     std::string subDir = configDir + "/deviceObject";
     ::mkdir(subDir.c_str(), 0755);
@@ -37,15 +61,22 @@ std::string write_config(const std::string& resourcesBody) {
 }
 
 /// Write a raw Lua string verbatim — for the malformed-config test.
+/// Same fallback rules as write_config; returns "" when no scratch
+/// directory could be created.
 std::string write_config_raw(const std::string& body) {
-    char dirTemplate[] = "/tmp/iot-l8-XXXXXX";
-    char* dir = mkdtemp(dirTemplate);
+    char dirTemplate[64];
+    char* dir = make_temp_dir(dirTemplate, sizeof(dirTemplate));
+    if (!dir) return {};
     std::string configDir(dir);
     std::string subDir = configDir + "/deviceObject";
     ::mkdir(subDir.c_str(), 0755);
     std::ofstream(subDir + "/0.lua") << body;
     return configDir;
 }
+
+#define SKIP_IF_NO_TMP(cfg) \
+    do { if ((cfg).empty()) GTEST_SKIP() \
+        << "no writable scratch dir (no /tmp + cwd unwritable)"; } while (0)
 
 void cleanup(const std::string& dir) {
     std::string f = dir + "/deviceObject/0.lua";
@@ -107,6 +138,7 @@ TEST(Objects, REQ_OBJ_003_json_override_replaces_default) {
     auto cfg = write_config(
         "[0]  = { value = 'Acme Corp',   include = true },"
         "[17] = { value = 'Test Device', include = true },");
+    SKIP_IF_NO_TMP(cfg);
 
     ObjectStore store;
     objects::install_device(store, cfg);
@@ -119,6 +151,7 @@ TEST(Objects, REQ_OBJ_003_json_override_replaces_default) {
 TEST(Objects, REQ_OBJ_003_json_include_false_keeps_default) {
     auto cfg = write_config(
         "[0] = { value = 'Should Not Apply', include = false },");
+    SKIP_IF_NO_TMP(cfg);
     ObjectStore store;
     objects::install_device(store, cfg);
     EXPECT_EQ("Sierra Wireless", store.find(3, 0, 0)->read());
@@ -127,6 +160,7 @@ TEST(Objects, REQ_OBJ_003_json_include_false_keeps_default) {
 
 TEST(Objects, REQ_OBJ_003_malformed_json_falls_back_silently) {
     auto cfg = write_config_raw("this is not lua");
+    SKIP_IF_NO_TMP(cfg);
     ObjectStore store;
     objects::install_device(store, cfg);
     EXPECT_EQ("Sierra Wireless", store.find(3, 0, 0)->read());
@@ -138,6 +172,7 @@ TEST(Objects, REQ_OBJ_003_type_mismatch_in_json_falls_back) {
     // (string_or falls through to the default when the value variant
     // doesn't hold std::string).
     auto cfg = write_config("[0] = { value = 42, include = true },");
+    SKIP_IF_NO_TMP(cfg);
     ObjectStore store;
     objects::install_device(store, cfg);
     EXPECT_EQ("Sierra Wireless", store.find(3, 0, 0)->read());
