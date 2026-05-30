@@ -12,8 +12,22 @@
 ///
 /// Wire details live in proto.hpp; the design is in
 /// modules/data-store/docs/design.md.
+///
+/// Threading model
+/// ---------------
+/// `connect()` spawns an internal listener thread. The listener
+/// owns the read side of the socket: every '\n'-terminated line is
+/// demuxed into either (a) a notify push (`{"ev":"changed",...}`)
+/// fanned out to per-watch callbacks AND a pull-style event queue,
+/// or (b) a response (`{"ok":...,"id":...}`) fulfilling the matching
+/// pending-request promise.
+///
+/// Public methods (`set`/`get`/`watch`/`unwatch`/`recv_event`) are
+/// safe to call from any thread; the listener thread is the sole
+/// reader, request methods just send + wait on their promise.
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -23,23 +37,13 @@ namespace data_store {
 
 using KV = std::pair<std::string, std::string>;
 
-/// Result of a connect() / recv_welcome() / send_request() call.
-/// `ok` is true when the call completed successfully. On failure
-/// `err` carries a single-line reason; `code` carries an errno when
-/// the failure was a syscall error, or 0 for protocol/parse errors.
+/// Result of a connect() / set() / get() / ... call.
 struct Status {
     bool        ok = true;
     int         code = 0;       // errno or 0
     std::string err;
 };
 
-/// Stream-socket client. Single-connection per instance; not
-/// thread-safe. Internally uses ACE_LSOCK_Stream + ACE_Time_Value
-/// for I/O so it shares the same timeout semantics as the rest of
-/// the iot stack; the public ABI stays POSIX-clean via pimpl.
-///
-/// D1 exposes `connect()` + `recv_welcome()`; D2/D3/D5 add `set()`,
-/// `get()`, `watch()`, `unwatch()`, and the async push receive loop.
 class Client {
 public:
     Client();
@@ -50,58 +54,34 @@ public:
     Client(Client&&) noexcept;
     Client& operator=(Client&&) noexcept;
 
-    /// Open the connection. `path` is the server's listening socket
-    /// (defaults to data_store::proto::kDefaultSocketPath when empty).
+    /// Open the connection and start the listener thread.
     Status connect(std::string path = "");
 
-    /// Read the single welcome line the server emits on accept.
-    /// Returns the line (including trailing '\n') in `out`. Times
-    /// out after `timeout_ms`.
+    /// Read the welcome line. Convenience: also consumable as the
+    /// first recv_event-style line if not called explicitly.
     Status recv_welcome(std::string& out, std::int32_t timeout_ms = 1000);
-
-    /// Read one '\n'-terminated line from the socket. Useful for
-    /// consuming notify events (and for tests). Returns the line
-    /// without the trailing newline in `out`.
-    Status recv_line(std::string& out, std::int32_t timeout_ms = 1000);
 
     // --- ops --------------------------------------------------------
 
-    /// `set` one or more key/value pairs atomically. Returns when
-    /// the server's `{"ok":...}` ack is received; `id` correlates
-    /// the response with the request.
+    /// `set` one or more key/value pairs atomically.
     Status set(const std::vector<KV>& pairs, std::int32_t timeout_ms = 1000);
     Status set(const std::string& k, const std::string& v,
                std::int32_t timeout_ms = 1000) {
         return set(std::vector<KV>{{k, v}}, timeout_ms);
     }
 
-    /// `get` one or more keys. `out` is filled in the same order as
-    /// `keys`; missing keys come back with `has_value=false`.
     struct GetResult {
         std::string key;
         std::string value;
         bool        has_value = false;
     };
+    /// `get` one or more keys. `out` is filled in the same order as
+    /// `keys`; missing keys come back with `has_value=false`.
     Status get(const std::vector<std::string>& keys,
                std::vector<GetResult>&         out,
                std::int32_t                    timeout_ms = 1000);
 
-    /// `register` for change notifications on one or more keys.
-    /// Notifications arrive asynchronously and are read via
-    /// `recv_line` / `recv_event` after the ack.
-    Status watch(const std::vector<std::string>& keys,
-                 std::int32_t                    timeout_ms = 1000);
-    Status watch(const std::string& key, std::int32_t timeout_ms = 1000) {
-        return watch(std::vector<std::string>{key}, timeout_ms);
-    }
-
-    /// `remove` one or more keys from the calling session's watch
-    /// set (other sessions' watches on the same keys are unaffected).
-    Status unwatch(const std::vector<std::string>& keys,
-                   std::int32_t                    timeout_ms = 1000);
-    Status unwatch(const std::string& key, std::int32_t timeout_ms = 1000) {
-        return unwatch(std::vector<std::string>{key}, timeout_ms);
-    }
+    // --- watch + callback ------------------------------------------
 
     /// Parsed notification event. `prev_has_value` distinguishes a
     /// real previous value from a freshly-created key.
@@ -111,15 +91,68 @@ public:
         std::string prev;
         bool        prev_has_value = false;
     };
-    /// Read the next notify line and parse it. Returns ok=false with
-    /// err="not an event" if the line was a response, not a push.
+
+    using EventCallback = std::function<void(const Event&)>;
+
+    /// Opaque handle returned by `watch(keys, cb)`. Hand back to
+    /// `unwatch(handle)` to drop this specific registration. The
+    /// same set of keys can be watched many times (each call gets
+    /// its own handle + callback); a key is unregistered on the
+    /// wire only when the last local watcher drops it.
+    using WatchHandle = std::uint64_t;
+    static constexpr WatchHandle kInvalidHandle = 0;
+
+    /// Register `cb` for value-change notifications on `keys`. The
+    /// callback fires on the listener thread for every matching
+    /// `ev=changed` event the server pushes. Returns the wire-level
+    /// ack status; `*out_handle` is set on success.
+    ///
+    /// The same Client can call watch() multiple times with different
+    /// keys + callbacks; all callbacks subscribed to a given key fire
+    /// for every change to that key.
+    Status watch(const std::vector<std::string>& keys,
+                 EventCallback                   cb,
+                 WatchHandle*                    out_handle = nullptr,
+                 std::int32_t                    timeout_ms = 1000);
+    Status watch(const std::string& key,
+                 EventCallback      cb,
+                 WatchHandle*       out_handle = nullptr,
+                 std::int32_t       timeout_ms = 1000) {
+        return watch(std::vector<std::string>{key},
+                     std::move(cb), out_handle, timeout_ms);
+    }
+
+    /// Pull-style watch (no callback). Use `recv_event()` to drain
+    /// the queued events. May be combined with callback-style watches
+    /// on the same Client — events arrive on both paths.
+    Status watch(const std::vector<std::string>& keys,
+                 std::int32_t                    timeout_ms = 1000);
+    Status watch(const std::string& key, std::int32_t timeout_ms = 1000) {
+        return watch(std::vector<std::string>{key}, timeout_ms);
+    }
+
+    /// Drop a specific callback-style watch. The server-side `remove`
+    /// fires only when this handle was the last local watcher for
+    /// any of its keys.
+    Status unwatch(WatchHandle handle, std::int32_t timeout_ms = 1000);
+
+    /// Drop a pull-style watch (or any local registration on these
+    /// keys, including callback ones if they were the only watchers).
+    Status unwatch(const std::vector<std::string>& keys,
+                   std::int32_t                    timeout_ms = 1000);
+    Status unwatch(const std::string& key, std::int32_t timeout_ms = 1000) {
+        return unwatch(std::vector<std::string>{key}, timeout_ms);
+    }
+
+    /// Pull one buffered event (filled by the listener thread). Use
+    /// alongside the pull-style watch(); callback-style watches do
+    /// NOT block this — events go to BOTH paths.
     Status recv_event(Event& out, std::int32_t timeout_ms = 1000);
 
-    /// Close the connection. Idempotent.
+    /// Close the connection + join the listener thread. Idempotent.
     void close();
 
-    /// Underlying ACE_HANDLE / fd. `-1` when not connected. Tests
-    /// use this; production code should not need it.
+    /// Underlying ACE_HANDLE / fd. `-1` when not connected.
     int fd() const;
 
 private:

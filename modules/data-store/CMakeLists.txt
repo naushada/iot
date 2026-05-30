@@ -97,6 +97,7 @@ if(BUILD_DATA_STORE_TESTS)
         test/worker_pool_test.cpp
         test/protocol_test.cpp
         test/lua_persistor_test.cpp
+        test/callback_test.cpp
         src/server/server.cpp
         src/server/session.cpp
         src/server/data_store.cpp

@@ -4,8 +4,16 @@
 
 #include <atomic>
 #include <cerrno>
+#include <condition_variable>
 #include <cstring>
+#include <deque>
+#include <future>
+#include <mutex>
+#include <stdexcept>
+#include <sys/socket.h>
 #include <sys/un.h>
+#include <thread>
+#include <unordered_map>
 
 #include <ace/LSOCK_Connector.h>
 #include <ace/LSOCK_Stream.h>
@@ -33,59 +41,53 @@ Status protocol_err(const std::string& what) {
 }
 
 std::atomic<std::uint64_t> g_next_id{1};
+std::atomic<std::uint64_t> g_next_handle{1};
+
+struct WatchEntry {
+    std::vector<std::string>      keys;
+    Client::EventCallback         cb;
+};
 
 } // namespace
 
-// --- pimpl --------------------------------------------------------------
+// ─────────────────────────────── Impl ───────────────────────────────
 
 class Client::Impl {
 public:
-    ACE_LSOCK_Stream stream;
-    std::string      recvBuf;
-    bool             connected = false;
+    ACE_LSOCK_Stream     stream;
+    std::atomic<bool>    connected{false};
 
-    Status recv_one_line(std::string& out, std::int32_t timeout_ms);
-    Status send_json(const std::string& req);
+    std::thread          listener;
+    std::atomic<bool>    stop_listener{false};
+
+    // id → pending promise (fulfilled by the listener thread).
+    std::mutex                                            pending_mtx;
+    std::unordered_map<std::uint64_t, std::promise<json>> pending;
+
+    // Welcome line bookkeeping.
+    std::mutex                  welcome_mtx;
+    std::condition_variable     welcome_cv;
+    std::string                 welcome_line;
+    bool                        welcome_received = false;
+
+    // Pull-style event queue.
+    std::mutex                  events_mtx;
+    std::condition_variable     events_cv;
+    std::deque<Event>           events;
+
+    // Callback-style watches + per-key local refcount.
+    std::mutex                                              watches_mtx;
+    std::unordered_map<WatchHandle, WatchEntry>             watches;
+    std::unordered_map<std::string, std::size_t>            key_refcount;
+
+    Status send_json(const std::string& body);
     Status round_trip(json& req, json& resp, std::int32_t timeout_ms);
+    void   run_listener();
+    void   fail_all_pending(const std::string& why);
 };
 
-Status Client::Impl::recv_one_line(std::string& out, std::int32_t timeout_ms) {
-    // Service from recvBuf first.
-    auto pos = recvBuf.find('\n');
-    if (pos != std::string::npos) {
-        out = recvBuf.substr(0, pos);
-        recvBuf.erase(0, pos + 1);
-        return {};
-    }
-
-    char buf[1024];
-    ACE_Time_Value timeout(timeout_ms / 1000,
-                           (timeout_ms % 1000) * 1000);
-    for (;;) {
-        ssize_t n = stream.recv(buf, sizeof(buf), &timeout);
-        if (n < 0) {
-            if (errno == ETIME || errno == ETIMEDOUT) {
-                Status s; s.ok=false; s.code=ETIMEDOUT;
-                s.err = "recv timeout"; return s;
-            }
-            return sys_err("recv");
-        }
-        if (n == 0) return protocol_err("server closed");
-        recvBuf.append(buf, static_cast<std::size_t>(n));
-        pos = recvBuf.find('\n');
-        if (pos != std::string::npos) {
-            out = recvBuf.substr(0, pos);
-            recvBuf.erase(0, pos + 1);
-            return {};
-        }
-        // No newline yet — loop and read more (timeout applies per
-        // recv call; cumulative wait may exceed it slightly, which
-        // is fine for our use case).
-    }
-}
-
-Status Client::Impl::send_json(const std::string& req) {
-    std::string line = req + "\n";
+Status Client::Impl::send_json(const std::string& body) {
+    std::string line = body + "\n";
     ssize_t n = stream.send_n(line.data(), line.size());
     if (n < 0 || static_cast<std::size_t>(n) != line.size()) {
         return sys_err("send_n");
@@ -95,35 +97,158 @@ Status Client::Impl::send_json(const std::string& req) {
 
 Status Client::Impl::round_trip(json& req, json& resp,
                                 std::int32_t timeout_ms) {
+    if (!connected.load()) return protocol_err("not connected");
+
     const std::uint64_t id = g_next_id.fetch_add(1);
     req["id"] = id;
-    auto ss = send_json(req.dump());
-    if (!ss.ok) return ss;
 
-    // Read lines until we find one with our id. Skip notify pushes
-    // (`ev=changed`) so the caller's set/get/watch ack arrives
-    // without interference. Callers needing pushes should use
-    // recv_event AFTER the round-trip completes.
-    for (;;) {
-        std::string line;
-        auto rs = recv_one_line(line, timeout_ms);
-        if (!rs.ok) return rs;
-        json p;
-        try { p = json::parse(line); }
-        catch (const std::exception& e) {
-            return protocol_err(std::string("bad response json: ") + e.what());
+    std::promise<json>  prom;
+    std::future<json>   fut = prom.get_future();
+    {
+        std::lock_guard<std::mutex> g(pending_mtx);
+        pending.emplace(id, std::move(prom));
+    }
+
+    auto ss = send_json(req.dump());
+    if (!ss.ok) {
+        std::lock_guard<std::mutex> g(pending_mtx);
+        pending.erase(id);
+        return ss;
+    }
+
+    using namespace std::chrono;
+    if (fut.wait_for(milliseconds(timeout_ms)) != std::future_status::ready) {
+        std::lock_guard<std::mutex> g(pending_mtx);
+        pending.erase(id);
+        Status s; s.ok=false; s.code=ETIMEDOUT;
+        s.err = "request timeout (id=" + std::to_string(id) + ")";
+        return s;
+    }
+
+    try {
+        resp = fut.get();
+    } catch (const std::exception& e) {
+        return protocol_err(std::string("promise broken: ") + e.what());
+    }
+    return {};
+}
+
+void Client::Impl::run_listener() {
+    std::string buf;
+    char        chunk[1024];
+
+    while (!stop_listener.load()) {
+        ACE_Time_Value timeout(0, 200 * 1000);
+        ssize_t n = stream.recv(chunk, sizeof(chunk), &timeout);
+        if (n < 0) {
+            if (errno == ETIME || errno == ETIMEDOUT || errno == EAGAIN) continue;
+            break;
         }
-        if (p.contains("ev")) continue;     // push — ignore here
-        if (!p.contains("ok")) {
-            return protocol_err("response missing ok");
+        if (n == 0) break;     // EOF
+
+        buf.append(chunk, static_cast<std::size_t>(n));
+
+        for (;;) {
+            auto pos = buf.find('\n');
+            if (pos == std::string::npos) break;
+            std::string line = buf.substr(0, pos);
+            buf.erase(0, pos + 1);
+            if (line.empty()) continue;
+
+            json p;
+            try { p = json::parse(line); } catch (...) { continue; }
+
+            // Welcome (server's first line — `hello` field).
+            {
+                std::lock_guard<std::mutex> g(welcome_mtx);
+                if (!welcome_received && p.contains("hello")) {
+                    welcome_line     = line + "\n";
+                    welcome_received = true;
+                    welcome_cv.notify_all();
+                    continue;
+                }
+            }
+
+            // Notify push.
+            if (p.contains("ev")) {
+                Event ev;
+                ev.key   = p.value("k", "");
+                ev.value = p.value("v", "");
+                if (p.contains("prev") && !p["prev"].is_null()) {
+                    ev.prev           = p["prev"].get<std::string>();
+                    ev.prev_has_value = true;
+                }
+
+                {
+                    std::lock_guard<std::mutex> g(events_mtx);
+                    events.push_back(ev);
+                    events_cv.notify_one();
+                }
+
+                std::vector<EventCallback> cbs;
+                {
+                    std::lock_guard<std::mutex> g(watches_mtx);
+                    for (const auto& [h, w] : watches) {
+                        for (const auto& k : w.keys) {
+                            if (k == ev.key) { cbs.push_back(w.cb); break; }
+                        }
+                    }
+                }
+                for (auto& cb : cbs) {
+                    try { cb(ev); } catch (...) { /* swallow */ }
+                }
+                continue;
+            }
+
+            // Response: ok + id → fulfill promise.
+            if (p.contains("ok") && p.contains("id")) {
+                std::uint64_t id = p["id"].get<std::uint64_t>();
+                std::promise<json> prom;
+                bool found = false;
+                {
+                    std::lock_guard<std::mutex> g(pending_mtx);
+                    auto it = pending.find(id);
+                    if (it != pending.end()) {
+                        prom  = std::move(it->second);
+                        pending.erase(it);
+                        found = true;
+                    }
+                }
+                if (found) {
+                    try { prom.set_value(std::move(p)); } catch (...) {}
+                }
+            }
         }
-        if (p.contains("id") && p["id"] != id) continue;  // mismatched
-        resp = std::move(p);
-        return {};
+    }
+
+    fail_all_pending("listener exited");
+
+    {
+        std::lock_guard<std::mutex> g(welcome_mtx);
+        welcome_received = true;
+        welcome_cv.notify_all();
+    }
+    {
+        std::lock_guard<std::mutex> g(events_mtx);
+        events_cv.notify_all();
     }
 }
 
-// --- Client -------------------------------------------------------------
+void Client::Impl::fail_all_pending(const std::string& why) {
+    std::unordered_map<std::uint64_t, std::promise<json>> snapshot;
+    {
+        std::lock_guard<std::mutex> g(pending_mtx);
+        snapshot.swap(pending);
+    }
+    for (auto& [id, prom] : snapshot) {
+        try {
+            prom.set_exception(std::make_exception_ptr(
+                std::runtime_error(why)));
+        } catch (...) {}
+    }
+}
+
+// ─────────────────────────── Client ───────────────────────────
 
 Client::Client() : m_impl(std::make_unique<Impl>()) {}
 Client::~Client() { close(); }
@@ -143,33 +268,36 @@ Status Client::connect(std::string path) {
     if (connector.connect(m_impl->stream, addr, &timeout) == -1) {
         return sys_err("ACE_LSOCK_Connector::connect(" + path + ")");
     }
-    m_impl->connected = true;
+    m_impl->connected.store(true);
+    m_impl->stop_listener.store(false);
+    m_impl->listener = std::thread([impl = m_impl.get()]() {
+        impl->run_listener();
+    });
     return {};
 }
 
 Status Client::recv_welcome(std::string& out, std::int32_t timeout_ms) {
-    if (!m_impl->connected) return protocol_err("not connected");
-    std::string line;
-    auto rs = m_impl->recv_one_line(line, timeout_ms);
-    if (!rs.ok) return rs;
-    out = line + "\n";   // restore newline for byte-equality tests
+    if (!m_impl->connected.load()) return protocol_err("not connected");
+    std::unique_lock<std::mutex> g(m_impl->welcome_mtx);
+    if (!m_impl->welcome_cv.wait_for(g,
+            std::chrono::milliseconds(timeout_ms),
+            [&]() { return m_impl->welcome_received; })) {
+        Status s; s.ok=false; s.code=ETIMEDOUT;
+        s.err = "welcome timeout"; return s;
+    }
+    if (m_impl->welcome_line.empty()) {
+        return protocol_err("connection closed before welcome");
+    }
+    out = m_impl->welcome_line;
     return {};
 }
 
-Status Client::recv_line(std::string& out, std::int32_t timeout_ms) {
-    if (!m_impl->connected) return protocol_err("not connected");
-    return m_impl->recv_one_line(out, timeout_ms);
-}
-
 Status Client::set(const std::vector<KV>& pairs, std::int32_t timeout_ms) {
-    if (!m_impl->connected) return protocol_err("not connected");
     json req;
     req["op"]   = "set";
     req["keys"] = json::array();
     for (const auto& kv : pairs) {
-        json e;
-        e["k"] = kv.first;
-        e["v"] = kv.second;
+        json e; e["k"] = kv.first; e["v"] = kv.second;
         req["keys"].push_back(e);
     }
     json resp;
@@ -185,7 +313,6 @@ Status Client::get(const std::vector<std::string>& keys,
                    std::vector<GetResult>&         out,
                    std::int32_t                    timeout_ms) {
     out.clear();
-    if (!m_impl->connected) return protocol_err("not connected");
     json req;
     req["op"]   = "get";
     req["keys"] = keys;
@@ -212,25 +339,94 @@ Status Client::get(const std::vector<std::string>& keys,
 
 Status Client::watch(const std::vector<std::string>& keys,
                      std::int32_t                    timeout_ms) {
-    if (!m_impl->connected) return protocol_err("not connected");
+    // Pull-style: bump local refcount, only send wire `register`
+    // for keys that just transitioned 0 → 1.
+    std::vector<std::string> wireKeys;
+    {
+        std::lock_guard<std::mutex> g(m_impl->watches_mtx);
+        for (const auto& k : keys) {
+            if (m_impl->key_refcount[k]++ == 0) wireKeys.push_back(k);
+        }
+    }
+    if (wireKeys.empty()) return {};
+
     json req;
     req["op"]   = "register";
-    req["keys"] = keys;
+    req["keys"] = wireKeys;
     json resp;
     auto rs = m_impl->round_trip(req, resp, timeout_ms);
-    if (!rs.ok) return rs;
+    if (!rs.ok) {
+        std::lock_guard<std::mutex> g(m_impl->watches_mtx);
+        for (const auto& k : wireKeys) {
+            auto it = m_impl->key_refcount.find(k);
+            if (it != m_impl->key_refcount.end() && it->second > 0) {
+                if (--it->second == 0) m_impl->key_refcount.erase(it);
+            }
+        }
+        return rs;
+    }
     if (!resp.value("ok", false)) {
         return protocol_err(resp.value("err", "watch failed"));
     }
     return {};
 }
 
+Status Client::watch(const std::vector<std::string>& keys,
+                     EventCallback                   cb,
+                     WatchHandle*                    out_handle,
+                     std::int32_t                    timeout_ms) {
+    if (!cb) return protocol_err("watch: callback is null");
+
+    auto pull = watch(keys, timeout_ms);
+    if (!pull.ok) return pull;
+
+    WatchHandle h = g_next_handle.fetch_add(1);
+    {
+        std::lock_guard<std::mutex> g(m_impl->watches_mtx);
+        WatchEntry w;
+        w.keys = keys;
+        w.cb   = std::move(cb);
+        m_impl->watches.emplace(h, std::move(w));
+    }
+    if (out_handle) *out_handle = h;
+    return {};
+}
+
+Status Client::unwatch(WatchHandle handle, std::int32_t timeout_ms) {
+    if (handle == kInvalidHandle) return protocol_err("invalid handle");
+
+    std::vector<std::string> keys;
+    {
+        std::lock_guard<std::mutex> g(m_impl->watches_mtx);
+        auto it = m_impl->watches.find(handle);
+        if (it == m_impl->watches.end()) {
+            return protocol_err("unknown watch handle");
+        }
+        keys = it->second.keys;
+        m_impl->watches.erase(it);
+    }
+    return unwatch(keys, timeout_ms);
+}
+
 Status Client::unwatch(const std::vector<std::string>& keys,
                        std::int32_t                    timeout_ms) {
-    if (!m_impl->connected) return protocol_err("not connected");
+    std::vector<std::string> wireKeys;
+    {
+        std::lock_guard<std::mutex> g(m_impl->watches_mtx);
+        for (const auto& k : keys) {
+            auto it = m_impl->key_refcount.find(k);
+            if (it == m_impl->key_refcount.end()) continue;
+            if (--it->second == 0) {
+                m_impl->key_refcount.erase(it);
+                wireKeys.push_back(k);
+            }
+        }
+    }
+    if (wireKeys.empty()) return {};
+
     json req;
     req["op"]   = "remove";
-    req["keys"] = keys;
+    req["keys"] = wireKeys;
     json resp;
     auto rs = m_impl->round_trip(req, resp, timeout_ms);
     if (!rs.ok) return rs;
@@ -241,37 +437,47 @@ Status Client::unwatch(const std::vector<std::string>& keys,
 }
 
 Status Client::recv_event(Event& out, std::int32_t timeout_ms) {
-    if (!m_impl->connected) return protocol_err("not connected");
-    std::string line;
-    auto rs = m_impl->recv_one_line(line, timeout_ms);
-    if (!rs.ok) return rs;
-    json p;
-    try { p = json::parse(line); }
-    catch (const std::exception& e) {
-        return protocol_err(std::string("bad event json: ") + e.what());
+    std::unique_lock<std::mutex> g(m_impl->events_mtx);
+    if (!m_impl->events_cv.wait_for(g,
+            std::chrono::milliseconds(timeout_ms),
+            [&]() { return !m_impl->events.empty() ||
+                           !m_impl->connected.load(); })) {
+        Status s; s.ok=false; s.code=ETIMEDOUT;
+        s.err = "no event within timeout"; return s;
     }
-    if (!p.contains("ev")) return protocol_err("not an event");
-    out.key   = p.value("k", "");
-    out.value = p.value("v", "");
-    if (p.contains("prev") && !p["prev"].is_null()) {
-        out.prev           = p["prev"].get<std::string>();
-        out.prev_has_value = true;
-    } else {
-        out.prev_has_value = false;
-    }
+    if (m_impl->events.empty()) return protocol_err("connection closed");
+    out = m_impl->events.front();
+    m_impl->events.pop_front();
     return {};
 }
 
 void Client::close() {
-    if (m_impl && m_impl->connected) {
+    if (!m_impl) return;
+    if (m_impl->connected.exchange(false)) {
+        m_impl->stop_listener.store(true);
+        ::shutdown(m_impl->stream.get_handle(), SHUT_RDWR);
+        if (m_impl->listener.joinable()) m_impl->listener.join();
         m_impl->stream.close();
-        m_impl->connected = false;
-        m_impl->recvBuf.clear();
+        m_impl->fail_all_pending("client closed");
+        {
+            std::lock_guard<std::mutex> g(m_impl->welcome_mtx);
+            m_impl->welcome_received = true;
+            m_impl->welcome_cv.notify_all();
+        }
+        {
+            std::lock_guard<std::mutex> g(m_impl->events_mtx);
+            m_impl->events_cv.notify_all();
+        }
+        {
+            std::lock_guard<std::mutex> g(m_impl->watches_mtx);
+            m_impl->watches.clear();
+            m_impl->key_refcount.clear();
+        }
     }
 }
 
 int Client::fd() const {
-    if (!m_impl || !m_impl->connected) return -1;
+    if (!m_impl || !m_impl->connected.load()) return -1;
     return const_cast<ACE_LSOCK_Stream&>(m_impl->stream).get_handle();
 }
 
