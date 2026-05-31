@@ -1,5 +1,21 @@
 # Local Data Store — Design
 
+> **Status (2026-05-31).** This document captures the original design
+> intent from the D1–D10 phases. Several parts have been **superseded
+> by later phases**; each affected section flags what changed and
+> points at the current source-of-truth doc. The high-level
+> architecture (LSOCK acceptor → SessionRegistry → WorkerPool →
+> DataStore + LuaPersistor) is unchanged; the wire framing, typing,
+> and threading details below were upgraded in PR #5 (typed values),
+> PR #7 (EMP framing), PR #11 (schema defaults), PR #12 (live watch).
+>
+> If you only need the *current* behaviour, read these instead:
+>
+> - [protocol.md](protocol.md) — current wire (EMP framing + typed values)
+> - [client_api.md](client_api.md) — application-developer guide
+> - This file — design rationale + historical context
+
+
 A persistent key-value store delivered as a **separate module** under
 `modules/data-store/`, built into three deliverables:
 
@@ -114,6 +130,14 @@ header.
 ---
 
 ## 3. Wire protocol
+
+> **⚠ Superseded (PR #7).** §3.1–§3.5 below describe the original
+> newline-delimited JSON wire. The shipping wire is **Embedded Micro
+> Protocol (EMP)** — fixed 8-byte big-endian header + JSON payload —
+> modelled on Eclipse Mihini's protocol. Read [protocol.md](protocol.md)
+> for the authoritative spec. The section is kept here so the historical
+> rationale (single-line, language-portable, no CoAP parser) stays
+> discoverable.
 
 Newline-delimited JSON over the stream socket. One JSON document per
 line, both directions. The client framing is `[\n]` — easy to
@@ -267,6 +291,18 @@ next phase batches writes onto a 100 ms tick.
 
 ## 5. Threading
 
+> **⚠ Superseded (D1.5 / commit `6d4c37c`).** The single-reactor-thread
+> model below was replaced by an active-object **WorkerPool** of 5
+> `ACE_Task` workers (xpmile MicroService shape). The reactor thread
+> only accepts + reads bytes; per-session work runs on the owning
+> Worker. `DataStore` mutex-guards the map; `LuaPersistor::save` is
+> called under the Worker thread, not the reactor. Cross-Worker notify
+> fan-out goes through a `DeliverNotify` WorkMsg on the owner Worker's
+> queue so the per-session "single writer to its socket" invariant
+> still holds. The fsync analysis at the end is unchanged — flush still
+> happens synchronously on the Worker thread; FUP-DS-1 tracks moving
+> it to a dedicated worker if profiling demands it.
+
 All sockets, the parser, and the persistor live on the **iot reactor
 thread** (same `ACE_Reactor::instance()` used by UDPAdapter). No
 locks anywhere. Push notifications are emitted inline from the
@@ -321,38 +357,42 @@ bad request — the client decides when to reconnect.
 
 ## 9. Configuration surface
 
-Settable on the iot CLI:
+> **Updated (PR #11).** ds-server is a separate daemon — there is no
+> in-process `ds-enable=` toggle. The current CLI surface is:
 
-| Flag           | Default                            | Purpose                                      |
-|----------------|------------------------------------|----------------------------------------------|
-| `ds-enable=`   | `false`                            | When `true`, start the data store at boot.   |
-| `ds-socket=`   | `/var/run/iot/data_store.sock`     | Listen path; created with 0660.              |
-| `ds-store=`    | `/var/lib/iot/data_store.lua`      | Persistent backing file.                     |
-| `ds-mode=`     | `write-through`                    | Reserved; future `batch=100ms` value.        |
+| Flag              | Default                            | Purpose                                                                                       |
+|-------------------|------------------------------------|-----------------------------------------------------------------------------------------------|
+| `ds-socket=`      | `/var/run/iot/data_store.sock`     | Listen path; created with mode `0660`.                                                       |
+| `ds-store=`       | `/var/lib/iot/data_store.lua`      | Persistent backing file (typed values, `schema_version=2`).                                  |
+| `ds-schema-dir=`  | `/etc/iot/ds-schemas/`             | Loads every `*.lua` schema under this dir on boot. Missing dir → silently treated as no schemas. |
+
+The iot client (lwm2m binary) selects its socket via `ds-sock=PATH`
+on its own CLI; see `apps/src/main.cpp` + `apps/src/ds_config.cpp`.
 
 ---
 
 ## 10. CLI test client
 
-A thin CLI client lives at `apps/src/data_store_client.cpp`. Same
-heredoc-friendly stdin shape as the existing readline CLI. Compiled
-as a separate target (`ds-cli`) so a deployment can ship it without
-the full iot binary for debugging.
+> **Updated (PR #7, PR #8).** ds-cli now lives at
+> `modules/data-store/src/cli/ds_cli.cpp` and is shipped as the
+> separate `ds-cli` target. It's argv-driven (one command per invocation),
+> not REPL-driven. Values are parsed JSON-first so types round-trip
+> correctly. See [protocol.md §9](protocol.md#9-ds-cli-examples) for the
+> current example set.
 
-```
-$ ds-cli /var/run/iot/data_store.sock
-ds> set foo bar
+```sh
+$ ds-cli --socket=/var/run/iot/data_store.sock set iot.endpoint '"urn:dev:client-7"'
 ok
-ds> get foo
-foo=bar
-ds> watch foo
-watching foo
-ds> ...
-[event] foo changed bar → quux
+$ ds-cli --socket=/var/run/iot/data_store.sock get iot.endpoint
+iot.endpoint=urn:dev:client-7
+$ ds-cli --socket=/var/run/iot/data_store.sock watch iot.endpoint
+watching 1 key(s) via callback handle=1; count=1
+[event] iot.endpoint = urn:dev:client-9  (prev=urn:dev:client-7)
 ```
 
-The CLI is a smoke-harness convenience; integrations talk JSON
-directly.
+The CLI is a smoke-harness convenience; library integrations link
+`libdatastore_client.a` instead of shelling out — see
+[client_api.md](client_api.md).
 
 ---
 
@@ -368,17 +408,21 @@ directly.
 
 ## 13. Client threading model (D8 — callback API)
 
-Implemented 2026-05-31 (commits `1fb4909` / `25a4e4b`).
+Implemented 2026-05-31 (commits `1fb4909` / `25a4e4b`); reframed onto
+EMP framing in PR #7.
 
 `Client::connect()` spawns an **internal listener thread** that owns
-the read side of the socket. Every '\n'-terminated line is demuxed
-into one of three lanes:
+the read side of the socket. Every complete EMP frame (one 8-byte
+header + payload) is demuxed by `type` byte into one of three lanes:
 
-| Line shape                         | Destination                                                            |
-|-----------------------------------|------------------------------------------------------------------------|
-| `{"hello":...}`                    | Welcome promise → `recv_welcome()` wakes                               |
-| `{"ev":"changed",...}`             | Pull queue (`recv_event()`) **and** every matching per-watch callback |
-| `{"ok":...,"id":...}`              | Per-request `std::promise<json>` matched by id → caller's `set/get/...` returns |
+| Frame type byte                    | Destination                                                                                           |
+|------------------------------------|-------------------------------------------------------------------------------------------------------|
+| `Push` (bit 1) `NotifyEvent`       | Pull queue (`recv_event()`) **and** every matching per-watch callback                                |
+| `Response` (bit 0)                 | Per-request `std::promise<PendingValue>` matched by `(op << 8 \| reqID)` → caller's `set/get/...` returns |
+| (anything else)                    | Dropped silently — server only ever sends responses or pushes                                         |
+
+EMP has no welcome handshake; the welcome promise + `recv_welcome()`
+were removed in PR #7.
 
 Synchronous methods (`set`, `get`, `watch`, `unwatch`) keep their
 sync signatures from the caller's view: they build a request, register
@@ -443,14 +487,17 @@ ACE — last-loaded wins, but operators see the collision.
 
 ### Validation hooks in Worker dispatch
 
-- **set**: each `{k,v}` pair runs `schema.validate_set(k, v)`.
-  Mismatch → `{ok:false, err:"schema(K): expected …, got …"}`. The
-  request bails before touching the store, so a malformed set has
-  zero side effect on memory or disk.
+- **set**: each `{key: value}` entry runs `schema.validate_set(k, v)`
+  against the *typed* `Value` variant (PR #5). Mismatch → EMP response
+  with `Status::SchemaRejected` (`0x8004`) and
+  `body = {"err":"schema(K): expected …, got …"}`. The request bails
+  before touching the store, so a malformed set has zero side effect
+  on memory or disk.
 - **get**: when `DataStore::get(k)` returns `nullopt`, the worker
-  falls back to `schema.default_for(k)`. Schema defaults are
-  stringified at load time (numbers → `"42"`, booleans → `"1"`/`"0"`)
-  so they match the wire's all-strings model.
+  falls back to `schema.default_for(k)` — which now returns a typed
+  `Value` (PR #5), not a stringified default. A `string` default
+  comes back as `std::string`, an `integer` default as `uint32_t` /
+  `int32_t` / `double` per range, a `boolean` default as `bool`.
 - **Unknown keys** (no schema entry) pass through unchanged. The
   schema is opt-in, not a whitelist.
 
@@ -458,20 +505,34 @@ ACE — last-loaded wins, but operators see the collision.
 
 | `type=` value | Validation                                      |
 |---------------|-------------------------------------------------|
-| `string`      | always passes (every wire value is a string)    |
-| `integer`     | parseable as `long long`; respects `min`/`max`  |
-| `float`       | parseable as `double`                           |
-| `boolean`     | one of `"0"`, `"1"`, `"true"`, `"false"`        |
-| `opaque`      | always passes (operator's responsibility)       |
+| `string`      | variant alternative is `std::string`            |
+| `integer`     | variant is `uint32_t` / `int32_t` / integer `double`; respects `min`/`max` |
+| `float`       | variant is `double` / `uint32_t` / `int32_t`    |
+| `boolean`     | variant alternative is `bool`                   |
+| `opaque`      | treated as `string`                             |
 | (omitted)     | always passes — same as opaque                  |
+
+> **Schema dir default (PR #11).** ds-server now auto-loads
+> `/etc/iot/ds-schemas/` when `ds-schema-dir=` isn't given. The
+> canonical `iot.lua` schema is installed there by the cmake
+> `install` rule.
 
 ---
 
 ## 15. Related docs
 
+- [`protocol.md`](protocol.md) — current wire-level EMP framing
+  (header, opcodes, status codes, push semantics, divergences from
+  Mihini, ds-cli examples).
+- [`client_api.md`](client_api.md) — application-developer guide for
+  `libdatastore_client` (CMake wiring, typed values, watch styles,
+  threading rules, schema deployment, error patterns, worked startup).
 - [`tdd.md`](tdd.md) — phase plan + tests.
 - [`../../../apps/docs/architecture.md`](../../../apps/docs/architecture.md) —
   iot-binary layout (adds a `ds-server` box once D1 lands).
+- [`../../../apps/src/ds_config.cpp`](../../../apps/src/ds_config.cpp) —
+  worked example of consuming the client lib from a real binary
+  (now with live `watch`, PR #12).
 - [`../../../apps/docs/cli.md`](../../../apps/docs/cli.md) —
   config-file Lua shape we reuse for the persistor.
 - [`../../../log/L10/results.md`](../../../log/L10/results.md) — phase
