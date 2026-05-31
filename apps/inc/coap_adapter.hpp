@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <fstream>
 
+#include <ace/Log_Msg.h>
+
 #include "cbor_adapter.hpp"
 #include "lwm2m_adapter.hpp"
 
@@ -288,7 +290,10 @@ class CoAPAdapter {
             });
 
             if(it != coapmessage.uripath.end()) {
-                std::cout << basename(__FILE__) << ":" << __LINE__ <<  " value:" << it->optionvalue << " cf: " << ::ntohs(atoi(it->optionvalue.c_str())) << std::endl;
+                ACE_DEBUG((LM_DEBUG,
+                           ACE_TEXT("%D [iot:%t] %M %N:%l value=%C cf=%u\n"),
+                           it->optionvalue.c_str(),
+                           static_cast<unsigned>(::ntohs(atoi(it->optionvalue.c_str())))));
                 return(getContentFormat(::ntohs(atoi(it->optionvalue.c_str()))));
             }
 

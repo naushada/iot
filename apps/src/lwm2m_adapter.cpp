@@ -830,6 +830,7 @@ std::int32_t LwM2MAdapter::buildLwM2MPayload(const ObjectId_t& oid, std::string 
     default:
         break;
     }
+    return 0;
 }
 
 
