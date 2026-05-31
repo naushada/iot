@@ -1,9 +1,10 @@
 # net-router — module design (L13)
 
-> **Status (2026-05-31):** D1, D2, D3 (DsBridge), partial D4
-> (nft_rules generator), D5 (ip_route + iface_monitor) landed.
-> D6 (lifecycle + `nft -f -` apply + e2e smoke) and D7 (packaging)
-> pending.
+> **Status (2026-05-31):** D1–D6 landed (schema, scaffold, DsBridge,
+> nft_rules generator, ip_route + iface_monitor, lifecycle FSM +
+> `nft -f` apply wrapper). D7 (packaging: systemd unit, IOT_ROLE=net,
+> apt-install nftables in both images, apps/CMakeLists.txt
+> add_subdirectory) remains.
 
 ## What this module is
 
@@ -82,13 +83,16 @@ modules/net/router/
 │   ├── shell.{hpp,cpp}         popen()-backed Runner abstraction — D5
 │   ├── ip_route.{hpp,cpp}      `ip route replace` metric writer — D5
 │   ├── iface_monitor.{hpp,cpp} `ip -j link/route show` parser — D5
-│   └── apply.{hpp,cpp}         `nft -f -` invoker — D6, pending
+│   ├── apply.{hpp,cpp}         tempfile + `nft -f` apply wrapper — D6
+│   └── lifecycle.{hpp,cpp}     pure FSM: Sinks + Inputs → step() — D6
 ├── schemas/net.lua
 ├── test/
 │   ├── ds_bridge_test.cpp      D3
 │   ├── nft_rules_test.cpp      D4
 │   ├── iface_monitor_test.cpp  D5
-│   └── ip_route_test.cpp       D5
+│   ├── ip_route_test.cpp       D5
+│   ├── apply_test.cpp          D6 (uses a real fake-nft shell script)
+│   └── lifecycle_test.cpp      D6 (FSM transitions + recovery)
 └── docs/design.md              this file
 ```
 
