@@ -175,3 +175,48 @@ TEST(DataStore, typed_unchanged_set_is_noop) {
     auto r = s.set("x", Value{static_cast<std::int32_t>(-7)});
     EXPECT_FALSE(r.changed);
 }
+
+/* ───────────────────────── typed accessors ───────────────────────── */
+// data_store::to_string / to_bool / to_uint32 / to_int32 / to_double —
+// the helpers apps consume to avoid re-rolling std::get_if + numeric
+// promotion boilerplate per field. Strict by default, with documented
+// integer promotions (int32 → uint32 when ≥0; uint32 → int32 when fits;
+// any integer → double).
+
+TEST(TypedAccessors, to_string_strict) {
+    EXPECT_EQ("hello", *data_store::to_string(Value{std::string("hello")}));
+    EXPECT_FALSE(data_store::to_string(Value{true}).has_value());
+    EXPECT_FALSE(data_store::to_string(Value{static_cast<std::uint32_t>(42)}).has_value());
+    EXPECT_FALSE(data_store::to_string(Value{std::monostate{}}).has_value());
+}
+
+TEST(TypedAccessors, to_bool_strict) {
+    EXPECT_TRUE(*data_store::to_bool(Value{true}));
+    EXPECT_FALSE(*data_store::to_bool(Value{false}));
+    // Strings like "1"/"true" are NOT coerced — by design.
+    EXPECT_FALSE(data_store::to_bool(Value{std::string("true")}).has_value());
+    EXPECT_FALSE(data_store::to_bool(Value{static_cast<std::uint32_t>(1)}).has_value());
+}
+
+TEST(TypedAccessors, to_uint32_accepts_int32_when_non_negative) {
+    EXPECT_EQ(42u, *data_store::to_uint32(Value{static_cast<std::uint32_t>(42)}));
+    EXPECT_EQ(42u, *data_store::to_uint32(Value{static_cast<std::int32_t>(42)}));
+    EXPECT_FALSE(data_store::to_uint32(Value{static_cast<std::int32_t>(-1)}).has_value());
+    EXPECT_FALSE(data_store::to_uint32(Value{1.5}).has_value());
+}
+
+TEST(TypedAccessors, to_int32_accepts_uint32_when_fits) {
+    EXPECT_EQ(-7, *data_store::to_int32(Value{static_cast<std::int32_t>(-7)}));
+    EXPECT_EQ(42, *data_store::to_int32(Value{static_cast<std::uint32_t>(42)}));
+    // Uint32 above INT32_MAX cannot fit → nullopt.
+    EXPECT_FALSE(data_store::to_int32(
+        Value{static_cast<std::uint32_t>(0x80000000u)}).has_value());
+}
+
+TEST(TypedAccessors, to_double_accepts_all_numeric) {
+    EXPECT_DOUBLE_EQ(1.5, *data_store::to_double(Value{1.5}));
+    EXPECT_DOUBLE_EQ(42.0, *data_store::to_double(Value{static_cast<std::uint32_t>(42)}));
+    EXPECT_DOUBLE_EQ(-7.0, *data_store::to_double(Value{static_cast<std::int32_t>(-7)}));
+    EXPECT_FALSE(data_store::to_double(Value{std::string("1.5")}).has_value());
+    EXPECT_FALSE(data_store::to_double(Value{true}).has_value());
+}

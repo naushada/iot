@@ -21,21 +21,6 @@ constexpr const char* kKeyEndpoint  = "iot.endpoint";
 constexpr const char* kKeyServerUri = "iot.server.uri";
 constexpr const char* kKeyLifetime  = "iot.lifetime";
 
-/// Try to lift the typed Value into T. Returns nullopt if the variant
-/// alternative doesn't match. We tolerate int32→uint32 promotion when
-/// the int is non-negative; the schema's min=0 catches the negative
-/// case at set time so this should be rare.
-template <class T>
-std::optional<T> as(const data_store::Value& v) {
-    if (auto* p = std::get_if<T>(&v)) return *p;
-    if constexpr (std::is_same_v<T, std::uint32_t>) {
-        if (auto* p = std::get_if<std::int32_t>(&v); p && *p >= 0) {
-            return static_cast<std::uint32_t>(*p);
-        }
-    }
-    return std::nullopt;
-}
-
 } // namespace
 
 struct DsConfig::Impl {
@@ -77,11 +62,11 @@ DsConfig::DsConfig(std::string socketPath)
         for (auto& r : got) {
             if (!r.has_value) continue;
             if (r.key == kKeyEndpoint) {
-                m_impl->endpoint = as<std::string>(r.value);
+                m_impl->endpoint = data_store::to_string(r.value);
             } else if (r.key == kKeyServerUri) {
-                m_impl->server_uri = as<std::string>(r.value);
+                m_impl->server_uri = data_store::to_string(r.value);
             } else if (r.key == kKeyLifetime) {
-                m_impl->lifetime = as<std::uint32_t>(r.value);
+                m_impl->lifetime = data_store::to_uint32(r.value);
             }
         }
     }
@@ -96,13 +81,13 @@ DsConfig::DsConfig(std::string socketPath)
             {
                 std::lock_guard<std::mutex> g(m_impl->mtx);
                 if (ev.key == kKeyEndpoint) {
-                    m_impl->endpoint = as<std::string>(ev.value);
+                    m_impl->endpoint = data_store::to_string(ev.value);
                     changed = Key::Endpoint;
                 } else if (ev.key == kKeyServerUri) {
-                    m_impl->server_uri = as<std::string>(ev.value);
+                    m_impl->server_uri = data_store::to_string(ev.value);
                     changed = Key::ServerUri;
                 } else if (ev.key == kKeyLifetime) {
-                    m_impl->lifetime = as<std::uint32_t>(ev.value);
+                    m_impl->lifetime = data_store::to_uint32(ev.value);
                     changed = Key::Lifetime;
                 }
             }

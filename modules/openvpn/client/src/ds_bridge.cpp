@@ -110,15 +110,15 @@ DsBridge::DsBridge(std::string socketPath)
         std::lock_guard<std::mutex> g(m_impl->mtx);
         for (auto& r : got) {
             if (!r.has_value) continue;
-            if      (r.key == kRemoteHost)  m_impl->remote_host  = as<std::string>(r.value);
-            else if (r.key == kRemotePort)  m_impl->remote_port  = as<std::uint32_t>(r.value);
-            else if (r.key == kRemoteProto) m_impl->remote_proto = as<std::string>(r.value);
-            else if (r.key == kCertPath)    m_impl->cert_path    = as<std::string>(r.value);
-            else if (r.key == kKeyPath)     m_impl->key_path     = as<std::string>(r.value);
-            else if (r.key == kCaPath)      m_impl->ca_path      = as<std::string>(r.value);
-            else if (r.key == kCipher)      m_impl->cipher       = as<std::string>(r.value);
-            else if (r.key == kDev)         m_impl->dev          = as<std::string>(r.value);
-            else if (r.key == kMgmtPort)    m_impl->mgmt_port    = as<std::uint32_t>(r.value);
+            if      (r.key == kRemoteHost)  m_impl->remote_host  = data_store::to_string(r.value);
+            else if (r.key == kRemotePort)  m_impl->remote_port  = data_store::to_uint32(r.value);
+            else if (r.key == kRemoteProto) m_impl->remote_proto = data_store::to_string(r.value);
+            else if (r.key == kCertPath)    m_impl->cert_path    = data_store::to_string(r.value);
+            else if (r.key == kKeyPath)     m_impl->key_path     = data_store::to_string(r.value);
+            else if (r.key == kCaPath)      m_impl->ca_path      = data_store::to_string(r.value);
+            else if (r.key == kCipher)      m_impl->cipher       = data_store::to_string(r.value);
+            else if (r.key == kDev)         m_impl->dev          = data_store::to_string(r.value);
+            else if (r.key == kMgmtPort)    m_impl->mgmt_port    = data_store::to_uint32(r.value);
         }
     }
 
@@ -131,15 +131,15 @@ DsBridge::DsBridge(std::string socketPath)
             std::optional<Key> changed;
             {
                 std::lock_guard<std::mutex> g(m_impl->mtx);
-                if      (ev.key == kRemoteHost)  { m_impl->remote_host  = as<std::string>(ev.value);   changed = Key::RemoteHost;  }
-                else if (ev.key == kRemotePort)  { m_impl->remote_port  = as<std::uint32_t>(ev.value); changed = Key::RemotePort;  }
-                else if (ev.key == kRemoteProto) { m_impl->remote_proto = as<std::string>(ev.value);   changed = Key::RemoteProto; }
-                else if (ev.key == kCertPath)    { m_impl->cert_path    = as<std::string>(ev.value);   changed = Key::CertPath;    }
-                else if (ev.key == kKeyPath)     { m_impl->key_path     = as<std::string>(ev.value);   changed = Key::KeyPath;     }
-                else if (ev.key == kCaPath)      { m_impl->ca_path      = as<std::string>(ev.value);   changed = Key::CaPath;      }
-                else if (ev.key == kCipher)      { m_impl->cipher       = as<std::string>(ev.value);   changed = Key::Cipher;      }
-                else if (ev.key == kDev)         { m_impl->dev          = as<std::string>(ev.value);   changed = Key::Dev;         }
-                else if (ev.key == kMgmtPort)    { m_impl->mgmt_port    = as<std::uint32_t>(ev.value); changed = Key::MgmtPort;    }
+                if      (ev.key == kRemoteHost)  { m_impl->remote_host  = data_store::to_string(ev.value);   changed = Key::RemoteHost;  }
+                else if (ev.key == kRemotePort)  { m_impl->remote_port  = data_store::to_uint32(ev.value); changed = Key::RemotePort;  }
+                else if (ev.key == kRemoteProto) { m_impl->remote_proto = data_store::to_string(ev.value);   changed = Key::RemoteProto; }
+                else if (ev.key == kCertPath)    { m_impl->cert_path    = data_store::to_string(ev.value);   changed = Key::CertPath;    }
+                else if (ev.key == kKeyPath)     { m_impl->key_path     = data_store::to_string(ev.value);   changed = Key::KeyPath;     }
+                else if (ev.key == kCaPath)      { m_impl->ca_path      = data_store::to_string(ev.value);   changed = Key::CaPath;      }
+                else if (ev.key == kCipher)      { m_impl->cipher       = data_store::to_string(ev.value);   changed = Key::Cipher;      }
+                else if (ev.key == kDev)         { m_impl->dev          = data_store::to_string(ev.value);   changed = Key::Dev;         }
+                else if (ev.key == kMgmtPort)    { m_impl->mgmt_port    = data_store::to_uint32(ev.value); changed = Key::MgmtPort;    }
             }
             if (!changed) return;
             // First-cut policy (L12 R4): log "needs restart"; live
