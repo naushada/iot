@@ -2,6 +2,7 @@
 
 #include "data_store.hpp"
 #include "data_store/proto.hpp"
+#include "schema.hpp"
 #include "server.hpp"
 #include "session.hpp"
 #include "worker_pool.hpp"
@@ -55,8 +56,12 @@ std::string notify_line(const std::string& key,
 
 } // namespace
 
-Worker::Worker(std::shared_ptr<DataStore> store, int id)
-  : m_store(std::move(store)), m_id(id) {
+Worker::Worker(std::shared_ptr<DataStore>      store,
+               std::shared_ptr<SchemaRegistry> schema,
+               int                             id)
+  : m_store(std::move(store)),
+    m_schema(std::move(schema)),
+    m_id(id) {
 }
 
 Worker::~Worker() {
@@ -189,6 +194,16 @@ void Worker::handle_process_request(WorkMsg* msg) {
                 }
                 const std::string k = e["k"].get<std::string>();
                 const std::string v = e["v"].get<std::string>();
+                // REQ-DS-014 / schema check: reject type mismatches
+                // before touching the store. Schema is optional; an
+                // unknown key returns nullopt → passthrough.
+                if (m_schema) {
+                    auto err = m_schema->validate_set(k, v);
+                    if (err) {
+                        s->send(error_response(reqId, *err));
+                        return;
+                    }
+                }
                 auto r = m_store->set(k, v);
                 if (!r.changed) continue;
                 std::string line = notify_line(k, v, r.prev);
@@ -224,8 +239,17 @@ void Worker::handle_process_request(WorkMsg* msg) {
                 auto v = m_store->get(k);
                 json item;
                 item["k"] = k;
-                if (v.has_value()) item["v"] = *v;
-                else               item["v"] = nullptr;
+                if (v.has_value()) {
+                    item["v"] = *v;
+                } else if (m_schema) {
+                    // Fall back to the schema default when the
+                    // key is unset.
+                    auto def = m_schema->default_for(k);
+                    if (def) item["v"] = *def;
+                    else     item["v"] = nullptr;
+                } else {
+                    item["v"] = nullptr;
+                }
                 resp["data"].push_back(item);
             }
             s->send(resp.dump() + "\n");

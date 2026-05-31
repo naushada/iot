@@ -17,7 +17,7 @@ TEST(WorkerPool, default_size_is_five) {
 
 TEST(WorkerPool, round_robin_visits_every_worker_then_wraps) {
     auto store = std::make_shared<ds::DataStore>();
-    ds::WorkerPool pool(store, 3);
+    ds::WorkerPool pool(store, /*schema=*/nullptr, 3);
     ASSERT_EQ(0, pool.open());
 
     // 6 picks across a 3-pool: indices 0,1,2,0,1,2.
@@ -39,6 +39,6 @@ TEST(WorkerPool, round_robin_visits_every_worker_then_wraps) {
 
 TEST(WorkerPool, next_before_open_returns_nullptr_when_pool_size_zero) {
     auto store = std::make_shared<ds::DataStore>();
-    ds::WorkerPool pool(store, 0);
+    ds::WorkerPool pool(store, /*schema=*/nullptr, /*poolSize=*/0);
     EXPECT_EQ(nullptr, pool.next());
 }

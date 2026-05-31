@@ -9,6 +9,7 @@
 /// kDefaultStorePath. Both are operator-overridable.
 
 #include "lua_persistor.hpp"
+#include "schema.hpp"
 #include "server.hpp"
 #include "worker_pool.hpp"
 
@@ -56,8 +57,21 @@ int main(int argc, char** argv) {
     std::string storePath = arg_value(argc, argv, "ds-store");
     if (storePath.empty())  storePath = data_store::proto::kDefaultStorePath;
 
+    std::string schemaDir = arg_value(argc, argv, "ds-schema-dir");
+
     std::cout << "[ds-server] socket=" << socketPath
-              << " store=" << storePath << "\n";
+              << " store=" << storePath;
+    if (!schemaDir.empty()) std::cout << " schemas=" << schemaDir;
+    std::cout << "\n";
+
+    // Schema (optional) — load every *.lua under ds-schema-dir/.
+    // Empty dir or missing files are tolerated (no validation kicks in).
+    auto schema = std::make_shared<data_store::server::SchemaRegistry>();
+    if (!schemaDir.empty()) {
+        auto n = schema->load_directory(schemaDir);
+        std::cout << "[ds-server] loaded " << n
+                  << " schema key(s) from " << schemaDir << "\n";
+    }
 
     auto store = std::make_shared<data_store::server::DataStore>();
 
@@ -81,7 +95,7 @@ int main(int argc, char** argv) {
     // shape as xpmile MicroService pool. Must be open()ed before the
     // server starts accepting so the first handle_input has a place
     // to enqueue.
-    data_store::server::WorkerPool pool(store);
+    data_store::server::WorkerPool pool(store, schema);
     if (pool.open() != 0) {
         std::cerr << "[ds-server] worker pool open failed; exit 1\n";
         return 1;

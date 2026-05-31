@@ -20,6 +20,7 @@
 namespace data_store::server {
 
 class DataStore;
+class SchemaRegistry;
 class Session;
 
 enum class WorkKind : std::uint8_t {
@@ -36,7 +37,9 @@ struct WorkMsg {
 
 class Worker : public ACE_Task<ACE_MT_SYNCH> {
 public:
-    Worker(std::shared_ptr<DataStore> store, int id);
+    Worker(std::shared_ptr<DataStore>      store,
+           std::shared_ptr<SchemaRegistry> schema,   // may be nullptr
+           int                             id);
     ~Worker() override;
 
     int open(void* args = nullptr) override;
@@ -55,8 +58,9 @@ private:
     void handle_deliver_notify(WorkMsg* msg);
     void handle_session_closed(WorkMsg* msg);
 
-    std::shared_ptr<DataStore> m_store;
-    int                        m_id;
+    std::shared_ptr<DataStore>      m_store;
+    std::shared_ptr<SchemaRegistry> m_schema;
+    int                             m_id;
 };
 
 } // namespace data_store::server

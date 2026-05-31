@@ -70,7 +70,7 @@ struct LiveServer {
 
     LiveServer(const std::string& dir)
       : store(std::make_shared<ds::server::DataStore>()),
-        pool(store, 3),
+        pool(store, /*schema=*/nullptr, 3),
         sock(dir + "/ds.sock") {
         EXPECT_EQ(0, pool.open());
         server = std::make_unique<ds::server::Server>(store, &pool, sock);
