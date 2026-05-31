@@ -55,14 +55,22 @@ RUN strip /staging/usr/bin/ds-server \
 # ──────────────────────────────────────────────────────────────────────
 FROM ubuntu:22.04 AS runtime
 
-# Runtime apt: only the libs the binaries actually link against per ldd.
-# --no-install-recommends keeps the layer small.
+# Runtime apt: libs the binaries link against per ldd, plus
+# openvpn(8) which `openvpn-client` spawns at /usr/sbin/openvpn.
+# --no-install-recommends keeps the layer small (openvpn alone pulls
+# ~6 MB; with recommends it'd drag in systemd, dnsmasq, etc.).
+#
+# Container-runtime caveat: openvpn(8) needs CAP_NET_ADMIN +
+# /dev/net/tun. Run with:
+#   podman run --cap-add=NET_ADMIN --device=/dev/net/tun ...
+# DEPLOY.md covers this in the operator walkthrough.
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends -qq \
         libreadline8 \
         libssl3 \
         zlib1g \
-        ca-certificates && \
+        ca-certificates \
+        openvpn && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* /usr/share/doc/* /usr/share/man/*
 
@@ -81,10 +89,11 @@ RUN echo /usr/local/ACE_TAO-7.0.0/lib > /etc/ld.so.conf.d/ace-tao.conf && \
     ldconfig
 
 # Binaries + config + entrypoint.
-COPY --from=build /staging/usr/bin/ds-server   /usr/local/bin/
-COPY --from=build /staging/usr/bin/ds-cli      /usr/local/bin/
-COPY --from=build /staging/usr/bin/lwm2m       /usr/local/bin/
-COPY --from=build /staging/etc/iot             /etc/iot
+COPY --from=build /staging/usr/bin/ds-server       /usr/local/bin/
+COPY --from=build /staging/usr/bin/ds-cli          /usr/local/bin/
+COPY --from=build /staging/usr/bin/lwm2m           /usr/local/bin/
+COPY --from=build /staging/usr/bin/openvpn-client  /usr/local/bin/
+COPY --from=build /staging/etc/iot                 /etc/iot
 
 COPY packaging/iot-entrypoint.sh /usr/local/bin/iot-entrypoint
 RUN chmod +x /usr/local/bin/iot-entrypoint

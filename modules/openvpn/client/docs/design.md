@@ -1,8 +1,8 @@
 # openvpn-client — module design (L12)
 
-> **Status (2026-05-31):** D1 + D2 scaffold landed. D3 (DsBridge),
-> D4 (mgmt parser), D5 (ACE_Process wrapper), D6 (lifecycle glue +
-> e2e smoke) pending.
+> **Status (2026-05-31):** L12 closed. D1+D2 (scaffold), D3 (DsBridge),
+> D4 (mgmt parser), D5 (ACE_Process wrapper), D6 (lifecycle + e2e
+> smoke) all done; openvpn(8) install + cap docs in this PR.
 
 ## What this module is
 
@@ -11,6 +11,26 @@ mirrors its state into the data store. Operators configure via
 `ds-cli set vpn.*`; the daemon spawns openvpn with a generated
 config, watches its management interface, and publishes the assigned
 virtual IP + state back to the same store.
+
+## Runtime requirements
+
+| Dep                       | Why                                                                          | Where it's installed                                |
+|---------------------------|------------------------------------------------------------------------------|------------------------------------------------------|
+| `openvpn(8)`              | Spawned by `OpenVpnProcess`; default path `/usr/sbin/openvpn`                | `docker/Dockerfile` (dev) + `packaging/Containerfile` (OCI runtime) |
+| `CAP_NET_ADMIN` capability | openvpn writes routes + brings the TUN device up                              | Container: `--cap-add=NET_ADMIN`. Bare-metal systemd: needs `AmbientCapabilities=CAP_NET_ADMIN` (FUP for the systemd unit) |
+| `/dev/net/tun`            | The TUN device node openvpn opens                                            | Container: `--device=/dev/net/tun`. Bare-metal: already there |
+| `ds-server` reachable     | DsBridge connects to the unix socket on startup                              | Same `/run/iot/data_store.sock` the lwm2m binary uses |
+
+Container example:
+
+```sh
+podman run -d --name iot-ovpn \
+    --cap-add=NET_ADMIN \
+    --device=/dev/net/tun \
+    --volumes-from iot-ds \
+    -v /etc/iot/vpn:/etc/iot/vpn:ro \
+    iot:l11 openvpn-client --ds-sock=/run/iot/data_store.sock
+```
 
 ```
 ┌──────────────────────────────────────────────────────────────┐

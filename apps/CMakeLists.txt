@@ -52,6 +52,13 @@ include_directories(inc)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store
                  ${CMAKE_BINARY_DIR}/data-store)
 
+# OpenVPN client daemon (L12). Sibling under ../modules/openvpn/client.
+# Adding it here means a top-level `cmake apps && make install` lands
+# the openvpn-client binary + its vpn.lua schema alongside everything
+# else. Standalone module build at modules/openvpn/client/ still works.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/openvpn/client
+                 ${CMAKE_BINARY_DIR}/openvpn-client)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)

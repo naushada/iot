@@ -7,7 +7,8 @@
 >
 > **Status (2026-05-31):** All D-items done. PRs #29 (D1+D2), #30 (D3),
 > #31 (D4), #33 (D5), #35 (D6). Restructure in PR #32; inc/ flatten
-> in PR #34. Module sits at `modules/openvpn/client/`.
+> in PR #34; **openvpn(8) runtime install + cap docs in PR #36**.
+> Module sits at `modules/openvpn/client/`.
 
 ---
 
