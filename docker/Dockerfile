@@ -1,6 +1,10 @@
 FROM ubuntu:jammy
+# Build deps (gcc/g++/etc.) + dev-side runtime deps (openvpn(8) — the
+# openvpn-client daemon spawns it; netcat-openbsd for the L12 fake-
+# openvpn smoke harness). Neither is a link-time dep, just runtime.
 RUN apt-get update && apt-get -y upgrade && \
-    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev liblua5.3-dev python3-dev autoconf wget pkg-config
+    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev liblua5.3-dev python3-dev autoconf wget pkg-config \
+                       openvpn netcat-openbsd
 
 # ACE/TAO 7.0.0 — same install prefix as the xpmile project so the include
 # / link paths in apps/CMakeLists.txt resolve. `ssl=1` is load-bearing; without

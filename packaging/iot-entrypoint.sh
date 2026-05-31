@@ -20,7 +20,7 @@ set -e
 # If the first arg is one of our binaries, forward verbatim — supports
 # `podman run iot:l11 ds-cli get foo`.
 case "${1:-}" in
-    ds-cli|ds-server|lwm2m)
+    ds-cli|ds-server|lwm2m|openvpn-client|openvpn)
         exec "$@"
         ;;
 esac

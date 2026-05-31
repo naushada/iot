@@ -53,6 +53,28 @@ podman run -d --name iot-server -e IOT_ROLE=server \
     iot:l11
 ```
 
+For **openvpn-client** (L12) — needs `CAP_NET_ADMIN` and
+`/dev/net/tun` because the spawned `openvpn(8)` brings up the TUN
+device + writes routes:
+
+```sh
+# vpn.* keys must be set before openvpn-client starts; see modules/openvpn/client/docs/design.md
+podman exec iot-ds ds-cli --socket=/run/iot/data_store.sock set vpn.remote.host '"vpn.example.com"'
+podman exec iot-ds ds-cli --socket=/run/iot/data_store.sock set vpn.cert.path  '"/etc/iot/vpn/client.crt"'
+podman exec iot-ds ds-cli --socket=/run/iot/data_store.sock set vpn.key.path   '"/etc/iot/vpn/client.key"'
+podman exec iot-ds ds-cli --socket=/run/iot/data_store.sock set vpn.ca.path    '"/etc/iot/vpn/ca.crt"'
+
+podman run -d --name iot-ovpn \
+    --cap-add=NET_ADMIN --device=/dev/net/tun \
+    --volumes-from iot-ds \
+    -v /etc/iot/vpn:/etc/iot/vpn:ro \
+    iot:l11 openvpn-client --ds-sock=/run/iot/data_store.sock
+```
+
+The image ships `openvpn(8)` from Ubuntu (`apt install openvpn` in
+the runtime stage). Default path `/usr/sbin/openvpn`; override with
+`--openvpn=PATH`.
+
 ### 3. Tune config via ds-cli
 
 ```sh
