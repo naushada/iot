@@ -26,6 +26,15 @@ struct Status {
 /// privileged.
 Status v0_dump_net_keys(const std::string& socketPath);
 
+/// Daemon mode: connect to ds-server, build a Lifecycle wiring
+/// nft apply + ip route + DsBridge writers, then tick every
+/// `poll_interval_sec_override` seconds (0 = use net.poll.interval_sec
+/// from ds, falls back to 5s). Returns when SIGTERM/SIGINT fires
+/// (g_run flag flipped by signal handler) or a fatal error happens.
+Status run_daemon(const std::string& socketPath,
+                  const std::string& nft_path,
+                  unsigned           poll_interval_sec_override = 0);
+
 } // namespace net_router
 
 #endif /* __net_router_router_hpp__ */

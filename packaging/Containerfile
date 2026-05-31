@@ -56,21 +56,26 @@ RUN strip /staging/usr/bin/ds-server \
 FROM ubuntu:22.04 AS runtime
 
 # Runtime apt: libs the binaries link against per ldd, plus
-# openvpn(8) which `openvpn-client` spawns at /usr/sbin/openvpn.
+# openvpn(8) which `openvpn-client` spawns at /usr/sbin/openvpn,
+# plus nftables + iproute2 which `net-router` shells out to for
+# atomic ruleset apply (`nft -f -`) and metric writes
+# (`ip route replace …`).
 # --no-install-recommends keeps the layer small (openvpn alone pulls
 # ~6 MB; with recommends it'd drag in systemd, dnsmasq, etc.).
 #
-# Container-runtime caveat: openvpn(8) needs CAP_NET_ADMIN +
-# /dev/net/tun. Run with:
-#   podman run --cap-add=NET_ADMIN --device=/dev/net/tun ...
-# DEPLOY.md covers this in the operator walkthrough.
+# Container-runtime caveats:
+#   openvpn(8): CAP_NET_ADMIN + /dev/net/tun → --cap-add=NET_ADMIN --device=/dev/net/tun
+#   net-router: CAP_NET_ADMIN + host network namespace → --cap-add=NET_ADMIN --network=host
+# DEPLOY.md covers both in the operator walkthrough.
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends -qq \
         libreadline8 \
         libssl3 \
         zlib1g \
         ca-certificates \
-        openvpn && \
+        openvpn \
+        nftables \
+        iproute2 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* /usr/share/doc/* /usr/share/man/*
 
@@ -93,6 +98,7 @@ COPY --from=build /staging/usr/bin/ds-server       /usr/local/bin/
 COPY --from=build /staging/usr/bin/ds-cli          /usr/local/bin/
 COPY --from=build /staging/usr/bin/lwm2m           /usr/local/bin/
 COPY --from=build /staging/usr/bin/openvpn-client  /usr/local/bin/
+COPY --from=build /staging/usr/bin/net-router      /usr/local/bin/
 COPY --from=build /staging/etc/iot                 /etc/iot
 
 COPY packaging/iot-entrypoint.sh /usr/local/bin/iot-entrypoint

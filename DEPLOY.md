@@ -41,6 +41,11 @@ client can connect to ds-server's unix socket:
 podman volume create iot-run
 podman run -d --name iot-ds     -e IOT_ROLE=ds     -v iot-run:/run/iot iot:l11
 podman run -d --name iot-client -e IOT_ROLE=client -v iot-run:/run/iot iot:l11
+# Optional: net-router for nftables DNAT into the local lwm2m client.
+# --network=host so the daemon sees the host's ifaces + applies nft
+# rules in the host's network namespace.
+podman run -d --name iot-net --cap-add=NET_ADMIN --network=host \
+    -e IOT_ROLE=net -v iot-run:/run/iot iot:l11
 ```
 
 For the server role (Bootstrap + DM), substitute `IOT_ROLE=server` and
@@ -179,6 +184,27 @@ journalctl -u iot-openvpn-client.service -f | grep "PUSH_REPLY\|state"
 The unit ships with `AmbientCapabilities=CAP_NET_ADMIN` +
 `DeviceAllow=/dev/net/tun rw` so openvpn(8) can create the TUN
 device + write routes under DynamicUser — no `root` required.
+
+For the **net-router** unit (L13: nftables DNAT + iface priority),
+seed the only required key and enable:
+
+```sh
+ds-cli --socket=/run/iot/data_store.sock set net.lwm2m.target_ip '"192.168.10.5"'
+# Optional: rename per-class iface keys to match your host
+ds-cli --socket=/run/iot/data_store.sock set net.iface.eth.name      '"eth0"'
+ds-cli --socket=/run/iot/data_store.sock set net.iface.wifi.name     '"wlan0"'
+ds-cli --socket=/run/iot/data_store.sock set net.iface.cellular.name '"wwan0"'
+
+sudo systemctl enable --now iot-net-router.service
+journalctl -u iot-net-router.service -f | grep "ruleset applied\|metric\|active"
+```
+
+The unit ships with `AmbientCapabilities=CAP_NET_ADMIN`; that's
+enough for `nft -f` and `ip route replace` under DynamicUser. Default
+forwarded ports are `80,443,5684` (HTTP/HTTPS + LwM2M/CoAP-over-DTLS)
+DNAT'd to `net.lwm2m.target_ip`. Override via `net.forward.ports`
+and add operator drops/forwards via the JSON `net.custom_rules`
+schema key (see `/etc/iot/ds-schemas/net.lua`).
 
 ### 4. Same ds-cli tuning as the container path
 
