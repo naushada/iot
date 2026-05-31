@@ -64,8 +64,8 @@ file itself; quick reference in [L12 plan §2 D1](../../../log/L12/plan.md).
 ```
 modules/openvpn/client/
 ├── CMakeLists.txt
-├── inc/openvpn_client/
-│   └── client.hpp            v0 public API
+├── inc/
+│   └── client.hpp            v0 public API (#include "client.hpp")
 ├── src/
 │   ├── main.cpp              CLI parse + entry
 │   ├── main_impl.cpp         v0 dump-vpn-keys (D2)

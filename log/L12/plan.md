@@ -117,8 +117,8 @@ shape:
 ```
 modules/openvpn/client/
 ├── CMakeLists.txt              builds openvpn-client binary; links libdatastore_client
-├── inc/openvpn_client/
-│   └── client.hpp              public-ish API (Client class for tests)
+├── inc/
+│   └── client.hpp              public-ish API (#include "client.hpp")
 ├── src/
 │   ├── client.cpp              connect lifecycle
 │   ├── ds_bridge.cpp           reads vpn.* from ds-server, writes back
