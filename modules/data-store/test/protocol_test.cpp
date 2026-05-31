@@ -96,7 +96,6 @@ TEST(Protocol, DS_REQ_DS_003_set_then_get_returns_latest) {
     auto cli_fut = std::async(std::launch::async, [&]() {
         ds::Client cli;
         auto cs = cli.connect(srv.sock); if (!cs.ok) return cs;
-        std::string w; cli.recv_welcome(w, 2000);
         auto ss = cli.set("foo", ds::Value{std::string("bar")}, 2000);
         if (!ss.ok) return ss;
         std::vector<ds::Client::GetResult> got;
@@ -127,7 +126,6 @@ TEST(Protocol, DS_REQ_DS_007_register_then_set_emits_notify_to_watcher) {
     auto watch_fut = std::async(std::launch::async, [&]() {
         ds::Client w;
         auto cs = w.connect(srv.sock); if (!cs.ok) return cs;
-        std::string welcome; w.recv_welcome(welcome, 2000);
         auto rs = w.watch("foo", 2000); if (!rs.ok) return rs;
 
         ds::Client::Event ev;
@@ -145,7 +143,6 @@ TEST(Protocol, DS_REQ_DS_007_register_then_set_emits_notify_to_watcher) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         ds::Client s;
         auto cs = s.connect(srv.sock); if (!cs.ok) return cs;
-        std::string welcome; s.recv_welcome(welcome, 2000);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         return s.set("foo", ds::Value{std::string("bar")}, 2000);
     });
@@ -171,7 +168,6 @@ TEST(Protocol, DS_REQ_DS_006_unchanged_value_no_notify) {
     auto seed_fut = std::async(std::launch::async, [&]() {
         ds::Client s;
         auto cs = s.connect(srv.sock); if (!cs.ok) return cs;
-        std::string w; s.recv_welcome(w, 2000);
         return s.set("foo", ds::Value{std::string("bar")}, 2000);
     });
     pump_until(seed_fut);
@@ -181,7 +177,6 @@ TEST(Protocol, DS_REQ_DS_006_unchanged_value_no_notify) {
     auto watch_fut = std::async(std::launch::async, [&]() {
         ds::Client w;
         auto cs = w.connect(srv.sock); if (!cs.ok) return cs;
-        std::string welcome; w.recv_welcome(welcome, 2000);
         auto rs = w.watch("foo", 2000); if (!rs.ok) return rs;
         ds::Client::Event ev;
         auto es = w.recv_event(ev, 300);
@@ -199,7 +194,6 @@ TEST(Protocol, DS_REQ_DS_006_unchanged_value_no_notify) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         ds::Client s;
         auto cs = s.connect(srv.sock); if (!cs.ok) return cs;
-        std::string welcome; s.recv_welcome(welcome, 2000);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         return s.set("foo", ds::Value{std::string("bar")}, 2000);   // same value
     });

@@ -1,11 +1,13 @@
 #include "session.hpp"
 
 #include "data_store.hpp"
+#include "data_store/proto.hpp"
 #include "server.hpp"
 #include "worker.hpp"
 
 #include <cerrno>
 #include <cstring>
+#include <stdexcept>
 
 #include <ace/Log_Msg.h>
 #include <ace/Reactor.h>
@@ -27,8 +29,11 @@ ACE_HANDLE Session::get_handle() const {
 }
 
 int Session::handle_input(ACE_HANDLE /*fd*/) {
-    // Reactor thread: read what's available, split on '\n', enqueue
-    // each complete line as a ProcessRequest to the owner Worker.
+    // Reactor thread: read what's available, extract complete EMP
+    // frames (header + payload), and enqueue each as a ProcessRequest
+    // for the owner Worker. The worker decodes the header to dispatch
+    // — keeping the reactor path bytes-only minimises lock/parse work
+    // on the shared thread.
     char buf[4096];
     ssize_t n = m_stream.recv(buf, sizeof(buf));
     if (n <= 0) {
@@ -39,15 +44,34 @@ int Session::handle_input(ACE_HANDLE /*fd*/) {
     m_recvBuf.append(buf, static_cast<std::size_t>(n));
 
     for (;;) {
-        auto pos = m_recvBuf.find('\n');
-        if (pos == std::string::npos) break;
-        std::string line = m_recvBuf.substr(0, pos);
-        m_recvBuf.erase(0, pos + 1);
-        if (line.empty()) continue;
+        proto::Header h;
+        std::string   payload;
+        bool got = false;
+        try {
+            // Peek at the header without consuming, so we can compute
+            // the full frame length, then carve out [header || body]
+            // as a single contiguous blob for the worker to redecode.
+            if (m_recvBuf.size() < proto::kHeaderSize) break;
+            proto::decode_header(m_recvBuf.data(), h);
+            if (h.payload_size > proto::kMaxPayloadBytes) {
+                throw std::runtime_error("oversized payload");
+            }
+            const std::size_t need = proto::kHeaderSize + h.payload_size;
+            if (m_recvBuf.size() < need) break;
+            payload.assign(m_recvBuf.data(), need);
+            m_recvBuf.erase(0, need);
+            got = true;
+        } catch (const std::exception& e) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [Session:%t] %M %N:%l bad EMP frame: "
+                                "%C — dropping connection\n"),
+                       e.what()));
+            return -1;
+        }
 
-        if (m_owner) {
+        if (got && m_owner) {
             auto* msg = new WorkMsg{
-                WorkKind::ProcessRequest, this, std::move(line)};
+                WorkKind::ProcessRequest, this, std::move(payload)};
             if (m_owner->enqueue(msg) == -1) {
                 ACE_ERROR((LM_ERROR,
                            ACE_TEXT("%D [Session:%t] %M %N:%l enqueue "

@@ -12,28 +12,96 @@ namespace proto = data_store::proto;
 
 /* ───────────────────────────── proto ──────────────────────────────── */
 
-TEST(Proto, parse_op_round_trip) {
-    EXPECT_EQ(proto::Op::Set,      proto::parse_op("set"));
-    EXPECT_EQ(proto::Op::Get,      proto::parse_op("get"));
-    EXPECT_EQ(proto::Op::Register, proto::parse_op("register"));
-    EXPECT_EQ(proto::Op::Remove,   proto::parse_op("remove"));
-    EXPECT_EQ(proto::Op::Unknown,  proto::parse_op("fetch"));
-    EXPECT_EQ(proto::Op::Unknown,  proto::parse_op(""));
+TEST(Proto, parse_op_round_trips_known_opcodes) {
+    EXPECT_EQ(proto::Op::Set,           proto::parse_op(0x0001));
+    EXPECT_EQ(proto::Op::Get,           proto::parse_op(0x0002));
+    EXPECT_EQ(proto::Op::RegisterWatch, proto::parse_op(0x0003));
+    EXPECT_EQ(proto::Op::RemoveWatch,   proto::parse_op(0x0004));
+    EXPECT_EQ(proto::Op::NotifyEvent,   proto::parse_op(0x0064));
+    EXPECT_EQ(proto::Op::Unknown,       proto::parse_op(0x9999));
+    EXPECT_EQ(proto::Op::Unknown,       proto::parse_op(0));
 }
 
-TEST(Proto, op_name_matches_parser) {
-    for (auto op : {proto::Op::Set, proto::Op::Get,
-                    proto::Op::Register, proto::Op::Remove}) {
-        EXPECT_EQ(op, proto::parse_op(proto::op_name(op)));
-    }
+TEST(Proto, encode_decode_header_round_trip) {
+    proto::Header in;
+    in.cmdID        = 0x1234;
+    in.type         = proto::Response;
+    in.reqID        = 42;
+    in.payload_size = 1024;
+    char buf[proto::kHeaderSize];
+    proto::encode_header(in, buf);
+    proto::Header out;
+    proto::decode_header(buf, out);
+    EXPECT_EQ(in.cmdID,        out.cmdID);
+    EXPECT_EQ(in.type,         out.type);
+    EXPECT_EQ(in.reqID,        out.reqID);
+    EXPECT_EQ(in.payload_size, out.payload_size);
 }
 
-TEST(Proto, welcome_line_is_one_json_doc_ending_in_newline) {
-    std::string w{proto::kWelcomeLine};
-    ASSERT_FALSE(w.empty());
-    EXPECT_EQ('\n', w.back());
-    EXPECT_NE(std::string::npos, w.find("\"ok\":true"));
-    EXPECT_NE(std::string::npos, w.find("data-store-server"));
+TEST(Proto, encode_command_then_decode_frame) {
+    std::string wire;
+    proto::encode_frame_command(proto::Op::Get, 7, R"({"keys":["a"]})", wire);
+    proto::Header h;
+    std::string body;
+    ASSERT_TRUE(proto::try_decode_frame(wire, h, body));
+    EXPECT_EQ(static_cast<std::uint16_t>(proto::Op::Get), h.cmdID);
+    EXPECT_EQ(0u, h.type);
+    EXPECT_EQ(7u, h.reqID);
+    EXPECT_EQ(R"({"keys":["a"]})", body);
+    EXPECT_TRUE(wire.empty());
+}
+
+TEST(Proto, encode_response_carries_status_prefix) {
+    std::string wire;
+    proto::encode_frame_response(proto::Op::Set, 3, proto::Status::Ok,
+                                 std::string_view{}, wire);
+    proto::Header h;
+    std::string body;
+    ASSERT_TRUE(proto::try_decode_frame(wire, h, body));
+    EXPECT_EQ(proto::Response, h.type);
+    ASSERT_GE(body.size(), 2u);
+    EXPECT_EQ(0, static_cast<std::uint8_t>(body[0]));
+    EXPECT_EQ(0, static_cast<std::uint8_t>(body[1]));
+}
+
+TEST(Proto, encode_push_has_push_bit_and_no_status_prefix) {
+    std::string wire;
+    proto::encode_frame_push(proto::Op::NotifyEvent,
+                             R"({"k":"foo","v":1})", wire);
+    proto::Header h;
+    std::string body;
+    ASSERT_TRUE(proto::try_decode_frame(wire, h, body));
+    EXPECT_TRUE(proto::is_push(h.type));
+    EXPECT_FALSE(proto::is_response(h.type));
+    EXPECT_EQ(0u, h.reqID);
+    EXPECT_EQ(R"({"k":"foo","v":1})", body);
+}
+
+TEST(Proto, try_decode_returns_false_when_buffer_short) {
+    std::string wire;
+    proto::encode_frame_command(proto::Op::Set, 1, R"({"keys":[]})", wire);
+    // Snip the last 3 bytes to simulate an incomplete recv.
+    std::string truncated = wire.substr(0, wire.size() - 3);
+    proto::Header h;
+    std::string body;
+    EXPECT_FALSE(proto::try_decode_frame(truncated, h, body));
+    EXPECT_EQ(wire.size() - 3, truncated.size());
+}
+
+TEST(Proto, try_decode_rejects_oversized_payload) {
+    // Hand-craft a header claiming payload_size > kMaxPayloadBytes.
+    proto::Header h;
+    h.cmdID        = 0x0001;
+    h.type         = 0;
+    h.reqID        = 1;
+    h.payload_size = proto::kMaxPayloadBytes + 1;
+    char buf[proto::kHeaderSize];
+    proto::encode_header(h, buf);
+    std::string wire(buf, proto::kHeaderSize);
+    proto::Header out;
+    std::string body;
+    EXPECT_THROW(proto::try_decode_frame(wire, out, body),
+                 std::runtime_error);
 }
 
 /* ───────────────────────────── store ──────────────────────────────── */

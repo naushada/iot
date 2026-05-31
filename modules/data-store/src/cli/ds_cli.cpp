@@ -1,7 +1,6 @@
-/// ds-cli — debugging client for ds-server.
+/// ds-cli — debugging client for ds-server (EMP protocol).
 ///
 /// Usage:
-///   ds-cli [--socket=PATH] [welcome]
 ///   ds-cli [--socket=PATH] set <key> <value>
 ///   ds-cli [--socket=PATH] get <key> [<key>...]
 ///   ds-cli [--socket=PATH] watch [--count=N] <key> [<key>...]
@@ -40,7 +39,6 @@ void on_signal(int) { g_stop.store(true); }
 void usage() {
     std::cerr <<
         "Usage:\n"
-        "  ds-cli [--socket=PATH] [welcome]\n"
         "  ds-cli [--socket=PATH] set <key> <value>\n"
         "  ds-cli [--socket=PATH] get <key> [<key>...]\n"
         "  ds-cli [--socket=PATH] watch [--count=N] <key> [<key>...]\n"
@@ -49,7 +47,7 @@ void usage() {
 
 struct Args {
     std::string                 socket;
-    std::string                 cmd = "welcome";
+    std::string                 cmd;
     int                         count = 1;
     std::vector<std::string>    rest;
 };
@@ -75,14 +73,6 @@ Args parse(int argc, char** argv) {
         else                              a.rest.emplace_back(std::move(s));
     }
     return a;
-}
-
-int do_welcome(data_store::Client& cli) {
-    std::string w;
-    auto rs = cli.recv_welcome(w);
-    if (!rs.ok) { std::cerr << "[ds-cli] " << rs.err << "\n"; return 2; }
-    std::cout << w;
-    return 0;
 }
 
 /// Parse a CLI-supplied value into a Value. We try JSON first
@@ -136,7 +126,6 @@ std::string value_to_display(const data_store::Value& v) {
 
 int do_set(data_store::Client& cli, const std::vector<std::string>& a) {
     if (a.size() != 2) { usage(); return 2; }
-    std::string w; cli.recv_welcome(w);
     auto rs = cli.set(a[0], parse_cli_value(a[1]));
     if (!rs.ok) { std::cerr << "[ds-cli] set: " << rs.err << "\n"; return 2; }
     std::cout << "ok\n";
@@ -145,7 +134,6 @@ int do_set(data_store::Client& cli, const std::vector<std::string>& a) {
 
 int do_get(data_store::Client& cli, const std::vector<std::string>& keys) {
     if (keys.empty()) { usage(); return 2; }
-    std::string w; cli.recv_welcome(w);
     std::vector<data_store::Client::GetResult> got;
     auto rs = cli.get(keys, got);
     if (!rs.ok) { std::cerr << "[ds-cli] get: " << rs.err << "\n"; return 2; }
@@ -159,7 +147,6 @@ int do_get(data_store::Client& cli, const std::vector<std::string>& keys) {
 int do_watch(data_store::Client& cli, const std::vector<std::string>& keys,
              int count) {
     if (keys.empty()) { usage(); return 2; }
-    std::string w; cli.recv_welcome(w);
 
     // Use the callback API so the wire-level demo matches the
     // production pattern: an app registers a handler and keeps going;
@@ -197,7 +184,6 @@ int do_watch(data_store::Client& cli, const std::vector<std::string>& keys,
 
 int do_unwatch(data_store::Client& cli, const std::vector<std::string>& keys) {
     if (keys.empty()) { usage(); return 2; }
-    std::string w; cli.recv_welcome(w);
     auto rs = cli.unwatch(keys);
     if (!rs.ok) { std::cerr << "[ds-cli] unwatch: " << rs.err << "\n"; return 2; }
     std::cout << "ok\n";
@@ -217,8 +203,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if      (a.cmd == "welcome") return do_welcome(cli);
-    else if (a.cmd == "set")     return do_set(cli, a.rest);
+    if      (a.cmd == "set")     return do_set(cli, a.rest);
     else if (a.cmd == "get")     return do_get(cli, a.rest);
     else if (a.cmd == "watch")   return do_watch(cli, a.rest, a.count);
     else if (a.cmd == "unwatch") return do_unwatch(cli, a.rest);

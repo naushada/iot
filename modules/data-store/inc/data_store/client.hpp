@@ -56,12 +56,10 @@ public:
     Client(Client&&) noexcept;
     Client& operator=(Client&&) noexcept;
 
-    /// Open the connection and start the listener thread.
+    /// Open the connection and start the listener thread. EMP has no
+    /// welcome handshake — the server is ready to receive frames as
+    /// soon as `connect()` returns ok.
     Status connect(std::string path = "");
-
-    /// Read the welcome line. Convenience: also consumable as the
-    /// first recv_event-style line if not called explicitly.
-    Status recv_welcome(std::string& out, std::int32_t timeout_ms = 1000);
 
     // --- ops --------------------------------------------------------
 

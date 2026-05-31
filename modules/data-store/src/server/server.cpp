@@ -134,11 +134,8 @@ int Server::handle_input(ACE_HANDLE /*fd*/) {
         m_sessions.insert(s);
     }
 
-    // Send welcome inline so the client knows the connection is live
-    // before issuing any request. ProcessRequest messages can already
-    // follow asynchronously.
-    s->send(proto::kWelcomeLine);
-
+    // EMP has no welcome handshake — the server is ready to receive
+    // frames as soon as the socket is registered with the reactor.
     if (ACE_Reactor::instance()->register_handler(
             s, ACE_Event_Handler::READ_MASK) == -1) {
         ACE_ERROR((LM_ERROR,

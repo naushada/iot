@@ -49,10 +49,8 @@ DsConfig::DsConfig(std::string socketPath)
                    m_path.c_str(), cs.err.c_str()));
         return;
     }
-    // Read+discard the welcome line so the listener thread's first
-    // demuxed line isn't sitting in the welcome bookkeeping.
-    std::string w;
-    m_impl->client.recv_welcome(w, /*timeout_ms=*/500);
+    // EMP has no welcome handshake — the connection is usable as soon
+    // as connect() returns ok.
     m_ok = true;
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [iot:%t] %M %N:%l data-store ready at %C\n"),

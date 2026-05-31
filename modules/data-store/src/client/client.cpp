@@ -11,6 +11,7 @@
 #include <future>
 #include <mutex>
 #include <stdexcept>
+#include <string_view>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <thread>
@@ -41,13 +42,29 @@ Status protocol_err(const std::string& what) {
     Status s; s.ok = false; s.err = what; return s;
 }
 
-std::atomic<std::uint64_t> g_next_id{1};
+/// reqID is the EMP correlator; 8 bits → 256 slots → wrap every 256
+/// requests. Listener thread uses 16-bit (op<<8 | reqID) so concurrent
+/// reqs on different opcodes don't collide.
+std::atomic<std::uint8_t>  g_next_reqid{1};
 std::atomic<std::uint64_t> g_next_handle{1};
 
 struct WatchEntry {
     std::vector<std::string>      keys;
     Client::EventCallback         cb;
 };
+
+struct PendingValue {
+    proto::Status status = proto::Status::Ok;
+    json          body;
+};
+
+/// 16-bit correlator combines opcode + reqID so two in-flight ops on
+/// the same reqID slot don't collide. We never queue >256 of any one
+/// opcode in flight; that's the EMP / Mihini ceiling.
+inline std::uint16_t corr_key(proto::Op op, std::uint8_t reqID) {
+    return static_cast<std::uint16_t>(
+        (static_cast<std::uint16_t>(op) << 8) | reqID);
+}
 
 } // namespace
 
@@ -61,15 +78,9 @@ public:
     std::thread          listener;
     std::atomic<bool>    stop_listener{false};
 
-    // id → pending promise (fulfilled by the listener thread).
-    std::mutex                                            pending_mtx;
-    std::unordered_map<std::uint64_t, std::promise<json>> pending;
-
-    // Welcome line bookkeeping.
-    std::mutex                  welcome_mtx;
-    std::condition_variable     welcome_cv;
-    std::string                 welcome_line;
-    bool                        welcome_received = false;
+    // corr_key → pending promise (fulfilled by the listener thread).
+    std::mutex                                                  pending_mtx;
+    std::unordered_map<std::uint16_t, std::promise<PendingValue>> pending;
 
     // Pull-style event queue.
     std::mutex                  events_mtx;
@@ -81,53 +92,59 @@ public:
     std::unordered_map<WatchHandle, WatchEntry>             watches;
     std::unordered_map<std::string, std::size_t>            key_refcount;
 
-    Status send_json(const std::string& body);
-    Status round_trip(json& req, json& resp, std::int32_t timeout_ms);
+    Status send_frame(const std::string& frame);
+    Status round_trip(proto::Op op, std::string_view body,
+                      PendingValue& out, std::int32_t timeout_ms);
     void   run_listener();
     void   fail_all_pending(const std::string& why);
 };
 
-Status Client::Impl::send_json(const std::string& body) {
-    std::string line = body + "\n";
-    ssize_t n = stream.send_n(line.data(), line.size());
-    if (n < 0 || static_cast<std::size_t>(n) != line.size()) {
+Status Client::Impl::send_frame(const std::string& frame) {
+    if (frame.empty()) return {};
+    ssize_t n = stream.send_n(frame.data(), frame.size());
+    if (n < 0 || static_cast<std::size_t>(n) != frame.size()) {
         return sys_err("send_n");
     }
     return {};
 }
 
-Status Client::Impl::round_trip(json& req, json& resp,
+Status Client::Impl::round_trip(proto::Op op,
+                                std::string_view body,
+                                PendingValue& out,
                                 std::int32_t timeout_ms) {
     if (!connected.load()) return protocol_err("not connected");
 
-    const std::uint64_t id = g_next_id.fetch_add(1);
-    req["id"] = id;
+    const std::uint8_t  reqID = g_next_reqid.fetch_add(1);
+    const std::uint16_t key   = corr_key(op, reqID);
 
-    std::promise<json>  prom;
-    std::future<json>   fut = prom.get_future();
+    std::promise<PendingValue>  prom;
+    std::future<PendingValue>   fut = prom.get_future();
     {
         std::lock_guard<std::mutex> g(pending_mtx);
-        pending.emplace(id, std::move(prom));
+        pending.emplace(key, std::move(prom));
     }
 
-    auto ss = send_json(req.dump());
+    std::string frame;
+    proto::encode_frame_command(op, reqID, body, frame);
+    auto ss = send_frame(frame);
     if (!ss.ok) {
         std::lock_guard<std::mutex> g(pending_mtx);
-        pending.erase(id);
+        pending.erase(key);
         return ss;
     }
 
     using namespace std::chrono;
     if (fut.wait_for(milliseconds(timeout_ms)) != std::future_status::ready) {
         std::lock_guard<std::mutex> g(pending_mtx);
-        pending.erase(id);
+        pending.erase(key);
         Status s; s.ok=false; s.code=ETIMEDOUT;
-        s.err = "request timeout (id=" + std::to_string(id) + ")";
+        s.err = "request timeout (op=" + proto::op_name(op) +
+                " reqID=" + std::to_string(reqID) + ")";
         return s;
     }
 
     try {
-        resp = fut.get();
+        out = fut.get();
     } catch (const std::exception& e) {
         return protocol_err(std::string("promise broken: ") + e.what());
     }
@@ -149,31 +166,28 @@ void Client::Impl::run_listener() {
 
         buf.append(chunk, static_cast<std::size_t>(n));
 
-        for (;;) {
-            auto pos = buf.find('\n');
-            if (pos == std::string::npos) break;
-            std::string line = buf.substr(0, pos);
-            buf.erase(0, pos + 1);
-            if (line.empty()) continue;
-
-            json p;
-            try { p = json::parse(line); } catch (...) { continue; }
-
-            // Welcome (server's first line — `hello` field).
-            {
-                std::lock_guard<std::mutex> g(welcome_mtx);
-                if (!welcome_received && p.contains("hello")) {
-                    welcome_line     = line + "\n";
-                    welcome_received = true;
-                    welcome_cv.notify_all();
-                    continue;
-                }
+        // Drain as many complete EMP frames as the recv buffer holds.
+        while (true) {
+            proto::Header h;
+            std::string   payload;
+            try {
+                if (!proto::try_decode_frame(buf, h, payload)) break;
+            } catch (const std::exception&) {
+                // Corrupt header → drop connection.
+                stop_listener.store(true);
+                break;
             }
 
-            // Notify push.
-            if (p.contains("ev")) {
+            const proto::Op op = proto::parse_op(h.cmdID);
+
+            if (proto::is_push(h.type)) {
+                // Push: payload is the JSON body (no status prefix).
+                if (op != proto::Op::NotifyEvent) continue;
+                json p;
+                try { p = json::parse(payload); } catch (...) { continue; }
+
                 Event ev;
-                ev.key   = p.value("k", "");
+                ev.key = p.value("k", "");
                 if (p.contains("v")) ev.value = value_from_json(p["v"]);
                 if (p.contains("prev") && !p["prev"].is_null()) {
                     ev.prev           = value_from_json(p["prev"]);
@@ -185,11 +199,10 @@ void Client::Impl::run_listener() {
                     events.push_back(ev);
                     events_cv.notify_one();
                 }
-
                 std::vector<EventCallback> cbs;
                 {
                     std::lock_guard<std::mutex> g(watches_mtx);
-                    for (const auto& [h, w] : watches) {
+                    for (const auto& [hnd, w] : watches) {
                         for (const auto& k : w.keys) {
                             if (k == ev.key) { cbs.push_back(w.cb); break; }
                         }
@@ -201,23 +214,41 @@ void Client::Impl::run_listener() {
                 continue;
             }
 
-            // Response: ok + id → fulfill promise.
-            if (p.contains("ok") && p.contains("id")) {
-                std::uint64_t id = p["id"].get<std::uint64_t>();
-                std::promise<json> prom;
-                bool found = false;
-                {
-                    std::lock_guard<std::mutex> g(pending_mtx);
-                    auto it = pending.find(id);
-                    if (it != pending.end()) {
-                        prom  = std::move(it->second);
-                        pending.erase(it);
-                        found = true;
+            if (!proto::is_response(h.type)) continue;  // ignore
+
+            // Response: first 2 payload bytes = status, rest = JSON body.
+            PendingValue v;
+            if (payload.size() < 2) {
+                v.status = proto::Status::BadFrame;
+            } else {
+                v.status = static_cast<proto::Status>(
+                    (static_cast<std::uint8_t>(payload[0]) << 8) |
+                     static_cast<std::uint8_t>(payload[1]));
+                if (payload.size() > 2) {
+                    try {
+                        v.body = json::parse(payload.data() + 2,
+                                             payload.data() + payload.size());
+                    } catch (...) {
+                        // Tolerate empty / unparseable body — status
+                        // already conveys success/failure.
                     }
                 }
-                if (found) {
-                    try { prom.set_value(std::move(p)); } catch (...) {}
+            }
+
+            const std::uint16_t key = corr_key(op, h.reqID);
+            std::promise<PendingValue> prom;
+            bool found = false;
+            {
+                std::lock_guard<std::mutex> g(pending_mtx);
+                auto it = pending.find(key);
+                if (it != pending.end()) {
+                    prom  = std::move(it->second);
+                    pending.erase(it);
+                    found = true;
                 }
+            }
+            if (found) {
+                try { prom.set_value(std::move(v)); } catch (...) {}
             }
         }
     }
@@ -225,18 +256,13 @@ void Client::Impl::run_listener() {
     fail_all_pending("listener exited");
 
     {
-        std::lock_guard<std::mutex> g(welcome_mtx);
-        welcome_received = true;
-        welcome_cv.notify_all();
-    }
-    {
         std::lock_guard<std::mutex> g(events_mtx);
         events_cv.notify_all();
     }
 }
 
 void Client::Impl::fail_all_pending(const std::string& why) {
-    std::unordered_map<std::uint64_t, std::promise<json>> snapshot;
+    std::unordered_map<std::uint16_t, std::promise<PendingValue>> snapshot;
     {
         std::lock_guard<std::mutex> g(pending_mtx);
         snapshot.swap(pending);
@@ -277,73 +303,80 @@ Status Client::connect(std::string path) {
     return {};
 }
 
-Status Client::recv_welcome(std::string& out, std::int32_t timeout_ms) {
-    if (!m_impl->connected.load()) return protocol_err("not connected");
-    std::unique_lock<std::mutex> g(m_impl->welcome_mtx);
-    if (!m_impl->welcome_cv.wait_for(g,
-            std::chrono::milliseconds(timeout_ms),
-            [&]() { return m_impl->welcome_received; })) {
-        Status s; s.ok=false; s.code=ETIMEDOUT;
-        s.err = "welcome timeout"; return s;
+namespace {
+
+/// Translate a wire-level status + optional error body into a
+/// caller-friendly Status. Ok → empty Status{}, anything else gets
+/// the err string lifted from the body when present.
+Status status_from(const PendingValue& v, const char* op_label) {
+    if (v.status == proto::Status::Ok) return {};
+    Status s; s.ok = false;
+    s.code = static_cast<int>(v.status);
+    if (v.body.is_object() && v.body.contains("err") &&
+        v.body["err"].is_string()) {
+        s.err = v.body["err"].get<std::string>();
+    } else {
+        s.err = std::string(op_label) + " failed (status=" +
+                proto::status_name(v.status) + ")";
     }
-    if (m_impl->welcome_line.empty()) {
-        return protocol_err("connection closed before welcome");
-    }
-    out = m_impl->welcome_line;
-    return {};
+    return s;
 }
+
+} // namespace
 
 Status Client::set(const std::vector<KV>& pairs, std::int32_t timeout_ms) {
     json req;
-    req["op"]   = "set";
     req["keys"] = json::array();
     for (const auto& kv : pairs) {
-        // Wire shape: each entry is a single-key object whose value
-        // round-trips through JSON's native type system.
+        // Wire shape per opcode 0x0001 Set: keys is an array of
+        // single-key objects so each value round-trips through JSON's
+        // native type system.
         json e;
         e[kv.first] = value_to_json(kv.second);
         req["keys"].push_back(e);
     }
-    json resp;
-    auto rs = m_impl->round_trip(req, resp, timeout_ms);
+    const std::string body = req.dump();
+    PendingValue out;
+    auto rs = m_impl->round_trip(proto::Op::Set,
+                                 std::string_view(body.data(), body.size()),
+                                 out, timeout_ms);
     if (!rs.ok) return rs;
-    if (!resp.value("ok", false)) {
-        return protocol_err(resp.value("err", "set failed"));
-    }
-    return {};
+    return status_from(out, "set");
 }
 
 Status Client::get(const std::vector<std::string>& keys,
-                   std::vector<GetResult>&         out,
+                   std::vector<GetResult>&         out_results,
                    std::int32_t                    timeout_ms) {
-    out.clear();
+    out_results.clear();
     json req;
-    req["op"]   = "get";
     req["keys"] = keys;
-    json resp;
-    auto rs = m_impl->round_trip(req, resp, timeout_ms);
+    const std::string body = req.dump();
+    PendingValue out;
+    auto rs = m_impl->round_trip(proto::Op::Get,
+                                 std::string_view(body.data(), body.size()),
+                                 out, timeout_ms);
     if (!rs.ok) return rs;
-    if (!resp.value("ok", false)) {
-        return protocol_err(resp.value("err", "get failed"));
-    }
-    if (!resp.contains("data") || !resp["data"].is_array()) {
+    auto err = status_from(out, "get");
+    if (!err.ok) return err;
+    if (!out.body.is_object() || !out.body.contains("data") ||
+        !out.body["data"].is_array()) {
         return protocol_err("get response missing data array");
     }
-    for (const auto& item : resp["data"]) {
+    for (const auto& item : out.body["data"]) {
         GetResult g;
         g.key = item.value("k", "");
         if (item.contains("v") && !item["v"].is_null()) {
             g.value     = value_from_json(item["v"]);
             g.has_value = true;
         }
-        out.push_back(std::move(g));
+        out_results.push_back(std::move(g));
     }
     return {};
 }
 
 Status Client::watch(const std::vector<std::string>& keys,
                      std::int32_t                    timeout_ms) {
-    // Pull-style: bump local refcount, only send wire `register`
+    // Pull-style: bump local refcount, only send wire RegisterWatch
     // for keys that just transitioned 0 → 1.
     std::vector<std::string> wireKeys;
     {
@@ -355,10 +388,12 @@ Status Client::watch(const std::vector<std::string>& keys,
     if (wireKeys.empty()) return {};
 
     json req;
-    req["op"]   = "register";
     req["keys"] = wireKeys;
-    json resp;
-    auto rs = m_impl->round_trip(req, resp, timeout_ms);
+    const std::string body = req.dump();
+    PendingValue out;
+    auto rs = m_impl->round_trip(proto::Op::RegisterWatch,
+                                 std::string_view(body.data(), body.size()),
+                                 out, timeout_ms);
     if (!rs.ok) {
         std::lock_guard<std::mutex> g(m_impl->watches_mtx);
         for (const auto& k : wireKeys) {
@@ -369,10 +404,7 @@ Status Client::watch(const std::vector<std::string>& keys,
         }
         return rs;
     }
-    if (!resp.value("ok", false)) {
-        return protocol_err(resp.value("err", "watch failed"));
-    }
-    return {};
+    return status_from(out, "watch");
 }
 
 Status Client::watch(const std::vector<std::string>& keys,
@@ -429,15 +461,14 @@ Status Client::unwatch(const std::vector<std::string>& keys,
     if (wireKeys.empty()) return {};
 
     json req;
-    req["op"]   = "remove";
     req["keys"] = wireKeys;
-    json resp;
-    auto rs = m_impl->round_trip(req, resp, timeout_ms);
+    const std::string body = req.dump();
+    PendingValue out;
+    auto rs = m_impl->round_trip(proto::Op::RemoveWatch,
+                                 std::string_view(body.data(), body.size()),
+                                 out, timeout_ms);
     if (!rs.ok) return rs;
-    if (!resp.value("ok", false)) {
-        return protocol_err(resp.value("err", "unwatch failed"));
-    }
-    return {};
+    return status_from(out, "unwatch");
 }
 
 Status Client::recv_event(Event& out, std::int32_t timeout_ms) {
@@ -463,11 +494,6 @@ void Client::close() {
         if (m_impl->listener.joinable()) m_impl->listener.join();
         m_impl->stream.close();
         m_impl->fail_all_pending("client closed");
-        {
-            std::lock_guard<std::mutex> g(m_impl->welcome_mtx);
-            m_impl->welcome_received = true;
-            m_impl->welcome_cv.notify_all();
-        }
         {
             std::lock_guard<std::mutex> g(m_impl->events_mtx);
             m_impl->events_cv.notify_all();
