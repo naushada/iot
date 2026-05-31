@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -100,6 +101,28 @@ public:
         return m_lifetime.load(std::memory_order_relaxed);
     }
 
+    /// Update the registration endpoint live. Threadsafe (mutex).
+    /// Sets the `pending_reregister` flag so the reactor tick knows
+    /// to drop the current registration and rejoin under the new
+    /// identity (Deregister → Unregistered → Register). For state
+    /// machines NOT currently Registered the flag is harmless —
+    /// the next Register the reactor sends already uses the new
+    /// endpoint via `endpoint()`.
+    void set_endpoint(std::string ep);
+    std::string endpoint() const;
+
+    /// Reactor tick consults these to decide whether to fire a
+    /// Deregister + auto re-Register cycle after a live endpoint
+    /// change. peek + clear are split so the tick can leave the
+    /// flag set when state is mid-flight (AwaitingRegisterAck etc.)
+    /// and pick it up on a later tick.
+    bool pending_reregister() const {
+        return m_re_register_pending.load(std::memory_order_relaxed);
+    }
+    void clear_pending_reregister() {
+        m_re_register_pending.store(false, std::memory_order_relaxed);
+    }
+
     RegistrationState   state()    const { return m_state; }
     const std::string&  location() const { return m_location; }
     const ClientConfig& config()   const { return m_cfg; }
@@ -111,6 +134,13 @@ private:
     /// concurrent set_lifetime() takes effect on the next request
     /// build / tick without locking the reactor.
     std::atomic<std::uint32_t> m_lifetime;
+    /// Live mirror of m_cfg.endpoint. Same reason as m_lifetime: a
+    /// data-store listener-thread set_endpoint() must not race with
+    /// reactor-thread build_register_request(). Guarded by m_endpoint_mtx
+    /// because std::string isn't lock-free.
+    mutable std::mutex      m_endpoint_mtx;
+    std::string             m_endpoint;
+    std::atomic<bool>       m_re_register_pending{false};
     const ObjectStore&      m_store;
     RegistrationState       m_state{RegistrationState::Unregistered};
     std::string             m_location;

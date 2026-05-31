@@ -237,3 +237,73 @@ TEST(RegistrationClient, REQ_REG_004_build_deregister_is_DELETE_rd_loc) {
     EXPECT_EQ(::lwm2m::RegistrationOutcome::Removed, del_outcome.kind);
     EXPECT_EQ(0u, registry->size());
 }
+
+/* ─────────────────────────── FUP-DS-9 / FUP-DS-10 live setters ───────── */
+
+TEST(RegistrationClient, FUP_DS_9_set_lifetime_takes_effect_on_next_build) {
+    auto store = minimal_store();
+    RegistrationClient cli(minimal_cfg(/*lt=*/3600), store);
+
+    cli.set_lifetime(900);
+    EXPECT_EQ(900u, cli.lifetime());
+
+    auto bytes = cli.build_register_request(0x1234, std::string{0x77});
+    CoAPAdapter coap;
+    CoAPAdapter::CoAPMessage parsed;
+    coap.parseRequest(bytes, parsed);
+
+    std::string lt;
+    for (const auto& opt : parsed.uripath) {
+        if (coap.getOptionNumber(opt.optiondelta) == "Uri-Query" &&
+            opt.optionvalue.compare(0, 3, "lt=") == 0) {
+            lt = opt.optionvalue.substr(3);
+        }
+    }
+    EXPECT_EQ("900", lt);
+}
+
+TEST(RegistrationClient, FUP_DS_10_set_endpoint_flags_pending_reregister) {
+    auto store = minimal_store();
+    RegistrationClient cli(minimal_cfg(), store);
+    EXPECT_FALSE(cli.pending_reregister());
+
+    cli.set_endpoint("urn:dev:NEW");
+    EXPECT_TRUE(cli.pending_reregister());
+    EXPECT_EQ("urn:dev:NEW", cli.endpoint());
+}
+
+TEST(RegistrationClient, FUP_DS_10_set_endpoint_idempotent_does_not_flag) {
+    auto store = minimal_store();
+    RegistrationClient cli(minimal_cfg(), store);  // ep = urn:dev:client-1
+    cli.set_endpoint("urn:dev:client-1");          // unchanged
+    EXPECT_FALSE(cli.pending_reregister());
+}
+
+TEST(RegistrationClient, FUP_DS_10_build_register_uses_live_endpoint) {
+    auto store = minimal_store();
+    RegistrationClient cli(minimal_cfg(), store);
+    cli.set_endpoint("urn:dev:MUTATED");
+
+    auto bytes = cli.build_register_request(0x4321, std::string{0x33});
+    CoAPAdapter coap;
+    CoAPAdapter::CoAPMessage parsed;
+    coap.parseRequest(bytes, parsed);
+
+    std::string ep;
+    for (const auto& opt : parsed.uripath) {
+        if (coap.getOptionNumber(opt.optiondelta) == "Uri-Query" &&
+            opt.optionvalue.compare(0, 3, "ep=") == 0) {
+            ep = opt.optionvalue.substr(3);
+        }
+    }
+    EXPECT_EQ("urn:dev:MUTATED", ep);
+}
+
+TEST(RegistrationClient, FUP_DS_10_clear_pending_reregister_does_not_revert_endpoint) {
+    auto store = minimal_store();
+    RegistrationClient cli(minimal_cfg(), store);
+    cli.set_endpoint("urn:dev:NEW");
+    cli.clear_pending_reregister();
+    EXPECT_FALSE(cli.pending_reregister());
+    EXPECT_EQ("urn:dev:NEW", cli.endpoint());
+}
