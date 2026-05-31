@@ -5,8 +5,8 @@
 > binary via its management interface. Config in + state out flows
 > through the same `ds-server` that the lwm2m binary integrates with.
 >
-> **Status (2026-05-31):** D1 + D2 (PR #29), D3 (PR #30) done.
-> D4–D6 pending.
+> **Status (2026-05-31):** D1 + D2 (PR #29), D3 (PR #30), D4 (PR #31)
+> done. D5 + D6 pending.
 
 ---
 
@@ -184,7 +184,28 @@ as a clear error.
 
 ---
 
-### D4 — Mgmt-protocol parser
+### D4 — Mgmt-protocol parser ✅ (PR #31)
+
+Closed 2026-05-31. `src/mgmt_protocol.{hpp,cpp}` lands as pure
+logic — no sockets, no ACE. `Parser::feed(bytes)` accumulates a line
+buffer and emits one `Event` per newline; `next()` pops in FIFO.
+Event::Kind covers 15 prefix-classified flavours (Banner / State /
+PushReply / ByteCount / Log / Hold / Fatal / Echo / Password /
+NeedOk / Client / SuccessReply / ErrorReply / EndMarker / DataLine /
+Unknown). Comma-split fields populated for the three async events
+that use that shape. `split_push_option()` helper for the option-
+name-vs-value follow-on parse.
+
+16 table-driven tests in `test/mgmt_protocol_test.cpp` cover:
+banner, STATE field layout, ASSIGN_IP IP-in-field-3, PUSH_REPLY
+comma split, split_push_option (bare option + key value + multi-
+word value + leading-ws), BYTECOUNT, SUCCESS/ERROR, END marker,
+multi-event batch feed, partial-line buffering, CRLF tolerance,
+empty-line drop, unknown async event, non-prefixed data line, and
+a realistic boot-to-CONNECTED stream from a single feed.
+
+Total: 21 openvpn-client tests now (5 DsBridge + 16 parser);
+39/39 ds-tests still green.
 
 **Scope.** `mgmt_protocol.{hpp,cpp}` — pure logic, no I/O. Takes raw
 bytes, emits events:
