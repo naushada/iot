@@ -9,6 +9,8 @@
 --   net.iface.eth.name        - kernel name for the eth slot (default "eth0")
 --   net.iface.wifi.name       - kernel name for the wifi slot (default "wlan0")
 --   net.iface.cellular.name   - kernel name for the cellular slot (default "wwan0")
+--   net.forward.ports         - comma-joined ports to DNAT to net.lwm2m.target_ip
+--                               (default "80,443,5684" — http, https, lwm2m/CoAP)
 --   net.custom_rules          - JSON array of {action, proto, dport, ...} (default "[]")
 --   net.poll.interval_sec     - iface-state poll cadence (default 5)
 --
@@ -37,6 +39,7 @@ return {
     ["net.iface.eth.name"]        = { type = "string",  default = "eth0" },
     ["net.iface.wifi.name"]       = { type = "string",  default = "wlan0" },
     ["net.iface.cellular.name"]   = { type = "string",  default = "wwan0" },
+    ["net.forward.ports"]         = { type = "string",  default = "80,443,5684" },
     ["net.custom_rules"]          = { type = "string",  default = "[]" },
     ["net.poll.interval_sec"]     = { type = "integer", default = 5,
                                       min = 1, max = 600 },
