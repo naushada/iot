@@ -155,7 +155,8 @@ class DTLSAdapter {
          */
         void add_credential(const std::string& identity, const std::string& secret) {
             if(!device_credentials.insert(std::pair<std::string, std::string>(identity, secret)).second) {
-                std::cout << "add_credential-> identity & secret can't be inserted into STL" << std::endl;
+                ACE_ERROR((LM_ERROR,
+                           ACE_TEXT("%D [iot:%t] %M %N:%l add_credential: identity already registered\n")));
             }
         }
 
