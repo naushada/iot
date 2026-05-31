@@ -1,6 +1,7 @@
 #include "data_store/client.hpp"
 
 #include "data_store/proto.hpp"
+#include "proto/value_json.hpp"
 
 #include <atomic>
 #include <cerrno>
@@ -173,9 +174,9 @@ void Client::Impl::run_listener() {
             if (p.contains("ev")) {
                 Event ev;
                 ev.key   = p.value("k", "");
-                ev.value = p.value("v", "");
+                if (p.contains("v")) ev.value = value_from_json(p["v"]);
                 if (p.contains("prev") && !p["prev"].is_null()) {
-                    ev.prev           = p["prev"].get<std::string>();
+                    ev.prev           = value_from_json(p["prev"]);
                     ev.prev_has_value = true;
                 }
 
@@ -297,7 +298,10 @@ Status Client::set(const std::vector<KV>& pairs, std::int32_t timeout_ms) {
     req["op"]   = "set";
     req["keys"] = json::array();
     for (const auto& kv : pairs) {
-        json e; e["k"] = kv.first; e["v"] = kv.second;
+        // Wire shape: each entry is a single-key object whose value
+        // round-trips through JSON's native type system.
+        json e;
+        e[kv.first] = value_to_json(kv.second);
         req["keys"].push_back(e);
     }
     json resp;
@@ -329,7 +333,7 @@ Status Client::get(const std::vector<std::string>& keys,
         GetResult g;
         g.key = item.value("k", "");
         if (item.contains("v") && !item["v"].is_null()) {
-            g.value     = item["v"].get<std::string>();
+            g.value     = value_from_json(item["v"]);
             g.has_value = true;
         }
         out.push_back(std::move(g));

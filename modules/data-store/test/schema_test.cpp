@@ -9,9 +9,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "data_store/value.hpp"
 #include "../src/server/schema.hpp"
 
 namespace ds = data_store::server;
+using data_store::Value;
 
 namespace {
 
@@ -56,7 +58,7 @@ return {
     ASSERT_NE(nullptr, e);
     EXPECT_EQ(ds::SchemaType::Integer, e->type);
     ASSERT_TRUE(e->default_value.has_value());
-    EXPECT_EQ("86400", *e->default_value);
+    EXPECT_EQ(86400u, std::get<std::uint32_t>(*e->default_value));
     EXPECT_EQ(0LL, e->min_int.value_or(-1));
 
     EXPECT_EQ(nullptr, r.find("not.in.schema"));
@@ -66,7 +68,8 @@ return {
 TEST(Schema, validate_set_passes_unknown_keys_through) {
     ds::SchemaRegistry r;
     // No schema loaded → every set passes.
-    EXPECT_FALSE(r.validate_set("anything", "v").has_value());
+    EXPECT_FALSE(r.validate_set("anything",
+        Value{std::string("v")}).has_value());
 }
 
 TEST(Schema, validate_set_rejects_type_mismatch) {
@@ -77,14 +80,38 @@ return { keys = { ["n"] = { type="integer", min=0, max=10 } } })");
 
     ds::SchemaRegistry r;
     r.load_directory(dir);
-    EXPECT_FALSE(r.validate_set("n", "5").has_value());   // ok
-    EXPECT_TRUE (r.validate_set("n", "foo").has_value()); // not integer
-    EXPECT_TRUE (r.validate_set("n", "-1").has_value());  // below min
-    EXPECT_TRUE (r.validate_set("n", "99").has_value());  // above max
+    EXPECT_FALSE(r.validate_set("n",
+        Value{static_cast<std::uint32_t>(5)}).has_value());     // ok
+    EXPECT_TRUE (r.validate_set("n",
+        Value{std::string("foo")}).has_value());                 // not integer
+    EXPECT_TRUE (r.validate_set("n",
+        Value{static_cast<std::int32_t>(-1)}).has_value());      // below min
+    EXPECT_TRUE (r.validate_set("n",
+        Value{static_cast<std::uint32_t>(99)}).has_value());     // above max
     ::unlink((dir + "/x.lua").c_str()); ::rmdir(dir.c_str());
 }
 
-TEST(Schema, default_for_returns_stringified_default) {
+TEST(Schema, validate_set_typed_string_and_boolean) {
+    auto dir = make_tmpdir();
+    if (dir.empty()) GTEST_SKIP() << "no writable /tmp or cwd";
+    write_file(dir + "/t.lua", R"(
+return { keys = {
+    ["name"]    = { type="string"  },
+    ["enabled"] = { type="boolean" },
+} })");
+    ds::SchemaRegistry r;
+    r.load_directory(dir);
+    EXPECT_FALSE(r.validate_set("name",
+        Value{std::string("ok")}).has_value());
+    EXPECT_TRUE (r.validate_set("name",
+        Value{static_cast<std::uint32_t>(1)}).has_value());
+    EXPECT_FALSE(r.validate_set("enabled", Value{true}).has_value());
+    EXPECT_TRUE (r.validate_set("enabled",
+        Value{std::string("true")}).has_value());
+    ::unlink((dir + "/t.lua").c_str()); ::rmdir(dir.c_str());
+}
+
+TEST(Schema, default_for_returns_typed_default) {
     auto dir = make_tmpdir();
     if (dir.empty()) GTEST_SKIP() << "no writable /tmp or cwd";
     write_file(dir + "/d.lua", R"(
@@ -99,9 +126,15 @@ return {
 
     ds::SchemaRegistry r;
     r.load_directory(dir);
-    EXPECT_EQ("42",    r.default_for("a").value_or(""));
-    EXPECT_EQ("1",     r.default_for("b").value_or(""));
-    EXPECT_EQ("hello", r.default_for("c").value_or(""));
+    auto a = r.default_for("a");
+    ASSERT_TRUE(a.has_value());
+    EXPECT_EQ(42u, std::get<std::uint32_t>(*a));
+    auto b = r.default_for("b");
+    ASSERT_TRUE(b.has_value());
+    EXPECT_TRUE(std::get<bool>(*b));
+    auto c = r.default_for("c");
+    ASSERT_TRUE(c.has_value());
+    EXPECT_EQ(std::string("hello"), std::get<std::string>(*c));
     EXPECT_FALSE(r.default_for("d").has_value());
     EXPECT_FALSE(r.default_for("nope").has_value());
     ::unlink((dir + "/d.lua").c_str()); ::rmdir(dir.c_str());
@@ -122,7 +155,8 @@ return { keys = { ["dup"] = { type="integer", default=2 } } })");
     ASSERT_TRUE(e->default_value.has_value());
     // Last-loaded wins; filesystem readdir order isn't guaranteed,
     // so just assert it's one of the two.
-    EXPECT_TRUE(*e->default_value == "1" || *e->default_value == "2");
+    auto n = std::get<std::uint32_t>(*e->default_value);
+    EXPECT_TRUE(n == 1u || n == 2u);
 
     ::unlink((dir + "/a.lua").c_str());
     ::unlink((dir + "/b.lua").c_str());

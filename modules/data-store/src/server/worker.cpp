@@ -2,6 +2,7 @@
 
 #include "data_store.hpp"
 #include "data_store/proto.hpp"
+#include "proto/value_json.hpp"
 #include "schema.hpp"
 #include "server.hpp"
 #include "session.hpp"
@@ -41,15 +42,15 @@ std::string error_response(const json& reqId, const std::string& msg) {
     return r.dump() + "\n";
 }
 
-/// Build a `{"ev":"changed","k":"...","v":"...","prev":...}` line.
+/// Build a `{"ev":"changed","k":"...","v":<typed>,"prev":<typed>}` line.
 std::string notify_line(const std::string& key,
-                        const std::string& newValue,
-                        const std::optional<std::string>& prev) {
+                        const Value& newValue,
+                        const std::optional<Value>& prev) {
     json r;
     r["ev"] = "changed";
     r["k"]  = key;
-    r["v"]  = newValue;
-    if (prev.has_value()) r["prev"] = *prev;
+    r["v"]  = value_to_json(newValue);
+    if (prev.has_value()) r["prev"] = value_to_json(*prev);
     else                  r["prev"] = nullptr;
     return r.dump() + "\n";
 }
@@ -177,9 +178,10 @@ void Worker::handle_process_request(WorkMsg* msg) {
 
     switch (op) {
         case proto::Op::Set: {
-            // Each element is `{"k":"...","v":"..."}`. Collect notify
-            // dispatches; emit after the response is on the wire so the
-            // initiating client sees its ack before peers see the push.
+            // Each element is a single-key object `{"keyname": <typed-value>}`.
+            // Collect notify dispatches; emit after the response is on
+            // the wire so the initiating client sees its ack before
+            // peers see the push.
             struct Push {
                 Session*                 watcher;
                 std::string              line;
@@ -187,13 +189,14 @@ void Worker::handle_process_request(WorkMsg* msg) {
             std::vector<Push> pushes;
 
             for (const auto& e : req["keys"]) {
-                if (!e.is_object() || !e.contains("k") || !e.contains("v") ||
-                    !e["k"].is_string() || !e["v"].is_string()) {
-                    s->send(error_response(reqId, "set entry needs k+v strings"));
+                if (!e.is_object() || e.size() != 1) {
+                    s->send(error_response(
+                        reqId, "set entry must be a single-key object"));
                     return;
                 }
-                const std::string k = e["k"].get<std::string>();
-                const std::string v = e["v"].get<std::string>();
+                auto it = e.begin();
+                const std::string k = it.key();
+                Value v = value_from_json(it.value());
                 // REQ-DS-014 / schema check: reject type mismatches
                 // before touching the store. Schema is optional; an
                 // unknown key returns nullopt → passthrough.
@@ -240,12 +243,12 @@ void Worker::handle_process_request(WorkMsg* msg) {
                 json item;
                 item["k"] = k;
                 if (v.has_value()) {
-                    item["v"] = *v;
+                    item["v"] = value_to_json(*v);
                 } else if (m_schema) {
                     // Fall back to the schema default when the
                     // key is unset.
                     auto def = m_schema->default_for(k);
-                    if (def) item["v"] = *def;
+                    if (def) item["v"] = value_to_json(*def);
                     else     item["v"] = nullptr;
                 } else {
                     item["v"] = nullptr;

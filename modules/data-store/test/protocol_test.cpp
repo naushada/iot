@@ -97,13 +97,14 @@ TEST(Protocol, DS_REQ_DS_003_set_then_get_returns_latest) {
         ds::Client cli;
         auto cs = cli.connect(srv.sock); if (!cs.ok) return cs;
         std::string w; cli.recv_welcome(w, 2000);
-        auto ss = cli.set("foo", "bar", 2000); if (!ss.ok) return ss;
+        auto ss = cli.set("foo", ds::Value{std::string("bar")}, 2000);
+        if (!ss.ok) return ss;
         std::vector<ds::Client::GetResult> got;
         auto gs = cli.get({"foo", "missing"}, got, 2000); if (!gs.ok) return gs;
         EXPECT_EQ(2u, got.size());
         EXPECT_EQ("foo", got[0].key);
         EXPECT_TRUE(got[0].has_value);
-        EXPECT_EQ("bar", got[0].value);
+        EXPECT_EQ(std::string("bar"), std::get<std::string>(got[0].value));
         EXPECT_EQ("missing", got[1].key);
         EXPECT_FALSE(got[1].has_value);
         return ds::Status{};
@@ -133,7 +134,7 @@ TEST(Protocol, DS_REQ_DS_007_register_then_set_emits_notify_to_watcher) {
         auto es = w.recv_event(ev, 5000);
         if (!es.ok) return es;
         EXPECT_EQ("foo",  ev.key);
-        EXPECT_EQ("bar",  ev.value);
+        EXPECT_EQ(std::string("bar"), std::get<std::string>(ev.value));
         EXPECT_FALSE(ev.prev_has_value);   // foo was new
         return ds::Status{};
     });
@@ -146,7 +147,7 @@ TEST(Protocol, DS_REQ_DS_007_register_then_set_emits_notify_to_watcher) {
         auto cs = s.connect(srv.sock); if (!cs.ok) return cs;
         std::string welcome; s.recv_welcome(welcome, 2000);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        return s.set("foo", "bar", 2000);
+        return s.set("foo", ds::Value{std::string("bar")}, 2000);
     });
 
     pump_until(watch_fut, set_fut);
@@ -171,7 +172,7 @@ TEST(Protocol, DS_REQ_DS_006_unchanged_value_no_notify) {
         ds::Client s;
         auto cs = s.connect(srv.sock); if (!cs.ok) return cs;
         std::string w; s.recv_welcome(w, 2000);
-        return s.set("foo", "bar", 2000);
+        return s.set("foo", ds::Value{std::string("bar")}, 2000);
     });
     pump_until(seed_fut);
     auto seed = seed_fut.get();
@@ -189,7 +190,7 @@ TEST(Protocol, DS_REQ_DS_006_unchanged_value_no_notify) {
         ds::Status fail;
         fail.ok = false;
         fail.err = es.ok
-            ? "unexpected notify k=" + ev.key + " v=" + ev.value
+            ? "unexpected notify k=" + ev.key
             : "unexpected error: " + es.err;
         return fail;
     });
@@ -200,7 +201,7 @@ TEST(Protocol, DS_REQ_DS_006_unchanged_value_no_notify) {
         auto cs = s.connect(srv.sock); if (!cs.ok) return cs;
         std::string welcome; s.recv_welcome(welcome, 2000);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        return s.set("foo", "bar", 2000);   // same value
+        return s.set("foo", ds::Value{std::string("bar")}, 2000);   // same value
     });
 
     pump_until(watch_fut, set_fut);

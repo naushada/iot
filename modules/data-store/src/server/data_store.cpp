@@ -6,18 +6,17 @@
 
 namespace data_store::server {
 
-void DataStore::load_from(std::unordered_map<std::string, std::string> data) {
+void DataStore::load_from(std::unordered_map<std::string, Value> data) {
     std::lock_guard<std::mutex> g(m_mtx);
     m_data = std::move(data);
 }
 
 void DataStore::flush_locked_release(
-        std::unordered_map<std::string, std::string> snapshot) {
+        std::unordered_map<std::string, Value> snapshot) {
     if (!m_persistor) return;
     try {
         m_persistor->save(snapshot);
     } catch (const std::exception& e) {
-        // In-memory map IS updated. Log loud + carry on per design §7.
         ACE_ERROR((LM_ERROR,
                    ACE_TEXT("%D [DS:%t] %M %N:%l persist failed: %C\n"),
                    e.what()));
@@ -29,44 +28,39 @@ std::size_t DataStore::size() const {
     return m_data.size();
 }
 
-std::optional<std::string> DataStore::get(const std::string& key) const {
+std::optional<Value> DataStore::get(const std::string& key) const {
     std::lock_guard<std::mutex> g(m_mtx);
     auto it = m_data.find(key);
     if (it == m_data.end()) return std::nullopt;
     return it->second;
 }
 
-SetResult DataStore::set(const std::string& key, const std::string& value) {
+SetResult DataStore::set(const std::string& key, Value value) {
     SetResult out;
-    std::unordered_map<std::string, std::string> snapshot;
+    std::unordered_map<std::string, Value> snapshot;
     {
         std::lock_guard<std::mutex> g(m_mtx);
 
         auto it = m_data.find(key);
         if (it == m_data.end()) {
-            m_data.emplace(key, value);
+            m_data.emplace(key, std::move(value));
             out.changed = true;
         } else {
             if (it->second == value) {
                 // REQ-DS-006: unchanged value → no notification + no flush.
                 return out;
             }
-            out.prev    = it->second;
+            out.prev    = std::move(it->second);
             out.changed = true;
-            it->second  = value;
+            it->second  = std::move(value);
         }
 
-        // Snapshot the watcher set for this key so the caller can
-        // dispatch notifications without holding the lock.
         auto wit = m_watchers.find(key);
         if (wit != m_watchers.end()) {
             out.watchers.reserve(wit->second.size());
             for (Session* s : wit->second) out.watchers.push_back(s);
         }
 
-        // Snapshot data for the persistor — copy under the lock so
-        // the disk image is consistent with the in-memory state at
-        // exactly this set's commit point.
         if (m_persistor) snapshot = m_data;
     }
     flush_locked_release(std::move(snapshot));
@@ -75,7 +69,7 @@ SetResult DataStore::set(const std::string& key, const std::string& value) {
 
 bool DataStore::remove(const std::string& key) {
     bool existed = false;
-    std::unordered_map<std::string, std::string> snapshot;
+    std::unordered_map<std::string, Value> snapshot;
     {
         std::lock_guard<std::mutex> g(m_mtx);
         existed = m_data.erase(key) > 0;

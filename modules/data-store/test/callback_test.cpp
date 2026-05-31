@@ -98,7 +98,7 @@ TEST(Callback, single_watch_with_callback_fires_on_event) {
 
         // Set from the same client — server fans the notify back to
         // every watcher on the key, including us.
-        auto ss = cli.set("foo", "bar", 2000);
+        auto ss = cli.set("foo", ds::Value{std::string("bar")}, 2000);
         if (!ss.ok) return ss;
 
         // Wait up to 3s for the callback.
@@ -119,7 +119,7 @@ TEST(Callback, single_watch_with_callback_fires_on_event) {
     if (rs.ok) {
         auto ev = fut.get();
         EXPECT_EQ("foo", ev.key);
-        EXPECT_EQ("bar", ev.value);
+        EXPECT_EQ(std::string("bar"), std::get<std::string>(ev.value));
         EXPECT_FALSE(ev.prev_has_value);
     }
     ::rmdir(dir.c_str());
@@ -152,9 +152,12 @@ TEST(Callback, multiple_watches_with_overlapping_keys_all_fire) {
             &hb, 2000);
         if (!rb.ok) return rb;
 
-        if (auto s = cli.set("foo",    "1", 2000); !s.ok) return s;
-        if (auto s = cli.set("bar",    "2", 2000); !s.ok) return s;
-        if (auto s = cli.set("shared", "3", 2000); !s.ok) return s;
+        if (auto s = cli.set("foo",
+                ds::Value{std::string("1")}, 2000); !s.ok) return s;
+        if (auto s = cli.set("bar",
+                ds::Value{std::string("2")}, 2000); !s.ok) return s;
+        if (auto s = cli.set("shared",
+                ds::Value{std::string("3")}, 2000); !s.ok) return s;
 
         // Wait for listener to dispatch.
         for (int i = 0; i < 100; ++i) {
@@ -167,7 +170,8 @@ TEST(Callback, multiple_watches_with_overlapping_keys_all_fire) {
 
         // Drop A; another set on shared should fire ONLY B.
         if (auto s = cli.unwatch(ha, 2000); !s.ok) return s;
-        if (auto s = cli.set("shared", "4", 2000); !s.ok) return s;
+        if (auto s = cli.set("shared",
+                ds::Value{std::string("4")}, 2000); !s.ok) return s;
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         EXPECT_EQ(2, a_fires.load());
         EXPECT_EQ(3, b_fires.load());
