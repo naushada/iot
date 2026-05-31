@@ -58,7 +58,7 @@ void pump(int times = 4) {
 
 /* ────────────────────────────── REQ-DS-011 ───────────────────────── */
 
-TEST(ServerIntegration, DS_REQ_DS_011_one_client_gets_welcome) {
+TEST(ServerIntegration, DS_REQ_DS_011_one_client_connects_and_gets_response) {
     std::string dir = make_temp_dir();
     if (dir.empty()) GTEST_SKIP() << "no writable /tmp or cwd";
     std::string sock = dir + "/ds.sock";
@@ -69,23 +69,24 @@ TEST(ServerIntegration, DS_REQ_DS_011_one_client_gets_welcome) {
     ds::server::Server server(store, &pool, sock);
     ASSERT_EQ(0, server.open());
 
-    // Connect from the test thread; the reactor pump below services
-    // the accept. We give the client a generous timeout in case the
-    // first pump tick lands after recv_welcome blocks.
+    // EMP has no welcome — to prove the wire works, issue a get on a
+    // missing key and assert ok+empty data.
     auto fut = std::async(std::launch::async, [&]() {
         ds::Client cli;
         auto cs = cli.connect(sock);
         if (!cs.ok) return std::string("CONNECT_FAILED:") + cs.err;
-        std::string w;
-        auto rs = cli.recv_welcome(w, /*timeout_ms=*/2000);
-        if (!rs.ok) return std::string("RECV_FAILED:") + rs.err;
-        return w;
+        std::vector<ds::Client::GetResult> got;
+        auto rs = cli.get({"nope"}, got, /*timeout_ms=*/2000);
+        if (!rs.ok) return std::string("GET_FAILED:") + rs.err;
+        if (got.size() != 1) return std::string("BAD_SIZE");
+        if (got[0].has_value) return std::string("UNEXPECTED_VALUE");
+        return std::string("ok");
     });
 
     pump(20);                       // service the connect
     std::string got = fut.get();
 
-    EXPECT_EQ(std::string(ds::proto::kWelcomeLine), got);
+    EXPECT_EQ("ok", got);
     server.close();
     pool.close();
     ::unlink(sock.c_str());
@@ -115,10 +116,11 @@ TEST(ServerIntegration, DS_REQ_DS_011_concurrent_sessions) {
             ds::Client cli;
             auto cs = cli.connect(sock);
             if (!cs.ok) return std::string("CONNECT:") + cs.err;
-            std::string w;
-            auto rs = cli.recv_welcome(w, 3000);
-            if (!rs.ok) return std::string("RECV:") + rs.err;
-            return w;
+            // Each session does one Get to prove the wire is alive.
+            std::vector<ds::Client::GetResult> got;
+            auto rs = cli.get({"nope"}, got, 3000);
+            if (!rs.ok) return std::string("GET:") + rs.err;
+            return std::string("ok");
         }));
     }
 
@@ -129,7 +131,7 @@ TEST(ServerIntegration, DS_REQ_DS_011_concurrent_sessions) {
     int ok = 0;
     for (auto& f : clients) {
         std::string got = f.get();
-        if (got == ds::proto::kWelcomeLine) ++ok;
+        if (got == "ok") ++ok;
         else ADD_FAILURE() << "session result: " << got;
     }
     EXPECT_EQ(N, ok);

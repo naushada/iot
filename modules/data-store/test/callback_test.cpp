@@ -84,7 +84,6 @@ TEST(Callback, single_watch_with_callback_fires_on_event) {
     auto cli_fut = std::async(std::launch::async, [&]() {
         ds::Client cli;
         auto cs = cli.connect(srv.sock); if (!cs.ok) return cs;
-        std::string w; cli.recv_welcome(w, 2000);
 
         ds::Client::WatchHandle h = ds::Client::kInvalidHandle;
         std::vector<std::string> keys = {"foo"};
@@ -138,7 +137,6 @@ TEST(Callback, multiple_watches_with_overlapping_keys_all_fire) {
     auto cli_fut = std::async(std::launch::async, [&]() {
         ds::Client cli;
         auto cs = cli.connect(srv.sock); if (!cs.ok) return cs;
-        std::string w; cli.recv_welcome(w, 2000);
 
         ds::Client::WatchHandle ha, hb;
         std::vector<std::string> aKeys = {"foo", "shared"};

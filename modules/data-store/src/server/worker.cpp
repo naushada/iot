@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string_view>
 
 #include <ace/Log_Msg.h>
 #include <ace/Message_Block.h>
@@ -33,26 +34,43 @@ WorkMsg* unwrap_block(ACE_Message_Block* mb) {
     return *reinterpret_cast<WorkMsg**>(mb->rd_ptr());
 }
 
-/// Build a `{"ok":false,"id":...,"err":"..."}` response line.
-std::string error_response(const json& reqId, const std::string& msg) {
-    json r;
-    r["ok"]  = false;
-    if (!reqId.is_null()) r["id"] = reqId;
-    r["err"] = msg;
-    return r.dump() + "\n";
+/// Encode an EMP response carrying optional JSON body and a status.
+/// Body of "" + status Ok is a bare ack; non-Ok statuses are paired
+/// with `{"err":"..."}` for human-readable diagnostics.
+std::string encode_response(proto::Op    op,
+                            std::uint8_t reqID,
+                            proto::Status st,
+                            const json&  body) {
+    std::string out;
+    const std::string s = body.is_null() ? std::string{} : body.dump();
+    proto::encode_frame_response(op, reqID, st,
+                                 std::string_view(s.data(), s.size()), out);
+    return out;
 }
 
-/// Build a `{"ev":"changed","k":"...","v":<typed>,"prev":<typed>}` line.
-std::string notify_line(const std::string& key,
-                        const Value& newValue,
-                        const std::optional<Value>& prev) {
-    json r;
-    r["ev"] = "changed";
-    r["k"]  = key;
-    r["v"]  = value_to_json(newValue);
-    if (prev.has_value()) r["prev"] = value_to_json(*prev);
-    else                  r["prev"] = nullptr;
-    return r.dump() + "\n";
+std::string encode_error(proto::Op    op,
+                         std::uint8_t reqID,
+                         proto::Status st,
+                         const std::string& msg) {
+    json b;
+    b["err"] = msg;
+    return encode_response(op, reqID, st, b);
+}
+
+/// Encode a NotifyEvent push frame (server → client, no correlation).
+std::string encode_notify_push(const std::string& key,
+                               const Value&       newValue,
+                               const std::optional<Value>& prev) {
+    json b;
+    b["k"] = key;
+    b["v"] = value_to_json(newValue);
+    if (prev.has_value()) b["prev"] = value_to_json(*prev);
+    else                  b["prev"] = nullptr;
+    std::string out;
+    const std::string s = b.dump();
+    proto::encode_frame_push(proto::Op::NotifyEvent,
+                             std::string_view(s.data(), s.size()), out);
+    return out;
 }
 
 } // namespace
@@ -146,35 +164,57 @@ void Worker::handle_process_request(WorkMsg* msg) {
     Session* s = msg->session;
     if (!s) return;
 
+    // msg->payload holds the FULL raw EMP frame (header || body).
+    // session.cpp already validated payload_size against
+    // kMaxPayloadBytes; here we trust the bounds.
+    if (msg->payload.size() < proto::kHeaderSize) {
+        return; // pathological — drop quietly, reactor will close on next read
+    }
+    proto::Header h{};
+    proto::decode_header(msg->payload.data(), h);
+    const char*  body_ptr = msg->payload.data() + proto::kHeaderSize;
+    const std::size_t body_len = msg->payload.size() - proto::kHeaderSize;
+
+    // EMP requests carry no status prefix — the JSON body starts at
+    // payload offset 0.
     json req;
-    json reqId;
-    try {
-        req = json::parse(msg->payload);
-        if (req.contains("id")) reqId = req["id"];
-    } catch (const std::exception& e) {
-        s->send(error_response(reqId, std::string("bad json: ") + e.what()));
-        return;
+    if (body_len > 0) {
+        try {
+            req = json::parse(body_ptr, body_ptr + body_len);
+        } catch (const std::exception& e) {
+            s->send(encode_error(proto::parse_op(h.cmdID), h.reqID,
+                                 proto::Status::BadPayload,
+                                 std::string("bad json: ") + e.what()));
+            return;
+        }
     }
 
-    if (!req.is_object() || !req.contains("op") || !req["op"].is_string()) {
-        s->send(error_response(reqId, "missing op"));
-        return;
-    }
-
-    const std::string opStr = req["op"].get<std::string>();
-    const proto::Op   op    = proto::parse_op(opStr);
+    const proto::Op op = proto::parse_op(h.cmdID);
     if (op == proto::Op::Unknown) {
-        s->send(error_response(reqId, "unknown op '" + opStr + "'"));
-        return;
-    }
-    if (!req.contains("keys") || !req["keys"].is_array()) {
-        s->send(error_response(reqId, "missing keys array"));
+        s->send(encode_error(op, h.reqID, proto::Status::BadOpcode,
+                             "unknown opcode 0x" +
+                             [&]{
+                                 char b[8];
+                                 std::snprintf(b, sizeof(b), "%04x", h.cmdID);
+                                 return std::string(b);
+                             }()));
         return;
     }
 
-    json resp;
-    resp["ok"] = true;
-    if (!reqId.is_null()) resp["id"] = reqId;
+    if (!proto::is_command(h.type)) {
+        // Server only consumes commands. Responses / pushes from a
+        // client violate the protocol — drop with BadFrame.
+        s->send(encode_error(op, h.reqID, proto::Status::BadFrame,
+                             "expected command frame"));
+        return;
+    }
+
+    // All four request opcodes carry `keys: [...]` in the body.
+    if (!req.is_object() || !req.contains("keys") || !req["keys"].is_array()) {
+        s->send(encode_error(op, h.reqID, proto::Status::BadPayload,
+                             "missing keys array"));
+        return;
+    }
 
     switch (op) {
         case proto::Op::Set: {
@@ -183,15 +223,16 @@ void Worker::handle_process_request(WorkMsg* msg) {
             // the wire so the initiating client sees its ack before
             // peers see the push.
             struct Push {
-                Session*                 watcher;
-                std::string              line;
+                Session*     watcher;
+                std::string  frame;
             };
             std::vector<Push> pushes;
 
             for (const auto& e : req["keys"]) {
                 if (!e.is_object() || e.size() != 1) {
-                    s->send(error_response(
-                        reqId, "set entry must be a single-key object"));
+                    s->send(encode_error(op, h.reqID,
+                                         proto::Status::BadPayload,
+                                         "set entry must be a single-key object"));
                     return;
                 }
                 auto it = e.begin();
@@ -203,28 +244,31 @@ void Worker::handle_process_request(WorkMsg* msg) {
                 if (m_schema) {
                     auto err = m_schema->validate_set(k, v);
                     if (err) {
-                        s->send(error_response(reqId, *err));
+                        s->send(encode_error(op, h.reqID,
+                                             proto::Status::SchemaRejected,
+                                             *err));
                         return;
                     }
                 }
                 auto r = m_store->set(k, v);
                 if (!r.changed) continue;
-                std::string line = notify_line(k, v, r.prev);
+                std::string frame = encode_notify_push(k, v, r.prev);
                 for (Session* w : r.watchers) {
                     if (!w) continue;
-                    pushes.push_back({w, line});
+                    pushes.push_back({w, frame});
                 }
             }
-            s->send(resp.dump() + "\n");
+            s->send(encode_response(op, h.reqID, proto::Status::Ok, json{}));
 
             // Notify fan-out: same-Worker → write directly; cross-Worker
-            // → enqueue DeliverNotify on the watcher's owner Worker.
+            // → enqueue DeliverNotify on the watcher's owner Worker
+            // carrying the pre-encoded push frame.
             for (auto& p : pushes) {
                 if (p.watcher->owner() == this) {
-                    p.watcher->send(p.line);
+                    p.watcher->send(p.frame);
                 } else if (p.watcher->owner()) {
                     auto* m = new WorkMsg{
-                        WorkKind::DeliverNotify, p.watcher, p.line};
+                        WorkKind::DeliverNotify, p.watcher, p.frame};
                     p.watcher->owner()->enqueue(m);
                 }
             }
@@ -232,10 +276,13 @@ void Worker::handle_process_request(WorkMsg* msg) {
         }
 
         case proto::Op::Get: {
+            json resp;
             resp["data"] = json::array();
             for (const auto& e : req["keys"]) {
                 if (!e.is_string()) {
-                    s->send(error_response(reqId, "get keys must be strings"));
+                    s->send(encode_error(op, h.reqID,
+                                         proto::Status::BadPayload,
+                                         "get keys must be strings"));
                     return;
                 }
                 const std::string k = e.get<std::string>();
@@ -255,47 +302,55 @@ void Worker::handle_process_request(WorkMsg* msg) {
                 }
                 resp["data"].push_back(item);
             }
-            s->send(resp.dump() + "\n");
+            s->send(encode_response(op, h.reqID, proto::Status::Ok, resp));
             return;
         }
 
-        case proto::Op::Register: {
+        case proto::Op::RegisterWatch: {
             for (const auto& e : req["keys"]) {
                 if (!e.is_string()) {
-                    s->send(error_response(reqId, "register keys must be strings"));
+                    s->send(encode_error(op, h.reqID,
+                                         proto::Status::BadPayload,
+                                         "register keys must be strings"));
                     return;
                 }
                 const std::string k = e.get<std::string>();
                 m_store->watch(s, k);
                 s->note_watch(k);
             }
-            s->send(resp.dump() + "\n");
+            s->send(encode_response(op, h.reqID, proto::Status::Ok, json{}));
             return;
         }
 
-        case proto::Op::Remove: {
+        case proto::Op::RemoveWatch: {
             for (const auto& e : req["keys"]) {
                 if (!e.is_string()) {
-                    s->send(error_response(reqId, "remove keys must be strings"));
+                    s->send(encode_error(op, h.reqID,
+                                         proto::Status::BadPayload,
+                                         "remove keys must be strings"));
                     return;
                 }
                 const std::string k = e.get<std::string>();
                 m_store->unwatch(s, k);
                 s->note_unwatch(k);
             }
-            s->send(resp.dump() + "\n");
+            s->send(encode_response(op, h.reqID, proto::Status::Ok, json{}));
             return;
         }
 
+        case proto::Op::NotifyEvent:
         case proto::Op::Unknown:
-            // Unreachable — already handled above.
+            // Server doesn't accept these as commands.
+            s->send(encode_error(op, h.reqID, proto::Status::BadOpcode,
+                                 "opcode not valid as a request"));
             return;
     }
 }
 
 void Worker::handle_deliver_notify(WorkMsg* msg) {
-    // Caller (any Worker) packaged a notify destined for one of OUR
-    // sessions. We're the sole writer to its socket, so send inline.
+    // Caller (any Worker) packaged an already-encoded EMP push frame
+    // destined for one of OUR sessions. We're the sole writer to its
+    // socket, so send inline.
     if (msg->session) {
         msg->session->send(msg->payload);
     }

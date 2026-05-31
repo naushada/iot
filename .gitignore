@@ -60,3 +60,6 @@ log/L9/cli-zip-smoke-*.log
 log/L9/probe-readline.*
 log/L9/run-cli-smoke.run.log
 log/L9/.cli-zip-big.json
+
+# CMake test build artifacts
+apps/test/build/
