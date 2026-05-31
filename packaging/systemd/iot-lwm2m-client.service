@@ -1,0 +1,42 @@
+[Unit]
+Description=IoT LwM2M client (binds to /run/iot DM server URI)
+Documentation=file:///etc/iot/lwm2m-client.env
+# Needs the data-store socket for live config; ordering ensures
+# DsConfig.connect() doesn't fall through to defaults at boot.
+After=network-online.target iot-ds.service
+Wants=network-online.target iot-ds.service
+# StartLimit* live in [Unit] for modern systemd (250+).
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+# All knobs in the env file so operators edit /etc/iot/lwm2m-client.env,
+# not the unit. Missing file → unit fails fast with "EnvironmentFile not
+# found" (the `-` prefix below makes it optional; we want it required so
+# typos surface, hence no prefix).
+EnvironmentFile=/etc/iot/lwm2m-client.env
+ExecStart=/usr/local/bin/lwm2m $LWM2M_ARGS
+
+DynamicUser=yes
+# Match ds-ds's RuntimeDirectory name so both units see the same
+# /run/iot/ tree (and thus the same socket file). Both units claim the
+# directory; systemd's RuntimeDirectory= semantics make this safe —
+# whichever starts first creates it, the other re-uses it.
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+
+Restart=on-failure
+RestartSec=5s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

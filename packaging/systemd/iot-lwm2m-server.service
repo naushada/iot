@@ -1,0 +1,34 @@
+[Unit]
+Description=IoT LwM2M Bootstrap + DM server (Leshan-compatible)
+Documentation=file:///etc/iot/lwm2m-server.env
+After=network-online.target iot-ds.service
+Wants=network-online.target iot-ds.service
+# Mutually-exclusive use case with the client unit: typical deploys
+# enable one or the other. Both can coexist on disjoint ports if
+# someone really wants client + server on the same host.
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/iot/lwm2m-server.env
+ExecStart=/usr/local/bin/lwm2m $LWM2M_ARGS
+
+DynamicUser=yes
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+
+Restart=on-failure
+RestartSec=5s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target
