@@ -1,7 +1,7 @@
 # L12 Plan — OpenVPN Client (ACE + data-store backed)
 
 > Forward-looking phase plan. Mirrors L10/L11 shape. Greenfield
-> `modules/openvpn-client/` module wrapping the upstream `openvpn(8)`
+> `modules/openvpn/client/` module wrapping the upstream `openvpn(8)`
 > binary via its management interface. Config in + state out flows
 > through the same `ds-server` that the lwm2m binary integrates with.
 >
@@ -61,12 +61,12 @@ uses.
 ### D1 — `vpn.*` schema ✅ (PR #29)
 
 Closed 2026-05-31. Schema lands at
-`modules/openvpn-client/schemas/vpn.lua` with 9 read + 7 write keys
+`modules/openvpn/client/schemas/vpn.lua` with 9 read + 7 write keys
 + defaults for the optional ones. cmake install rule drops it at
 `/etc/iot/ds-schemas/vpn.lua`. Smoke verified `vpn.remote.port=99999`
 rejected with `schema(vpn.remote.port): 99999 above max 65535`.
 
-**Scope.** Add `modules/openvpn-client/schemas/vpn.lua`. ds-server
+**Scope.** Add `modules/openvpn/client/schemas/vpn.lua`. ds-server
 auto-loads it from `/etc/iot/ds-schemas/` (FUP-DS-6 default dir).
 Operators get `SchemaRejected` at set time on type / range mismatches.
 
@@ -96,25 +96,25 @@ Written by the daemon:
 | `vpn.pid`               | uint32  | Live openvpn subprocess pid                                        |
 | `vpn.exit_code`         | int32   | Last openvpn exit code (when state==exited)                        |
 
-**Tests.** `modules/openvpn-client/test/schema_test.cpp` validates the
+**Tests.** `modules/openvpn/client/test/schema_test.cpp` validates the
 schema parses + the type / range / default expectations hold.
 
 ---
 
 ### D2 — Module scaffold ✅ (PR #29)
 
-Closed 2026-05-31. Module tree under `modules/openvpn-client/`
+Closed 2026-05-31. Module tree under `modules/openvpn/client/`
 mirrors data-store. v0 binary connects to ds-server, dumps every
 known vpn.* key via libdatastore_client, exits. Internal lib
 (`openvpn_client_lib`) split out so future test targets link the
 same code the binary runs. Schema install rule lands at
 `/etc/iot/ds-schemas/vpn.lua`. Module README at `docs/design.md`.
 
-**Scope.** Create `modules/openvpn-client/` mirroring data-store's
+**Scope.** Create `modules/openvpn/client/` mirroring data-store's
 shape:
 
 ```
-modules/openvpn-client/
+modules/openvpn/client/
 ├── CMakeLists.txt              builds openvpn-client binary; links libdatastore_client
 ├── inc/openvpn_client/
 │   └── client.hpp              public-ish API (Client class for tests)
