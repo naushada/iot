@@ -257,7 +257,109 @@ into the returned `Status{ok, code, err}`.
 
 ---
 
-## 9. Sanity ceilings and failure modes
+## 9. ds-cli examples
+
+`ds-cli` is the debugging client packaged with `ds-server`. Each
+invocation is one EMP exchange (or, for `watch`, a register + N pushes).
+Pass `--socket=PATH` when ds-server is bound somewhere other than the
+default `/var/run/iot/data_store.sock`.
+
+The CLI tries to parse `<value>` as JSON first, then falls back to a
+bare string. That's how typing decisions get made on the wire: bare
+text → `string`, `42` → `uint32`, `-7` → `int32`, `1.5` → `double`,
+`true`/`false` → `bool`, `null` → JSON null.
+
+```sh
+# Start ds-server (run in a separate shell)
+ds-server ds-socket=/tmp/ds.sock ds-store=/tmp/ds.lua
+```
+
+### Set — typed values
+
+```sh
+# String — quoted, so JSON sees "bar" not the bareword bar.
+ds-cli --socket=/tmp/ds.sock set iot.endpoint '"urn:dev:client-7"'
+# ok
+
+# uint32
+ds-cli --socket=/tmp/ds.sock set iot.lifetime 86400
+# ok
+
+# bool
+ds-cli --socket=/tmp/ds.sock set iot.tls.enabled true
+# ok
+
+# double
+ds-cli --socket=/tmp/ds.sock set iot.sample.hz 0.25
+# ok
+
+# Bare string (no quotes — falls through JSON parse, stored as string).
+ds-cli --socket=/tmp/ds.sock set iot.notes 'free-form note text'
+# ok
+```
+
+### Get — read one or many
+
+```sh
+ds-cli --socket=/tmp/ds.sock get iot.endpoint iot.lifetime iot.notes nope
+# iot.endpoint=urn:dev:client-7
+# iot.lifetime=86400
+# iot.notes=free-form note text
+# nope=(null)
+```
+
+Missing keys come back as `(null)` rather than an error — caller's job
+to decide whether absent vs explicit-null matters.
+
+### Watch — wait for one (or N) value-change pushes
+
+```sh
+# Default: wait for one event then exit (good for one-shot scripts).
+ds-cli --socket=/tmp/ds.sock watch iot.endpoint
+# watching 1 key(s) via callback handle=1; count=1
+# [event] iot.endpoint = urn:dev:client-9  (prev=urn:dev:client-7)
+```
+
+Trigger the event from a second terminal:
+
+```sh
+ds-cli --socket=/tmp/ds.sock set iot.endpoint '"urn:dev:client-9"'
+```
+
+Wait for multiple events with `--count`:
+
+```sh
+ds-cli --socket=/tmp/ds.sock watch --count=3 iot.endpoint iot.lifetime
+# blocks until 3 events on either key have fired, or SIGINT
+```
+
+### Unwatch — drop a subscription
+
+```sh
+ds-cli --socket=/tmp/ds.sock unwatch iot.endpoint iot.lifetime
+# ok
+```
+
+`unwatch` is rarely needed from the CLI (each `ds-cli watch` is a
+short-lived process that drops its watches on exit); it's there for
+parity with the library and for ad-hoc poking at server state.
+
+### Scripted workflows
+
+```sh
+# Stage one consistent set of config keys, then sanity-check.
+ds-cli --socket=/tmp/ds.sock set iot.endpoint '"urn:dev:prod-1"'
+ds-cli --socket=/tmp/ds.sock set iot.lifetime 3600
+ds-cli --socket=/tmp/ds.sock set iot.server.uri '"coap://10.0.0.1:5683"'
+ds-cli --socket=/tmp/ds.sock get iot.endpoint iot.lifetime iot.server.uri
+
+# Tail changes to a key while doing related work elsewhere.
+ds-cli --socket=/tmp/ds.sock watch --count=100 iot.endpoint > endpoint.log &
+```
+
+---
+
+## 10. Sanity ceilings and failure modes
 
 - **Maximum payload**: 1 MiB. A header claiming more is treated as
   corrupt and the connection is dropped (`BadFrame`).
@@ -271,7 +373,7 @@ into the returned `Status{ok, code, err}`.
 
 ---
 
-## 10. Divergences from Mihini EMP
+## 11. Divergences from Mihini EMP
 
 | Aspect              | Mihini EMP                              | Data-store EMP                                |
 |---------------------|-----------------------------------------|-----------------------------------------------|
