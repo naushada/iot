@@ -2,6 +2,7 @@
 #define __lwm2m_adapter_cpp__
 
 #include "lwm2m_adapter.hpp"
+#include <ace/Log_Msg.h>
 
 LwM2MAdapter::LwM2MAdapter() {
     ///LwM2M Security Object URI --> /0
@@ -354,7 +355,8 @@ std::string LwM2MAdapter::resourceIDName(const std::uint32_t& oid, const std::ui
 std::int32_t LwM2MAdapter::parseLwM2MUri(const std::string& uri, std::uint32_t& oid, std::uint32_t& oiid, std::uint32_t& rid) {
 
     if(uri.empty() || (uri.at(0) != '/')) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error uri is empty" << std::endl;
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l Error uri is empty\n")));
         return(-1);
     }
 
@@ -848,7 +850,8 @@ std::int32_t LwM2MAdapter::serialiseObjects(const json& rid, std::string& out) {
                 ss.write(reinterpret_cast<char *>(out.data()), out.length());
 
             } else {
-                std::cout << basename(__FILE__) << ":" << __LINE__ << " unsupported type" << std::endl;
+                ACE_ERROR((LM_ERROR,
+                           ACE_TEXT("%D [iot:%t] %M %N:%l Error unsupported type\n")));
             }
             riid++;
         }

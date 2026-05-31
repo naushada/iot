@@ -3,6 +3,8 @@
 
 #include "dtls_adapter.hpp"
 
+#include <ace/Log_Msg.h>
+
 
 std::int32_t dtlsWriteCb(dtls_context_t *ctx, session_t *session, uint8 *data, size_t len) {
     DTLSAdapter &inst = *static_cast<DTLSAdapter *>(dtls_get_app_data(ctx));
@@ -247,8 +249,9 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
     } else {
         buf.resize(len);
         dtls_debug("got %d bytes from port %d\n", len, ntohs(session.addr.sin.sin_port));
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " got len: " << len << " bytes from port: "
-                  << ntohs(session.addr.sin.sin_port) << std::endl;
+        ACE_DEBUG((LM_DEBUG,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l rx %d bytes from port %u\n"),
+                   len, static_cast<unsigned>(ntohs(session.addr.sin.sin_port))));
 
         if(len <= DTLS_MAX_BUF) {
             dtls_debug_dump("bytes from peer:", buf.data(), len);

@@ -3,7 +3,7 @@
 
 #include "cbor_adapter.hpp"
 
-
+#include <ace/Log_Msg.h>
 
 CBORAdapter::CBORAdapter() {
 
@@ -25,8 +25,9 @@ std::int32_t CBORAdapter::json2cbor(const std::string& in, std::string& out) {
         out.assign(cbor.begin(), cbor.end());
         return 0;
     } catch (const std::exception& e) {
-        std::cout << basename(__FILE__) << ":" << __LINE__
-                  << " json2cbor parse error: " << e.what() << std::endl;
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l json2cbor parse error: %C\n"),
+                   e.what()));
         return -1;
     }
 }
@@ -38,7 +39,9 @@ std::string CBORAdapter::getJson(const std::string& fileName) {
     std::stringstream ss;
 
     if(!ifs.is_open()) {
-        std::cout << basename(__FILE__) << ":" << " Error Opening of file: " << fileName << " is Failed" << std::endl;
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l failed to open file: %C\n"),
+                   fileName.c_str()));
         return(std::string());
     }
 
@@ -60,7 +63,9 @@ std::string CBORAdapter::getJson(const std::string& fileName) {
 std::int32_t CBORAdapter::getCBOR(const std::string& fname, std::string& cbor) {
     auto data = getJson(fname);
     if(!data.length()) {
-        std::cout << basename(__FILE__) << ":" << " Unable to get the contents of json: " << fname << " is Failed" << std::endl;
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l unable to read JSON contents from %C\n"),
+                   fname.c_str()));
         return(-1);
     }
     auto ret = json2cbor(data, cbor);
@@ -74,7 +79,9 @@ bool CBORAdapter::writeIntoFile(const std::string &input, const std::string& fil
     ofs.open(fileName);
 
     if(!ofs.is_open()) {
-        std::cout << basename(__FILE__) << ":" << " Opening of file: " << fileName << " is Failed" << std::endl;
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l failed to open file for write: %C\n"),
+                   fileName.c_str()));
         return(false);
     }
 

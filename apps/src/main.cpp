@@ -70,7 +70,8 @@ void parsePeerOption(const std::string& in, UDPAdapter::Scheme_t& scheme, std::s
     ///in = coaps://host:port
     if(in.empty()) {
         ///input is empty, 
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error input is empty" << std::endl;
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l parsePeerOption: empty input\n")));
         return;
     }
 
@@ -255,8 +256,9 @@ void wire_server(std::shared_ptr<App>& app, const std::string& configDir,
 
         auto expired = registry->expire(now);
         if (!expired.empty()) {
-            std::cout << "[lwm2m] expired " << expired.size()
-                      << " registration(s)\n";
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l expired %u registration(s)\n"),
+                       static_cast<unsigned>(expired.size())));
             // L3 follow-up: forward expired locations to the RegistryMirror
             // when the Mongo schema PR lands.
         }
@@ -368,7 +370,9 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         auto a = wapp_bs.lock();
         auto r = wreg_bs.lock();
         if (!a || !r) return;
-        std::cout << "[lwm2m] bootstrap commit done; sending Register\n";
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l bootstrap commit done; "
+                            "sending Register\n")));
         auto payload = r->build_register_request(next_msgid(),
                                                  std::string{static_cast<char>(0x01)});
         tx_via(*a, payload, ::UDPAdapter::ServiceType_t::LwM2MClient);
@@ -426,7 +430,9 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         // the new endpoint (via RegistrationClient::endpoint()) and/or
         // to the freshly-swapped peer above.
         if (reg->state() == ::lwm2m::RegistrationState::Unregistered) {
-            std::cout << "[lwm2m] no bootstrap; sending Register directly\n";
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l no bootstrap; "
+                                "sending Register directly\n")));
             auto payload = reg->build_register_request(
                 next_msgid(),
                 std::string{static_cast<char>(0x10)});
@@ -483,7 +489,9 @@ int main(std::int32_t argc, char *argv[]) {
     parseCommandLineArgument(argc, argv, argValueMap);
     if(!argValueMap.empty()) {
         for(const auto& ent: argValueMap) {
-            std::cout << basename(__FILE__) << ":" << __LINE__ << " ent.first:" << ent.first << " ent.second:" << ent.second << std::endl;
+            ACE_DEBUG((LM_DEBUG,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l arg %C=%C\n"),
+                       ent.first.c_str(), ent.second.c_str()));
         }
     }
 
@@ -491,8 +499,9 @@ int main(std::int32_t argc, char *argv[]) {
     if(!argValueMap["role"].empty() && (argValueMap["role"] == "server" || argValueMap["role"] == "client")) {
         role = roleMap[argValueMap["role"]];
     } else {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error Invalid Option for role" << std::endl;
-        return(-1);
+        ACE_ERROR_RETURN((LM_ERROR,
+                          ACE_TEXT("%D [iot:%t] %M %N:%l invalid option for role\n")),
+                         -1);
     }
 
     UDPAdapter::Scheme_t scheme;
@@ -501,8 +510,9 @@ int main(std::int32_t argc, char *argv[]) {
     std::uint16_t bsPort;
     if(UDPAdapter::Role_t::CLIENT == role) {
         if(argValueMap["bs"].empty()) {
-            std::cout << basename(__FILE__) << ":" << __LINE__ << " Error bs=value is missing in command line argument" << std::endl;
-            return(-1);
+            ACE_ERROR_RETURN((LM_ERROR,
+                              ACE_TEXT("%D [iot:%t] %M %N:%l bs=value missing from command line\n")),
+                             -1);
         }
         parsePeerOption(argValueMap["bs"], scheme, bsHost, bsPort);
     }
@@ -510,18 +520,23 @@ int main(std::int32_t argc, char *argv[]) {
     std::string selfHost;
     std::uint16_t selfPort;
     if(argValueMap["local"].empty()) {
-        std::cout << basename(__FILE__) << ":" << __LINE__ << " Error local=value is missing in command line argument" << std::endl;
-        return(-1);
+        ACE_ERROR_RETURN((LM_ERROR,
+                          ACE_TEXT("%D [iot:%t] %M %N:%l local=value missing from command line\n")),
+                         -1);
     }
     parsePeerOption(argValueMap["local"], scheme, selfHost, selfPort);
 
-    std::cout << basename(__FILE__) << ":" << __LINE__ << " scheme:" << std::to_string(scheme) << " host:" << selfHost << " port:" << std::to_string(selfPort) << std::endl;
+    ACE_DEBUG((LM_INFO,
+               ACE_TEXT("%D [iot:%t] %M %N:%l scheme=%d host=%C port=%u\n"),
+               static_cast<int>(scheme), selfHost.c_str(),
+               static_cast<unsigned>(selfPort)));
 
     std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");
     if(scheme == UDPAdapter::Scheme_t::CoAPs) {
         ///identity & secret are mandatory argument
         if(argValueMap["identity"].empty() || argValueMap["secret"].empty()) {
-            std::cout << basename(__FILE__) << ":" << __LINE__ << " Error either identity or secret missing for coaps" << std::endl;
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l identity or secret missing for coaps\n")));
             return(-2);
         }
 
@@ -705,8 +720,9 @@ int main(std::int32_t argc, char *argv[]) {
         rline.init();
         rline.start();
     } else {
-        std::cout << "[lwm2m] stdin is not a TTY; running in "
-                  << "non-interactive mode (reactor only).\n";
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l stdin is not a TTY; "
+                            "running in non-interactive mode (reactor only)\n")));
         // ACE_Task::wait() blocks until svc() returns.
         app->udpAdapter()->wait();
     }

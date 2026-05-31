@@ -1,8 +1,9 @@
 #include "lua_config.hpp"
 
 #include <cmath>
-#include <iostream>
 #include <memory>
+
+#include <ace/Log_Msg.h>
 
 extern "C" {
 #include <lauxlib.h>
@@ -94,8 +95,9 @@ ResourceMap load_object_resources(const std::string& path) {
     ResourceMap out;
     LuaStatePtr L(luaL_newstate());
     if (!L) {
-        std::cerr << "[lua_config] " << path
-                  << ": luaL_newstate failed\n";
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l lua_config %C: luaL_newstate failed\n"),
+                   path.c_str()));
         return out;
     }
     luaL_openlibs(L.get());
@@ -106,14 +108,17 @@ ResourceMap load_object_resources(const std::string& path) {
         const char* err = lua_tostring(L.get(), -1);
         std::string msg = err ? err : "(no error message)";
         if (msg.find("cannot open") == std::string::npos) {
-            std::cerr << "[lua_config] " << path << ": " << msg << "\n";
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l lua_config %C: %C\n"),
+                       path.c_str(), msg.c_str()));
         }
         return out;
     }
 
     if (!lua_istable(L.get(), -1)) {
-        std::cerr << "[lua_config] " << path
-                  << ": top-level return is not a table\n";
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l lua_config %C: top-level return is not a table\n"),
+                   path.c_str()));
         return out;
     }
 
@@ -121,14 +126,16 @@ ResourceMap load_object_resources(const std::string& path) {
     // (deviceObject / serverObject / securityObject); we don't enforce.
     lua_pushnil(L.get());
     if (lua_next(L.get(), -2) == 0) {
-        std::cerr << "[lua_config] " << path
-                  << ": top-level table is empty\n";
+        ACE_ERROR((LM_WARNING,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l lua_config %C: top-level table is empty\n"),
+                   path.c_str()));
         return out;
     }
     // Stack: top-level table (-3), key (-2), object-table (-1)
     if (!lua_istable(L.get(), -1)) {
-        std::cerr << "[lua_config] " << path
-                  << ": object value is not a table\n";
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l lua_config %C: object value is not a table\n"),
+                   path.c_str()));
         lua_pop(L.get(), 2);
         return out;
     }
