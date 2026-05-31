@@ -1,6 +1,7 @@
 #ifndef __lwm2m_registration_client_hpp__
 #define __lwm2m_registration_client_hpp__
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <string>
@@ -87,12 +88,29 @@ public:
     void note_update_sent(std::chrono::steady_clock::time_point t =
                               std::chrono::steady_clock::now());
 
+    /// Update the registration lifetime live. The next Register or
+    /// Update built will carry the new `lt=` query value; the
+    /// `should_send_update` window shrinks/grows immediately because
+    /// the next tick reads the atomic. Thread-safe — the typical
+    /// caller is the data-store listener thread reacting to a NotifyEvent.
+    void set_lifetime(std::uint32_t seconds) {
+        m_lifetime.store(seconds, std::memory_order_relaxed);
+    }
+    std::uint32_t lifetime() const {
+        return m_lifetime.load(std::memory_order_relaxed);
+    }
+
     RegistrationState   state()    const { return m_state; }
     const std::string&  location() const { return m_location; }
     const ClientConfig& config()   const { return m_cfg; }
 
 private:
     ClientConfig            m_cfg;
+    /// Live mirror of m_cfg.lifetime. m_cfg is no longer the source
+    /// of truth for lifetime — readers consult this atomic so a
+    /// concurrent set_lifetime() takes effect on the next request
+    /// build / tick without locking the reactor.
+    std::atomic<std::uint32_t> m_lifetime;
     const ObjectStore&      m_store;
     RegistrationState       m_state{RegistrationState::Unregistered};
     std::string             m_location;

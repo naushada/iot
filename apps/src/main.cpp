@@ -533,6 +533,30 @@ int main(std::int32_t argc, char *argv[]) {
         wire_server(app, configDir, ds);
     }
 
+    // FUP-DS-9 — apply hot-reloaded values to the live LwM2M FSM.
+    // Today we only re-apply `iot.lifetime` (the most operationally
+    // useful one); endpoint + server.uri still log "pending" because
+    // they require a re-register / re-bind that's tracked separately.
+    // The callback fires on the DsConfig listener thread; set_lifetime
+    // is lock-free (atomic store) so this is safe alongside the
+    // reactor thread reading via lifetime() on its next tick.
+    if (clientPlumbing.reg) {
+        std::weak_ptr<::lwm2m::RegistrationClient> wreg = clientPlumbing.reg;
+        ds.on_change([wreg, &ds](iot::DsConfig::Key k) {
+            if (k != iot::DsConfig::Key::Lifetime) return;
+            auto reg = wreg.lock();
+            if (!reg) return;
+            auto v = ds.lifetime();
+            if (!v) return;
+            reg->set_lifetime(*v);
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l applied "
+                                "iot.lifetime=%u to live RegistrationClient "
+                                "— next Update tick uses it\n"),
+                       static_cast<unsigned>(*v)));
+        });
+    }
+
     // UDP socket churn (peer torn down between writes) would otherwise
     // raise SIGPIPE and kill the process; ignore it. SIGINT/SIGTERM are
     // handled by the ACE reactor loop inside UDPAdapter::start().
