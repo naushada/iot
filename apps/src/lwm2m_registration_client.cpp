@@ -15,7 +15,22 @@ RegistrationClient::RegistrationClient(ClientConfig cfg,
                                        const ObjectStore& store)
     : m_cfg(std::move(cfg)),
       m_lifetime(m_cfg.lifetime),
+      m_endpoint(m_cfg.endpoint),
       m_store(store) {}
+
+void RegistrationClient::set_endpoint(std::string ep) {
+    {
+        std::lock_guard<std::mutex> g(m_endpoint_mtx);
+        if (m_endpoint == ep) return;   // unchanged — don't trigger re-register
+        m_endpoint = std::move(ep);
+    }
+    m_re_register_pending.store(true, std::memory_order_relaxed);
+}
+
+std::string RegistrationClient::endpoint() const {
+    std::lock_guard<std::mutex> g(m_endpoint_mtx);
+    return m_endpoint;
+}
 
 std::string RegistrationClient::build_register_request(std::uint16_t messageId,
                                                        const std::string& token) {
@@ -28,7 +43,7 @@ std::string RegistrationClient::build_register_request(std::uint16_t messageId,
     emit_option(ss, OPT_CONTENT_FORMAT, cf_bytes(40), prev);
 
     // Query options must be emitted in option-number order: 15 > 12 > 11.
-    emit_option(ss, OPT_URI_QUERY, "ep=" + m_cfg.endpoint, prev);
+    emit_option(ss, OPT_URI_QUERY, "ep=" + endpoint(), prev);
     emit_option(ss, OPT_URI_QUERY,
                 "lt=" + std::to_string(lifetime()), prev);
     emit_option(ss, OPT_URI_QUERY,

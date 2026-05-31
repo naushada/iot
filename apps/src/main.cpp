@@ -379,14 +379,36 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         // L9 fallback (Leshan interop) — if we never went through
         // Bootstrap (e.g. the server is a plain LwM2M DM server with no
         // BS account for us), fire the initial Register on the first
-        // tick after startup. After this the state transitions to
-        // AwaitingRegisterAck and the branch no longer matches.
+        // tick after startup. Also the second leg of FUP-DS-10: after
+        // a triggered Deregister completes, state returns to
+        // Unregistered and this branch sends a fresh Register with
+        // the new endpoint (via RegistrationClient::endpoint()).
         if (reg->state() == ::lwm2m::RegistrationState::Unregistered) {
             std::cout << "[lwm2m] no bootstrap; sending Register directly\n";
             auto payload = reg->build_register_request(
                 next_msgid(),
                 std::string{static_cast<char>(0x10)});
             tx_via(*a, payload, svc);
+            // Endpoint change is naturally satisfied by this Register;
+            // clear the flag so we don't double-act on it later.
+            reg->clear_pending_reregister();
+        }
+
+        // FUP-DS-10 — endpoint hot-reload kicks the re-register cycle.
+        // Only act when we're cleanly Registered; states in flight
+        // (AwaitingRegisterAck / AwaitingUpdateAck / AwaitingDeregisterAck)
+        // leave the flag set, picked up on a later tick.
+        if (reg->pending_reregister() &&
+            reg->state() == ::lwm2m::RegistrationState::Registered) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l endpoint changed — "
+                                "sending Deregister, will rejoin under new "
+                                "endpoint on next tick\n")));
+            auto payload = reg->build_deregister_request(
+                next_msgid(),
+                std::string{static_cast<char>(0x20)});
+            tx_via(*a, payload, svc);
+            reg->clear_pending_reregister();
         }
 
         // L9 stub 2 — Update POST when the lifetime margin elapses.
@@ -533,27 +555,39 @@ int main(std::int32_t argc, char *argv[]) {
         wire_server(app, configDir, ds);
     }
 
-    // FUP-DS-9 — apply hot-reloaded values to the live LwM2M FSM.
-    // Today we only re-apply `iot.lifetime` (the most operationally
-    // useful one); endpoint + server.uri still log "pending" because
-    // they require a re-register / re-bind that's tracked separately.
-    // The callback fires on the DsConfig listener thread; set_lifetime
-    // is lock-free (atomic store) so this is safe alongside the
-    // reactor thread reading via lifetime() on its next tick.
+    // FUP-DS-9 / FUP-DS-10 — apply hot-reloaded values to the live
+    // LwM2M FSM. `iot.lifetime` lands lock-free; `iot.endpoint` raises
+    // the re-register flag which the 1Hz tick consumes by sending
+    // Deregister → on 2.02 the state goes Unregistered → the tick's
+    // existing Unregistered branch sends a fresh Register with the
+    // new endpoint via RegistrationClient::endpoint().
+    // server.uri is still log-only — re-bind needs UDP/DTLS teardown
+    // tracked separately (FUP-DS-11).
     if (clientPlumbing.reg) {
         std::weak_ptr<::lwm2m::RegistrationClient> wreg = clientPlumbing.reg;
         ds.on_change([wreg, &ds](iot::DsConfig::Key k) {
-            if (k != iot::DsConfig::Key::Lifetime) return;
             auto reg = wreg.lock();
             if (!reg) return;
-            auto v = ds.lifetime();
-            if (!v) return;
-            reg->set_lifetime(*v);
-            ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l applied "
-                                "iot.lifetime=%u to live RegistrationClient "
-                                "— next Update tick uses it\n"),
-                       static_cast<unsigned>(*v)));
+            if (k == iot::DsConfig::Key::Lifetime) {
+                auto v = ds.lifetime();
+                if (!v) return;
+                reg->set_lifetime(*v);
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D [iot:%t] %M %N:%l applied "
+                                    "iot.lifetime=%u to live "
+                                    "RegistrationClient — next Update tick "
+                                    "uses it\n"),
+                           static_cast<unsigned>(*v)));
+            } else if (k == iot::DsConfig::Key::Endpoint) {
+                auto v = ds.endpoint();
+                if (!v) return;
+                reg->set_endpoint(*v);
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D [iot:%t] %M %N:%l applied "
+                                    "iot.endpoint=%C — re-register cycle "
+                                    "queued for next 1Hz tick\n"),
+                           v->c_str()));
+            }
         });
     }
 
