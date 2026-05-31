@@ -123,6 +123,14 @@ public:
         m_re_register_pending.store(false, std::memory_order_relaxed);
     }
 
+    /// Public trigger for callers that need to force a Deregister →
+    /// Register cycle without changing the endpoint — typical use is
+    /// a transport-layer rebind (different DM server URI). The reactor
+    /// tick reacts to this flag the same way as for an endpoint change.
+    void request_reregister() {
+        m_re_register_pending.store(true, std::memory_order_relaxed);
+    }
+
     RegistrationState   state()    const { return m_state; }
     const std::string&  location() const { return m_location; }
     const ClientConfig& config()   const { return m_cfg; }
