@@ -28,16 +28,40 @@ include_directories(
 
 link_directories(${ACE_ROOT}/lib)
 
-# Internal lib so future test targets can link the same code that
-# the binary uses. v0 — only main.cpp; D3+ add client/ds_bridge/etc.
+# Internal lib so test targets can link the same code that the
+# binary uses. D3 added ds_bridge.cpp; D4/D5/D6 will append.
 add_library(openvpn_client_lib STATIC
-    src/main_impl.cpp)
+    src/main_impl.cpp
+    src/ds_bridge.cpp)
+
+target_include_directories(openvpn_client_lib PUBLIC src)
 
 target_link_libraries(openvpn_client_lib
     PUBLIC datastore_client ACE pthread)
 
 add_executable(openvpn-client src/main.cpp)
 target_link_libraries(openvpn-client PRIVATE openvpn_client_lib)
+
+# ─────────────────────────── Tests ─────────────────────────────
+# Light unit tests for the bits of openvpn_client that DON'T need a
+# live ds-server (DsBridge construct-against-bad-socket path,
+# missing_required() shape). Live ds-server smokes stay as
+# log/L12/*-smoke.sh scripts run on demand.
+option(BUILD_OPENVPN_CLIENT_TESTS "Build openvpn-client gtest suite" OFF)
+if(BUILD_OPENVPN_CLIENT_TESTS)
+    find_package(GTest REQUIRED)
+    enable_testing()
+
+    add_executable(openvpn-client-tests
+        test/ds_bridge_test.cpp)
+
+    target_link_libraries(openvpn-client-tests
+        openvpn_client_lib
+        GTest::gtest_main
+        GTest::gtest)
+
+    add_test(NAME openvpn-client-tests COMMAND openvpn-client-tests)
+endif()
 
 # Install rule. Skip if IOT_PACKAGING_INSTALL is OFF (set by the
 # parent apps/CMakeLists.txt for dev-builds that shouldn't touch

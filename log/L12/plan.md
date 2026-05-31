@@ -5,7 +5,8 @@
 > binary via its management interface. Config in + state out flows
 > through the same `ds-server` that the lwm2m binary integrates with.
 >
-> **Status (2026-05-31):** D1 + D2 done (PR #29). D3–D6 pending.
+> **Status (2026-05-31):** D1 + D2 (PR #29), D3 (PR #30) done.
+> D4–D6 pending.
 
 ---
 
@@ -143,7 +144,26 @@ and exits.
 
 ---
 
-### D3 — DsBridge: read vpn.* from data-store + connect/watch
+### D3 — DsBridge: read vpn.* from data-store + connect/watch ✅ (PR #30)
+
+Closed 2026-05-31. `src/ds_bridge.{hpp,cpp}` lands with read
+accessors + setters per the L12 plan key list, plus
+`missing_required()` that returns the 4 required keys absent (host,
+cert.path, key.path, ca.path). Listener-thread watch logs
+"needs restart" on every change (R4 first-cut policy); FUP-L12-1
+will replace with live re-application.
+
+5 unit tests in `test/ds_bridge_test.cpp` cover the don't-need-a-
+live-ds-server paths (construct against bad socket, accessors return
+nullopt, missing_required shape, setters no-op when disconnected,
+on_change accepts nullptr). Build behind
+`-DBUILD_OPENVPN_CLIENT_TESTS=ON`. Smoke against a real ds-server
+verifies the "ready for D6" handoff message fires only when all 4
+required keys are present.
+
+`v0_dump_vpn_keys` refactored to use DsBridge instead of bare
+Client::get so the binary now exercises the bridge end-to-end on
+every run.
 
 **Scope.** `ds_bridge.{hpp,cpp}` — analog of `apps/src/ds_config.cpp`,
 adapted for vpn keys:
