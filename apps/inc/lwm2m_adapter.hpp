@@ -45,16 +45,7 @@ class LwM2MAdapter {
         }
 
         /**
-         * @brief 
-         * 
-         * @param uri 
-         * @param payload 
-         * @param tlvs 
-         * @return std::int32_t 
-         */
-        std::int32_t parseLwM2MPayload(const std::string& uri, const std::string& payload, std::vector<LwM2MObject>& objects);
-        /**
-         * @brief 
+         * @brief
          * 
          * @param oid 
          * @param oiid 

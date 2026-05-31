@@ -858,23 +858,6 @@ std::uint32_t DbClient::from_json_array_to_vector(const std::string json_obj, co
   }
   
   return(0);
-
-#if 0
-  auto tt = it->get_document().value;
-  //ACE_DEBUG((LM_DEBUG, ACE_TEXT("%D [worker:%t] %M %N:%l the length is  %d value %s\n"), tt.length(), tt.data()));  
-  reference_no = tt["reference"].get_utf8().value.to_string();
-  //ACE_DEBUG((LM_DEBUG, ACE_TEXT("%D [worker:%t] %M %N:%l the reference is %s\n"), reference_no.c_str()));  
-
-  bsoncxx::document::element elm_value = doc["TrackingNumber"];
-
-  //ACE_DEBUG((LM_DEBUG, ACE_TEXT("%D [worker:%t] %M %N:%l the type is %d\n"), elm_value.type()));
-  if(elm_value && elm_value.type() == bsoncxx::type::k_utf8) {
-    //ACE_DEBUG((LM_DEBUG, ACE_TEXT("%D [worker:%t] %M %N:%l the length is %d\n"), elm_value.get_utf8().value.length()));
-    std::string res(elm_value.get_utf8().value.data(), elm_value.get_utf8().value.length());
-    return(res);
-  }
-  return(std::string());
-  #endif
 }
 
 std::uint32_t DbClient::from_json_element_to_string(const std::string json_obj, const std::string key, std::string& str_out)
