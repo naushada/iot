@@ -3,9 +3,11 @@
 #include <gtest/gtest.h>
 
 #include "data_store/proto.hpp"
+#include "data_store/value.hpp"
 #include "../src/server/data_store.hpp"
 
 using data_store::server::DataStore;
+using data_store::Value;
 namespace proto = data_store::proto;
 
 /* ───────────────────────────── proto ──────────────────────────────── */
@@ -44,31 +46,31 @@ TEST(DataStore, empty_get_returns_nullopt) {
 
 TEST(DataStore, set_then_get_returns_value) {
     DataStore s;
-    auto r = s.set("k", "v");
+    auto r = s.set("k", Value{std::string("v")});
     EXPECT_TRUE(r.changed);
     EXPECT_FALSE(r.prev.has_value());        // new key
     EXPECT_TRUE(r.watchers.empty());
     EXPECT_EQ(1u, s.size());
     auto v = s.get("k");
     ASSERT_TRUE(v.has_value());
-    EXPECT_EQ("v", *v);
+    EXPECT_EQ(std::string("v"), std::get<std::string>(*v));
 }
 
 TEST(DataStore, second_set_returns_previous) {
     DataStore s;
-    s.set("k", "v1");
-    auto r = s.set("k", "v2");
+    s.set("k", Value{std::string("v1")});
+    auto r = s.set("k", Value{std::string("v2")});
     EXPECT_TRUE(r.changed);
     ASSERT_TRUE(r.prev.has_value());
-    EXPECT_EQ("v1", *r.prev);
-    EXPECT_EQ("v2", *s.get("k"));
+    EXPECT_EQ(std::string("v1"), std::get<std::string>(*r.prev));
+    EXPECT_EQ(std::string("v2"), std::get<std::string>(*s.get("k")));
     EXPECT_EQ(1u, s.size());
 }
 
 TEST(DataStore, unchanged_set_reports_not_changed) {
     DataStore s;
-    s.set("k", "v");
-    auto r = s.set("k", "v");
+    s.set("k", Value{std::string("v")});
+    auto r = s.set("k", Value{std::string("v")});
     EXPECT_FALSE(r.changed);                 // REQ-DS-006
     EXPECT_FALSE(r.prev.has_value());        // no notify, no snapshot
     EXPECT_TRUE(r.watchers.empty());
@@ -76,8 +78,32 @@ TEST(DataStore, unchanged_set_reports_not_changed) {
 
 TEST(DataStore, remove_returns_true_only_when_present) {
     DataStore s;
-    s.set("k", "v");
+    s.set("k", Value{std::string("v")});
     EXPECT_TRUE(s.remove("k"));
     EXPECT_FALSE(s.remove("k"));
     EXPECT_FALSE(s.get("k").has_value());
+}
+
+TEST(DataStore, integer_value_round_trips) {
+    DataStore s;
+    auto r = s.set("counter", Value{static_cast<std::uint32_t>(42)});
+    EXPECT_TRUE(r.changed);
+    auto v = s.get("counter");
+    ASSERT_TRUE(v.has_value());
+    EXPECT_EQ(42u, std::get<std::uint32_t>(*v));
+}
+
+TEST(DataStore, boolean_value_round_trips) {
+    DataStore s;
+    s.set("enabled", Value{true});
+    auto v = s.get("enabled");
+    ASSERT_TRUE(v.has_value());
+    EXPECT_TRUE(std::get<bool>(*v));
+}
+
+TEST(DataStore, typed_unchanged_set_is_noop) {
+    DataStore s;
+    s.set("x", Value{static_cast<std::int32_t>(-7)});
+    auto r = s.set("x", Value{static_cast<std::int32_t>(-7)});
+    EXPECT_FALSE(r.changed);
 }

@@ -4,9 +4,12 @@
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <sys/stat.h>
+#include <type_traits>
+#include <variant>
 
 #include <ace/Log_Msg.h>
 
@@ -34,50 +37,72 @@ SchemaType parse_type(const std::string& s) {
     return SchemaType::Any;
 }
 
-/// Stringify a Lua value at stack index `idx` to the wire form
-/// (everything in the store is a std::string).
-std::string lua_value_to_string(lua_State* L, int idx) {
+/// Pull a Lua value at stack index `idx` into a Value, picking the
+/// narrowest variant alternative that fits. Returns monostate for
+/// unsupported types (tables, functions, userdata).
+Value lua_value_to_value(lua_State* L, int idx) {
     switch (lua_type(L, idx)) {
-        case LUA_TBOOLEAN: return lua_toboolean(L, idx) ? "1" : "0";
-        case LUA_TNUMBER: {
-            double n = lua_tonumber(L, idx);
-            // Integer-friendly print when the value is a whole number.
-            if (n == static_cast<double>(static_cast<long long>(n))) {
-                return std::to_string(static_cast<long long>(n));
+        case LUA_TBOOLEAN:
+            return Value(lua_toboolean(L, idx) != 0);
+        case LUA_TNUMBER:
+            if (lua_isinteger(L, idx)) {
+                lua_Integer n = lua_tointeger(L, idx);
+                if (n >= 0 &&
+                    n <= static_cast<lua_Integer>(
+                             std::numeric_limits<std::uint32_t>::max())) {
+                    return Value(static_cast<std::uint32_t>(n));
+                }
+                if (n >= std::numeric_limits<std::int32_t>::min() &&
+                    n <= std::numeric_limits<std::int32_t>::max()) {
+                    return Value(static_cast<std::int32_t>(n));
+                }
+                return Value(static_cast<double>(n));
             }
-            char buf[32];
-            std::snprintf(buf, sizeof(buf), "%g", n);
-            return buf;
-        }
+            return Value(lua_tonumber(L, idx));
         case LUA_TSTRING: {
             std::size_t len = 0;
             const char* s = lua_tolstring(L, idx, &len);
-            return std::string(s, len);
+            return Value(std::string(s, len));
         }
-        default: return {};
+        default:
+            return Value(std::monostate{});
     }
 }
 
-bool parse_long(const std::string& s, long long& out) {
-    if (s.empty()) return false;
-    try {
-        std::size_t pos = 0;
-        out = std::stoll(s, &pos);
-        return pos == s.size();
-    } catch (...) {
-        return false;
-    }
+/// Best-effort: stringify a Value for inclusion in a diagnostic
+/// message. Booleans → true/false; numbers → decimal; strings bare.
+std::string value_diag(const Value& v) {
+    return std::visit([](auto&& a) -> std::string {
+        using T = std::decay_t<decltype(a)>;
+        if constexpr (std::is_same_v<T, std::monostate>) return "null";
+        else if constexpr (std::is_same_v<T, bool>)      return a ? "true" : "false";
+        else if constexpr (std::is_same_v<T, std::string>) return a;
+        else if constexpr (std::is_same_v<T, double>) {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%g", a);
+            return buf;
+        } else {
+            return std::to_string(a);
+        }
+    }, v);
 }
 
-bool parse_double(const std::string& s, double& out) {
-    if (s.empty()) return false;
-    try {
-        std::size_t pos = 0;
-        out = std::stod(s, &pos);
-        return pos == s.size();
-    } catch (...) {
-        return false;
+/// Pull an integer out of a numeric Value (uint32/int32/double in
+/// integer range). Returns nullopt for strings / bools / fractional
+/// doubles.
+std::optional<long long> value_as_integer(const Value& v) {
+    if (std::holds_alternative<std::uint32_t>(v)) {
+        return static_cast<long long>(std::get<std::uint32_t>(v));
     }
+    if (std::holds_alternative<std::int32_t>(v)) {
+        return static_cast<long long>(std::get<std::int32_t>(v));
+    }
+    if (std::holds_alternative<double>(v)) {
+        double d = std::get<double>(v);
+        long long n = static_cast<long long>(d);
+        if (static_cast<double>(n) == d) return n;
+    }
+    return std::nullopt;
 }
 
 } // namespace
@@ -125,7 +150,7 @@ void SchemaRegistry::load_one(const std::string& path) {
 
         lua_getfield(L.get(), -1, "default");
         if (!lua_isnil(L.get(), -1)) {
-            e.default_value = lua_value_to_string(L.get(), -1);
+            e.default_value = lua_value_to_value(L.get(), lua_gettop(L.get()));
         }
         lua_pop(L.get(), 1);
 
@@ -186,47 +211,59 @@ const SchemaEntry* SchemaRegistry::find(const std::string& key) const {
 }
 
 std::optional<std::string> SchemaRegistry::validate_set(
-        const std::string& key, const std::string& value) const {
+        const std::string& key, const Value& value) const {
     auto it = m_entries.find(key);
     if (it == m_entries.end()) return std::nullopt;  // passthrough
     const SchemaEntry& e = it->second;
+
+    // monostate (null) is always accepted — used to clear a key.
+    if (std::holds_alternative<std::monostate>(value)) return std::nullopt;
+
     switch (e.type) {
         case SchemaType::Any:
+            return std::nullopt;
+
         case SchemaType::String:
         case SchemaType::Opaque:
-            return std::nullopt;
-        case SchemaType::Boolean: {
-            if (value == "0" || value == "1" ||
-                value == "true" || value == "false") return std::nullopt;
-            return "schema(" + key + "): expected boolean, got '" + value + "'";
-        }
+            if (std::holds_alternative<std::string>(value)) return std::nullopt;
+            return "schema(" + key + "): expected string, got " +
+                   value_diag(value);
+
+        case SchemaType::Boolean:
+            if (std::holds_alternative<bool>(value)) return std::nullopt;
+            return "schema(" + key + "): expected boolean, got " +
+                   value_diag(value);
+
         case SchemaType::Integer: {
-            long long n;
-            if (!parse_long(value, n)) {
-                return "schema(" + key + "): expected integer, got '" + value + "'";
+            auto n = value_as_integer(value);
+            if (!n) {
+                return "schema(" + key + "): expected integer, got " +
+                       value_diag(value);
             }
-            if (e.min_int && n < *e.min_int) {
-                return "schema(" + key + "): " + std::to_string(n) +
+            if (e.min_int && *n < *e.min_int) {
+                return "schema(" + key + "): " + std::to_string(*n) +
                        " below min " + std::to_string(*e.min_int);
             }
-            if (e.max_int && n > *e.max_int) {
-                return "schema(" + key + "): " + std::to_string(n) +
+            if (e.max_int && *n > *e.max_int) {
+                return "schema(" + key + "): " + std::to_string(*n) +
                        " above max " + std::to_string(*e.max_int);
             }
             return std::nullopt;
         }
-        case SchemaType::Float: {
-            double f;
-            if (!parse_double(value, f)) {
-                return "schema(" + key + "): expected float, got '" + value + "'";
+
+        case SchemaType::Float:
+            if (std::holds_alternative<double>(value) ||
+                std::holds_alternative<std::uint32_t>(value) ||
+                std::holds_alternative<std::int32_t>(value)) {
+                return std::nullopt;
             }
-            return std::nullopt;
-        }
+            return "schema(" + key + "): expected float, got " +
+                   value_diag(value);
     }
     return std::nullopt;
 }
 
-std::optional<std::string> SchemaRegistry::default_for(
+std::optional<Value> SchemaRegistry::default_for(
         const std::string& key) const {
     auto it = m_entries.find(key);
     if (it == m_entries.end()) return std::nullopt;

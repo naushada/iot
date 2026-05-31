@@ -34,6 +34,7 @@ endif()
 
 include_directories(
     ${DS_MODULE_DIR}/inc
+    ${DS_MODULE_DIR}/src
     ${ACE_ROOT}/include
     ${NLOHMANN_JSON_INCLUDE}
     ${LUA_INCLUDE_DIR})
@@ -111,8 +112,8 @@ if(BUILD_DATA_STORE_TESTS)
         src/client/client.cpp)
 
     target_link_libraries(ds-tests
-        gtest_main
-        gtest
+        GTest::gtest_main
+        GTest::gtest
         ACE
         pthread
         ${LUA_LINK_LIBS})

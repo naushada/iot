@@ -34,6 +34,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "data_store/value.hpp"
+
 namespace data_store::server {
 
 enum class SchemaType : std::uint8_t {
@@ -47,7 +49,7 @@ enum class SchemaType : std::uint8_t {
 
 struct SchemaEntry {
     SchemaType                  type = SchemaType::Any;
-    std::optional<std::string>  default_value;   ///< stringified
+    std::optional<Value>        default_value;
     std::optional<long long>    min_int;
     std::optional<long long>    max_int;
 };
@@ -69,11 +71,11 @@ public:
     /// Validate a set value against the schema. Returns an empty
     /// optional on success; a diagnostic string on rejection.
     std::optional<std::string> validate_set(const std::string& key,
-                                            const std::string& value) const;
+                                            const Value& value) const;
 
     /// Default for an absent key, or nullopt when the schema has
     /// no default (or no entry at all).
-    std::optional<std::string> default_for(const std::string& key) const;
+    std::optional<Value> default_for(const std::string& key) const;
 
     std::size_t size() const { return m_entries.size(); }
 

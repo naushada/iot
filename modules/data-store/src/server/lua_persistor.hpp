@@ -1,38 +1,35 @@
 #ifndef __data_store_server_lua_persistor_hpp__
 #define __data_store_server_lua_persistor_hpp__
 
-/// Loads + flushes the persistent key-value store as a Lua chunk.
+/// Loads + flushes the persistent key-value store as a Lua chunk
+/// of TYPED values (DS-D11).
 ///
-/// On-disk shape per design.md §4.1:
+/// On-disk shape:
 ///
 ///   return {
-///     schema_version = 1,
+///     schema_version = 2,
 ///     data = {
-///       ["foo"] = "bar",
-///       ["counter"] = "42",
-///       ...
+///       ["foo"]     = "bar",       -- string
+///       ["counter"] = 42,          -- integer
+///       ["ratio"]   = 1.5,         -- float
+///       ["enabled"] = true,        -- boolean
+///       ["unset"]   = nil,         -- absent (serialiser skips nils)
+///       -- ...
 ///     },
 ///   }
 ///
-/// Mirrors the `apps/config/**/*.lua` convention so the same loader
-/// (`iot::lua_config`) can be pointed at the file for inspection,
-/// though the data-store module ships its own minimal loader instead
-/// of cross-linking apps/.
-///
-/// load() runs once on daemon startup; save() runs after every
-/// successful set/remove that changes state (write-through per
-/// DS-D2). save() is crash-safe via temp + fsync + rename.
+/// Each value lands in the right `data_store::Value` variant
+/// alternative on load. Schema-version 1 (string-only) files still
+/// load — every value comes back as Value::string.
 
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 
+#include "data_store/value.hpp"
+
 namespace data_store::server {
 
-/// Distinguishes "file simply isn't there yet" (recoverable: start
-/// with empty map) from "file exists but we can't parse it"
-/// (REQ-DS-016: must log + exit 3, not silently start with stale
-/// state).
 class CorruptStoreError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
@@ -42,13 +39,11 @@ class LuaPersistor {
 public:
     explicit LuaPersistor(std::string path);
 
-    /// Read the file. Returns an empty map if it doesn't exist.
-    /// Throws CorruptStoreError on parse / schema problems.
-    std::unordered_map<std::string, std::string> load();
+    /// Read the file. Empty map when missing; throws on parse failure.
+    std::unordered_map<std::string, Value> load();
 
-    /// Atomic write: serialise → write to `<path>.tmp` → fsync →
-    /// rename to `<path>`. Throws std::runtime_error on disk error.
-    void save(const std::unordered_map<std::string, std::string>& data);
+    /// Atomic write: serialise → write `<path>.tmp` → fsync → rename.
+    void save(const std::unordered_map<std::string, Value>& data);
 
     const std::string& path() const { return m_path; }
 

@@ -33,9 +33,11 @@
 #include <utility>
 #include <vector>
 
+#include "data_store/value.hpp"
+
 namespace data_store {
 
-using KV = std::pair<std::string, std::string>;
+using KV = std::pair<std::string, Value>;
 
 /// Result of a connect() / set() / get() / ... call.
 struct Status {
@@ -65,14 +67,14 @@ public:
 
     /// `set` one or more key/value pairs atomically.
     Status set(const std::vector<KV>& pairs, std::int32_t timeout_ms = 1000);
-    Status set(const std::string& k, const std::string& v,
+    Status set(const std::string& k, Value v,
                std::int32_t timeout_ms = 1000) {
-        return set(std::vector<KV>{{k, v}}, timeout_ms);
+        return set(std::vector<KV>{{k, std::move(v)}}, timeout_ms);
     }
 
     struct GetResult {
         std::string key;
-        std::string value;
+        Value       value;
         bool        has_value = false;
     };
     /// `get` one or more keys. `out` is filled in the same order as
@@ -87,8 +89,8 @@ public:
     /// real previous value from a freshly-created key.
     struct Event {
         std::string key;
-        std::string value;
-        std::string prev;
+        Value       value;
+        Value       prev;
         bool        prev_has_value = false;
     };
 

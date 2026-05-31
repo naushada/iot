@@ -11,10 +11,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "data_store/value.hpp"
 #include "../src/server/data_store.hpp"
 #include "../src/server/lua_persistor.hpp"
 
 namespace ds = data_store::server;
+using data_store::Value;
 
 namespace {
 
@@ -45,16 +47,45 @@ TEST(LuaPersistor, save_then_load_round_trips) {
     std::string path = dir + "/store.lua";
 
     ds::LuaPersistor p(path);
-    std::unordered_map<std::string, std::string> in {
-        {"foo", "bar"},
-        {"counter", "42"},
-        {"k.with.dots", "v"},
-        {"tricky", "has \"quotes\" and\nnewline"},
+    std::unordered_map<std::string, Value> in {
+        {"foo",          Value{std::string("bar")}},
+        {"counter",      Value{static_cast<std::uint32_t>(42)}},
+        {"signed",       Value{static_cast<std::int32_t>(-7)}},
+        {"ratio",        Value{1.5}},
+        {"enabled",      Value{true}},
+        {"k.with.dots",  Value{std::string("v")}},
+        {"tricky",       Value{std::string("has \"quotes\" and\nnewline")}},
     };
     p.save(in);
 
     auto out = p.load();
     EXPECT_EQ(in, out);
+
+    ::unlink(path.c_str());
+    ::rmdir(dir.c_str());
+}
+
+TEST(LuaPersistor, v1_string_only_file_loads_as_strings) {
+    auto dir = make_tmpdir();
+    if (dir.empty()) GTEST_SKIP() << "no writable /tmp or cwd";
+    std::string path = dir + "/v1.lua";
+
+    // Hand-crafted v1 file — every value is a Lua string literal,
+    // schema_version=1. Must load cleanly under the new typed code.
+    std::ofstream(path) <<
+        "return {\n"
+        "  schema_version = 1,\n"
+        "  data = {\n"
+        "    [\"foo\"] = \"bar\",\n"
+        "    [\"baz\"] = \"qux\",\n"
+        "  },\n"
+        "}\n";
+
+    ds::LuaPersistor p(path);
+    auto out = p.load();
+    ASSERT_EQ(2u, out.size());
+    EXPECT_EQ(std::string("bar"), std::get<std::string>(out.at("foo")));
+    EXPECT_EQ(std::string("qux"), std::get<std::string>(out.at("baz")));
 
     ::unlink(path.c_str());
     ::rmdir(dir.c_str());
@@ -96,12 +127,12 @@ TEST(DataStorePersist, set_flushes_to_disk_and_load_restores) {
         ds::DataStore s;
         s.set_persistor(&p);
 
-        s.set("a", "1");
-        s.set("b", "2");
+        s.set("a", Value{std::string("1")});
+        s.set("b", Value{static_cast<std::uint32_t>(2)});
         s.remove("a");
         // s.set with unchanged value MUST NOT add a flush — but
         // since the flush is best-effort we just check final state.
-        s.set("b", "2");
+        s.set("b", Value{static_cast<std::uint32_t>(2)});
     }
 
     {
@@ -111,7 +142,7 @@ TEST(DataStorePersist, set_flushes_to_disk_and_load_restores) {
         EXPECT_EQ(1u, s.size());
         auto b = s.get("b");
         ASSERT_TRUE(b.has_value());
-        EXPECT_EQ("2", *b);
+        EXPECT_EQ(2u, std::get<std::uint32_t>(*b));
         EXPECT_FALSE(s.get("a").has_value());
     }
 

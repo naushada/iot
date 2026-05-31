@@ -14,6 +14,7 @@
 
 #include "data_store/client.hpp"
 #include "data_store/proto.hpp"
+#include "data_store/value.hpp"
 
 #include <atomic>
 #include <cerrno>
@@ -22,9 +23,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <string>
+#include <type_traits>
 #include <unistd.h>
+#include <variant>
 #include <vector>
+
+#include "nlohmann/json.hpp"
 
 namespace {
 
@@ -79,10 +85,59 @@ int do_welcome(data_store::Client& cli) {
     return 0;
 }
 
+/// Parse a CLI-supplied value into a Value. We try JSON first
+/// (catches numbers, booleans, null, quoted strings); on parse
+/// failure we fall through to a plain string. This means
+/// `set foo 42` stores integer 42, `set foo true` stores bool true,
+/// and `set foo hello` stores the string "hello".
+data_store::Value parse_cli_value(const std::string& raw) {
+    try {
+        auto j = nlohmann::json::parse(raw);
+        if (j.is_null())            return std::monostate{};
+        if (j.is_boolean())         return j.get<bool>();
+        if (j.is_string())          return j.get<std::string>();
+        if (j.is_number_float())    return j.get<double>();
+        if (j.is_number_unsigned()) {
+            auto u = j.get<std::uint64_t>();
+            if (u <= std::numeric_limits<std::uint32_t>::max())
+                return static_cast<std::uint32_t>(u);
+            return static_cast<double>(u);
+        }
+        if (j.is_number_integer()) {
+            auto i = j.get<std::int64_t>();
+            if (i >= std::numeric_limits<std::int32_t>::min() &&
+                i <= std::numeric_limits<std::int32_t>::max())
+                return static_cast<std::int32_t>(i);
+            return static_cast<double>(i);
+        }
+    } catch (...) {
+        // Not valid JSON → treat as a bare string.
+    }
+    return raw;
+}
+
+/// Render a Value for human-readable CLI output.
+std::string value_to_display(const data_store::Value& v) {
+    return std::visit([](auto&& a) -> std::string {
+        using T = std::decay_t<decltype(a)>;
+        if constexpr (std::is_same_v<T, std::monostate>) return "(null)";
+        else if constexpr (std::is_same_v<T, bool>)
+            return a ? "true" : "false";
+        else if constexpr (std::is_same_v<T, std::string>) return a;
+        else if constexpr (std::is_same_v<T, double>) {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%g", a);
+            return buf;
+        } else {
+            return std::to_string(a);
+        }
+    }, v);
+}
+
 int do_set(data_store::Client& cli, const std::vector<std::string>& a) {
     if (a.size() != 2) { usage(); return 2; }
     std::string w; cli.recv_welcome(w);
-    auto rs = cli.set(a[0], a[1]);
+    auto rs = cli.set(a[0], parse_cli_value(a[1]));
     if (!rs.ok) { std::cerr << "[ds-cli] set: " << rs.err << "\n"; return 2; }
     std::cout << "ok\n";
     return 0;
@@ -95,7 +150,7 @@ int do_get(data_store::Client& cli, const std::vector<std::string>& keys) {
     auto rs = cli.get(keys, got);
     if (!rs.ok) { std::cerr << "[ds-cli] get: " << rs.err << "\n"; return 2; }
     for (const auto& g : got) {
-        if (g.has_value) std::cout << g.key << "=" << g.value << "\n";
+        if (g.has_value) std::cout << g.key << "=" << value_to_display(g.value) << "\n";
         else             std::cout << g.key << "=(null)\n";
     }
     return 0;
@@ -115,8 +170,10 @@ int do_watch(data_store::Client& cli, const std::vector<std::string>& keys,
     data_store::Client::WatchHandle h = data_store::Client::kInvalidHandle;
     auto rs = cli.watch(keys,
         [&](const data_store::Client::Event& ev) {
-            std::cout << "[event] " << ev.key << " = " << ev.value;
-            if (ev.prev_has_value) std::cout << "  (prev=" << ev.prev << ")";
+            std::cout << "[event] " << ev.key << " = "
+                      << value_to_display(ev.value);
+            if (ev.prev_has_value)
+                std::cout << "  (prev=" << value_to_display(ev.prev) << ")";
             std::cout << "\n";
             std::cout.flush();
             received.fetch_add(1);
