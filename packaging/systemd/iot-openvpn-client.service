@@ -1,0 +1,44 @@
+[Unit]
+Description=IoT OpenVPN client (spawns openvpn(8), publishes tunnel state to ds-server)
+Documentation=file:///etc/iot/openvpn-client.env
+Documentation=file:///usr/local/share/doc/iot/openvpn-client-design.md
+# DsBridge connects to ds-server's unix socket; wait for it.
+After=network-online.target iot-ds.service
+Wants=network-online.target iot-ds.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/iot/openvpn-client.env
+ExecStart=/usr/local/bin/openvpn-client $OPENVPN_CLIENT_ARGS
+
+# openvpn(8) needs to create the TUN device + write routes — both
+# require CAP_NET_ADMIN. DynamicUser=yes works fine with
+# AmbientCapabilities on systemd 244+; we drop everything else so
+# even if openvpn-client itself is compromised the blast radius is
+# scoped to the tunnel.
+DynamicUser=yes
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+DeviceAllow=/dev/net/tun rw
+
+# Same RuntimeDirectory=iot as iot-ds.service so the daemon sees
+# the same /run/iot/data_store.sock socket file.
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+
+Restart=on-failure
+RestartSec=5s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

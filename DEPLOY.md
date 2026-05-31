@@ -163,6 +163,23 @@ sudo systemctl status iot-ds iot-lwm2m-client
 The lwm2m-client unit `After=iot-ds.service Wants=iot-ds.service` so
 DsConfig connects on the first try without falling back to defaults.
 
+For the **openvpn-client** unit, seed the required vpn.* keys first
+(or it will refuse to start) and then enable:
+
+```sh
+ds-cli --socket=/run/iot/data_store.sock set vpn.remote.host '"vpn.example.com"'
+ds-cli --socket=/run/iot/data_store.sock set vpn.cert.path  '"/etc/iot/vpn/client.crt"'
+ds-cli --socket=/run/iot/data_store.sock set vpn.key.path   '"/etc/iot/vpn/client.key"'
+ds-cli --socket=/run/iot/data_store.sock set vpn.ca.path    '"/etc/iot/vpn/ca.crt"'
+
+sudo systemctl enable --now iot-openvpn-client.service
+journalctl -u iot-openvpn-client.service -f | grep "PUSH_REPLY\|state"
+```
+
+The unit ships with `AmbientCapabilities=CAP_NET_ADMIN` +
+`DeviceAllow=/dev/net/tun rw` so openvpn(8) can create the TUN
+device + write routes under DynamicUser — no `root` required.
+
 ### 4. Same ds-cli tuning as the container path
 
 ```sh
