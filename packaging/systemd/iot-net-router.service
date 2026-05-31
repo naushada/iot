@@ -1,0 +1,48 @@
+[Unit]
+Description=IoT net-router (nftables DNAT + iface priority manager, watches ds-server net.*)
+Documentation=file:///etc/iot/net-router.env
+Documentation=file:///usr/local/share/doc/iot/net-router-design.md
+# Needs ds-server up (DsBridge connects on startup). We also order
+# After iot-openvpn-client.service so the tun device exists by the
+# time we generate ruleset(s) that DNAT into it — openvpn(8) creates
+# tun0 from inside the openvpn-client unit, see L12 docs.
+After=network-online.target iot-ds.service iot-openvpn-client.service
+Wants=network-online.target iot-ds.service
+# Note: not `Requires=iot-openvpn-client.service` — net-router still
+# usefully runs on hosts without VPN (DNAT into the local lwm2m
+# client over a direct iface). Hard-requires would lock that out.
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/iot/net-router.env
+ExecStart=/usr/local/bin/net-router $NET_ROUTER_ARGS
+
+# nftables apply + `ip route replace` both require CAP_NET_ADMIN.
+# DynamicUser=yes works with AmbientCapabilities on systemd 244+.
+# We drop everything else: even a compromised net-router can only
+# nat/route, not load modules, mount, ptrace, etc.
+DynamicUser=yes
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+# Same RuntimeDirectory=iot as iot-ds.service so the daemon sees
+# the same /run/iot/data_store.sock socket file.
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+
+Restart=on-failure
+RestartSec=5s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

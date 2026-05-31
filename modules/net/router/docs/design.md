@@ -1,10 +1,10 @@
 # net-router — module design (L13)
 
-> **Status (2026-05-31):** D1–D6 landed (schema, scaffold, DsBridge,
-> nft_rules generator, ip_route + iface_monitor, lifecycle FSM +
-> `nft -f` apply wrapper). D7 (packaging: systemd unit, IOT_ROLE=net,
-> apt-install nftables in both images, apps/CMakeLists.txt
-> add_subdirectory) remains.
+> **Status (2026-05-31):** L13 complete (D1–D7). The daemon wires
+> DsBridge + iface_monitor + ip_route + apply + Lifecycle behind a
+> simple poll loop, ships as `iot-net-router.service` (systemd) and
+> `IOT_ROLE=net` (container). nftables + iproute2 are now in both
+> the dev image and the runtime image.
 
 ## What this module is
 
@@ -84,7 +84,8 @@ modules/net/router/
 │   ├── ip_route.{hpp,cpp}      `ip route replace` metric writer — D5
 │   ├── iface_monitor.{hpp,cpp} `ip -j link/route show` parser — D5
 │   ├── apply.{hpp,cpp}         tempfile + `nft -f` apply wrapper — D6
-│   └── lifecycle.{hpp,cpp}     pure FSM: Sinks + Inputs → step() — D6
+│   ├── lifecycle.{hpp,cpp}     pure FSM: Sinks + Inputs → step() — D6
+│   └── daemon.cpp              run_daemon() — poll loop, signals — D7
 ├── schemas/net.lua
 ├── test/
 │   ├── ds_bridge_test.cpp      D3

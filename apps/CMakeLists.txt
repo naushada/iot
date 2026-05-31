@@ -59,6 +59,12 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/openvpn/client
                  ${CMAKE_BINARY_DIR}/openvpn-client)
 
+# net-router daemon (L13). Sibling under ../modules/net/router.
+# Brings the net-router binary + net.lua schema into the same install
+# tree as everything else.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/net/router
+                 ${CMAKE_BINARY_DIR}/net-router)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
@@ -105,6 +111,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-lwm2m-client.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-lwm2m-server.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-openvpn-client.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-net-router.service
             DESTINATION lib/systemd/system)
 
     # tmpfiles.d fallback for hosts where RuntimeDirectory= doesn't
@@ -125,6 +132,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/lwm2m-client.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/lwm2m-server.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/openvpn-client.env
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/net-router.env
             DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot)
 
     # Object-resource config templates. Land each .lua as .lua.example

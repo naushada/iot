@@ -1,13 +1,10 @@
-/// net-router — daemon entry (L13/D2 scaffold).
+/// net-router — daemon entry.
 ///
-/// Usage:
-///   net-router [--ds-sock=PATH] [--dump] [--help]
+/// Modes:
+///   --dump            snapshot net.* and exit (default with no other mode)
+///   --daemon          run the FSM loop forever (systemd unit uses this)
 ///
-/// Today (D2 scaffold): connects to ds-server, dumps every known
-/// net.* key (whether set or unset), warns if net.lwm2m.target_ip
-/// is missing, exits. D3..D7 add the DsBridge, nftables rule
-/// generator, ip route metrics, iface monitor, and the
-/// IOT_ROLE=net systemd integration.
+/// All other args are wiring (socket path, nft binary, poll override).
 
 #include <cstdlib>
 #include <iostream>
@@ -19,25 +16,37 @@ namespace {
 
 void usage() {
     std::cout <<
-        "net-router (L13/D2 scaffold)\n"
+        "net-router\n"
         "\n"
-        "Usage: net-router [--ds-sock=PATH] [--dump] [--help]\n"
+        "Usage: net-router [--ds-sock=PATH] [--nft=PATH] [--poll=SECS]\n"
+        "                  [--dump | --daemon] [--help]\n"
         "\n"
-        "  --ds-sock=PATH   ds-server unix socket; defaults to ds-server's\n"
-        "                   built-in default (/var/run/iot/data_store.sock).\n"
-        "  --dump           snapshot net.* and exit (current default).\n"
-        "  --help           show this and exit.\n";
+        "  --ds-sock=PATH  ds-server unix socket; defaults to ds-server's\n"
+        "                  built-in default (/var/run/iot/data_store.sock).\n"
+        "  --nft=PATH      nft(8) binary path (default: \"nft\" via $PATH).\n"
+        "  --poll=SECS     override net.poll.interval_sec (default: use ds key).\n"
+        "  --dump          snapshot net.* and exit (default if no mode).\n"
+        "  --daemon        run the lifecycle FSM forever.\n"
+        "  --help          show this and exit.\n";
 }
+
+enum class Mode { Dump, Daemon };
 
 } // namespace
 
 int main(int argc, char** argv) {
     std::string sock;
+    std::string nft_path = "nft";
+    unsigned    poll     = 0;
+    Mode        mode     = Mode::Dump;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if      (a.rfind("--ds-sock=", 0) == 0) sock = a.substr(10);
-        else if (a == "--dump")                 { /* default mode */ }
+        else if (a.rfind("--nft=", 0)     == 0) nft_path = a.substr(6);
+        else if (a.rfind("--poll=", 0)    == 0) poll = static_cast<unsigned>(std::stoul(a.substr(7)));
+        else if (a == "--dump")                 mode = Mode::Dump;
+        else if (a == "--daemon")               mode = Mode::Daemon;
         else if (a == "--help" || a == "-h")    { usage(); return 0; }
         else {
             std::cerr << "net-router: unknown argument '" << a << "'\n";
@@ -46,6 +55,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    auto rs = net_router::v0_dump_net_keys(sock);
+    auto rs = (mode == Mode::Daemon)
+            ? net_router::run_daemon(sock, nft_path, poll)
+            : net_router::v0_dump_net_keys(sock);
     return rs.ok ? 0 : 1;
 }

@@ -33,6 +33,7 @@ link_directories(${ACE_ROOT}/lib)
 # ip_route/iface_monitor/apply.
 add_library(net_router_lib STATIC
     src/main_impl.cpp
+    src/daemon.cpp
     src/ds_bridge.cpp
     src/nft_rules.cpp
     src/shell.cpp
