@@ -1,0 +1,29 @@
+=== 1. Build the OCI image (no-op if cached) ===
+--> ccd8bfb76901
+Successfully tagged localhost/iot:l11
+ccd8bfb76901f624ce60f38259c597667812340f039b389309a3606acf23610e
+
+=== 2. Start ds-server container ===
+2026-05-31 07:55:35.478327 [DS:1] LM_DEBUG /src/modules/data-store/src/server/server.cpp:74 listening on /run/iot/data_store.sock (mode 0660)
+OK ds-server bound /run/iot/data_store.sock
+
+=== 3. Seed initial iot.* keys via ds-cli (from inside the ds container) ===
+iot.endpoint=urn:dev:e2e-initial
+iot.lifetime=7200
+
+=== 4. Start lwm2m client container sharing /run/iot ===
+2026-05-31 07:55:36.525154 [iot:1] LM_INFO /src/apps/src/main.cpp:603 endpoint from data-store: urn:dev:e2e-initial
+OK client picked up initial iot.endpoint + iot.lifetime via DsConfig
+
+=== 5. Hot-apply: mutate iot.lifetime; expect 'applied iot.lifetime=...' on client ===
+2026-05-31 07:55:37.678118 [iot:2] LM_INFO /src/apps/src/main.cpp:636 applied iot.lifetime=1800 to live RegistrationClient — next Update tick uses it
+OK client hot-applied iot.lifetime=1800 from listener thread
+
+=== 6. Schema rejection still gates at the wire ===
+OK schema rejected iot.lifetime=-1 with SchemaRejected
+
+=== Summary ===
+All 6 checks passed.
+DS image size: 118.6 MB
+ds container exit: running
+client container exit: running

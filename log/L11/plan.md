@@ -5,8 +5,8 @@
 > on-disk artefacts. As each D closes, the corresponding section
 > moves into `results.md` alongside the evidence.
 >
-> **Status (2026-05-31):** D1 + D2 (PR #23), D4 (PR #24), D3 (PR #25)
-> done. D5 + D6 pending. FUP-L11-1 opened to track image-size shrink.
+> **Status (2026-05-31):** All six D-items closed (PRs #23, #24, #25, #26).
+> FUP-L11-1 (image-size shrink) opened during D3, not blocking.
 
 ---
 
@@ -210,7 +210,13 @@ tree and no missing files / dangling rpaths.
 
 ---
 
-### D5 — README: deploy walkthrough
+### D5 — README: deploy walkthrough ✅ (PR #26)
+
+Closed 2026-05-31. Top-level `DEPLOY.md` lands with both container
++ bare-metal paths, an operator-task cookbook, and a troubleshooting
+section. Cross-links to `packaging/README.md` for internals and to
+`modules/data-store/docs/{protocol,client_api}.md` for the wire +
+API references.
 
 **Scope.** Top-level `DEPLOY.md` (or a section in `README.md`) with
 two paths:
@@ -233,7 +239,12 @@ item; visible quality bar).
 
 ---
 
-### D6 — End-to-end smoke
+### D6 — End-to-end smoke ✅ (PR #26)
+
+Closed 2026-05-31. `log/L11/e2e-smoke.sh` runs the full path —
+build image → start ds + client containers sharing a named
+volume → seed + read + hot-apply → schema rejection. All 6 checks
+pass; evidence at `log/L11/e2e-smoke.txt`.
 
 **Scope.** A single script that runs the full deploy path on a clean
 container and proves it works:
