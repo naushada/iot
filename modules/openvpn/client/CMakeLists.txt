@@ -16,13 +16,13 @@ set(OVPN_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 # lwm2m binary. If data-store has already been added (e.g. by a parent
 # project), skip the re-add to avoid the cmake "already exists" error.
 if(NOT TARGET datastore_client)
-    add_subdirectory(${OVPN_MODULE_DIR}/../data-store
+    add_subdirectory(${OVPN_MODULE_DIR}/../../data-store
                      ${CMAKE_BINARY_DIR}/data-store)
 endif()
 
 include_directories(
     ${OVPN_MODULE_DIR}/inc
-    ${OVPN_MODULE_DIR}/../data-store/inc
+    ${OVPN_MODULE_DIR}/../../data-store/inc
     ${ACE_ROOT}/include
 )
 
