@@ -121,6 +121,12 @@ constexpr std::uint32_t kMaxPayloadBytes = 1u << 20;
 constexpr const char* kDefaultSocketPath = "/var/run/iot/data_store.sock";
 constexpr const char* kDefaultStorePath  = "/var/lib/iot/data_store.lua";
 
+/// Conventional drop-in directory for client-published *.lua schema
+/// files. ds-server auto-loads it on startup when `ds-schema-dir=`
+/// isn't set explicitly; a missing directory is silently treated as
+/// "no schemas" so the daemon still boots on dev machines.
+constexpr const char* kDefaultSchemaDir  = "/etc/iot/ds-schemas/";
+
 } // namespace data_store::proto
 
 #endif /* __data_store_proto_hpp__ */

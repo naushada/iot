@@ -127,3 +127,10 @@ install(TARGETS datastore_client
         ARCHIVE DESTINATION /usr/local/lib)
 install(DIRECTORY inc/data_store
         DESTINATION /usr/local/include)
+
+# Ship the canonical iot.* schema to the default ds-schema-dir so
+# packaged installs validate iot.endpoint / iot.lifetime / etc. out
+# of the box. Operators can drop additional *.lua siblings in the
+# same directory.
+install(FILES schemas/iot.lua
+        DESTINATION /etc/iot/ds-schemas/)
