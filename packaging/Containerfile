@@ -1,0 +1,102 @@
+# Multi-stage runtime image for ds-server + lwm2m.
+#
+# Stage 1 (build) re-uses the existing dev image — naushada/iot:latest —
+# which already has ACE_TAO 7.0.0, mongocxx, OpenSSL 3.1.1, tinydtls,
+# and Lua 5.3 dev set up at the paths apps/CMakeLists.txt expects.
+#
+# Stage 2 (runtime) starts from Ubuntu 22.04 minimal and copies in only
+# the binaries + shared libs the ldd inventory says are needed:
+#   - libACE.so.7.0.0          (from /usr/local/ACE_TAO-7.0.0/lib)
+#   - libmongocxx + libbsoncxx + libmongoc + libbson  (lwm2m only)
+#   - libssl/libcrypto 3       (from base ubuntu)
+#   - libreadline/libtinfo/libz (from base ubuntu)
+#   - Lua + tinydtls are STATICALLY linked into the binaries — no runtime needed
+#
+# Target image size ≤ 100 MB. Last measured: see packaging/README.md.
+
+ARG BUILD_IMAGE=naushada/iot:latest
+
+# ──────────────────────────────────────────────────────────────────────
+# Stage 1: build
+# ──────────────────────────────────────────────────────────────────────
+FROM ${BUILD_IMAGE} AS build
+
+# liblua5.3-dev isn't baked into the dev image; install it once here so
+# the make invocation finds lauxlib.h. The dev image ships without /tmp
+# so apt-key's temp-file creation fails — mkdir it first.
+RUN mkdir -p /tmp && chmod 1777 /tmp && \
+    apt-get update -qq && apt-get install -y -qq liblua5.3-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . /src
+
+RUN rm -rf /src/apps/build /src/modules/data-store/build && \
+    mkdir -p /src/apps/build && \
+    cd /src/apps/build && \
+    cmake -DCMAKE_INSTALL_PREFIX=/usr .. && \
+    make -j"$(nproc)" && \
+    make install DESTDIR=/staging
+
+# Container deploys don't care about copy-on-edit safety for the config
+# templates — the image is the unit of upgrade. Rename .example back to
+# .lua so the lwm2m binary's `config=/etc/iot/config` boots out of the
+# box. Operators override by mounting their own /etc/iot/config tree.
+RUN find /staging/etc/iot/config -name '*.lua.example' \
+        -exec sh -c 'mv "$1" "${1%.example}"' _ {} \;
+
+# Strip the binaries — saves ~20 MB across the three.
+RUN strip /staging/usr/bin/ds-server \
+          /staging/usr/bin/ds-cli \
+          /staging/usr/bin/lwm2m
+
+# ──────────────────────────────────────────────────────────────────────
+# Stage 2: runtime
+# ──────────────────────────────────────────────────────────────────────
+FROM ubuntu:22.04 AS runtime
+
+# Runtime apt: only the libs the binaries actually link against per ldd.
+# --no-install-recommends keeps the layer small.
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends -qq \
+        libreadline8 \
+        libssl3 \
+        zlib1g \
+        ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/* /usr/share/doc/* /usr/share/man/*
+
+# Bring in ACE 7.0.0 shared lib only (not the full SDK).
+COPY --from=build /usr/local/ACE_TAO-7.0.0/lib/libACE.so* /usr/local/ACE_TAO-7.0.0/lib/
+
+# Bring in mongocxx + bsoncxx + mongoc + bson runtime libs (lwm2m links them).
+COPY --from=build /usr/local/lib/libbson-1.0.so*    /usr/local/lib/
+COPY --from=build /usr/local/lib/libbsoncxx.so*     /usr/local/lib/
+COPY --from=build /usr/local/lib/libmongoc-1.0.so*  /usr/local/lib/
+COPY --from=build /usr/local/lib/libmongocxx.so*    /usr/local/lib/
+
+# ld.so cache update so the binaries find these.
+RUN echo /usr/local/ACE_TAO-7.0.0/lib > /etc/ld.so.conf.d/ace-tao.conf && \
+    echo /usr/local/lib              > /etc/ld.so.conf.d/iot-runtime.conf && \
+    ldconfig
+
+# Binaries + config + entrypoint.
+COPY --from=build /staging/usr/bin/ds-server   /usr/local/bin/
+COPY --from=build /staging/usr/bin/ds-cli      /usr/local/bin/
+COPY --from=build /staging/usr/bin/lwm2m       /usr/local/bin/
+COPY --from=build /staging/etc/iot             /etc/iot
+
+COPY packaging/iot-entrypoint.sh /usr/local/bin/iot-entrypoint
+RUN chmod +x /usr/local/bin/iot-entrypoint
+
+# RuntimeDirectory= equivalent inside the container — ds-server binds
+# its socket here. Operators can `--volume host:/run/iot` to share the
+# socket between sibling containers.
+RUN mkdir -p /run/iot /var/lib/iot && \
+    chmod 0755 /run/iot && \
+    chmod 0750 /var/lib/iot
+
+# Smoke probe: `podman run --rm iot:l11 ds-cli --help` should land in
+# the help path (exit 0 or 2).
+ENTRYPOINT ["/usr/local/bin/iot-entrypoint"]
+CMD []

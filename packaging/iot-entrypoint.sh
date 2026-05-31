@@ -1,0 +1,59 @@
+#!/bin/sh
+# Container entrypoint: dispatch on IOT_ROLE env var.
+#
+#   IOT_ROLE=ds      → run ds-server
+#   IOT_ROLE=client  → run lwm2m role=client
+#   IOT_ROLE=server  → run lwm2m role=server
+#
+# Per-role default args live in /etc/iot/lwm2m-*.env (sourced via
+# . , so they end up as shell vars). Operators override by:
+#   * mounting their own /etc/iot/ tree, OR
+#   * passing `--env LWM2M_ARGS=...` on `podman run`, OR
+#   * passing literal argv to the container (becomes "$@").
+#
+# Argv passed to the container goes through to the underlying binary,
+# which lets you do:
+#   podman run iot:l11 ds-cli set iot.endpoint '"urn:dev:c-7"'
+
+set -e
+
+# If the first arg is one of our binaries, forward verbatim — supports
+# `podman run iot:l11 ds-cli get foo`.
+case "${1:-}" in
+    ds-cli|ds-server|lwm2m)
+        exec "$@"
+        ;;
+esac
+
+case "${IOT_ROLE:-}" in
+    ds)
+        exec /usr/local/bin/ds-server \
+            ds-socket=/run/iot/data_store.sock \
+            ds-store=/var/lib/iot/data_store.lua \
+            ds-schema-dir=/etc/iot/ds-schemas \
+            "$@"
+        ;;
+    client)
+        # shellcheck disable=SC1091
+        [ -f /etc/iot/lwm2m-client.env ] && . /etc/iot/lwm2m-client.env
+        : "${LWM2M_ARGS:?lwm2m-client.env missing LWM2M_ARGS}"
+        # shellcheck disable=SC2086  # word-splitting is intentional
+        exec /usr/local/bin/lwm2m $LWM2M_ARGS "$@"
+        ;;
+    server)
+        # shellcheck disable=SC1091
+        [ -f /etc/iot/lwm2m-server.env ] && . /etc/iot/lwm2m-server.env
+        : "${LWM2M_ARGS:?lwm2m-server.env missing LWM2M_ARGS}"
+        # shellcheck disable=SC2086
+        exec /usr/local/bin/lwm2m $LWM2M_ARGS "$@"
+        ;;
+    "")
+        echo "iot-entrypoint: set IOT_ROLE to one of: ds | client | server" >&2
+        echo "                or invoke a binary directly: ds-cli / ds-server / lwm2m" >&2
+        exit 64
+        ;;
+    *)
+        echo "iot-entrypoint: unknown IOT_ROLE='$IOT_ROLE' (expected ds|client|server)" >&2
+        exit 64
+        ;;
+esac

@@ -5,8 +5,8 @@
 > on-disk artefacts. As each D closes, the corresponding section
 > moves into `results.md` alongside the evidence.
 >
-> **Status (2026-05-31):** D1 + D2 done (PR #23); D4 done (PR #24).
-> D3 + D5 + D6 pending.
+> **Status (2026-05-31):** D1 + D2 (PR #23), D4 (PR #24), D3 (PR #25)
+> done. D5 + D6 pending. FUP-L11-1 opened to track image-size shrink.
 
 ---
 
@@ -137,7 +137,13 @@ under `/etc/iot/config/`.
 
 ---
 
-### D3 — OCI image build
+### D3 — OCI image build ✅ (PR #25)
+
+Closed 2026-05-31. Image size landed at **119 MB** vs the 100 MB
+soft target — over by ~18%; routes to shrink documented in
+`packaging/README.md` and tracked as **FUP-L11-1**. All smokes pass
+end-to-end inside the container (ds-server + ds-cli + lwm2m client
+picking up live config).
 
 **Scope.** A `packaging/Containerfile` (podman-first; works under
 Docker too) producing a runtime image:
@@ -244,6 +250,14 @@ container and proves it works:
 
 - `log/L11/e2e-smoke.sh`
 - `log/L11/e2e-smoke.txt` (captured run)
+
+---
+
+## 2.5. Follow-ups opened during execution
+
+| ID         | Item                                                                                                                                          |
+|------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| FUP-L11-1  | OCI image size 119 MB vs 100 MB soft target. Routes documented in `packaging/README.md` §"Image size" (debian-slim base, drop mongo runtime, upx). Not blocking. |
 
 ---
 
