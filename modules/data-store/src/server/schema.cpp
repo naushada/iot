@@ -4,11 +4,11 @@
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
-#include <iostream>
 #include <memory>
-#include <sstream>
 #include <stdexcept>
 #include <sys/stat.h>
+
+#include <ace/Log_Msg.h>
 
 extern "C" {
 #include <lauxlib.h>
@@ -143,9 +143,10 @@ void SchemaRegistry::load_one(const std::string& path) {
 
         auto [it, inserted] = m_entries.emplace(key, e);
         if (!inserted) {
-            std::cerr << "[schema] WARNING: duplicate key '" << key
-                      << "' in " << path
-                      << " — overriding previous definition\n";
+            ACE_ERROR((LM_WARNING,
+                       ACE_TEXT("%D [Schema:%t] %M %N:%l duplicate key '%C' "
+                                "in %C — overriding previous definition\n"),
+                       key.c_str(), path.c_str()));
             it->second = e;
         }
         lua_pop(L.get(), 1);    // spec table
@@ -170,8 +171,9 @@ std::size_t SchemaRegistry::load_directory(const std::string& dir) {
         try {
             load_one(path);
         } catch (const std::exception& e) {
-            std::cerr << "[schema] WARNING: skipping " << path
-                      << ": " << e.what() << "\n";
+            ACE_ERROR((LM_WARNING,
+                       ACE_TEXT("%D [Schema:%t] %M %N:%l skipping %C: %C\n"),
+                       path.c_str(), e.what()));
         }
     }
     ::closedir(d);
