@@ -5,7 +5,8 @@
 > on-disk artefacts. As each D closes, the corresponding section
 > moves into `results.md` alongside the evidence.
 >
-> **Status (2026-05-31):** D1 + D2 done (PR #23). D3–D6 pending.
+> **Status (2026-05-31):** D1 + D2 done (PR #23); D4 done (PR #24).
+> D3 + D5 + D6 pending.
 
 ---
 
@@ -170,7 +171,15 @@ Target size ≤ 100 MB.
 
 ---
 
-### D4 — cmake install rules pass smoke
+### D4 — cmake install rules pass smoke ✅ (PR #24)
+
+Closed 2026-05-31. Switched both CMakeLists.txt files to GNUInstallDirs
+so packagers can override via `--prefix=/usr`. Added install rules for
+the D1+D2 artefacts behind `IOT_PACKAGING_INSTALL=ON` (default). Used
+`CMAKE_INSTALL_FULL_SYSCONFDIR` (not the relative variant) so `/etc/iot`
+lands absolute under `--prefix=/usr`, and hardcoded `lib/tmpfiles.d`
+(not `LIBDIR/tmpfiles.d`) so multi-arch hosts don't bury it under
+`lib/aarch64-linux-gnu/`. Smoke evidence in PR description.
 
 **Scope.** Audit current `install(...)` rules across
 `apps/CMakeLists.txt` + `modules/data-store/CMakeLists.txt`. Add what's

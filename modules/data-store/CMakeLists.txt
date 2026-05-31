@@ -121,16 +121,23 @@ if(BUILD_DATA_STORE_TESTS)
     add_test(NAME ds-tests COMMAND ds-tests)
 endif()
 
-install(TARGETS ds-server ds-cli
-        RUNTIME DESTINATION /usr/local/bin)
-install(TARGETS datastore_client
-        ARCHIVE DESTINATION /usr/local/lib)
-install(DIRECTORY inc/data_store
-        DESTINATION /usr/local/include)
+include(GNUInstallDirs)
 
-# Ship the canonical iot.* schema to the default ds-schema-dir so
-# packaged installs validate iot.endpoint / iot.lifetime / etc. out
-# of the box. Operators can drop additional *.lua siblings in the
-# same directory.
+# Use GNUInstallDirs so packagers can override per the standard
+# autotools-style flow:
+#   cmake -DCMAKE_INSTALL_PREFIX=/usr     → bin → /usr/bin
+#   cmake -DCMAKE_INSTALL_PREFIX=/usr/local (default) → bin → /usr/local/bin
+# Pair with `make install DESTDIR=/staging` for clean per-tree installs.
+install(TARGETS ds-server ds-cli
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS datastore_client
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(DIRECTORY inc/data_store
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# Ship the canonical iot.* schema to the ds-server default schema dir.
+# FULL_SYSCONFDIR is /etc when --prefix=/usr (cmake's special case);
+# the relative SYSCONFDIR would land at /usr/etc which ds-server won't
+# scan.
 install(FILES schemas/iot.lua
-        DESTINATION /etc/iot/ds-schemas/)
+        DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
