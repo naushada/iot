@@ -4,12 +4,13 @@
 
 namespace data_store::server {
 
-WorkerPool::WorkerPool(std::shared_ptr<DataStore> store,
-                       std::size_t poolSize) {
+WorkerPool::WorkerPool(std::shared_ptr<DataStore>      store,
+                       std::shared_ptr<SchemaRegistry> schema,
+                       std::size_t                     poolSize) {
     m_workers.reserve(poolSize);
     for (std::size_t i = 0; i < poolSize; ++i) {
         m_workers.emplace_back(
-            std::make_unique<Worker>(store, static_cast<int>(i)));
+            std::make_unique<Worker>(store, schema, static_cast<int>(i)));
     }
 }
 

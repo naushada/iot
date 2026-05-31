@@ -64,6 +64,7 @@ add_executable(ds-server
     src/server/session.cpp
     src/server/data_store.cpp
     src/server/lua_persistor.cpp
+    src/server/schema.cpp
     src/server/worker.cpp
     src/server/worker_pool.cpp
     src/proto/proto.cpp)
@@ -97,10 +98,13 @@ if(BUILD_DATA_STORE_TESTS)
         test/worker_pool_test.cpp
         test/protocol_test.cpp
         test/lua_persistor_test.cpp
+        test/callback_test.cpp
+        test/schema_test.cpp
         src/server/server.cpp
         src/server/session.cpp
         src/server/data_store.cpp
         src/server/lua_persistor.cpp
+        src/server/schema.cpp
         src/server/worker.cpp
         src/server/worker_pool.cpp
         src/proto/proto.cpp

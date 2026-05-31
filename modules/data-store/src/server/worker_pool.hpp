@@ -18,12 +18,15 @@
 
 namespace data_store::server {
 
+class SchemaRegistry;
+
 class WorkerPool {
 public:
     static constexpr std::size_t kDefaultSize = 5;
 
-    WorkerPool(std::shared_ptr<DataStore> store,
-               std::size_t poolSize = kDefaultSize);
+    WorkerPool(std::shared_ptr<DataStore>      store,
+               std::shared_ptr<SchemaRegistry> schema = nullptr,
+               std::size_t                     poolSize = kDefaultSize);
     ~WorkerPool();
 
     int  open();
