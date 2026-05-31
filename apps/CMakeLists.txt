@@ -76,7 +76,61 @@ target_link_libraries(lwm2m
 
 add_subdirectory(test)
 
+include(GNUInstallDirs)
+
+# Drop the CONFIGURATIONS Release filter so `make install` works in
+# Debug builds too — packagers don't always rebuild as Release.
 install(TARGETS lwm2m
-        CONFIGURATIONS Release
-        RUNTIME DESTINATION /usr/local/bin
-)
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# ──────────────────────────── packaging assets ─────────────────────────
+# IOT_PACKAGING_INSTALL toggles the systemd + /etc/iot/* install. Default
+# ON so a `make install` produces a deployable tree; flip to OFF for
+# dev installs that should not touch /lib/systemd or /etc/iot.
+option(IOT_PACKAGING_INSTALL "Install systemd units, env files, config examples" ON)
+
+if(IOT_PACKAGING_INSTALL)
+    # systemd unit files. /lib/systemd/system is the conventional
+    # vendor path; distros' own units live at /etc/systemd/system
+    # and override us, which is fine.
+    install(FILES
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-ds.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-lwm2m-client.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-lwm2m-server.service
+            DESTINATION lib/systemd/system)
+
+    # tmpfiles.d fallback for hosts where RuntimeDirectory= doesn't
+    # fire (older systemd, sysvinit shims). MUST land under plain
+    # `lib/tmpfiles.d`, NOT `${CMAKE_INSTALL_LIBDIR}/tmpfiles.d` —
+    # multi-arch hosts make LIBDIR=lib/<triplet> which systemd-tmpfiles
+    # doesn't scan.
+    install(FILES
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot.conf
+            DESTINATION lib/tmpfiles.d)
+
+    # EnvironmentFile for each lwm2m unit. Use FULL_SYSCONFDIR so the
+    # files land at /etc/iot/ when --prefix=/usr (cmake's GNUInstallDirs
+    # special-cases /usr to make sysconfdir an absolute /etc). The
+    # relative CMAKE_INSTALL_SYSCONFDIR would have placed these at
+    # /usr/etc/iot/ which no service reads.
+    install(FILES
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/lwm2m-client.env
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/lwm2m-server.env
+            DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot)
+
+    # Object-resource config templates. Land each .lua as .lua.example
+    # so an operator copy + edit is required — packaging upgrades won't
+    # silently clobber edited config. Renaming has to be per-file
+    # because cmake's install(FILES RENAME) only takes one source.
+    set(IOT_CONFIG_DIR ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/config)
+    foreach(subdir securityObject serverObject deviceObject accessControlObject firmwareObject)
+        file(GLOB _lua_files
+             RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/config/${subdir}
+             ${CMAKE_CURRENT_SOURCE_DIR}/config/${subdir}/*.lua)
+        foreach(_f ${_lua_files})
+            install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/config/${subdir}/${_f}
+                    DESTINATION ${IOT_CONFIG_DIR}/${subdir}
+                    RENAME ${_f}.example)
+        endforeach()
+    endforeach()
+endif()
