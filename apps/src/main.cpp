@@ -10,6 +10,8 @@
 #include <sstream>
 #include <unordered_map>
 
+#include <ace/Log_Msg.h>
+
 #include "app.hpp"
 #include "readline.hpp"
 
@@ -25,6 +27,7 @@
 #include "lwm2m_registration_client.hpp"
 #include "lwm2m_registration_server.hpp"
 
+#include "ds_config.hpp"
 #include "lua_config.hpp"
 
 
@@ -136,9 +139,20 @@ inline void tx_via(App& app,
 /// `ep=` on the server's CLI, or hard-coded for a known test client.
 ::lwm2m::bootstrap::AccountProvisioning
 load_provisioning_from_config(const std::string& configDir,
-                              const std::string& endpoint) {
+                              const std::string& endpoint,
+                              iot::DsConfig*     ds = nullptr) {
     ::lwm2m::bootstrap::AccountProvisioning a;
     a.endpoint = endpoint;
+
+    // ds-server overrides (when connected): iot.server.uri replaces the
+    // DM Security instance's URI; iot.lifetime replaces the Server
+    // instance's lifetime. iid 0 (Bootstrap) stays file-driven.
+    std::optional<std::string>   dsUri;
+    std::optional<std::uint32_t> dsLifetime;
+    if (ds && ds->connected()) {
+        dsUri      = ds->server_uri();
+        dsLifetime = ds->lifetime();
+    }
 
     using iot::lua_config::bool_or;
     using iot::lua_config::load_object_resources;
@@ -155,6 +169,13 @@ load_provisioning_from_config(const std::string& configDir,
         ::lwm2m::bootstrap::SecurityInstance s;
         s.iid               = iid;
         s.serverUri         = string_or(m, 0, "");
+        if (iid == 1 && dsUri) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l DM server URI from "
+                                "data-store: %C\n"),
+                       dsUri->c_str()));
+            s.serverUri = *dsUri;
+        }
         s.isBootstrapServer = bool_or(m, 1, iid == 0);
         s.securityMode      = static_cast<std::uint8_t>(uint_or(m, 2, 3));
         s.identity          = string_or(m, 3, "");
@@ -170,6 +191,13 @@ load_provisioning_from_config(const std::string& configDir,
         row.iid           = 0;
         row.shortServerId = static_cast<std::uint16_t>(uint_or(srv, 0, 1));
         row.lifetime      = uint_or(srv, 1, 86400);
+        if (dsLifetime) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l Server lifetime from "
+                                "data-store: %u\n"),
+                       static_cast<unsigned>(*dsLifetime)));
+            row.lifetime  = *dsLifetime;
+        }
         row.binding       = string_or(srv, 7, "U");
         a.server.push_back(std::move(row));
     }
@@ -179,7 +207,8 @@ load_provisioning_from_config(const std::string& configDir,
 /// Attach BootstrapServer (on the Bootstrap port) + RegistrationServer +
 /// canonical ObjectStore (for Discover output) on the DeviceMgmtServer
 /// port. Install the 1 Hz tick to drive registry expiry.
-void wire_server(std::shared_ptr<App>& app, const std::string& configDir) {
+void wire_server(std::shared_ptr<App>& app, const std::string& configDir,
+                 iot::DsConfig& ds) {
     auto registry = std::make_shared<::lwm2m::ClientRegistry>();
     auto bsServer = std::make_shared<::lwm2m::bootstrap::Server>();
 
@@ -187,7 +216,7 @@ void wire_server(std::shared_ptr<App>& app, const std::string& configDir) {
     // deployments would load multiple accounts from a registry file or
     // the DB; the wiring point stays the same.
     bsServer->add_account(
-        load_provisioning_from_config(configDir, "urn:dev:client-1"));
+        load_provisioning_from_config(configDir, "urn:dev:client-1", &ds));
 
     // L9 / FUP-3: attach BOTH handlers to EVERY server-side service
     // context. processRequest's URI dispatch routes /bs → bsServer,
@@ -269,7 +298,8 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                            const std::string& endpoint,
                            const std::string& configDir,
                            const std::string& bsHost,
-                           std::uint16_t bsPort) {
+                           std::uint16_t bsPort,
+                           iot::DsConfig& ds) {
     ClientPlumbing plumb;
     plumb.store = std::make_shared<::lwm2m::ObjectStore>();
     ::lwm2m::objects::install_canonical_objects(*plumb.store, configDir);
@@ -293,7 +323,14 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
 
     ::lwm2m::ClientConfig cfg;
     cfg.endpoint     = endpoint;
-    cfg.lifetime     = 86400;
+    auto dsLifetime  = ds.lifetime();
+    cfg.lifetime     = dsLifetime.value_or(86400);
+    if (dsLifetime) {
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l Registration lifetime from "
+                            "data-store: %u\n"),
+                   static_cast<unsigned>(cfg.lifetime)));
+    }
     cfg.binding      = "U";
     cfg.lwm2mVersion = "1.1";
     plumb.reg = std::make_shared<::lwm2m::RegistrationClient>(cfg, *plumb.store);
@@ -473,15 +510,27 @@ int main(std::int32_t argc, char *argv[]) {
     const std::string configDir = !argValueMap["config"].empty()
                                       ? argValueMap["config"]
                                       : std::string("../config");
-    const std::string endpoint  = !argValueMap["ep"].empty()
+    std::string endpoint        = !argValueMap["ep"].empty()
                                       ? argValueMap["ep"]
                                       : std::string("urn:dev:client-1");
 
+    // ds-server config-plane: optional. When connected, `iot.endpoint`
+    // / `iot.lifetime` / `iot.server.uri` override the CLI/file
+    // defaults. Empty `ds-sock=` ⇒ default socket path; ds-server not
+    // running just means we fall through to compiled-in defaults.
+    iot::DsConfig ds(argValueMap["ds-sock"]);
+    if (auto v = ds.endpoint(); v.has_value() && argValueMap["ep"].empty()) {
+        endpoint = std::move(*v);
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l endpoint from data-store: %C\n"),
+                   endpoint.c_str()));
+    }
+
     ClientPlumbing clientPlumbing;
     if (UDPAdapter::CLIENT == role) {
-        clientPlumbing = wire_client(app, endpoint, configDir, bsHost, bsPort);
+        clientPlumbing = wire_client(app, endpoint, configDir, bsHost, bsPort, ds);
     } else {
-        wire_server(app, configDir);
+        wire_server(app, configDir, ds);
     }
 
     // UDP socket churn (peer torn down between writes) would otherwise
