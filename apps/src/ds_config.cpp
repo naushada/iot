@@ -1,5 +1,7 @@
 #include "ds_config.hpp"
 
+#include <mutex>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -13,26 +15,40 @@ namespace iot {
 
 const char* DsConfig::kDefaultSocketPath = data_store::proto::kDefaultSocketPath;
 
-struct DsConfig::Impl {
-    data_store::Client client;
-};
-
 namespace {
 
-/// Look up `key` and run the supplied projector against the typed
-/// Value. Returns nullopt when the key is unset, the request fails,
-/// or the projector rejects the variant alternative.
-template <typename T, typename Project>
-std::optional<T> fetch(data_store::Client& cli,
-                       const std::string&  key,
-                       Project             project) {
-    std::vector<data_store::Client::GetResult> got;
-    auto rs = cli.get({key}, got, /*timeout_ms=*/500);
-    if (!rs.ok || got.empty() || !got[0].has_value) return std::nullopt;
-    return project(got[0].value);
+constexpr const char* kKeyEndpoint  = "iot.endpoint";
+constexpr const char* kKeyServerUri = "iot.server.uri";
+constexpr const char* kKeyLifetime  = "iot.lifetime";
+
+/// Try to lift the typed Value into T. Returns nullopt if the variant
+/// alternative doesn't match. We tolerate int32→uint32 promotion when
+/// the int is non-negative; the schema's min=0 catches the negative
+/// case at set time so this should be rare.
+template <class T>
+std::optional<T> as(const data_store::Value& v) {
+    if (auto* p = std::get_if<T>(&v)) return *p;
+    if constexpr (std::is_same_v<T, std::uint32_t>) {
+        if (auto* p = std::get_if<std::int32_t>(&v); p && *p >= 0) {
+            return static_cast<std::uint32_t>(*p);
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace
+
+struct DsConfig::Impl {
+    data_store::Client                  client;
+    data_store::Client::WatchHandle     watch_handle =
+        data_store::Client::kInvalidHandle;
+
+    mutable std::mutex                  mtx;
+    std::optional<std::string>          endpoint;
+    std::optional<std::string>          server_uri;
+    std::optional<std::uint32_t>        lifetime;
+    ChangeCallback                      cb;
+};
 
 DsConfig::DsConfig(std::string socketPath)
   : m_impl(std::make_unique<Impl>()),
@@ -40,65 +56,108 @@ DsConfig::DsConfig(std::string socketPath)
                               : std::move(socketPath)) {
     auto cs = m_impl->client.connect(m_path);
     if (!cs.ok) {
-        // ds-server is optional — log once then move on. The caller
-        // checks connected() / each accessor returns nullopt → fallback
-        // path runs.
         ACE_DEBUG((LM_INFO,
                    ACE_TEXT("%D [iot:%t] %M %N:%l data-store not available "
                             "at %C (%C); using fallback defaults\n"),
                    m_path.c_str(), cs.err.c_str()));
         return;
     }
-    // EMP has no welcome handshake — the connection is usable as soon
-    // as connect() returns ok.
     m_ok = true;
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [iot:%t] %M %N:%l data-store ready at %C\n"),
                m_path.c_str()));
+
+    // Prime the cache with one initial get for all three keys. Missing
+    // values stay nullopt and the caller's value_or() defaults apply.
+    std::vector<data_store::Client::GetResult> got;
+    auto gs = m_impl->client.get(
+        {kKeyEndpoint, kKeyServerUri, kKeyLifetime}, got);
+    if (gs.ok) {
+        std::lock_guard<std::mutex> g(m_impl->mtx);
+        for (auto& r : got) {
+            if (!r.has_value) continue;
+            if (r.key == kKeyEndpoint) {
+                m_impl->endpoint = as<std::string>(r.value);
+            } else if (r.key == kKeyServerUri) {
+                m_impl->server_uri = as<std::string>(r.value);
+            } else if (r.key == kKeyLifetime) {
+                m_impl->lifetime = as<std::uint32_t>(r.value);
+            }
+        }
+    }
+
+    // Watch the same three keys. The callback fires on the Client's
+    // listener thread; it updates the cache + invokes the user-side
+    // change callback so a long-lived process can react.
+    auto ws = m_impl->client.watch(
+        {kKeyEndpoint, kKeyServerUri, kKeyLifetime},
+        [this](const data_store::Client::Event& ev) {
+            std::optional<Key> changed;
+            {
+                std::lock_guard<std::mutex> g(m_impl->mtx);
+                if (ev.key == kKeyEndpoint) {
+                    m_impl->endpoint = as<std::string>(ev.value);
+                    changed = Key::Endpoint;
+                } else if (ev.key == kKeyServerUri) {
+                    m_impl->server_uri = as<std::string>(ev.value);
+                    changed = Key::ServerUri;
+                } else if (ev.key == kKeyLifetime) {
+                    m_impl->lifetime = as<std::uint32_t>(ev.value);
+                    changed = Key::Lifetime;
+                }
+            }
+            if (!changed) return;
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l data-store key '%C' "
+                                "changed (hot-reload pending — applied at "
+                                "next op or process restart)\n"),
+                       ev.key.c_str()));
+            ChangeCallback cbcopy;
+            {
+                std::lock_guard<std::mutex> g(m_impl->mtx);
+                cbcopy = m_impl->cb;
+            }
+            if (cbcopy) cbcopy(*changed);
+        },
+        &m_impl->watch_handle);
+    if (!ws.ok) {
+        ACE_ERROR((LM_WARNING,
+                   ACE_TEXT("%D [iot:%t] %M %N:%l watch register failed: %C — "
+                            "cache primed but hot-reload disabled\n"),
+                   ws.err.c_str()));
+    }
 }
 
 DsConfig::~DsConfig() {
-    if (m_impl) m_impl->client.close();
+    if (!m_impl) return;
+    if (m_impl->watch_handle != data_store::Client::kInvalidHandle) {
+        m_impl->client.unwatch(m_impl->watch_handle, /*timeout_ms=*/200);
+    }
+    m_impl->client.close();
 }
 
-std::optional<std::string> DsConfig::endpoint() {
+std::optional<std::string> DsConfig::endpoint() const {
     if (!m_ok) return std::nullopt;
-    return fetch<std::string>(m_impl->client, "iot.endpoint",
-        [](const data_store::Value& v) -> std::optional<std::string> {
-            if (std::holds_alternative<std::string>(v)) {
-                return std::get<std::string>(v);
-            }
-            return std::nullopt;
-        });
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->endpoint;
 }
 
-std::optional<std::string> DsConfig::server_uri() {
+std::optional<std::string> DsConfig::server_uri() const {
     if (!m_ok) return std::nullopt;
-    return fetch<std::string>(m_impl->client, "iot.server.uri",
-        [](const data_store::Value& v) -> std::optional<std::string> {
-            if (std::holds_alternative<std::string>(v)) {
-                return std::get<std::string>(v);
-            }
-            return std::nullopt;
-        });
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->server_uri;
 }
 
-std::optional<std::uint32_t> DsConfig::lifetime() {
+std::optional<std::uint32_t> DsConfig::lifetime() const {
     if (!m_ok) return std::nullopt;
-    return fetch<std::uint32_t>(m_impl->client, "iot.lifetime",
-        [](const data_store::Value& v) -> std::optional<std::uint32_t> {
-            if (std::holds_alternative<std::uint32_t>(v)) {
-                return std::get<std::uint32_t>(v);
-            }
-            // Accept int32 (operator may have typed -1 or similar) only
-            // when non-negative; reject doubles + strings to keep the
-            // schema strict.
-            if (std::holds_alternative<std::int32_t>(v)) {
-                auto n = std::get<std::int32_t>(v);
-                if (n >= 0) return static_cast<std::uint32_t>(n);
-            }
-            return std::nullopt;
-        });
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->lifetime;
+}
+
+void DsConfig::on_change(ChangeCallback cb) {
+    if (!m_impl) return;
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    m_impl->cb = std::move(cb);
 }
 
 } // namespace iot
