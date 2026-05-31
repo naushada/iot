@@ -1,109 +1,86 @@
 #include "openvpn_client/client.hpp"
 
+#include "ds_bridge.hpp"
+
+#include <cstdint>
+#include <optional>
 #include <sstream>
 #include <string>
-#include <type_traits>
-#include <variant>
-#include <vector>
 
 #include <ace/Log_Msg.h>
-
-#include "data_store/client.hpp"
-#include "data_store/value.hpp"
 
 namespace openvpn_client {
 
 namespace {
 
-/// Stringify a Value for a single ACE_DEBUG log line. Keeps the
-/// dump human-readable without dragging in nlohmann::json.
-std::string value_to_display(const data_store::Value& v) {
-    return std::visit([](auto&& a) -> std::string {
-        using T = std::decay_t<decltype(a)>;
-        if constexpr (std::is_same_v<T, std::monostate>) return "(null)";
-        else if constexpr (std::is_same_v<T, bool>)
-            return a ? "true" : "false";
-        else if constexpr (std::is_same_v<T, std::string>) return a;
-        else if constexpr (std::is_same_v<T, double>) {
-            char buf[32];
-            std::snprintf(buf, sizeof(buf), "%g", a);
-            return buf;
-        } else {
-            return std::to_string(a);
-        }
-    }, v);
+/// Pretty-print an optional<string> for the snapshot dump.
+const char* show(const std::optional<std::string>& v) {
+    return v.has_value() ? v->c_str() : "(unset)";
 }
 
-/// All vpn.* keys the schema (L12/D1) declares. Order matches the
-/// schema file's read-then-write grouping so the dump reads naturally.
-const std::vector<std::string>& known_keys() {
-    static const std::vector<std::string> ks = {
-        "vpn.remote.host",
-        "vpn.remote.port",
-        "vpn.remote.proto",
-        "vpn.cert.path",
-        "vpn.key.path",
-        "vpn.ca.path",
-        "vpn.cipher",
-        "vpn.dev",
-        "vpn.mgmt.port",
-        "vpn.state",
-        "vpn.assigned.ip",
-        "vpn.assigned.gateway",
-        "vpn.assigned.netmask",
-        "vpn.assigned.dns",
-        "vpn.pid",
-        "vpn.exit_code",
-    };
-    return ks;
+/// Same idea for an optional<uint32_t> — into a thread-local buffer
+/// so the format spec stays %C (no %u juggling) and the caller can
+/// keep one dispatch path.
+const char* show(const std::optional<std::uint32_t>& v) {
+    static thread_local char buf[24];
+    if (!v.has_value()) return "(unset)";
+    std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(*v));
+    return buf;
 }
 
 } // namespace
 
 Status v0_dump_vpn_keys(const std::string& socketPath) {
-    data_store::Client cli;
-    auto cs = cli.connect(socketPath);
-    if (!cs.ok) {
-        ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [ovpn:%t] %M %N:%l data-store connect "
-                            "failed: %C\n"),
-                   cs.err.c_str()));
+    // D3 upgrade: replace the bare Client::get with a DsBridge, which
+    // primes the snapshot + registers a watch (so any concurrent
+    // ds-cli mutation surfaces while the dump is in flight — handy
+    // for live operator inspection).
+    DsBridge ds(socketPath);
+    if (!ds.connected()) {
+        // DsBridge already logged the connect-failure reason; just
+        // surface a Status the caller can return as a non-zero exit.
         Status s;
-        s.ok = false;
-        s.code = cs.code;
-        s.err = cs.err;
-        return s;
-    }
-
-    std::vector<data_store::Client::GetResult> got;
-    auto gs = cli.get(known_keys(), got);
-    if (!gs.ok) {
-        ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [ovpn:%t] %M %N:%l get(vpn.*) failed: %C\n"),
-                   gs.err.c_str()));
-        Status s;
-        s.ok = false;
-        s.code = gs.code;
-        s.err = gs.err;
+        s.ok   = false;
+        s.code = 1;
+        s.err  = "data-store connect failed";
         return s;
     }
 
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [ovpn:%t] %M %N:%l vpn.* snapshot "
-                        "(%u keys) from %C:\n"),
-               static_cast<unsigned>(got.size()),
-               socketPath.empty() ? "(default socket)" : socketPath.c_str()));
-    for (const auto& r : got) {
-        if (!r.has_value) {
-            ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [ovpn:%t] %M %N:%l   %C = <unset>\n"),
-                       r.key.c_str()));
-        } else {
-            ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [ovpn:%t] %M %N:%l   %C = %C\n"),
-                       r.key.c_str(), value_to_display(r.value).c_str()));
+               ACE_TEXT("%D [ovpn:%t] %M %N:%l vpn.* snapshot from %C:\n"),
+               ds.socket_path().c_str()));
+
+    // Read keys — accessor-by-accessor so the variant unwrap (and
+    // schema-default application) happens in one place per key.
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ovpn:%t] %M %N:%l   vpn.remote.host  = %C\n"), show(ds.remote_host())));
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ovpn:%t] %M %N:%l   vpn.remote.port  = %C\n"), show(ds.remote_port())));
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ovpn:%t] %M %N:%l   vpn.remote.proto = %C\n"), show(ds.remote_proto())));
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ovpn:%t] %M %N:%l   vpn.cert.path    = %C\n"), show(ds.cert_path())));
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ovpn:%t] %M %N:%l   vpn.key.path     = %C\n"), show(ds.key_path())));
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ovpn:%t] %M %N:%l   vpn.ca.path      = %C\n"), show(ds.ca_path())));
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ovpn:%t] %M %N:%l   vpn.cipher       = %C\n"), show(ds.cipher())));
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ovpn:%t] %M %N:%l   vpn.dev          = %C\n"), show(ds.dev())));
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ovpn:%t] %M %N:%l   vpn.mgmt.port    = %C\n"), show(ds.mgmt_port())));
+
+    // Required-key gate: D6's lifecycle will refuse to spawn openvpn
+    // here. For v0 we just log so operators can see which keys are
+    // still missing as they bring up a fresh deployment.
+    if (auto missing = ds.missing_required()) {
+        std::ostringstream joined;
+        for (std::size_t i = 0; i < missing->size(); ++i) {
+            if (i) joined << ", ";
+            joined << (*missing)[i];
         }
+        ACE_DEBUG((LM_WARNING,
+                   ACE_TEXT("%D [ovpn:%t] %M %N:%l required keys missing: "
+                            "%C — daemon mode (D6) will refuse to start\n"),
+                   joined.str().c_str()));
+    } else {
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D [ovpn:%t] %M %N:%l all required keys "
+                            "present; ready for D6 lifecycle\n")));
     }
+
     return {};
 }
 
