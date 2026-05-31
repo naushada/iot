@@ -292,6 +292,18 @@ struct ClientPlumbing {
     std::shared_ptr<::lwm2m::DmClient>               dm;
     std::shared_ptr<::lwm2m::bootstrap::Client>      bs;
     std::shared_ptr<::lwm2m::RegistrationClient>     reg;
+
+    /// FUP-DS-11 — DM server URI rebind mailbox shared between the
+    /// data-store listener thread (writer) and the reactor tick
+    /// (reader/consumer). Mutex-guarded because std::string + uint16_t
+    /// aren't lock-free together.
+    struct Rebind {
+        std::mutex     mtx;
+        bool           pending = false;
+        std::string    host;
+        std::uint16_t  port = 0;
+    };
+    std::shared_ptr<Rebind>                          rebind;
 };
 
 ClientPlumbing wire_client(std::shared_ptr<App>& app,
@@ -362,12 +374,20 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         tx_via(*a, payload, ::UDPAdapter::ServiceType_t::LwM2MClient);
     });
 
+    // FUP-DS-11 — DM server URI rebind mailbox. Listener thread fills
+    // it from a Key::ServerUri change; reactor tick consumes it once
+    // state is cleanly Unregistered (so the Deregister to the old
+    // server has been ack'd), swaps the LwM2MClient peer, then the
+    // existing Unregistered branch sends Register to the new peer.
+    auto rebind = std::make_shared<ClientPlumbing::Rebind>();
+    plumb.rebind = rebind;
+
     // 1 Hz ticker: drives Update emission + Observe pmax + (TODO) initial
     // Register once bootstrap completes.
     std::weak_ptr<::lwm2m::RegistrationClient> wreg = plumb.reg;
     std::weak_ptr<::lwm2m::DmClient>           wdm  = plumb.dm;
     std::weak_ptr<App>                         wapp = app;
-    app->udpAdapter()->on_tick_client([wreg, wdm, wapp]() {
+    app->udpAdapter()->on_tick_client([wreg, wdm, wapp, rebind]() {
         auto reg = wreg.lock();
         auto dm  = wdm.lock();
         auto a   = wapp.lock();
@@ -376,13 +396,35 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         const auto svc = ::UDPAdapter::ServiceType_t::LwM2MClient;
         const auto now = std::chrono::steady_clock::now();
 
+        // FUP-DS-11 — if a rebind is queued and we're between
+        // registrations, swap the LwM2MClient peer FIRST so the next
+        // Register goes to the new server. Must run before the
+        // Unregistered branch below.
+        if (reg->state() == ::lwm2m::RegistrationState::Unregistered) {
+            std::lock_guard<std::mutex> g(rebind->mtx);
+            if (rebind->pending) {
+                for (auto& [type, ctx] : a->udpAdapter()->services()) {
+                    if (type != ::UDPAdapter::ServiceType_t::LwM2MClient) continue;
+                    ctx->peerHost(rebind->host);
+                    ctx->peerPort(rebind->port);
+                }
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D [iot:%t] %M %N:%l swapped DM peer to "
+                                    "%C:%u for next Register\n"),
+                           rebind->host.c_str(),
+                           static_cast<unsigned>(rebind->port)));
+                rebind->pending = false;
+            }
+        }
+
         // L9 fallback (Leshan interop) — if we never went through
         // Bootstrap (e.g. the server is a plain LwM2M DM server with no
         // BS account for us), fire the initial Register on the first
-        // tick after startup. Also the second leg of FUP-DS-10: after
-        // a triggered Deregister completes, state returns to
+        // tick after startup. Also the second leg of FUP-DS-10/11:
+        // after a triggered Deregister completes, state returns to
         // Unregistered and this branch sends a fresh Register with
-        // the new endpoint (via RegistrationClient::endpoint()).
+        // the new endpoint (via RegistrationClient::endpoint()) and/or
+        // to the freshly-swapped peer above.
         if (reg->state() == ::lwm2m::RegistrationState::Unregistered) {
             std::cout << "[lwm2m] no bootstrap; sending Register directly\n";
             auto payload = reg->build_register_request(
@@ -555,17 +597,21 @@ int main(std::int32_t argc, char *argv[]) {
         wire_server(app, configDir, ds);
     }
 
-    // FUP-DS-9 / FUP-DS-10 — apply hot-reloaded values to the live
-    // LwM2M FSM. `iot.lifetime` lands lock-free; `iot.endpoint` raises
-    // the re-register flag which the 1Hz tick consumes by sending
-    // Deregister → on 2.02 the state goes Unregistered → the tick's
-    // existing Unregistered branch sends a fresh Register with the
-    // new endpoint via RegistrationClient::endpoint().
-    // server.uri is still log-only — re-bind needs UDP/DTLS teardown
-    // tracked separately (FUP-DS-11).
+    // FUP-DS-9 / FUP-DS-10 / FUP-DS-11 — apply hot-reloaded values to
+    // the live LwM2M FSM.
+    //   * iot.lifetime   — lock-free atomic, next Update tick uses it
+    //   * iot.endpoint   — flips pending_reregister, reactor tick fires
+    //                      Deregister → Unregistered → Register cycle
+    //   * iot.server.uri — fills the rebind mailbox + flips
+    //                      pending_reregister; reactor tick swaps the
+    //                      DM peer after Unregistered, then Register
+    //                      goes to the new server. Plain CoAP only;
+    //                      CoAPs requires DTLS teardown + reconnect
+    //                      tracked separately if/when needed.
     if (clientPlumbing.reg) {
-        std::weak_ptr<::lwm2m::RegistrationClient> wreg = clientPlumbing.reg;
-        ds.on_change([wreg, &ds](iot::DsConfig::Key k) {
+        std::weak_ptr<::lwm2m::RegistrationClient>      wreg = clientPlumbing.reg;
+        std::shared_ptr<ClientPlumbing::Rebind>         rebind = clientPlumbing.rebind;
+        ds.on_change([wreg, rebind, &ds](iot::DsConfig::Key k) {
             auto reg = wreg.lock();
             if (!reg) return;
             if (k == iot::DsConfig::Key::Lifetime) {
@@ -587,6 +633,43 @@ int main(std::int32_t argc, char *argv[]) {
                                     "iot.endpoint=%C — re-register cycle "
                                     "queued for next 1Hz tick\n"),
                            v->c_str()));
+            } else if (k == iot::DsConfig::Key::ServerUri && rebind) {
+                auto v = ds.server_uri();
+                if (!v) return;
+                UDPAdapter::Scheme_t sc{};
+                std::string h;
+                std::uint16_t p = 0;
+                parsePeerOption(*v, sc, h, p);
+                if (h.empty() || p == 0) {
+                    ACE_ERROR((LM_WARNING,
+                               ACE_TEXT("%D [iot:%t] %M %N:%l iot.server.uri "
+                                        "'%C' failed to parse — rebind skipped\n"),
+                               v->c_str()));
+                    return;
+                }
+                if (sc == UDPAdapter::Scheme_t::CoAPs) {
+                    ACE_ERROR((LM_WARNING,
+                               ACE_TEXT("%D [iot:%t] %M %N:%l iot.server.uri "
+                                        "scheme=coaps live rebind not yet "
+                                        "supported (needs DTLS teardown); "
+                                        "applying peer change only — next "
+                                        "Register will still use stale DTLS "
+                                        "session\n")));
+                }
+                {
+                    std::lock_guard<std::mutex> g(rebind->mtx);
+                    rebind->pending = true;
+                    rebind->host    = h;
+                    rebind->port    = p;
+                }
+                reg->request_reregister();
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D [iot:%t] %M %N:%l applied "
+                                    "iot.server.uri=%C — rebind to %C:%u "
+                                    "queued for next 1Hz tick (after "
+                                    "Deregister to old server completes)\n"),
+                           v->c_str(), h.c_str(),
+                           static_cast<unsigned>(p)));
             }
         });
     }
