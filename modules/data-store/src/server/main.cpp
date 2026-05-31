@@ -58,23 +58,25 @@ int main(int argc, char** argv) {
     if (storePath.empty())  storePath = data_store::proto::kDefaultStorePath;
 
     std::string schemaDir = arg_value(argc, argv, "ds-schema-dir");
+    if (schemaDir.empty()) schemaDir = data_store::proto::kDefaultSchemaDir;
 
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [DS:%t] %M %N:%l socket=%C store=%C schemas=%C\n"),
                socketPath.c_str(),
                storePath.c_str(),
-               schemaDir.empty() ? "(none)" : schemaDir.c_str()));
+               schemaDir.c_str()));
 
-    // Schema (optional) — load every *.lua under ds-schema-dir/.
-    // Empty dir or missing files are tolerated (no validation kicks in).
+    // Schema (optional) — load every *.lua under ds-schema-dir/. A
+    // missing directory loads zero keys and the daemon still boots —
+    // important on dev machines where /etc/iot/ds-schemas/ doesn't
+    // exist (REQ-DS-014 keeps validation a passthrough when no schema
+    // covers a key).
     auto schema = std::make_shared<data_store::server::SchemaRegistry>();
-    if (!schemaDir.empty()) {
-        auto n = schema->load_directory(schemaDir);
-        ACE_DEBUG((LM_INFO,
-                   ACE_TEXT("%D [DS:%t] %M %N:%l loaded %u schema key(s) "
-                            "from %C\n"),
-                   static_cast<unsigned>(n), schemaDir.c_str()));
-    }
+    auto n = schema->load_directory(schemaDir);
+    ACE_DEBUG((LM_INFO,
+               ACE_TEXT("%D [DS:%t] %M %N:%l loaded %u schema key(s) "
+                        "from %C\n"),
+               static_cast<unsigned>(n), schemaDir.c_str()));
 
     auto store = std::make_shared<data_store::server::DataStore>();
 

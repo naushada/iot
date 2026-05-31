@@ -433,7 +433,84 @@ config struct and signals the rest of the app to re-read.
 
 ---
 
-## 11. Testing tips
+## 11. Deploying a schema
+
+Apps that publish well-known keys (like the iot binary's `iot.*`
+namespace) ship a Lua schema file so ds-server can validate types and
+ranges at the source — the bad value is rejected at `set` time, not
+at app startup three days later when somebody finally reads it.
+
+### Default schema directory
+
+ds-server auto-loads `*.lua` under `/etc/iot/ds-schemas/` at boot.
+Override with `ds-schema-dir=PATH` on the CLI. A missing directory
+is silently treated as "no schemas" so dev machines still boot.
+
+Packaging (handled by the cmake `install` rule):
+
+```
+modules/data-store/schemas/iot.lua  →  /etc/iot/ds-schemas/iot.lua
+```
+
+Drop additional `*.lua` siblings for other apps; a duplicate key
+across files logs a warning and last-loaded wins.
+
+### Schema file shape
+
+```lua
+-- /etc/iot/ds-schemas/iot.lua  (canonical iot.* schema)
+return {
+  namespace = "iot",       -- informational only
+  keys = {
+    ["iot.lifetime"]   = { type = "integer", default = 86400,
+                           min = 0, max = 2592000 },
+    ["iot.endpoint"]   = { type = "string", default = "urn:dev:client-1" },
+    ["iot.server.uri"] = { type = "string" },   -- no default on purpose
+    ["iot.observable"] = { type = "boolean", default = true },
+  },
+}
+```
+
+Supported `type` values: `string`, `integer`, `float`, `boolean`,
+`opaque` (treated as `string`). `min`/`max` are integer-only.
+
+### Rejection in practice
+
+```sh
+$ ds-cli set iot.lifetime -1
+[ds-cli] set: schema(iot.lifetime): -1 below min 0
+
+$ ds-cli set iot.lifetime 99999999
+[ds-cli] set: schema(iot.lifetime): 99999999 above max 2592000
+
+$ ds-cli set iot.endpoint 42
+[ds-cli] set: schema(iot.endpoint): expected string, got 42
+
+$ ds-cli set iot.observable 99
+[ds-cli] set: schema(iot.observable): expected boolean, got 99
+```
+
+On the wire each of these is one EMP frame carrying
+`Status::SchemaRejected` (`0x8004`) with `body = {"err":"..."}`. From
+C++ the failure surfaces as `Status{ok=false, code=0x8004,
+err="schema(...): …"}`.
+
+### Keys not in the schema
+
+Schemas are **opt-in per key**. A `set` for a key not in any loaded
+schema passes through unchanged — useful for application-private
+namespaces that don't need server-side validation.
+
+### When to omit `default`
+
+If your application has its own fallback that depends on absence
+signalling, leave `default` off. The iot binary's `iot.server.uri`
+case: absence falls through to the security-object `.lua` config
+file; declaring a default would shadow that fallback for every run.
+
+---
+
+## 12. Testing tips
 
 - **Run ds-server out-of-process in your integration tests** — spawn
   it as a subprocess pointing at a per-test `mkdtemp` socket. That's
@@ -450,7 +527,7 @@ config struct and signals the rest of the app to re-read.
 
 ---
 
-## 12. Where to look next
+## 13. Where to look next
 
 - [protocol.md](protocol.md) — the wire-level EMP framing this library
   speaks.
