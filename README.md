@@ -11,7 +11,7 @@ One binary, `lwm2m`, plays either role:
 | `server` | `local=` Bootstrap port + `:5683` DM port   | LwM2M Server + Bootstrap-Server |
 | `client` | `local=` LwM2M Client port                  | LwM2M Client (device)        |
 
-## Status (2026-05-29)
+## Status (2026-05-31)
 
 | Phase | Closes (RDD §6) | State |
 |------:|-----------------|-------|
@@ -24,6 +24,8 @@ One binary, `lwm2m`, plays either role:
 | L7 | Observe / Notify + threshold engine (D4 NON-default / CON-on-demand) | ✅ |
 | L8 | Canonical objects + Linux platform readers + JSON-backed Device | ✅ |
 | L9 | App-level wiring + Leshan interop harness + first pcap pass | ✅ |
+| L10 | Data-store: typed values (variant), EMP framing, schema, live watch + hot-apply for `iot.{endpoint, lifetime, server.uri}` | ✅ |
+| L11 | Packaging: systemd units, GNUInstallDirs install rules, OCI runtime image, end-to-end smoke, [`DEPLOY.md`](DEPLOY.md) | ✅ |
 
 All six binding decisions (D1–D6) are recorded in
 [`apps/docs/lwm2m-rdd.md`](apps/docs/lwm2m-rdd.md#11-decisions-log) and
@@ -31,21 +33,23 @@ mirrored in [`apps/docs/lwm2m-design.md`](apps/docs/lwm2m-design.md#12-decisions
 
 ## Build
 
-The supported build path is the container image. The local (non-container)
-build needs ACE_TAO 7.0.0 at `/usr/local/ACE_TAO-7.0.0`, OpenSSL 3.1.1,
-mongo-cxx-driver v3.6, tinydtls (vendored under `apps/3rdparty/tinydtls`),
-and `nlohmann/json` (vendored under `apps/3rdparty/json`).
+Two paths land everything (`lwm2m` + `ds-server` + `ds-cli` +
+`libdatastore_client.a` + tests):
 
-### Container (podman or docker)
+- **Dev image** (`docker/Dockerfile` → `naushada/iot:latest`) — fat
+  build environment with ACE_TAO 7.0.0, OpenSSL 3.1.1, mongo-c/cxx,
+  tinydtls, gtest. Use this for compiling and running tests.
+- **Runtime image** (`packaging/Containerfile` → `iot:l11`) — thin
+  multi-stage image for deployment. ~119 MB. See
+  [`packaging/README.md`](packaging/README.md).
+
+For a full deploy walkthrough (container + bare-metal paths +
+operator cookbook), see [`DEPLOY.md`](DEPLOY.md).
+
+### Dev image (podman or docker)
 
 ```sh
 podman build -t naushada/iot:latest -f docker/Dockerfile .
-```
-
-To pin a specific commit (useful for cache busting between rebuilds):
-
-```sh
-podman build --build-arg GIT_REF=<sha> -t naushada/iot:latest -f docker/Dockerfile .
 ```
 
 The image:
@@ -56,14 +60,26 @@ The image:
 - Steps 12–13 clone googletest + the project, build tinydtls via
   autoconf, then `cmake .. && make` for the `lwm2m` + `lwm2m_test`
   targets.
-- The binaries land at `/opt/app/lwm2m` and `/opt/app/lwm2m_test`.
 
-### Local
+### Local (no container)
+
+Needs the same deps installed on the host:
 
 ```sh
 cd apps/3rdparty/tinydtls && autoconf && autoheader && ./configure && make
 cd ../.. && mkdir -p build && cd build && cmake .. && make
 ```
+
+For a packageable install:
+
+```sh
+cmake -B build -DCMAKE_INSTALL_PREFIX=/usr
+make -C build -j"$(nproc)"
+make -C build install DESTDIR=/tmp/staging   # or sudo make install for /
+```
+
+See [`DEPLOY.md`](DEPLOY.md) for the resulting layout + systemd
+integration.
 
 ## Quick-start
 
@@ -142,26 +158,50 @@ to be built from source. See `apps/docs/leshan-interop.md` §2.
 ## Layout
 
 ```
-apps/
-├── inc/           public headers (LwM2M, codecs, registration / bootstrap / observe)
-├── src/           implementation files
-├── test/          GoogleTest suites
-├── config/        JSON config for Security (OID 0), Server (OID 1), Device (OID 3)
-├── 3rdparty/      vendored tinydtls + nlohmann::json
-├── docs/          design + RDD + interop docs
-│   ├── architecture.md       pre- and post-L9 layout
-│   ├── ace-refactor.md       I/O design
-│   ├── lwm2m-design.md       module map + state machines + decisions
-│   ├── lwm2m-rdd.md          requirements catalogue + traceability + defects
-│   └── leshan-interop.md     L9 interop runbook
+apps/                          LwM2M client + server binary
+├── inc/                       public headers (LwM2M, codecs, registration / bootstrap / observe / DsConfig)
+├── src/                       implementation files (+ cli/ for the REPL)
+├── test/                      GoogleTest suites (154 tests)
+├── config/                    Lua templates for Security/Server/Device/...
+├── 3rdparty/                  vendored tinydtls + nlohmann::json
+├── docs/
+│   ├── architecture.md        post-L11 layout
+│   ├── ace-refactor.md        I/O refactor history
+│   ├── cli.md                 REPL commands
+│   ├── lwm2m-design.md        module map + FSMs + decisions
+│   ├── lwm2m-rdd.md           requirements catalogue + traceability
+│   └── leshan-interop.md      L9 interop runbook
 └── CMakeLists.txt
 
+modules/
+└── data-store/                AF_UNIX KV store (ds-server + ds-cli + libdatastore_client.a)
+    ├── inc/data_store/        public client headers (POSIX-clean)
+    ├── src/                   server + client + cli + proto
+    ├── test/                  39 tests (proto framing, schema, persistence, watch)
+    ├── schemas/iot.lua        canonical iot.* schema (installed to /etc/iot/ds-schemas/)
+    └── docs/
+        ├── design.md          design + history
+        ├── protocol.md        EMP wire spec + opcodes + ds-cli examples
+        ├── client_api.md      libdatastore_client integration guide
+        └── tdd.md             D1–D10 phase plan + closures
+
+packaging/                     L11 deploy artefacts
+├── systemd/                   iot-{ds,lwm2m-client,lwm2m-server}.service + iot.conf (tmpfiles.d)
+├── etc-iot/                   lwm2m-{client,server}.env templates
+├── Containerfile              multi-stage OCI runtime build (~119 MB)
+├── iot-entrypoint.sh          IOT_ROLE dispatcher
+└── README.md                  packaging internals + size budget
+
 docker/
-├── Dockerfile
-└── docker-compose.leshan.yml four-service compose harness
+├── Dockerfile                 dev build image (naushada/iot:latest)
+└── docker-compose.leshan.yml  Leshan interop harness
 
 log/
-└── L9/            pcap captures + interop run scripts
+├── L9/                        pcap captures + interop run scripts
+├── L10/                       data-store phase closure + smokes
+└── L11/                       packaging phase plan + e2e smoke
+
+DEPLOY.md                      top-level deploy walkthrough (container + bare metal)
 ```
 
 ## Decisions (D1–D6)
@@ -181,15 +221,20 @@ Full rationale: [`apps/docs/lwm2m-rdd.md`](apps/docs/lwm2m-rdd.md#11-decisions-l
 
 ## Known follow-ups
 
-- **Wire FSM-level ACK handling** — Acknowledgement-typed inbound frames
-  are currently short-circuited at the top of
-  `CoAPAdapter::processRequest` to suppress the wire-spurious echo. The
-  proper consumer (`RegistrationClient::on_response`, `DmClient` response
-  paths) needs to be wired in.
+L10 / L11 leftovers (data-store + packaging):
+
+- **FUP-DS-1** — Profile the persistor's fsync cost under load. Move to
+  a dedicated ACE_Task worker if it shows up in CoAP latency.
+- **FUP-DS-12** — Live CoAPs DTLS rebind on `iot.server.uri` change.
+  Today the peer is swapped but the DTLS session isn't re-handshaked.
+  Opens only if a CoAPs deployment surfaces.
+- **FUP-L11-1** — OCI image size shrink (119 MB → < 100 MB target).
+  Routes in [`packaging/README.md`](packaging/README.md) §"Image size".
+
+Older items still open from L9:
+
 - **RegistryMirror activation** — the worker is built but not started by
   `main.cpp` because the Mongo schema PR is pending.
 - **Leshan client-side interop** — needs the `leshan-client-demo` JAR
-  built from source; no canonical image on Docker Hub.
-
-See [`apps/docs/leshan-interop.md`](apps/docs/leshan-interop.md) §8 for
-the full follow-up list.
+  built from source; no canonical image on Docker Hub. See
+  [`apps/docs/leshan-interop.md`](apps/docs/leshan-interop.md) §8.
