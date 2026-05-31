@@ -35,7 +35,8 @@ add_library(openvpn_client_lib STATIC
     src/main_impl.cpp
     src/ds_bridge.cpp
     src/mgmt_protocol.cpp
-    src/process.cpp)
+    src/process.cpp
+    src/lifecycle.cpp)
 
 target_include_directories(openvpn_client_lib PUBLIC src)
 
@@ -58,7 +59,8 @@ if(BUILD_OPENVPN_CLIENT_TESTS)
     add_executable(openvpn-client-tests
         test/ds_bridge_test.cpp
         test/mgmt_protocol_test.cpp
-        test/process_test.cpp)
+        test/process_test.cpp
+        test/lifecycle_test.cpp)
 
     target_link_libraries(openvpn-client-tests
         openvpn_client_lib
