@@ -1,8 +1,11 @@
-# IoT LwM2M Stack — Current Architecture
+# IoT LwM2M Stack — Architecture
 
-Status: **as-implemented snapshot** (pre-ACE refactor). This document captures
-the codebase as it stands so we have a fixed baseline to compare against
-during the ACE refactor and the LwM2M design work that follows.
+> **Status (2026-05-31).** §1–§12 capture the *pre-ACE-refactor* baseline
+> from the early phases of the project — kept as historical context.
+> §13 onward documents the *current* shape after L9 (LwM2M wiring) and
+> L10 (data-store integration) landed. §14 covers L11 packaging. When
+> the current behaviour diverges from §1–§12, the later sections are
+> authoritative.
 
 ## 1. What the binary does
 
@@ -308,30 +311,87 @@ six binding decisions (D1 spec version, D2 short-server-id keying,
 D3 registry storage, D4 notify transport, D5 push plane, D6 device
 backing).
 
-## Data-store module
+## 14. Data-store integration (L10) + Packaging (L11)
+
+### Data-store module (L10)
 
 Sibling at `modules/data-store/`. A standalone persistent
 key-value store delivered as three targets:
 
-- `ds-server` — AF_UNIX daemon. ACE reactor on the main thread, pool
-  of 5 `ACE_Task<ACE_MT_SYNCH>` workers (xpmile MicroService shape)
-  draining work via `getq/putq`. Backed by a Lua chunk on disk
-  (`return { schema_version = 1, data = {...} }`) with write-through
-  on every set/remove via temp + fsync + rename.
+- `ds-server` — AF_UNIX daemon. ACE reactor accepts; pool of 5
+  `ACE_Task<ACE_MT_SYNCH>` workers (xpmile MicroService shape) drains
+  per-session work via `getq/putq`. Backed by a Lua chunk on disk
+  (`return { schema_version = 2, data = {...} }`) with write-through
+  on every set/remove via temp + fsync + rename. Auto-loads
+  `/etc/iot/ds-schemas/*.lua` for type + range validation at set time.
 - `libdatastore_client.a` — POSIX-clean public header (pimpl over
   ACE internally). Apps link this and talk over the unix socket;
   there is **no in-process accessor** — clean blast-radius
   separation between iot and the store.
-- `ds-cli` — operator debug client, supports
-  `welcome / set / get / watch / unwatch` subcommands.
+- `ds-cli` — operator debug client: `set / get / watch / unwatch`.
 
-Wire protocol is line-delimited JSON
-(`{"op":"set","keys":[...],"id":N}` / `{"ok":true,...}` /
-`{"ev":"changed","k":"...","v":"...","prev":...}`); per-key watch
-fan-out is dispatched cross-Worker via the same `WorkMsg` queue used
-for requests, so the only socket writer is always the session's
-owning Worker — no socket locking anywhere.
+**Wire** is binary EMP framing (Mihini-style 8-byte big-endian header
++ JSON payload), not line-delimited JSON. Five opcodes —
+`Set / Get / RegisterWatch / RemoveWatch / NotifyEvent` — with a
+2-byte status prefix on every response. Push notifications use a
+distinct `type` bit so the listener thread can demux them without
+reqID correlation. Spec: [`modules/data-store/docs/protocol.md`](../../modules/data-store/docs/protocol.md).
 
-Docs: [`modules/data-store/docs/design.md`](../../modules/data-store/docs/design.md)
-+ [`tdd.md`](../../modules/data-store/docs/tdd.md). L10 closure
-record: [`log/L10/results.md`](../../log/L10/results.md).
+**Values** are a `std::variant<monostate, string, bool, uint32, int32,
+double>` matching grace-server's `value_type`. JSON's native type
+system round-trips through `value_to_json` / `value_from_json` helpers.
+
+**Per-key watch fan-out** is dispatched cross-Worker via the same
+`WorkMsg` queue used for requests, so the only socket writer is
+always the session's owning Worker — no socket locking anywhere.
+
+### iot binary integration (L10 cont'd)
+
+The lwm2m binary holds a `DsConfig` for its process lifetime:
+
+- At startup, primes a thread-safe cache via a single `Get` of
+  `iot.endpoint`/`iot.lifetime`/`iot.server.uri`, then registers a
+  callback-style `watch` for the same keys.
+- On every NotifyEvent, the listener thread updates the cache and
+  fires per-key apply policies via `RegistrationClient` setters:
+  - `iot.lifetime` → atomic `set_lifetime` → next Update tick uses it
+  - `iot.endpoint` → `set_endpoint` flips `pending_reregister` →
+    reactor tick sends Deregister; on Unregistered the existing
+    Register branch fires with the new endpoint
+  - `iot.server.uri` → fills a `Rebind` mailbox + flips
+    `pending_reregister` → after Unregistered, reactor swaps the
+    ServiceContext peer + auto-Registers to the new server
+- DsConfig is optional: connect failures log once at LM_INFO and
+  every accessor returns nullopt → caller's compiled defaults run.
+
+Wire trace + apply policy worked out in PRs #16/#17/#18 (L10 follow-
+ups DS-9/10/11). End-to-end smoke at `log/L11/e2e-smoke.sh`.
+
+### Packaging (L11)
+
+`packaging/` lands two deploy paths off the same cmake build:
+
+- **OCI runtime image** (`packaging/Containerfile`) — multi-stage
+  build off `naushada/iot:latest`; runtime is `ubuntu:22.04` + only
+  the libs `ldd` actually demands. `iot-entrypoint.sh` dispatches on
+  `IOT_ROLE={ds,client,server}`. ~119 MB.
+- **Bare-metal install** — `make install` (GNUInstallDirs idiom)
+  drops binaries + headers + lib under `${CMAKE_INSTALL_PREFIX}`,
+  schema/configs under `/etc/iot/`, systemd units under
+  `/usr/lib/systemd/system/`, tmpfiles.d entry under
+  `/usr/lib/tmpfiles.d/`. Three units: `iot-ds.service`,
+  `iot-lwm2m-client.service`, `iot-lwm2m-server.service`. The lwm2m
+  units `After=iot-ds.service Wants=iot-ds.service` so DsConfig
+  connects on the first try.
+
+Operator-facing walkthrough: [`DEPLOY.md`](../../DEPLOY.md).
+Packaging internals + size budget: [`packaging/README.md`](../../packaging/README.md).
+Phase plan + closures: [`log/L11/plan.md`](../../log/L11/plan.md).
+
+### Related docs
+
+- [`modules/data-store/docs/design.md`](../../modules/data-store/docs/design.md) — historical design + superseded markers
+- [`modules/data-store/docs/protocol.md`](../../modules/data-store/docs/protocol.md) — current wire spec (EMP)
+- [`modules/data-store/docs/client_api.md`](../../modules/data-store/docs/client_api.md) — `libdatastore_client` application guide
+- [`log/L10/results.md`](../../log/L10/results.md) — L10 closure record
+- [`log/L11/plan.md`](../../log/L11/plan.md) — L11 packaging phase
