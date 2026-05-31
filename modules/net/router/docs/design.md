@@ -1,8 +1,9 @@
 # net-router — module design (L13)
 
-> **Status (2026-05-31):** D1 + D2 scaffold landed. D3 (DsBridge),
-> D4 (nft_rules), D5 (ip_route + iface_monitor), D6 (lifecycle +
-> e2e smoke), D7 (packaging) pending.
+> **Status (2026-05-31):** D1, D2, D3 (DsBridge), partial D4
+> (nft_rules generator), D5 (ip_route + iface_monitor) landed.
+> D6 (lifecycle + `nft -f -` apply + e2e smoke) and D7 (packaging)
+> pending.
 
 ## What this module is
 
@@ -77,14 +78,17 @@ modules/net/router/
 │   ├── main.cpp                CLI parse + entry
 │   ├── main_impl.cpp           v0 dump-net-keys (D2)
 │   ├── ds_bridge.{hpp,cpp}     net.* DsBridge — D3, pending
-│   ├── nft_rules.{hpp,cpp}     pure ruleset generator — D4, pending
-│   ├── ip_route.{hpp,cpp}      metric write wrapper — D5, pending
-│   ├── iface_monitor.{hpp,cpp} `ip link show -j` parser — D5, pending
-│   └── apply.{hpp,cpp}         `nft -f -` invoker — D5, pending
+│   ├── nft_rules.{hpp,cpp}     pure ruleset generator — D4 (partial)
+│   ├── shell.{hpp,cpp}         popen()-backed Runner abstraction — D5
+│   ├── ip_route.{hpp,cpp}      `ip route replace` metric writer — D5
+│   ├── iface_monitor.{hpp,cpp} `ip -j link/route show` parser — D5
+│   └── apply.{hpp,cpp}         `nft -f -` invoker — D6, pending
 ├── schemas/net.lua
 ├── test/
-│   └── placeholder_test.cpp    keeps net-router-tests linkable
-│                               until D3 lands ds_bridge_test.cpp
+│   ├── ds_bridge_test.cpp      D3
+│   ├── nft_rules_test.cpp      D4
+│   ├── iface_monitor_test.cpp  D5
+│   └── ip_route_test.cpp       D5
 └── docs/design.md              this file
 ```
 

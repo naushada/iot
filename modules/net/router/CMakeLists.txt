@@ -34,7 +34,10 @@ link_directories(${ACE_ROOT}/lib)
 add_library(net_router_lib STATIC
     src/main_impl.cpp
     src/ds_bridge.cpp
-    src/nft_rules.cpp)
+    src/nft_rules.cpp
+    src/shell.cpp
+    src/iface_monitor.cpp
+    src/ip_route.cpp)
 
 target_include_directories(net_router_lib PUBLIC src)
 target_link_libraries(net_router_lib
@@ -60,7 +63,9 @@ if(BUILD_NET_ROUTER_TESTS)
 
     add_executable(net-router-tests
         test/ds_bridge_test.cpp
-        test/nft_rules_test.cpp)
+        test/nft_rules_test.cpp
+        test/iface_monitor_test.cpp
+        test/ip_route_test.cpp)
 
     target_link_libraries(net-router-tests
         net_router_lib
