@@ -45,6 +45,15 @@ include_directories(${LUA_INCLUDE_DIR})
 
 include_directories(inc)
 
+# Data-store client lib — sibling module under ../modules/data-store.
+# We add it as a subdirectory so the iot binary always links the
+# in-tree libdatastore_client.a + its public headers; runtime use of
+# the ds-server daemon is still optional per ds_config.cpp.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store
+                 ${CMAKE_BINARY_DIR}/data-store)
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
+
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
 link_directories(${ACE_ROOT}/lib)
 
@@ -54,6 +63,7 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 add_executable(lwm2m ${SOURCES})
 target_link_libraries(lwm2m
                         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls/libtinydtls.a
+                        datastore_client
                         ACE
                         z
                         readline
