@@ -255,6 +255,10 @@ Each call serialises the appropriate command frame, waits up to
 `timeout_ms` for the matching response, and lifts the wire `Status`
 into the returned `Status{ok, code, err}`.
 
+For an application-developer-focused walkthrough — CMake wiring,
+typed values, callback vs pull-style watch, threading rules, and
+a worked startup pattern — see [client_api.md](client_api.md).
+
 ---
 
 ## 9. ds-cli examples
