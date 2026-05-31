@@ -58,6 +58,54 @@ podman run -d --name iot-ovpn \
                   remote VPN
 ```
 
+## Who does what on the kernel
+
+A common question: **who actually creates `tun0`, sets the IP, and
+installs the routes when a `PUSH_REPLY` arrives?**
+
+Answer: **openvpn(8), not our daemon.** This module never touches
+the kernel network state — it observes and publishes. The split:
+
+| Step                                             | Owner                | How                                              |
+|--------------------------------------------------|----------------------|--------------------------------------------------|
+| Open `/dev/net/tun`, allocate `tun0`            | openvpn(8) subprocess | `ioctl(TUNSETIFF)`                               |
+| Set IP `10.8.0.6` on `tun0`                     | openvpn(8)            | `ioctl(SIOCSIFADDR)` / netlink                   |
+| Set netmask `255.255.255.0`                     | openvpn(8)            | `ioctl(SIOCSIFNETMASK)`                          |
+| Bring interface up, install routes              | openvpn(8)            | `ioctl(SIOCSIFFLAGS)` + `RTM_NEWROUTE`           |
+| Observe what happened + publish to ds-server     | this module           | mgmt `>PUSH_REPLY:` + `>STATE:` → `DsBridge::set_assigned_*` |
+
+That's why the systemd unit ships `AmbientCapabilities=CAP_NET_ADMIN`
++ `DeviceAllow=/dev/net/tun rw` — those are openvpn(8)'s requirements,
+not ours. Our daemon could run as nobody; openvpn can't.
+
+Sequence on a fresh PUSH_REPLY:
+
+1. openvpn-server pushes `ifconfig 10.8.0.6 255.255.255.0,route-gateway 10.8.0.1,…`
+2. openvpn(8) **applies it to the kernel** (creates tun0, sets IP,
+   installs routes) — this is non-negotiable in the default config.
+3. openvpn(8) emits management lines: `>STATE:…,ASSIGN_IP,…,10.8.0.6,…`,
+   then `>PUSH_REPLY:…`, then `>STATE:…,CONNECTED,…`.
+4. Our `Lifecycle::step` parses + DsBridge writes
+   `vpn.assigned.{ip,gateway,netmask,dns}` to ds-server.
+5. Other apps observe via `ds-cli get vpn.assigned.ip` or
+   `Client::watch`.
+
+**The data store is a mirror of what openvpn already did to the
+kernel**, not the source of truth. An app reading `vpn.assigned.ip`
+out of ds-server can assume the tunnel exists with that address; if
+they want to re-verify, they can `ip addr show tun0`.
+
+### What if we wanted to own the kernel state ourselves?
+
+openvpn(8) accepts `--ifconfig-noexec --route-noexec` plus an
+`--up <script>` callback to suppress its default kernel writes and
+hand the assigned values to an external program. The external
+program would then issue the netlink commands itself — much bigger
+surface (privilege, error handling, route table conflicts) and
+moves us into the same problem space NetworkManager / systemd-networkd
+already solve. L12's scope explicitly took the smaller bet: let
+openvpn do the kernel work, we just watch.
+
 ## Why ACE (not libevent like grace-server)
 
 The rest of this repo (lwm2m, ds-server, ds-cli) all run on
