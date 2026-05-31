@@ -23,15 +23,20 @@ struct Status {
     std::string err;
 };
 
-/// v0 entry point: connect to ds-server at `socketPath` (empty →
-/// default `/var/run/iot/data_store.sock`), `get` the known vpn.*
-/// keys, dump them to stderr (ACE logging), exit. No openvpn
-/// subprocess yet — D5+D6 add it.
-///
-/// Returns Status{ok=true} on success even when a key is unset
-/// (an unset key is just absent from the output). ok=false on
-/// connect failure or wire-level error.
+/// Diagnostic mode: connect to ds-server, dump the vpn.* snapshot,
+/// exit. Useful for bring-up to confirm DsBridge sees the right
+/// values without spawning openvpn.
 Status v0_dump_vpn_keys(const std::string& socketPath);
+
+/// Full lifecycle: connect to ds-server, refuse on
+/// missing_required(), spawn openvpn(8), connect to its management
+/// socket, route STATE / PUSH_REPLY through Lifecycle::step into
+/// DsBridge writes. Quiesces on subprocess exit (or after first
+/// PUSH_REPLY if `once`). Writes `vpn.state=exited` +
+/// `vpn.exit_code=<n>` before returning.
+Status run_daemon(const std::string& socketPath,
+                  const std::string& openvpn_path = "/usr/sbin/openvpn",
+                  bool               once         = false);
 
 } // namespace openvpn_client
 

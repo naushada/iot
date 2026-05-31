@@ -5,9 +5,9 @@
 > binary via its management interface. Config in + state out flows
 > through the same `ds-server` that the lwm2m binary integrates with.
 >
-> **Status (2026-05-31):** D1 + D2 (PR #29), D3 (PR #30), D4 (PR #31),
-> D5 (PR #33) done. D6 pending. Module-layout restructure landed in
-> PR #32 (now under `modules/openvpn/client/`).
+> **Status (2026-05-31):** All D-items done. PRs #29 (D1+D2), #30 (D3),
+> #31 (D4), #33 (D5), #35 (D6). Restructure in PR #32; inc/ flatten
+> in PR #34. Module sits at `modules/openvpn/client/`.
 
 ---
 
@@ -293,7 +293,38 @@ Verify exit code is captured.
 
 ---
 
-### D6 — Main loop: glue D3 + D4 + D5; first PUSH_REPLY → ds-server
+### D6 — Main loop: glue D3 + D4 + D5; first PUSH_REPLY → ds-server ✅ (PR #35)
+
+Closed 2026-05-31. `src/lifecycle.{hpp,cpp}` lands as the pure FSM
+(named Lifecycle, not Client, to avoid file-conflict with
+inc/client.hpp's v0 API). Sinks-based design lets unit tests
+substitute callbacks without standing up DsBridge.
+
+`run_daemon()` in main_impl.cpp wires DsBridge + OpenVpnProcess +
+mgmt Parser + Lifecycle on a synchronous event loop:
+spawn openvpn → connect_mgmt (retries 100ms × 50) → recv loop with
+200ms timeout → feed Parser → step Lifecycle → on subprocess death
+or `--once` after first PUSH_REPLY, terminate + reap + write
+vpn.state=exited + vpn.exit_code.
+
+main.cpp grew flags: `--openvpn=PATH` (defaults /usr/sbin/openvpn),
+`--once` (single-cycle smoke), `--dump` (the legacy snapshot mode).
+
+7 new Lifecycle tests (37 module total): STATE normalisation,
+ASSIGN_IP IP capture, PUSH_REPLY ifconfig/gateway/DNS extraction,
+multi-DNS comma join, on_first_push_reply fires once, realistic
+boot stream final state.
+
+End-to-end smoke at `log/L12/openvpn-smoke.sh`: boots ds-server,
+seeds vpn.* required keys, spawns openvpn-client with --once
+against a FAKE openvpn (shell + nc emitting canned mgmt bytes).
+Asserts `ds-cli get vpn.assigned.ip` returns the pushed value
+(10.8.0.99). All vpn.assigned.{ip,gateway,netmask,dns} +
+vpn.state=exited round-trip end-to-end.
+
+Real openvpn(8) needs CAP_NET_ADMIN + a real server peer; the
+parser + state FSM are exhaustively unit-tested with realistic
+fixtures, so the fake-openvpn smoke is the right tradeoff for CI.
 
 **Scope.** `src/client.cpp` + `src/main.cpp`:
 
