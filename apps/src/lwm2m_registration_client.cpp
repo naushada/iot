@@ -13,7 +13,9 @@ using namespace ::lwm2m::coap;
 
 RegistrationClient::RegistrationClient(ClientConfig cfg,
                                        const ObjectStore& store)
-    : m_cfg(std::move(cfg)), m_store(store) {}
+    : m_cfg(std::move(cfg)),
+      m_lifetime(m_cfg.lifetime),
+      m_store(store) {}
 
 std::string RegistrationClient::build_register_request(std::uint16_t messageId,
                                                        const std::string& token) {
@@ -28,7 +30,7 @@ std::string RegistrationClient::build_register_request(std::uint16_t messageId,
     // Query options must be emitted in option-number order: 15 > 12 > 11.
     emit_option(ss, OPT_URI_QUERY, "ep=" + m_cfg.endpoint, prev);
     emit_option(ss, OPT_URI_QUERY,
-                "lt=" + std::to_string(m_cfg.lifetime), prev);
+                "lt=" + std::to_string(lifetime()), prev);
     emit_option(ss, OPT_URI_QUERY,
                 "lwm2m=" + m_cfg.lwm2mVersion, prev);
     emit_option(ss, OPT_URI_QUERY, "b=" + m_cfg.binding, prev);
@@ -60,7 +62,7 @@ std::string RegistrationClient::build_update_request(std::uint16_t messageId,
     emit_uri_path(ss, m_location, prev);
 
     emit_option(ss, OPT_URI_QUERY,
-                "lt=" + std::to_string(m_cfg.lifetime), prev);
+                "lt=" + std::to_string(lifetime()), prev);
     emit_option(ss, OPT_URI_QUERY, "b=" + m_cfg.binding, prev);
 
     if (withAdvertisedSet) {
@@ -146,7 +148,7 @@ bool RegistrationClient::should_send_update(
     std::chrono::steady_clock::time_point now) const {
     if (m_state != RegistrationState::Registered) return false;
     auto due = m_lastSendOrAck
-             + std::chrono::seconds(m_cfg.lifetime)
+             + std::chrono::seconds(lifetime())
              - std::chrono::seconds(m_cfg.updateMarginSeconds);
     return now >= due;
 }

@@ -109,8 +109,8 @@ DsConfig::DsConfig(std::string socketPath)
             if (!changed) return;
             ACE_DEBUG((LM_INFO,
                        ACE_TEXT("%D [iot:%t] %M %N:%l data-store key '%C' "
-                                "changed (hot-reload pending — applied at "
-                                "next op or process restart)\n"),
+                                "changed — registered on_change handlers fire "
+                                "next\n"),
                        ev.key.c_str()));
             ChangeCallback cbcopy;
             {
