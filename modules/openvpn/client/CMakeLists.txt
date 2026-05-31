@@ -30,11 +30,12 @@ link_directories(${ACE_ROOT}/lib)
 
 # Internal lib so test targets can link the same code that the
 # binary uses. D3 added ds_bridge.cpp; D4 added mgmt_protocol.cpp;
-# D5/D6 will append process.cpp + client.cpp.
+# D5 added process.cpp; D6 will append client.cpp.
 add_library(openvpn_client_lib STATIC
     src/main_impl.cpp
     src/ds_bridge.cpp
-    src/mgmt_protocol.cpp)
+    src/mgmt_protocol.cpp
+    src/process.cpp)
 
 target_include_directories(openvpn_client_lib PUBLIC src)
 
@@ -56,7 +57,8 @@ if(BUILD_OPENVPN_CLIENT_TESTS)
 
     add_executable(openvpn-client-tests
         test/ds_bridge_test.cpp
-        test/mgmt_protocol_test.cpp)
+        test/mgmt_protocol_test.cpp
+        test/process_test.cpp)
 
     target_link_libraries(openvpn-client-tests
         openvpn_client_lib

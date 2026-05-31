@@ -5,8 +5,9 @@
 > binary via its management interface. Config in + state out flows
 > through the same `ds-server` that the lwm2m binary integrates with.
 >
-> **Status (2026-05-31):** D1 + D2 (PR #29), D3 (PR #30), D4 (PR #31)
-> done. D5 + D6 pending.
+> **Status (2026-05-31):** D1 + D2 (PR #29), D3 (PR #30), D4 (PR #31),
+> D5 (PR #33) done. D6 pending. Module-layout restructure landed in
+> PR #32 (now under `modules/openvpn/client/`).
 
 ---
 
@@ -237,7 +238,27 @@ from a real openvpn mgmt session) → expected `Event` stream.
 
 ---
 
-### D5 — `ACE_Process` wrapper + lifecycle
+### D5 — `ACE_Process` wrapper + lifecycle ✅ (PR #33)
+
+Closed 2026-05-31. `src/process.{hpp,cpp}` lands with the pure
+`OpenVpnConfig` POD + `build_openvpn_config()` + `write_temp_config()`
+helpers + the `OpenVpnProcess` RAII class (spawn / spawn_openvpn /
+running / wait / terminate). Destructor SIGKILL+reaps any
+leftover child + unlinks the generated config.
+
+Two real bugs surfaced + fixed during D5:
+  - ACE_Process_Options::command_line tokenises on whitespace, so
+    `/bin/sh -c '…'` collapsed argv. Added quote_if_needed() that
+    wraps any argv element containing whitespace in `"..."`.
+  - write_temp_config used /tmp unconditionally; minimal containers
+    sometimes ship without it. Now $TMPDIR → /tmp → cwd fallback
+    chain, matching modules/data-store/test/protocol_test.cpp.
+
+9 new tests in `test/process_test.cpp` (now 30 total across the
+module): config-render directives + overrides, temp-write
+round-trip, fresh-file-per-call, /bin/sh stand-in captures exit
+code, running() reports false post-exit, terminate() kills long
+runner, destructor reaps, spawn_openvpn writes the temp config.
 
 **Scope.** `process.{hpp,cpp}`:
 
