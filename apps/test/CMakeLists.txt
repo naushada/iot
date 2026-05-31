@@ -1,17 +1,47 @@
 cmake_minimum_required(VERSION 3.16.3)
-project(lwm2m)
+project(lwm2m_test CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -Wall -Wextra")
+
+# Mirror apps/CMakeLists.txt so the sources under ../src compile with
+# the same include paths + link deps. Diverging from main caused the
+# pre-FUP-DS-8 breakage (missing nlohmann/json.hpp + ACE includes).
+if(NOT DEFINED ACE_ROOT)
+    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
+endif()
+
 find_package(GTest REQUIRED)
-find_package(Lua  REQUIRED)
+find_package(Lua REQUIRED)
+find_library(LUA_STATIC_LIB
+             NAMES liblua5.3.a liblua.a
+             PATHS /usr/lib/aarch64-linux-gnu /usr/lib/x86_64-linux-gnu
+                   /usr/lib /usr/local/lib
+             NO_DEFAULT_PATH)
+if(LUA_STATIC_LIB)
+    set(LUA_LINK_LIBS ${LUA_STATIC_LIB} dl m)
+else()
+    set(LUA_LINK_LIBS ${LUA_LIBRARIES})
+endif()
 
+include_directories(
+    ../inc
+    test
+    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json/single_include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/tinydtls
+    ${ACE_ROOT}/include
+    ${LUA_INCLUDE_DIR}
+)
 
-include_directories(../inc)
-include_directories(test)
-include_directories(${LUA_INCLUDE_DIR})
+link_directories(${ACE_ROOT}/lib)
 
-#Adding Complier flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++2a -g -Wall -Wextra")
+enable_testing()
 
-#However, the file(GLOB...) allows for wildcard additions:
+# Test sources + the minimum app-side sources they exercise. We
+# deliberately leave out src/main.cpp (its own entry point) and the
+# heavy LwM2M client/server wiring that needs UDP/DTLS/Mongo to come
+# up — those land in their own integration tests when needed.
 file(GLOB SOURCES "*.cpp"
                     "../src/coap_adapter.cpp"
                     "../src/cbor_adapter.cpp"
@@ -34,23 +64,14 @@ file(GLOB SOURCES "*.cpp"
                     "../src/lwm2m_object_stubs.cpp"
                     "../src/lua_config.cpp")
 
-enable_testing()
-
 add_executable(lwm2m_test ${SOURCES})
-target_link_libraries(lwm2m_test gtest_main)
 
-target_link_libraries(lwm2m_test gtest)
-target_link_libraries(lwm2m_test pthread)
-target_link_libraries(lwm2m_test z)
-find_library(LUA_STATIC_LIB
-             NAMES liblua5.3.a liblua.a
-             PATHS /usr/lib/aarch64-linux-gnu /usr/lib/x86_64-linux-gnu
-                   /usr/lib /usr/local/lib NO_DEFAULT_PATH)
-if(LUA_STATIC_LIB)
-    target_link_libraries(lwm2m_test ${LUA_STATIC_LIB} dl m)
-else()
-    target_link_libraries(lwm2m_test ${LUA_LIBRARIES})
-endif()
+target_link_libraries(lwm2m_test
+    GTest::gtest_main
+    GTest::gtest
+    ACE
+    pthread
+    z
+    ${LUA_LINK_LIBS})
 
-add_test(lwm2m_gtests lwm2m_test)
-gtest_discover_tests(lwm2m_test)
+add_test(NAME lwm2m_gtests COMMAND lwm2m_test)
