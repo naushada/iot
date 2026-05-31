@@ -10,7 +10,7 @@ missing=(null)
 ----- ds-cli set foo baz (triggers event) -----
 ok
 ----- watch output -----
-watching 1 key(s); count=1
+watching 1 key(s) via callback handle=1; count=1
 [event] foo = baz  (prev=bar)
 ----- ds-cli unwatch foo -----
 ok

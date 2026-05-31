@@ -225,6 +225,109 @@ Breakdown:
 - `ServerIntegration.*` (3) — welcome, 16-concurrent-sessions, socket mode
 - `Protocol.*` (3) — set+get, register+notify, unchanged-no-notify
 
+## D8 — Client listener thread + per-watch EventCallback
+
+**Closed 2026-05-31** (commit `1fb4909`, merged via PR #3).
+
+`Client::connect()` now spawns an internal listener thread that owns
+the read side of the socket. Every line is demuxed into one of three
+lanes — pending-request promises (by `id`), the pull-style event
+queue, or per-watch callbacks. Sync methods (`set`/`get`/`watch`/
+`unwatch`) keep their sync signatures from the caller's view via
+`std::promise<json>` under the hood.
+
+`watch(keys, EventCallback)` returns a `WatchHandle`; the same Client
+supports N concurrent callback registrations with overlapping or
+distinct key sets. Per-key local refcount means the wire-level
+`register`/`remove` fires only on 0→1 and N→0 transitions.
+
+### Risk gates closed
+
+| Req | Test |
+|-----|------|
+| REQ-DS-020 | `Callback.single_watch_with_callback_fires_on_event` |
+| REQ-DS-021 | `Callback.multiple_watches_with_overlapping_keys_all_fire` |
+| REQ-DS-022 | Same test — ref-counted unwatch verified by `cli.unwatch(ha)` followed by `set("shared", ...)` firing only B |
+
+### Wire evidence
+
+`log/L10/ds-smoke.txt` now shows the callback-mode line:
+
+```
+watching 1 key(s) via callback handle=1; count=1
+[event] foo = baz  (prev=bar)
+```
+
+---
+
+## D9 — Per-client Lua schema files
+
+**Closed 2026-05-31** (commit `25a4e4b`, merged via PR #3).
+
+New `ds-schema-dir=PATH` CLI flag on `ds-server`. At startup it
+loads every `*.lua` schema file in the directory into a single
+immutable `SchemaRegistry`. Each client/user owns one file; the
+`namespace` field is informational; gating is by full key name
+across all files. Duplicates log a `LM_WARNING` (last-loaded wins).
+
+Worker dispatch consults the registry:
+- set with type/range mismatch → `{ok:false, err:"schema(K): ..."}`
+- get on absent key → falls back to schema default (stringified)
+- unknown keys → passthrough (schema is opt-in)
+
+Sample schema: `modules/data-store/schemas/iot.lua`.
+
+### Risk gates closed
+
+| Req | Test |
+|-----|------|
+| REQ-DS-023 | `Schema.loads_single_file_and_indexes_keys`, `validate_set_*`, `default_for_returns_stringified_default`, `duplicate_key_across_files_last_wins`, `missing_dir_yields_empty_registry`, `validate_set_passes_unknown_keys_through` (6 tests). |
+
+### Wire evidence (manual smoke)
+
+```
+set iot.lifetime 3600   → ok
+set iot.lifetime abc    → schema(iot.lifetime): expected integer, got 'abc'
+set iot.lifetime -1     → schema(iot.lifetime): -1 below min 0
+get iot.endpoint        → urn:dev:client-1   (schema default)
+get iot.unknown         → (null)             (no schema entry, no value)
+```
+
+---
+
+## D10 — ACE logging sweep in ds-server
+
+**Closed 2026-05-31** (this commit).
+
+Server-side `std::cout`/`std::cerr` in `data_store.cpp`, `schema.cpp`,
+and `main.cpp` replaced with `ACE_DEBUG`/`ACE_ERROR` using the same
+`%D [DS:%t] %M %N:%l ...` format as the rest of the iot stack. ds-cli
+keeps its plain stdout/stderr output (CLI is the operator/script
+contract).
+
+Tests: 30/30 still green; manual ds-server stderr shows the ACE log
+format after the swap.
+
+---
+
+## Test summary (latest)
+
+```
+[==========] 30 tests from 9 test suites ran. (~950 ms total)
+[  PASSED  ] 30 tests.
+```
+
+Breakdown:
+- `Proto.*` (3) — op parse, welcome line shape
+- `DataStore.*` (5) — get/set/remove + unchanged
+- `DataStorePersist.*` (1) — set → flush → restart → restore
+- `LuaPersistor.*` (4) — load, save+load, corrupted, missing-table
+- `WorkerPool.*` (3) — size, round-robin, zero-size guard
+- `ServerIntegration.*` (3) — welcome, 16-concurrent-sessions, socket mode
+- `Protocol.*` (3) — set+get, register+notify, unchanged-no-notify
+- `Callback.*` (2) — single-callback + multi-overlapping ref-counted
+- `Schema.*` (6) — load + validate + default + duplicate-warning
+
 ## Open follow-ups (next-PR fodder)
 
 | ID         | Item                                                                                                                              |
@@ -233,3 +336,4 @@ Breakdown:
 | FUP-DS-2   | Per-session rate cap (`ds-set-rate=`) to mitigate RISK-DS-02 (a single client flooding sets).                                       |
 | FUP-DS-3   | Q1 (`remove`-implies-notify) reopened only if a consumer asks; currently no.                                                       |
 | FUP-DS-4   | Q2 (per-key max value size) — pick a cap when the first real consumer lands; today there is no enforced cap.                       |
+| FUP-DS-5   | Wire iot binary into ds-server for a real consumer (e.g., persist LwM2M observe attrs / push-plane tokens).                         |

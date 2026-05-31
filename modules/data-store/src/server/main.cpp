@@ -18,11 +18,11 @@
 #include <atomic>
 #include <csignal>
 #include <cstring>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <string_view>
 
+#include <ace/Log_Msg.h>
 #include <ace/Reactor.h>
 #include <ace/Time_Value.h>
 
@@ -59,18 +59,21 @@ int main(int argc, char** argv) {
 
     std::string schemaDir = arg_value(argc, argv, "ds-schema-dir");
 
-    std::cout << "[ds-server] socket=" << socketPath
-              << " store=" << storePath;
-    if (!schemaDir.empty()) std::cout << " schemas=" << schemaDir;
-    std::cout << "\n";
+    ACE_DEBUG((LM_INFO,
+               ACE_TEXT("%D [DS:%t] %M %N:%l socket=%C store=%C schemas=%C\n"),
+               socketPath.c_str(),
+               storePath.c_str(),
+               schemaDir.empty() ? "(none)" : schemaDir.c_str()));
 
     // Schema (optional) — load every *.lua under ds-schema-dir/.
     // Empty dir or missing files are tolerated (no validation kicks in).
     auto schema = std::make_shared<data_store::server::SchemaRegistry>();
     if (!schemaDir.empty()) {
         auto n = schema->load_directory(schemaDir);
-        std::cout << "[ds-server] loaded " << n
-                  << " schema key(s) from " << schemaDir << "\n";
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D [DS:%t] %M %N:%l loaded %u schema key(s) "
+                            "from %C\n"),
+                   static_cast<unsigned>(n), schemaDir.c_str()));
     }
 
     auto store = std::make_shared<data_store::server::DataStore>();
@@ -82,14 +85,16 @@ int main(int argc, char** argv) {
     try {
         store->load_from(persistor.load());
     } catch (const data_store::server::CorruptStoreError& e) {
-        std::cerr << "[ds-server] corrupt store at " << storePath
-                  << ": " << e.what()
-                  << " — refusing to start (exit 3)\n";
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [DS:%t] %M %N:%l corrupt store at %C: %C — "
+                            "refusing to start (exit 3)\n"),
+                   storePath.c_str(), e.what()));
         return 3;
     }
     store->set_persistor(&persistor);
-    std::cout << "[ds-server] loaded " << store->size()
-              << " key(s) from " << storePath << "\n";
+    ACE_DEBUG((LM_INFO,
+               ACE_TEXT("%D [DS:%t] %M %N:%l loaded %u key(s) from %C\n"),
+               static_cast<unsigned>(store->size()), storePath.c_str()));
 
     // Active-object worker pool — N=5 threads, round-robin. Same
     // shape as xpmile MicroService pool. Must be open()ed before the
@@ -97,14 +102,18 @@ int main(int argc, char** argv) {
     // to enqueue.
     data_store::server::WorkerPool pool(store, schema);
     if (pool.open() != 0) {
-        std::cerr << "[ds-server] worker pool open failed; exit 1\n";
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [DS:%t] %M %N:%l worker pool open failed; "
+                            "exit 1\n")));
         return 1;
     }
 
     data_store::server::Server server(store, &pool, socketPath);
 
     if (server.open() != 0) {
-        std::cerr << "[ds-server] open failed; exit 1\n";
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [DS:%t] %M %N:%l server open failed; "
+                            "exit 1\n")));
         pool.close();
         return 1;
     }
@@ -121,8 +130,10 @@ int main(int argc, char** argv) {
         if (rc < 0) {
             // -1 with errno=EINTR is normal during shutdown.
             if (errno != EINTR) {
-                std::cerr << "[ds-server] handle_events rc=" << rc
-                          << " errno=" << errno << "\n";
+                ACE_ERROR((LM_ERROR,
+                           ACE_TEXT("%D [DS:%t] %M %N:%l handle_events "
+                                    "rc=%d errno=%d\n"),
+                           rc, errno));
                 break;
             }
         }
@@ -130,6 +141,7 @@ int main(int argc, char** argv) {
 
     server.close();
     pool.close();
-    std::cout << "[ds-server] clean exit\n";
+    ACE_DEBUG((LM_INFO,
+               ACE_TEXT("%D [DS:%t] %M %N:%l clean exit\n")));
     return 0;
 }

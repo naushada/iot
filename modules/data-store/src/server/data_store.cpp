@@ -2,7 +2,7 @@
 
 #include "lua_persistor.hpp"
 
-#include <iostream>
+#include <ace/Log_Msg.h>
 
 namespace data_store::server {
 
@@ -18,7 +18,9 @@ void DataStore::flush_locked_release(
         m_persistor->save(snapshot);
     } catch (const std::exception& e) {
         // In-memory map IS updated. Log loud + carry on per design §7.
-        std::cerr << "[data-store] persist failed: " << e.what() << "\n";
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [DS:%t] %M %N:%l persist failed: %C\n"),
+                   e.what()));
     }
 }
 

@@ -366,10 +366,113 @@ directly.
 
 ---
 
-## 12. Related docs
+## 13. Client threading model (D8 — callback API)
+
+Implemented 2026-05-31 (commits `1fb4909` / `25a4e4b`).
+
+`Client::connect()` spawns an **internal listener thread** that owns
+the read side of the socket. Every '\n'-terminated line is demuxed
+into one of three lanes:
+
+| Line shape                         | Destination                                                            |
+|-----------------------------------|------------------------------------------------------------------------|
+| `{"hello":...}`                    | Welcome promise → `recv_welcome()` wakes                               |
+| `{"ev":"changed",...}`             | Pull queue (`recv_event()`) **and** every matching per-watch callback |
+| `{"ok":...,"id":...}`              | Per-request `std::promise<json>` matched by id → caller's `set/get/...` returns |
+
+Synchronous methods (`set`, `get`, `watch`, `unwatch`) keep their
+sync signatures from the caller's view: they build a request, register
+a promise in the pending-map, send the JSON line, wait on
+`std::future::wait_for(timeout)`. The listener fulfils the promise on
+response arrival. Result: the same Client is safe to drive from any
+thread for sync requests while events arrive on the listener.
+
+### Per-watch callback registry
+
+`watch(keys, EventCallback cb)` returns a `WatchHandle`. Multiple
+`watch()` calls — same Client, different key sets, different
+callbacks — all stay live. On `ev=changed` the listener iterates the
+watch table and invokes every callback whose key set contains the
+event's key.
+
+A per-key **local refcount** keeps the wire-level `register` /
+`remove` tidy:
+
+- First local watcher for a key → send `register` on the wire.
+- Subsequent local watchers for the same key → no wire traffic.
+- `unwatch(handle)` drops the handle's keys; only when a key's
+  refcount hits zero does `remove` go out on the wire.
+
+So three independent callbacks all watching `"foo"` produce exactly
+one `register {foo}` round-trip; the third `unwatch` produces the
+matching `remove`.
+
+### Pull queue still works
+
+Apps that prefer a poll-style loop call the no-callback `watch(keys)`
+overload and read from `recv_event(timeout_ms)`. The listener still
+fans events into the queue regardless of whether any callbacks are
+registered, so pull + callback styles can mix on one Client.
+
+---
+
+## 14. Per-client Lua schemas (D9)
+
+Implemented 2026-05-31 (commit `25a4e4b`).
+
+`ds-server` accepts an optional `ds-schema-dir=PATH` CLI flag. At
+startup every `*.lua` under that directory is loaded into a single
+`SchemaRegistry` (immutable after load — no locks on the read path).
+Each client/user owns one file:
+
+```lua
+-- /etc/ds-schemas/iot.lua
+return {
+  namespace = "iot",
+  keys = {
+    ["iot.lifetime"]  = { type="integer", default=86400, min=0 },
+    ["iot.endpoint"]  = { type="string",  default="urn:dev:client-1" },
+    ["iot.identity"]  = { type="opaque" },
+  },
+}
+```
+
+The `namespace` field is informational; gating is by the full key
+name across every loaded file. Duplicate keys log a WARNING via
+ACE — last-loaded wins, but operators see the collision.
+
+### Validation hooks in Worker dispatch
+
+- **set**: each `{k,v}` pair runs `schema.validate_set(k, v)`.
+  Mismatch → `{ok:false, err:"schema(K): expected …, got …"}`. The
+  request bails before touching the store, so a malformed set has
+  zero side effect on memory or disk.
+- **get**: when `DataStore::get(k)` returns `nullopt`, the worker
+  falls back to `schema.default_for(k)`. Schema defaults are
+  stringified at load time (numbers → `"42"`, booleans → `"1"`/`"0"`)
+  so they match the wire's all-strings model.
+- **Unknown keys** (no schema entry) pass through unchanged. The
+  schema is opt-in, not a whitelist.
+
+### Supported types
+
+| `type=` value | Validation                                      |
+|---------------|-------------------------------------------------|
+| `string`      | always passes (every wire value is a string)    |
+| `integer`     | parseable as `long long`; respects `min`/`max`  |
+| `float`       | parseable as `double`                           |
+| `boolean`     | one of `"0"`, `"1"`, `"true"`, `"false"`        |
+| `opaque`      | always passes (operator's responsibility)       |
+| (omitted)     | always passes — same as opaque                  |
+
+---
+
+## 15. Related docs
 
 - [`tdd.md`](tdd.md) — phase plan + tests.
 - [`../../../apps/docs/architecture.md`](../../../apps/docs/architecture.md) —
   iot-binary layout (adds a `ds-server` box once D1 lands).
 - [`../../../apps/docs/cli.md`](../../../apps/docs/cli.md) —
   config-file Lua shape we reuse for the persistor.
+- [`../../../log/L10/results.md`](../../../log/L10/results.md) — phase
+  closure record, evidence files, open follow-ups.

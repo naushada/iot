@@ -23,6 +23,7 @@
 #include <cstring>
 #include <iostream>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -104,29 +105,36 @@ int do_watch(data_store::Client& cli, const std::vector<std::string>& keys,
              int count) {
     if (keys.empty()) { usage(); return 2; }
     std::string w; cli.recv_welcome(w);
-    auto rs = cli.watch(keys);
+
+    // Use the callback API so the wire-level demo matches the
+    // production pattern: an app registers a handler and keeps going;
+    // the client's internal listener thread invokes the handler when
+    // events arrive. We sleep on the main thread until `count` events
+    // have fired (or SIGINT).
+    std::atomic<int> received{0};
+    data_store::Client::WatchHandle h = data_store::Client::kInvalidHandle;
+    auto rs = cli.watch(keys,
+        [&](const data_store::Client::Event& ev) {
+            std::cout << "[event] " << ev.key << " = " << ev.value;
+            if (ev.prev_has_value) std::cout << "  (prev=" << ev.prev << ")";
+            std::cout << "\n";
+            std::cout.flush();
+            received.fetch_add(1);
+        },
+        &h);
     if (!rs.ok) { std::cerr << "[ds-cli] watch: " << rs.err << "\n"; return 2; }
-    std::cout << "watching " << keys.size() << " key(s); count=" << count << "\n";
+    std::cout << "watching " << keys.size()
+              << " key(s) via callback handle=" << h
+              << "; count=" << count << "\n";
     std::cout.flush();
 
     ::signal(SIGINT,  on_signal);
     ::signal(SIGTERM, on_signal);
 
-    int received = 0;
-    while (!g_stop.load() && received < count) {
-        data_store::Client::Event ev;
-        auto es = cli.recv_event(ev, /*timeout_ms=*/250);
-        if (es.code == ETIMEDOUT) continue;
-        if (!es.ok) {
-            std::cerr << "[ds-cli] recv_event: " << es.err << "\n";
-            return 2;
-        }
-        std::cout << "[event] " << ev.key << " = " << ev.value;
-        if (ev.prev_has_value) std::cout << "  (prev=" << ev.prev << ")";
-        std::cout << "\n";
-        std::cout.flush();
-        ++received;
+    while (!g_stop.load() && received.load() < count) {
+        ::usleep(50 * 1000);   // 50 ms tick
     }
+    cli.unwatch(h);
     return 0;
 }
 
