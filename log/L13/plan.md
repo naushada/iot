@@ -7,7 +7,7 @@
 > via `ip route` metrics, and exposes a per-rule custom-rules
 > escape hatch via a single JSON-encoded ds-server key.
 >
-> **Status (2026-05-31):** D1 + D2 done (PR #41). D3–D7 pending.
+> **Status (2026-05-31):** D1+D2 (PR #41), D3 + partial D4 (PR #42) done. D5–D7 pending.
 
 ---
 

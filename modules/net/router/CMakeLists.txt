@@ -22,6 +22,7 @@ endif()
 include_directories(
     ${NET_ROUTER_MODULE_DIR}/inc
     ${NET_ROUTER_MODULE_DIR}/../../data-store/inc
+    ${NET_ROUTER_MODULE_DIR}/../../../apps/3rdparty/json/single_include
     ${ACE_ROOT}/include
 )
 
@@ -31,7 +32,9 @@ link_directories(${ACE_ROOT}/lib)
 # D2 ships only main_impl.cpp; D3..D6 append ds_bridge/nft_rules/
 # ip_route/iface_monitor/apply.
 add_library(net_router_lib STATIC
-    src/main_impl.cpp)
+    src/main_impl.cpp
+    src/ds_bridge.cpp
+    src/nft_rules.cpp)
 
 target_include_directories(net_router_lib PUBLIC src)
 target_link_libraries(net_router_lib
@@ -55,9 +58,9 @@ if(BUILD_NET_ROUTER_TESTS)
     find_package(GTest REQUIRED)
     enable_testing()
 
-    # D3+ will append additional test files.
     add_executable(net-router-tests
-        test/placeholder_test.cpp)
+        test/ds_bridge_test.cpp
+        test/nft_rules_test.cpp)
 
     target_link_libraries(net-router-tests
         net_router_lib
