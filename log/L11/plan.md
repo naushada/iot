@@ -5,7 +5,7 @@
 > on-disk artefacts. As each D closes, the corresponding section
 > moves into `results.md` alongside the evidence.
 >
-> **Status (drafted 2026-05-31):** D1–D6 pending.
+> **Status (2026-05-31):** D1 + D2 done (PR #23). D3–D6 pending.
 
 ---
 
@@ -57,7 +57,9 @@ that `liblua5.3-dev` needs to be on the runtime host.
 
 ## 2. D-items
 
-### D1 — systemd units
+### D1 — systemd units ✅ (PR #23)
+
+Closed 2026-05-31. cmake install rule lands in D4.
 
 **Scope.** Author and install three unit files:
 
@@ -90,7 +92,11 @@ with systemd inside (or a sysvinit-skipping `systemd-nspawn`), runs:
 
 ---
 
-### D2 — Default config layout
+### D2 — Default config layout ✅ (PR #23, partial)
+
+Closed 2026-05-31 for the parts that ship now: env files + tmpfiles.d
+fallback. The `/etc/iot/config/*.lua.example` rename moves to D4 where
+the install rules live.
 
 **Scope.** Decide + ship the on-disk tree:
 
