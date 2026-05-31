@@ -37,7 +37,9 @@ add_library(net_router_lib STATIC
     src/nft_rules.cpp
     src/shell.cpp
     src/iface_monitor.cpp
-    src/ip_route.cpp)
+    src/ip_route.cpp
+    src/apply.cpp
+    src/lifecycle.cpp)
 
 target_include_directories(net_router_lib PUBLIC src)
 target_link_libraries(net_router_lib
@@ -65,7 +67,9 @@ if(BUILD_NET_ROUTER_TESTS)
         test/ds_bridge_test.cpp
         test/nft_rules_test.cpp
         test/iface_monitor_test.cpp
-        test/ip_route_test.cpp)
+        test/ip_route_test.cpp
+        test/apply_test.cpp
+        test/lifecycle_test.cpp)
 
     target_link_libraries(net-router-tests
         net_router_lib
