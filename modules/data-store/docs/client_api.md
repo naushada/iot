@@ -334,6 +334,44 @@ pair. Internally it combines them into a 16-bit correlator so two
 opcodes can share a reqID slot in flight; you don't need to worry
 about per-call ID assignment.
 
+### 8.1 — Where bridges fit (and why they have their own mutex)
+
+`apps/src/ds_config.cpp`, `modules/openvpn/client/src/ds_bridge.cpp`,
+and `modules/net/router/src/ds_bridge.cpp` are not just typed
+wrappers — each one owns a **private snapshot cache** of the keys
+it cares about, guarded by **its own mutex** (see `m_impl->mtx` /
+`m_cacheMtx` in those files). That looks like duplicate locking,
+but the two layers protect different state:
+
+| Layer            | Mutex(es)                                          | Protects                                                   |
+|------------------|----------------------------------------------------|------------------------------------------------------------|
+| `data_store::Client` | `pending_mtx`, `events_mtx`, `watches_mtx`     | Outstanding requests, the event queue, registered watches  |
+| Per-app bridge   | one `std::mutex` per bridge                        | A `map<key, Value>` snapshot + the `on_change` callback    |
+
+The bridges exist so a daemon's hot path (LwM2M re-register tick,
+net-router poll tick, …) can call `ds.endpoint()` / `ds.target_ip()`
+synchronously — no wire round-trip, no failure if ds-server is
+briefly unreachable. Reads pull a `Value` out of the cache *under
+the bridge's mutex*, then return; downstream callers do
+`data_store::as<T>(v)` on the **local copy** with no further
+locking required (Value is a value type).
+
+Why doesn't the client subsume the cache?
+
+- Each daemon's read-key set is different. A "cached client" would
+  still need per-domain typed accessors (`endpoint()`,
+  `target_ip()`, …) on top, so the bridge layer wouldn't go away.
+- The `on_change` demux (translating "key X changed" into a
+  domain enum like `Key::IfacePriority`) is per-bridge anyway.
+- Two mutexes in two layers cost less than the API churn of pulling
+  every typed accessor into the library.
+
+If a future module needs a generic typed-and-cached read, the right
+move is a thin `data_store::CachedClient` wrapper around `Client`
+(reuse the watch + snapshot logic from any bridge as a template);
+the existing bridges can keep their hand-rolled caches in the
+meantime.
+
 ---
 
 ## 9. Error handling patterns
