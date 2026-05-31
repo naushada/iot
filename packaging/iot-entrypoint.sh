@@ -4,6 +4,8 @@
 #   IOT_ROLE=ds      → run ds-server
 #   IOT_ROLE=client  → run lwm2m role=client
 #   IOT_ROLE=server  → run lwm2m role=server
+#   IOT_ROLE=ovpn    → run openvpn-client (needs --cap-add=NET_ADMIN
+#                       --device=/dev/net/tun on the podman run)
 #
 # Per-role default args live in /etc/iot/lwm2m-*.env (sourced via
 # . , so they end up as shell vars). Operators override by:
@@ -47,13 +49,20 @@ case "${IOT_ROLE:-}" in
         # shellcheck disable=SC2086
         exec /usr/local/bin/lwm2m $LWM2M_ARGS "$@"
         ;;
+    ovpn)
+        # shellcheck disable=SC1091
+        [ -f /etc/iot/openvpn-client.env ] && . /etc/iot/openvpn-client.env
+        : "${OPENVPN_CLIENT_ARGS:?openvpn-client.env missing OPENVPN_CLIENT_ARGS}"
+        # shellcheck disable=SC2086
+        exec /usr/local/bin/openvpn-client $OPENVPN_CLIENT_ARGS "$@"
+        ;;
     "")
-        echo "iot-entrypoint: set IOT_ROLE to one of: ds | client | server" >&2
-        echo "                or invoke a binary directly: ds-cli / ds-server / lwm2m" >&2
+        echo "iot-entrypoint: set IOT_ROLE to one of: ds | client | server | ovpn" >&2
+        echo "                or invoke a binary directly: ds-cli / ds-server / lwm2m / openvpn-client / openvpn" >&2
         exit 64
         ;;
     *)
-        echo "iot-entrypoint: unknown IOT_ROLE='$IOT_ROLE' (expected ds|client|server)" >&2
+        echo "iot-entrypoint: unknown IOT_ROLE='$IOT_ROLE' (expected ds|client|server|ovpn)" >&2
         exit 64
         ;;
 esac
