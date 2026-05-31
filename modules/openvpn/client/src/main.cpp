@@ -13,7 +13,7 @@
 #include <iostream>
 #include <string>
 
-#include "openvpn_client/client.hpp"
+#include "client.hpp"
 
 namespace {
 

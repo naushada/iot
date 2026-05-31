@@ -1,4 +1,4 @@
-#include "openvpn_client/client.hpp"
+#include "client.hpp"
 
 #include "ds_bridge.hpp"
 
