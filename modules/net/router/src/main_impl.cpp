@@ -21,21 +21,21 @@ const std::vector<std::string>& known_keys() {
     static const std::vector<std::string> ks = {
         // Reads
         "net.tun.dev",
-        "net.lwm2m.target_ip",
-        "net.lwm2m.target_port",
+        "net.lwm2m.target.ip",
+        "net.lwm2m.target.port",
         "net.iface.priority",
         "net.iface.eth.name",
         "net.iface.wifi.name",
         "net.iface.cellular.name",
-        "net.custom_rules",
-        "net.poll.interval_sec",
+        "net.custom.rules",
+        "net.poll.interval.sec",
         // Writes (will be unset on first boot)
         "net.state",
         "net.tun.ip",
         "net.tun.gateway",
         "net.iface.active",
-        "net.rules.applied_count",
-        "net.last_apply_unix",
+        "net.rules.applied.count",
+        "net.last.apply.unix",
     };
     return ks;
 }
@@ -93,12 +93,12 @@ Status v0_dump_net_keys(const std::string& socketPath) {
         }
     }
 
-    // Bring-up gate: net.lwm2m.target_ip is the only required read
+    // Bring-up gate: net.lwm2m.target.ip is the only required read
     // key (the rest have schema defaults). Mirror the openvpn-client
     // missing-required diagnostic so the operator sees what to fix.
     bool target_ip_set = false;
     for (const auto& r : got) {
-        if (r.key == "net.lwm2m.target_ip" && r.has_value) {
+        if (r.key == "net.lwm2m.target.ip" && r.has_value) {
             target_ip_set = true;
             break;
         }
@@ -106,7 +106,7 @@ Status v0_dump_net_keys(const std::string& socketPath) {
     if (!target_ip_set) {
         ACE_DEBUG((LM_WARNING,
                    ACE_TEXT("%D [netr:%t] %M %N:%l required key missing: "
-                            "net.lwm2m.target_ip — daemon mode (D6) will "
+                            "net.lwm2m.target.ip — daemon mode (D6) will "
                             "refuse to start\n")));
     } else {
         ACE_DEBUG((LM_INFO,

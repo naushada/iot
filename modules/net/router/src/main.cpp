@@ -24,7 +24,7 @@ void usage() {
         "  --ds-sock=PATH  ds-server unix socket; defaults to ds-server's\n"
         "                  built-in default (/var/run/iot/data_store.sock).\n"
         "  --nft=PATH      nft(8) binary path (default: \"nft\" via $PATH).\n"
-        "  --poll=SECS     override net.poll.interval_sec (default: use ds key).\n"
+        "  --poll=SECS     override net.poll.interval.sec (default: use ds key).\n"
         "  --dump          snapshot net.* and exit (default if no mode).\n"
         "  --daemon        run the lifecycle FSM forever.\n"
         "  --help          show this and exit.\n";

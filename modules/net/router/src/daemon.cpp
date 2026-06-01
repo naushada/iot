@@ -86,7 +86,7 @@ Lifecycle::Inputs snapshot_inputs(const DsBridge&                         ds,
                               ds.custom_rules().value_or(""), &err);
         if (!err.empty()) {
             ACE_DEBUG((LM_WARNING,
-                       ACE_TEXT("%D [netr:%t] %M %N:%l net.custom_rules parse "
+                       ACE_TEXT("%D [netr:%t] %M %N:%l net.custom.rules parse "
                                 "error (keeping previous): %C\n"),
                        err.c_str()));
         }
@@ -185,7 +185,7 @@ Status run_daemon(const std::string& socketPath,
         lc.step(in);
 
         // Sleep interval: override (CLI) > ds key > 5s. Re-read every
-        // tick so an operator's `ds-cli set net.poll.interval_sec` lands
+        // tick so an operator's `ds-cli set net.poll.interval.sec` lands
         // without a restart.
         unsigned interval = poll_interval_sec_override
                           ? poll_interval_sec_override

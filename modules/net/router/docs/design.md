@@ -13,13 +13,13 @@ generates an **nftables** ruleset that DNATs inbound tunnel traffic
 to the lwm2m client, and manages outgoing-traffic interface
 priority (eth → wifi → cellular) via `ip route` metric writes.
 Operator-set custom forward/drop/accept rules flow through a single
-`net.custom_rules` ds-server key as a JSON-encoded string.
+`net.custom.rules` ds-server key as a JSON-encoded string.
 
 ```
               ┌──────────────────────────────────────┐
               │  Operator / Other apps               │
               │  ds-cli set net.lwm2m.target_ip ...  │
-              │  ds-cli set net.custom_rules ...     │
+              │  ds-cli set net.custom.rules ...     │
               └─────────────────┬────────────────────┘
                                 │ EMP over /run/iot/data_store.sock
                           ┌─────▼─────┐
@@ -62,7 +62,7 @@ An iptables fallback is FUP only if a target without nftables surfaces.
 `schemas/net.lua` (installed to `/etc/iot/ds-schemas/net.lua` by D7's
 install rule). 9 read keys + 6 write keys; the only required read
 key is `net.lwm2m.target_ip`. Custom rules ship as a JSON-encoded
-string in `net.custom_rules`; shape is validated at the JSON-parse
+string in `net.custom.rules`; shape is validated at the JSON-parse
 step in the daemon (the schema can't json-parse).
 
 See [L13 plan §2.D1](../../../../log/L13/plan.md) for the full

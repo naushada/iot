@@ -189,7 +189,7 @@ For the **net-router** unit (L13: nftables DNAT + iface priority),
 seed the only required key and enable:
 
 ```sh
-ds-cli --socket=/run/iot/data_store.sock set net.lwm2m.target_ip '"192.168.10.5"'
+ds-cli --socket=/run/iot/data_store.sock set net.lwm2m.target.ip '"192.168.10.5"'
 # Optional: rename per-class iface keys to match your host
 ds-cli --socket=/run/iot/data_store.sock set net.iface.eth.name      '"eth0"'
 ds-cli --socket=/run/iot/data_store.sock set net.iface.wifi.name     '"wlan0"'
@@ -202,8 +202,8 @@ journalctl -u iot-net-router.service -f | grep "ruleset applied\|metric\|active"
 The unit ships with `AmbientCapabilities=CAP_NET_ADMIN`; that's
 enough for `nft -f` and `ip route replace` under DynamicUser. Default
 forwarded ports are `80,443,5684` (HTTP/HTTPS + LwM2M/CoAP-over-DTLS)
-DNAT'd to `net.lwm2m.target_ip`. Override via `net.forward.ports`
-and add operator drops/forwards via the JSON `net.custom_rules`
+DNAT'd to `net.lwm2m.target.ip`. Override via `net.forward.ports`
+and add operator drops/forwards via the JSON `net.custom.rules`
 schema key (see `/etc/iot/ds-schemas/net.lua`).
 
 ### 4. Same ds-cli tuning as the container path

@@ -54,7 +54,7 @@ parse_custom_rules(const std::string& json, std::string* parse_error) {
     try {
         auto j = nlohmann::json::parse(json);
         if (!j.is_array()) {
-            if (parse_error) *parse_error = "net.custom_rules: top-level must be a JSON array";
+            if (parse_error) *parse_error = "net.custom.rules: top-level must be a JSON array";
             return {};
         }
         for (const auto& e : j) {
@@ -71,7 +71,7 @@ parse_custom_rules(const std::string& json, std::string* parse_error) {
             out.push_back(std::move(r));
         }
     } catch (const std::exception& e) {
-        if (parse_error) *parse_error = std::string("net.custom_rules: ") + e.what();
+        if (parse_error) *parse_error = std::string("net.custom.rules: ") + e.what();
         return {};
     }
     return out;

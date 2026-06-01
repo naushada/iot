@@ -18,7 +18,7 @@
 
 namespace net_router::nft {
 
-/// Operator-supplied rule (parsed from `net.custom_rules` JSON).
+/// Operator-supplied rule (parsed from `net.custom.rules` JSON).
 struct CustomRule {
     std::string action;  ///< "forward" | "drop" | "accept"
     std::string proto;   ///< "tcp" | "udp"  (lowercase)
@@ -44,7 +44,7 @@ struct State {
 /// a u16 in [1,65535] are skipped (logged by the caller if it cares).
 std::vector<std::uint16_t> parse_forward_ports(const std::string& csv);
 
-/// Parse the operator-supplied `net.custom_rules` JSON-string into
+/// Parse the operator-supplied `net.custom.rules` JSON-string into
 /// a vector of CustomRule. Returns empty vector on parse error +
 /// sets `*parse_error` (non-null) to the diagnostic. The daemon
 /// keeps the previous ruleset live on parse failure.
