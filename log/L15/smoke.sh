@@ -116,6 +116,19 @@ else
     echo "WARN wifi.assoc.ssid empty (fake-wpa id_str path is informational)" >&2
 fi
 
+# REQ-WIFI-025: wifi.scan.results MUST be non-empty JSON.
+RESULTS=$("$DS_CLI" --socket="$DS_SOCK" get wifi.scan.results 2>/dev/null \
+            | sed -n 's/^wifi\.scan\.results=//p')
+case "$RESULTS" in
+    ""|"(null)"|"[]")
+        echo "FAIL wifi.scan.results = '$RESULTS' (expected non-empty JSON)" >&2
+        PASS=0
+        ;;
+    *)
+        echo "OK wifi.scan.results = $RESULTS"
+        ;;
+esac
+
 # Write the transcript before exiting (transcript wanted regardless
 # of pass/fail so a CI failure carries the evidence).
 {
