@@ -280,6 +280,59 @@ TEST(SVC_NFR_SVC_005_multi_waiter_wakeup,
     }
 }
 
+// ─────────────────────────── REQ-SVC-007 ───────────────────────────
+// ds-server self-publishes services.ds.state="running" on boot.
+
+TEST(SVC_REQ_SVC_007_ds_publishes_state_and_uptime,
+     state_running_visible_after_boot) {
+    GateFixture f;
+    if (!f.ok()) GTEST_SKIP();
+    std::vector<ds::Client::GetResult> got;
+    auto rs = f.client().get({"services.ds.state"}, got);
+    ASSERT_TRUE(rs.ok);
+    ASSERT_EQ(1u, got.size());
+    ASSERT_TRUE(got[0].has_value);
+    auto s = ds::to_string(got[0].value);
+    ASSERT_TRUE(s.has_value());
+    EXPECT_EQ("running", *s);
+}
+
+TEST(SVC_REQ_SVC_007_ds_publishes_state_and_uptime,
+     uptime_seeded_to_zero) {
+    GateFixture f;
+    if (!f.ok()) GTEST_SKIP();
+    std::vector<ds::Client::GetResult> got;
+    auto rs = f.client().get({"services.ds.uptime.sec"}, got);
+    ASSERT_TRUE(rs.ok);
+    ASSERT_EQ(1u, got.size());
+    ASSERT_TRUE(got[0].has_value);
+    // The 60s timer hasn't fired yet for a freshly-spawned server,
+    // so the value is the seed 0. The periodic tick is verified at
+    // the smoke level (D8) since waiting 60s in a unit test is
+    // wasteful.
+    auto n = ds::to_int32(got[0].value);
+    ASSERT_TRUE(n.has_value());
+    EXPECT_EQ(0, *n);
+}
+
+// ─────────────────────────── REQ-SVC-008 ───────────────────────────
+// Set on services.ds.enable is rejected by ds-server (the key is
+// intentionally absent from services.lua; namespace-claimed-but-
+// not-declared rejection kicks in).
+
+TEST(SVC_REQ_SVC_008_ds_enable_set_rejected,
+     set_services_ds_enable_returns_schema_error) {
+    GateFixture f;
+    if (!f.ok()) GTEST_SKIP();
+    auto rs = f.client().set("services.ds.enable", true);
+    EXPECT_FALSE(rs.ok)
+        << "expected ds-server to reject services.ds.enable; rs.err='"
+        << rs.err << "'";
+    if (!rs.ok) {
+        EXPECT_NE(std::string::npos, rs.err.find("services.ds.enable"));
+    }
+}
+
 // ─────────────────────────── REQ-SVC-006 ───────────────────────────
 
 TEST(SVC_REQ_SVC_006_publish_state_no_throw_on_failure,

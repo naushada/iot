@@ -8,20 +8,25 @@
 /// Defaults come from data_store::proto::kDefaultSocketPath and
 /// kDefaultStorePath. Both are operator-overridable.
 
+#include "data_store.hpp"
 #include "lua_persistor.hpp"
 #include "schema.hpp"
 #include "server.hpp"
 #include "worker_pool.hpp"
 
 #include "data_store/proto.hpp"
+#include "data_store/value.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <string_view>
 
+#include <ace/Event_Handler.h>
 #include <ace/Log_Msg.h>
 #include <ace/Reactor.h>
 #include <ace/Time_Value.h>
@@ -34,6 +39,31 @@ void on_signal(int /*sig*/) {
     g_stop.store(true);
     ACE_Reactor::instance()->end_reactor_event_loop();
 }
+
+/// L16/D2 — periodic services.ds.uptime.sec publisher. Reactor
+/// timer fires every 60s and bumps the key directly via the
+/// in-process DataStore::set (no socket round-trip). The handler
+/// owns no resources; lifetime is tied to the main() stack.
+class UptimePublisher : public ACE_Event_Handler {
+public:
+    UptimePublisher(data_store::server::DataStore& store,
+                    std::chrono::steady_clock::time_point started)
+        : m_store(store), m_started(started) {}
+
+    int handle_timeout(const ACE_Time_Value& /*now*/,
+                       const void* /*act*/) override {
+        auto elapsed = std::chrono::steady_clock::now() - m_started;
+        auto sec = std::chrono::duration_cast<std::chrono::seconds>(elapsed);
+        std::int32_t sec_i32 = static_cast<std::int32_t>(sec.count());
+        if (sec_i32 < 0) sec_i32 = 0;
+        m_store.set("services.ds.uptime.sec", data_store::Value{sec_i32});
+        return 0;
+    }
+
+private:
+    data_store::server::DataStore&        m_store;
+    std::chrono::steady_clock::time_point m_started;
+};
 
 /// Parse `key=value` args. Reused shape from apps/src/main.cpp.
 std::string arg_value(int argc, char** argv, std::string_view key) {
@@ -120,6 +150,22 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // L16/D2 — publish services.ds.* runtime state. state is set
+    // once the server is open; uptime ticks every 60s thereafter.
+    // ds-server is the substrate so it can't gate ITSELF on
+    // services.ds.enable (services.lua omits the enable key); the
+    // state surface still exists for `ds-cli svc list` symmetry.
+    const auto started = std::chrono::steady_clock::now();
+    store->set("services.ds.state",
+               data_store::Value{std::string("running")});
+    store->set("services.ds.uptime.sec", data_store::Value{std::int32_t{0}});
+    UptimePublisher uptime(*store, started);
+    long uptime_timer_id = ACE_Reactor::instance()->schedule_timer(
+        &uptime,
+        nullptr,
+        /*delay=*/ACE_Time_Value(60),
+        /*interval=*/ACE_Time_Value(60));
+
     ::signal(SIGINT,  on_signal);
     ::signal(SIGTERM, on_signal);
     ::signal(SIGPIPE, SIG_IGN);
@@ -139,6 +185,13 @@ int main(int argc, char** argv) {
                 break;
             }
         }
+    }
+
+    // Best-effort: publish exited state before tearing down.
+    store->set("services.ds.state",
+               data_store::Value{std::string("exited")});
+    if (uptime_timer_id != -1) {
+        ACE_Reactor::instance()->cancel_timer(uptime_timer_id);
     }
 
     server.close();

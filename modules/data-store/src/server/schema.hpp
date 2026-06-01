@@ -33,6 +33,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "data_store/value.hpp"
 
@@ -77,14 +78,27 @@ public:
     /// no default (or no entry at all).
     std::optional<Value> default_for(const std::string& key) const;
 
+    /// Is the first dot-segment of `key` claimed by some loaded
+    /// schema file's `namespace="..."` declaration? Used by
+    /// validate_set to reject sets on undeclared keys when their
+    /// namespace IS owned (L16/D2 — supports the
+    /// "services.ds.enable is intentionally absent" pattern).
+    bool is_namespace_claimed(const std::string& key) const;
+
     std::size_t size() const { return m_entries.size(); }
+    std::size_t namespace_count() const { return m_namespaces.size(); }
 
 private:
     /// Parse one schema file. Throws std::runtime_error on
     /// fundamental problems; caller catches + skips.
     void load_one(const std::string& path);
 
+    /// Pull the first dot-segment out of `key` (e.g. "services.ds.enable"
+    /// -> "services"). Empty when the key has no dots.
+    static std::string first_segment(const std::string& key);
+
     std::unordered_map<std::string, SchemaEntry> m_entries;
+    std::unordered_set<std::string>              m_namespaces;
 };
 
 } // namespace data_store::server
