@@ -15,6 +15,11 @@
 #include <ostream>
 #include <string_view>
 
+#include <ace/Log_Msg.h>
+
+#include "ds_bridge.hpp"
+#include "supervisor.hpp"
+
 namespace wifi_client {
 
 namespace {
@@ -123,17 +128,32 @@ Status v0_dump_wifi_keys(const std::string& /*socketPath*/,
     return {};
 }
 
-Status run_daemon(const std::string& /*socketPath*/,
-                  const std::string& /*wpa_path*/,
-                  const std::string& /*iface*/,
-                  const std::string& /*ctrl_dir*/,
-                  bool               /*once*/) {
-    Status s;
-    s.ok   = false;
-    s.code = 75;   // EX_TEMPFAIL — feature not yet built.
-    s.err  = "wifi-client run_daemon not yet implemented (L15/D1 scaffold; "
-             "D3..D6 land DsBridge, ctrl, and the Supervisor)";
-    return s;
+Status run_daemon(const std::string& socketPath,
+                  const std::string& wpa_path,
+                  const std::string& iface,
+                  const std::string& ctrl_dir,
+                  bool               once) {
+    DsBridge ds(socketPath);
+    if (!ds.connected()) {
+        Status s; s.ok = false; s.code = 1;
+        s.err = "data-store connect failed"; return s;
+    }
+    ACE_DEBUG((LM_INFO,
+               ACE_TEXT("%D [wifi:%t] %M %N:%l starting on iface=%C "
+                        "wpa=%C ctrl_dir=%C\n"),
+               iface.c_str(), wpa_path.c_str(), ctrl_dir.c_str()));
+
+    SupervisorOptions opt;
+    opt.wpa_path  = wpa_path;
+    opt.iface     = iface;
+    opt.ctrl_dir  = ctrl_dir;
+    opt.once      = once;
+    Supervisor sup(ds, std::move(opt));
+    int rc = sup.run();
+    Status st;
+    st.ok   = (rc == 0);
+    st.code = rc;
+    return st;
 }
 
 // Test-only accessors so main_test.cpp can assert the keylist
