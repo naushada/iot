@@ -119,6 +119,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-lwm2m-server.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-openvpn-client.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-net-router.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-wifi-client.service
             DESTINATION lib/systemd/system)
 
     # tmpfiles.d fallback for hosts where RuntimeDirectory= doesn't
@@ -140,6 +141,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/lwm2m-server.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/openvpn-client.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/net-router.env
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/wifi-client.env
             DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot)
 
     # Object-resource config templates. Land each .lua as .lua.example
