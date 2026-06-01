@@ -20,6 +20,11 @@
 --   vpn.assigned.dns      - comma-joined DNS list (array variant: FUP)
 --   vpn.pid               - live openvpn subprocess pid
 --   vpn.exit_code         - last openvpn exit code (set when state=exited)
+--   vpn.gate.reason       - "ok" while running, "wan_down" while gated on
+--                           net.iface.active. Lets operators distinguish
+--                           "VPN off because no WAN" from "off because exited".
+--   vpn.bound.iface       - WAN iface this session is bound to (mirrors
+--                           net.iface.active at spawn). Empty when idle.
 --
 -- Drop this file alongside iot.lua at ds-server's `ds-schema-dir=`
 -- path (defaults to /etc/iot/ds-schemas/). ds-server auto-loads it
@@ -55,5 +60,7 @@ return {
     ["vpn.assigned.dns"]     = { type = "string" },
     ["vpn.pid"]              = { type = "integer", min = 0 },
     ["vpn.exit_code"]        = { type = "integer" },
+    ["vpn.gate.reason"]      = { type = "string" },
+    ["vpn.bound.iface"]      = { type = "string" },
   },
 }

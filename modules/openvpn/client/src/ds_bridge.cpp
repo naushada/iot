@@ -38,6 +38,12 @@ constexpr const char* kAssignedNetmask = "vpn.assigned.netmask";
 constexpr const char* kAssignedDns     = "vpn.assigned.dns";
 constexpr const char* kPid             = "vpn.pid";
 constexpr const char* kExitCode        = "vpn.exit_code";
+constexpr const char* kGateReason      = "vpn.gate.reason";
+constexpr const char* kBoundIface      = "vpn.bound.iface";
+
+/// Single key out of the net.* namespace — the WAN gate. Read-only
+/// from openvpn-client's perspective; net-router owns the write side.
+constexpr const char* kNetIfaceActive  = "net.iface.active";
 
 /// Variant→T lift with int32→uint32 promotion for non-negative ints
 /// (schema's min=0 catches the negative case at set time so this is
@@ -73,7 +79,9 @@ struct DsBridge::Impl {
     std::optional<std::string>    cipher;
     std::optional<std::string>    dev;
     std::optional<std::uint32_t>  mgmt_port;
+    std::optional<std::string>    wan_iface;
     ChangeCallback                cb;
+    WanCallback                   wan_cb;
 };
 
 // ─────────────────────── ctor / dtor ────────────────────────────────
@@ -103,6 +111,7 @@ DsBridge::DsBridge(std::string socketPath)
         kRemoteHost, kRemotePort, kRemoteProto,
         kCertPath, kKeyPath, kCaPath,
         kCipher, kDev, kMgmtPort,
+        kNetIfaceActive,
     };
     std::vector<data_store::Client::GetResult> got;
     auto gs = m_impl->client.get(read_keys, got);
@@ -110,15 +119,22 @@ DsBridge::DsBridge(std::string socketPath)
         std::lock_guard<std::mutex> g(m_impl->mtx);
         for (auto& r : got) {
             if (!r.has_value) continue;
-            if      (r.key == kRemoteHost)  m_impl->remote_host  = data_store::to_string(r.value);
-            else if (r.key == kRemotePort)  m_impl->remote_port  = data_store::to_uint32(r.value);
-            else if (r.key == kRemoteProto) m_impl->remote_proto = data_store::to_string(r.value);
-            else if (r.key == kCertPath)    m_impl->cert_path    = data_store::to_string(r.value);
-            else if (r.key == kKeyPath)     m_impl->key_path     = data_store::to_string(r.value);
-            else if (r.key == kCaPath)      m_impl->ca_path      = data_store::to_string(r.value);
-            else if (r.key == kCipher)      m_impl->cipher       = data_store::to_string(r.value);
-            else if (r.key == kDev)         m_impl->dev          = data_store::to_string(r.value);
-            else if (r.key == kMgmtPort)    m_impl->mgmt_port    = data_store::to_uint32(r.value);
+            if      (r.key == kRemoteHost)     m_impl->remote_host  = data_store::to_string(r.value);
+            else if (r.key == kRemotePort)     m_impl->remote_port  = data_store::to_uint32(r.value);
+            else if (r.key == kRemoteProto)    m_impl->remote_proto = data_store::to_string(r.value);
+            else if (r.key == kCertPath)       m_impl->cert_path    = data_store::to_string(r.value);
+            else if (r.key == kKeyPath)        m_impl->key_path     = data_store::to_string(r.value);
+            else if (r.key == kCaPath)         m_impl->ca_path      = data_store::to_string(r.value);
+            else if (r.key == kCipher)         m_impl->cipher       = data_store::to_string(r.value);
+            else if (r.key == kDev)            m_impl->dev          = data_store::to_string(r.value);
+            else if (r.key == kMgmtPort)       m_impl->mgmt_port    = data_store::to_uint32(r.value);
+            else if (r.key == kNetIfaceActive) {
+                // net-router writes empty-string when no iface is up;
+                // collapse to nullopt so the supervisor's "gated" state
+                // has a single representation.
+                auto s = data_store::to_string(r.value);
+                if (s.has_value() && !s->empty()) m_impl->wan_iface = std::move(s);
+            }
         }
     }
 
@@ -128,6 +144,31 @@ DsBridge::DsBridge(std::string socketPath)
     auto ws = m_impl->client.watch(
         read_keys,
         [this](const data_store::Client::Event& ev) {
+            // net.iface.active goes through its own callback path —
+            // it has a different signature (snapshot vs Key enum) and
+            // a different consumer (Supervisor's gate, not the
+            // hot-reload logger).
+            if (ev.key == kNetIfaceActive) {
+                std::optional<std::string> snapshot;
+                {
+                    auto s = data_store::to_string(ev.value);
+                    if (s.has_value() && !s->empty()) snapshot = std::move(s);
+                    std::lock_guard<std::mutex> g(m_impl->mtx);
+                    m_impl->wan_iface = snapshot;
+                }
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D [ovpn:%t] %M %N:%l WAN gate event "
+                                    "net.iface.active='%C'\n"),
+                           snapshot.has_value() ? snapshot->c_str() : ""));
+                WanCallback wcbcopy;
+                {
+                    std::lock_guard<std::mutex> g(m_impl->mtx);
+                    wcbcopy = m_impl->wan_cb;
+                }
+                if (wcbcopy) wcbcopy(snapshot);
+                return;
+            }
+
             std::optional<Key> changed;
             {
                 std::lock_guard<std::mutex> g(m_impl->mtx);
@@ -221,6 +262,11 @@ std::optional<std::uint32_t> DsBridge::mgmt_port() const {
     std::lock_guard<std::mutex> g(m_impl->mtx);
     return m_impl->mgmt_port;
 }
+std::optional<std::string> DsBridge::wan_iface() const {
+    if (!m_ok) return std::nullopt;
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->wan_iface;
+}
 
 std::optional<std::vector<std::string>>
 DsBridge::missing_required() const {
@@ -278,6 +324,14 @@ void DsBridge::set_exit_code(std::int32_t c) {
     if (!m_ok) return;
     m_impl->client.set(kExitCode, c);
 }
+void DsBridge::set_gate_reason(const std::string& s) {
+    if (!m_ok) return;
+    m_impl->client.set(kGateReason, s);
+}
+void DsBridge::set_bound_iface(const std::string& s) {
+    if (!m_ok) return;
+    m_impl->client.set(kBoundIface, s);
+}
 
 // ─────────────────────── on_change registration ─────────────────────
 
@@ -285,6 +339,12 @@ void DsBridge::on_change(ChangeCallback cb) {
     if (!m_impl) return;
     std::lock_guard<std::mutex> g(m_impl->mtx);
     m_impl->cb = std::move(cb);
+}
+
+void DsBridge::on_wan_change(WanCallback cb) {
+    if (!m_impl) return;
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    m_impl->wan_cb = std::move(cb);
 }
 
 } // namespace openvpn_client

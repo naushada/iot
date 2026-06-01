@@ -80,6 +80,28 @@ The image ships `openvpn(8)` from Ubuntu (`apt install openvpn` in
 the runtime stage). Default path `/usr/sbin/openvpn`; override with
 `--openvpn=PATH`.
 
+**WAN gate (L15).** openvpn-client only spawns openvpn while
+`net.iface.active` is non-empty — i.e. while net-router has
+selected a usable WAN iface (eth0 / wlan0 / wwan0). In the
+container path that means start the `iot-netr` container alongside
+`iot-ovpn`. For dev runs without net-router, short-circuit the
+gate by setting the key by hand:
+
+```sh
+podman exec iot-ds ds-cli --socket=/run/iot/data_store.sock \
+    set net.iface.active '"eth0"'
+```
+
+Observe the gate via two new write keys:
+
+```sh
+podman exec iot-ds ds-cli --socket=/run/iot/data_store.sock \
+    get vpn.state vpn.gate.reason vpn.bound.iface
+# vpn.state       = "connected"
+# vpn.gate.reason = "ok"           # "wan_down" when gated
+# vpn.bound.iface = "eth0"
+```
+
 ### 3. Tune config via ds-cli
 
 ```sh
@@ -178,12 +200,21 @@ ds-cli --socket=/run/iot/data_store.sock set vpn.key.path   '"/etc/iot/vpn/clien
 ds-cli --socket=/run/iot/data_store.sock set vpn.ca.path    '"/etc/iot/vpn/ca.crt"'
 
 sudo systemctl enable --now iot-openvpn-client.service
-journalctl -u iot-openvpn-client.service -f | grep "PUSH_REPLY\|state"
+journalctl -u iot-openvpn-client.service -f | grep "PUSH_REPLY\|state\|WAN"
 ```
 
 The unit ships with `AmbientCapabilities=CAP_NET_ADMIN` +
 `DeviceAllow=/dev/net/tun rw` so openvpn(8) can create the TUN
 device + write routes under DynamicUser — no `root` required.
+
+**WAN gate.** openvpn-client now subscribes to `net.iface.active`
+and only spawns openvpn while a WAN iface is up. Enable
+`iot-net-router.service` alongside (or set the key by hand for
+dev). Reason exposed via `vpn.gate.reason` (`ok` while running,
+`wan_down` while gated, `spawn_failed` after a spawn error);
+bound iface in `vpn.bound.iface`. See
+[`modules/openvpn/client/docs/design.md`](modules/openvpn/client/docs/design.md)
+§ "WAN gate" for the state machine.
 
 For the **net-router** unit (L13: nftables DNAT + iface priority),
 seed the only required key and enable:
