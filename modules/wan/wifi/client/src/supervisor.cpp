@@ -203,7 +203,25 @@ bool RssiCoalescer::should_publish(int dbm) {
 Supervisor::Supervisor(DsBridge& ds, SupervisorOptions opt)
   : m_ds(ds),
     m_opt(std::move(opt)),
-    m_fsm(Lifecycle::Sinks{}) {}
+    m_fsm(Lifecycle::Sinks{
+        // set_state -> ds_bridge.set_assoc_state. The Lifecycle's
+        // transition() suppresses same-state re-entries, so this
+        // write-through satisfies NFR-WIFI-004 by construction.
+        [this](std::string_view s) {
+            m_ds.set_assoc_state(std::string(s));
+        },
+        // on_connected: handled in the Supervisor run-loop directly
+        // (spawns DHCP, publishes ssid/bssid). Leaving empty here
+        // avoids double-publishing.
+        nullptr,
+        nullptr,  // on_disconnected — same reasoning
+        nullptr,  // on_scan_results — Supervisor issues SCAN_RESULTS
+        // on_reject -> wifi.last.error so operators see auth/assoc
+        // failures without tailing journalctl.
+        [this](const std::string& err) {
+            m_ds.set_last_error(err);
+        },
+    }) {}
 
 Supervisor::~Supervisor() = default;
 
@@ -281,6 +299,15 @@ int Supervisor::run() {
             continue;
         }
         m_fsm.step(*ev);
+        // FUP-L15-D8-1: on ScanResults the Supervisor should issue
+        // SCAN_RESULTS + publish wifi.scan.results JSON. Naive
+        // request() mid-loop collides with concurrent unsolicited
+        // CTRL-EVENT datagrams (real wpa_ctrl skips events between
+        // request/reply; our minimal parser doesn't). Plumbed as a
+        // follow-up — the unit tests already verify the
+        // cap_and_serialize_scan_results + parse_scan_results
+        // helpers (D6 supervisor_test.cpp), and the smoke proves
+        // the connect path end-to-end.
         if (ev->kind == ctrl::CtrlEvent::Kind::Connected) {
             m_ds.set_assoc_ssid(ev->ssid);
             m_ds.set_assoc_bssid(ev->bssid);
