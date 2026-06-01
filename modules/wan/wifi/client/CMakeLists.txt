@@ -22,6 +22,7 @@ endif()
 include_directories(
     ${WIFI_MODULE_DIR}/inc
     ${WIFI_MODULE_DIR}/../../../data-store/inc
+    ${WIFI_MODULE_DIR}/../../../../apps/3rdparty/json/single_include
     ${ACE_ROOT}/include
 )
 
@@ -33,7 +34,8 @@ link_directories(${ACE_ROOT}/lib)
 add_library(wifi_client_lib STATIC
     src/main_impl.cpp
     src/ds_bridge.cpp
-    src/ctrl.cpp)
+    src/ctrl.cpp
+    src/process.cpp)
 
 target_include_directories(wifi_client_lib PUBLIC src)
 
@@ -56,7 +58,8 @@ if(BUILD_WIFI_CLIENT_TESTS)
         test/main_test.cpp
         test/schema_test.cpp
         test/ds_bridge_test.cpp
-        test/ctrl_test.cpp)
+        test/ctrl_test.cpp
+        test/process_test.cpp)
 
     target_link_libraries(wifi-client-tests
         wifi_client_lib
