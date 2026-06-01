@@ -18,14 +18,19 @@
 /// into the main thread that runs the mgmt event-loop. The event-loop's
 /// 250 ms recv timeout doubles as the WAN-event polling interval.
 
+#include <atomic>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 
 #include "client.hpp"
 #include "ds_bridge.hpp"
 #include "gate.hpp"
+
+namespace data_store { class ServiceGate; }   // forward decl
 
 namespace openvpn_client {
 
@@ -56,6 +61,14 @@ private:
     DsBridge& m_ds;
     Options   m_opt;
     Gate      m_gate;
+
+    /// L16/D4 — services.openvpn.client.enable gate. Composes with
+    /// the WAN gate; the composition rule is "disable dominates":
+    /// when m_svc->enabled() is false, the WAN target is ignored and
+    /// the Supervisor parks at gate.reason="disabled".
+    std::unique_ptr<data_store::ServiceGate> m_svc;
+    std::thread                              m_svc_watcher;
+    std::atomic<bool>                        m_svc_dirty{false};
 
     std::mutex                 m_mtx;
     std::condition_variable    m_cv;
