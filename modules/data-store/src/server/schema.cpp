@@ -120,6 +120,18 @@ void SchemaRegistry::load_one(const std::string& path) {
         throw std::runtime_error("top-level return is not a table");
     }
 
+    // Capture the `namespace` declaration so validate_set can reject
+    // sets on undeclared keys whose namespace IS claimed by some
+    // loaded schema (the "services.ds.enable is intentionally absent"
+    // pattern from L16/D2). Missing namespace = no claim.
+    lua_getfield(L.get(), -1, "namespace");
+    if (lua_isstring(L.get(), -1)) {
+        std::size_t nlen = 0;
+        const char* nc = lua_tolstring(L.get(), -1, &nlen);
+        m_namespaces.emplace(nc, nlen);
+    }
+    lua_pop(L.get(), 1);
+
     lua_getfield(L.get(), -1, "keys");
     if (!lua_istable(L.get(), -1)) {
         throw std::runtime_error("schema missing `keys` table");
@@ -210,10 +222,34 @@ const SchemaEntry* SchemaRegistry::find(const std::string& key) const {
     return (it == m_entries.end()) ? nullptr : &it->second;
 }
 
+std::string SchemaRegistry::first_segment(const std::string& key) {
+    auto dot = key.find('.');
+    if (dot == std::string::npos) return {};
+    return key.substr(0, dot);
+}
+
+bool SchemaRegistry::is_namespace_claimed(const std::string& key) const {
+    auto ns = first_segment(key);
+    if (ns.empty()) return false;
+    return m_namespaces.count(ns) > 0;
+}
+
 std::optional<std::string> SchemaRegistry::validate_set(
         const std::string& key, const Value& value) const {
     auto it = m_entries.find(key);
-    if (it == m_entries.end()) return std::nullopt;  // passthrough
+    if (it == m_entries.end()) {
+        // Key not declared. If its namespace IS claimed by some
+        // loaded schema, reject — every owner is expected to fully
+        // enumerate its surface (L16/D2 "intentionally absent
+        // services.ds.enable" pattern). Otherwise passthrough
+        // (REQ-DS-023 unknown-keys-pass).
+        if (is_namespace_claimed(key)) {
+            return "schema(" + key + "): namespace '" +
+                   first_segment(key) +
+                   "' is claimed but this key is not declared";
+        }
+        return std::nullopt;
+    }
     const SchemaEntry& e = it->second;
 
     // monostate (null) is always accepted — used to clear a key.

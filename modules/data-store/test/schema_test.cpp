@@ -162,3 +162,59 @@ return { keys = { ["dup"] = { type="integer", default=2 } } })");
     ::unlink((dir + "/b.lua").c_str());
     ::rmdir(dir.c_str());
 }
+
+// ─────────────────── L16/D2 namespace-claimed rejection ─────────────
+
+TEST(Schema, SVC_REQ_SVC_008_undeclared_key_in_claimed_namespace_rejected) {
+    auto dir = make_tmpdir();
+    if (dir.empty()) GTEST_SKIP();
+    // services namespace owned; only services.ds.state declared.
+    // services.ds.enable is intentionally absent — set must reject.
+    write_file(dir + "/services.lua", R"(
+return {
+  namespace = "services",
+  keys = {
+    ["services.ds.state"] = { type = "string", default = "running" },
+  },
+})");
+
+    ds::SchemaRegistry r;
+    ASSERT_EQ(1u, r.load_directory(dir));
+    EXPECT_EQ(1u, r.namespace_count());
+    EXPECT_TRUE(r.is_namespace_claimed("services.ds.enable"));
+    EXPECT_TRUE(r.is_namespace_claimed("services.foo.bar"));
+    EXPECT_FALSE(r.is_namespace_claimed("other.key"));
+
+    // A bool set against an undeclared key in a claimed namespace
+    // MUST be rejected.
+    auto err = r.validate_set("services.ds.enable", Value{true});
+    ASSERT_TRUE(err.has_value());
+    EXPECT_NE(std::string::npos, err->find("services.ds.enable"));
+    EXPECT_NE(std::string::npos, err->find("not declared"));
+
+    // Unrelated namespace still passes through.
+    EXPECT_FALSE(r.validate_set("other.foo", Value{std::string("v")})
+                     .has_value());
+
+    ::unlink((dir + "/services.lua").c_str());
+    ::rmdir(dir.c_str());
+}
+
+TEST(Schema, SVC_REQ_SVC_008_declared_key_in_claimed_namespace_accepted) {
+    auto dir = make_tmpdir();
+    if (dir.empty()) GTEST_SKIP();
+    write_file(dir + "/services.lua", R"(
+return {
+  namespace = "services",
+  keys = {
+    ["services.net.router.enable"] = { type = "boolean", default = true },
+  },
+})");
+    ds::SchemaRegistry r;
+    ASSERT_EQ(1u, r.load_directory(dir));
+    // Declared key with matching type → accepted.
+    EXPECT_FALSE(r.validate_set("services.net.router.enable",
+                                Value{false}).has_value());
+    ::unlink((dir + "/services.lua").c_str());
+    ::rmdir(dir.c_str());
+}
