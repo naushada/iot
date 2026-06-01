@@ -32,7 +32,8 @@ link_directories(${ACE_ROOT}/lib)
 # supervisor as their phases land.
 add_library(wifi_client_lib STATIC
     src/main_impl.cpp
-    src/ds_bridge.cpp)
+    src/ds_bridge.cpp
+    src/ctrl.cpp)
 
 target_include_directories(wifi_client_lib PUBLIC src)
 
@@ -54,7 +55,8 @@ if(BUILD_WIFI_CLIENT_TESTS)
     add_executable(wifi-client-tests
         test/main_test.cpp
         test/schema_test.cpp
-        test/ds_bridge_test.cpp)
+        test/ds_bridge_test.cpp
+        test/ctrl_test.cpp)
 
     target_link_libraries(wifi-client-tests
         wifi_client_lib

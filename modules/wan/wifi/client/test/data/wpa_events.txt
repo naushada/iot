@@ -1,0 +1,8 @@
+<3>CTRL-EVENT-SCAN-STARTED
+<3>CTRL-EVENT-SCAN-RESULTS
+<3>CTRL-EVENT-CONNECTED - Connection to aa:bb:cc:dd:ee:ff completed [id=0 id_str=HomeAP]
+<3>CTRL-EVENT-DISCONNECTED bssid=aa:bb:cc:dd:ee:ff reason=3 locally_generated=1
+<3>CTRL-EVENT-ASSOC-REJECT bssid=aa:bb:cc:dd:ee:ff status_code=17
+<3>CTRL-EVENT-AUTH-REJECT bssid=aa:bb:cc:dd:ee:ff auth_type=0 auth_transaction=2 status_code=15
+<3>CTRL-EVENT-TERMINATING
+<3>CTRL-EVENT-WHATEVER-NEW-EVENT-WPA-MIGHT-ADD-LATER some args
