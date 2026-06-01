@@ -1,0 +1,27 @@
+L16/D8 smoke transcript 2026-06-01 18:37:44Z
+===========================================
+ds.log (head):
+  2026-06-01 18:37:42.182930 [DS:391] LM_INFO /src/modules/data-store/src/server/main.cpp:93 socket=/tmp/svc-smoke/ds.sock store=/tmp/svc-smoke/store.lua schemas=/tmp/svc-smoke/schemas
+  2026-06-01 18:37:42.183538 [DS:391] LM_INFO /src/modules/data-store/src/server/main.cpp:106 loaded 34 schema key(s) from /tmp/svc-smoke/schemas
+  2026-06-01 18:37:42.183601 [DS:391] LM_INFO /src/modules/data-store/src/server/main.cpp:127 loaded 0 key(s) from /tmp/svc-smoke/store.lua
+  2026-06-01 18:37:42.183758 [Worker:393] LM_DEBUG /src/modules/data-store/src/server/worker.cpp:117 worker 0 started
+  2026-06-01 18:37:42.183804 [Worker:397] LM_DEBUG /src/modules/data-store/src/server/worker.cpp:117 worker 4 started
+  2026-06-01 18:37:42.183870 [Worker:395] LM_DEBUG /src/modules/data-store/src/server/worker.cpp:117 worker 2 started
+  2026-06-01 18:37:42.183988 [Worker:394] LM_DEBUG /src/modules/data-store/src/server/worker.cpp:117 worker 1 started
+  2026-06-01 18:37:42.184047 [Worker:396] LM_DEBUG /src/modules/data-store/src/server/worker.cpp:117 worker 3 started
+  2026-06-01 18:37:42.184092 [DS:391] LM_DEBUG /src/modules/data-store/src/server/server.cpp:74 listening on /tmp/svc-smoke/ds.sock (mode 0660)
+
+net-router.log:
+  2026-06-01 18:37:42.713500 [netr:408] LM_INFO /src/modules/net/router/src/ds_bridge.cpp:75 data-store ready at /tmp/svc-smoke/ds.sock
+  2026-06-01 18:37:42.715161 [netr:408] LM_INFO /src/modules/net/router/src/daemon.cpp:189 daemon up; priority ifaces: eth0 (3 entries)
+  2026-06-01 18:37:42.725908 [netr:408] LM_INFO /src/modules/net/router/src/daemon.cpp:140 nft ruleset applied (631 bytes)
+  2026-06-01 18:37:44.736948 [netr:408] LM_INFO /src/modules/net/router/src/daemon.cpp:204 services.net.router.enable=false; tearing down
+
+final svc list:
+  NAME               ENABLE   STATE      UPTIME
+  ds                 n/a      running    0
+  lwm2m.client       true     running    
+  lwm2m.server       true     running    
+  net.router         true     running    
+  openvpn.client     true     running    
+  wifi.client        true     running    

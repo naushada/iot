@@ -282,6 +282,81 @@ journalctl -u iot-lwm2m-client.service -f | grep "applied iot"
 
 ---
 
+## services.* control plane
+
+Each iot daemon (net-router, openvpn-client, lwm2m-client,
+lwm2m-server, wifi-client) honours `services.<name>.enable`. The
+**daemon stays alive** (its systemd unit is still `active
+(running)`); the gate flips its **worker** on or off — the
+openvpn(8) / wpa_supplicant / udhcpc / nft subprocess. Use
+`systemctl stop iot-<name>` if you need to stop the daemon
+itself.
+
+ds-server is exempt — it's the substrate, can't self-disable —
+so it publishes `services.ds.state` but rejects any set on
+`services.ds.enable`. `ds-cli svc list` reflects this with
+`ENABLE = n/a` on the ds row.
+
+### Inspect every daemon's gate
+
+```sh
+ds-cli --socket=/run/iot/data_store.sock svc list
+# NAME               ENABLE   STATE      UPTIME
+# ds                 n/a      running    1h12m
+# lwm2m.client       true     running
+# lwm2m.server       true     running
+# net.router         true     running
+# openvpn.client     true     running
+# wifi.client        true     running
+```
+
+### Toggle one daemon's worker
+
+```sh
+ds-cli --socket=/run/iot/data_store.sock svc disable openvpn.client
+# ok
+# wifi.assoc.state, vpn.state etc. stay observable while disabled;
+# only the openvpn(8) subprocess gets reaped.
+
+ds-cli --socket=/run/iot/data_store.sock svc enable openvpn.client
+# ok
+```
+
+### Drill into one row
+
+```sh
+ds-cli --socket=/run/iot/data_store.sock svc status openvpn.client
+# services.openvpn.client.enable = true
+# services.openvpn.client.state  = running
+```
+
+### Composition rules (worth knowing)
+
+- `enable=false` **dominates** every domain gate.
+  `openvpn-client`: disabled trumps `wan_down` →
+  `vpn.gate.reason="disabled"`, not `"wan_down"`.
+  `wifi-client`: disabled is checked BEFORE the NM-conflict
+  probe → no spurious `wifi.assoc.state="conflict"` writes when
+  operator never intended the daemon to run.
+- nft state previously installed by `net-router` stays in the
+  kernel across a disable cycle; re-enable refreshes. Manual
+  flush is the workaround for "fully clean teardown."
+
+### When to use systemctl instead
+
+- The whole daemon is misbehaving and you want the process gone
+  (memory leak, deadlock). `systemctl stop iot-<name>` reaps the
+  daemon AND its workers.
+- Upgrading the daemon binary in place: `systemctl stop … &&
+  apt-get install … && systemctl start …`.
+- Switching deployment shape (e.g., handing iface management to
+  NetworkManager): mask the iot daemon's unit.
+
+`ds-cli svc disable` is for the everyday "I want this OFF for now
+but keep the daemon ready to come back fast" path.
+
+---
+
 ## Common operator tasks
 
 ### Inspect the schema
