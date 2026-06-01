@@ -22,7 +22,7 @@ L14 ships a single `podman-compose`-style harness that:
    plus a real `leshan` lwm2m server (we already keep its compose
    file at `docker/docker-compose.leshan.yml`).
 2. Seeds the required ds keys (`iot.endpoint`, `iot.server.uri`,
-   `vpn.remote.host`, `net.lwm2m.target_ip`, …) via `ds-cli`.
+   `vpn.remote.host`, `net.lwm2m.target.ip`, …) via `ds-cli`.
 3. Asserts each daemon reached its "ready" state (registered with
    leshan; openvpn-client published a `vpn.state`; net-router
    applied a non-empty nftables ruleset).
@@ -99,13 +99,13 @@ nicer and ports trivially to a future GHA / k3s smoke.
 3. Wait until `ds-server` accepts connections on its unix socket
    (poll `ds-cli get iot.endpoint` until exit 0).
 4. Seed every required ds key: `iot.endpoint`, `iot.server.uri`,
-   `vpn.remote.host`, `net.lwm2m.target_ip`, `net.iface.eth.name`.
+   `vpn.remote.host`, `net.lwm2m.target.ip`, `net.iface.eth.name`.
 5. Wait for the lwm2m-client to register with leshan
    (`curl /api/clients` until our endpoint appears).
 6. Assert `vpn.state` reached `connecting` (or `running` if the
    fake openvpn returns a PUSH_REPLY).
 7. Assert the fake-nft recorder file contains a ruleset with our
-   `net.lwm2m.target_ip` substring.
+   `net.lwm2m.target.ip` substring.
 8. Tear down (`podman pod rm -f`).
 
 Exits 0 on success, non-zero with a diagnostic on the first failed

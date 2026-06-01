@@ -17,22 +17,22 @@ namespace {
 
 // Single source of truth for wire-level key strings.
 constexpr const char* kTunDev          = "net.tun.dev";
-constexpr const char* kLwM2MTargetIp   = "net.lwm2m.target_ip";
-constexpr const char* kLwM2MTargetPort = "net.lwm2m.target_port";
+constexpr const char* kLwM2MTargetIp   = "net.lwm2m.target.ip";
+constexpr const char* kLwM2MTargetPort = "net.lwm2m.target.port";
 constexpr const char* kIfacePriority   = "net.iface.priority";
 constexpr const char* kIfaceEthName    = "net.iface.eth.name";
 constexpr const char* kIfaceWifiName   = "net.iface.wifi.name";
 constexpr const char* kIfaceCellName   = "net.iface.cellular.name";
 constexpr const char* kForwardPorts    = "net.forward.ports";
-constexpr const char* kCustomRules     = "net.custom_rules";
-constexpr const char* kPollIntervalSec = "net.poll.interval_sec";
+constexpr const char* kCustomRules     = "net.custom.rules";
+constexpr const char* kPollIntervalSec = "net.poll.interval.sec";
 
 constexpr const char* kState               = "net.state";
 constexpr const char* kTunIp               = "net.tun.ip";
 constexpr const char* kTunGateway          = "net.tun.gateway";
 constexpr const char* kIfaceActive         = "net.iface.active";
-constexpr const char* kRulesAppliedCount   = "net.rules.applied_count";
-constexpr const char* kLastApplyUnix       = "net.last_apply_unix";
+constexpr const char* kRulesAppliedCount   = "net.rules.applied.count";
+constexpr const char* kLastApplyUnix       = "net.last.apply.unix";
 
 } // namespace
 
