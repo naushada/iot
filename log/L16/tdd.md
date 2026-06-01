@@ -36,7 +36,7 @@ Out of scope for L16:
 - Cross-service dependency graph (FUP-L17a).
 - Boot-time vs ephemeral disable distinction (FUP-L17b).
 - Per-key ACL beyond filesystem DAC (FUP-L17c).
-- Sub-worker granularity (`services.wifi-client.dhcp.enable`).
+- Sub-worker granularity (`services.wifi.client.dhcp.enable`).
 
 ---
 
@@ -52,14 +52,14 @@ Out of scope for L16:
 | REQ-SVC-006   | `ServiceGate::publish_state(s)` MUST issue `Client::set("services.<name>.state", s)`; failures MUST be logged via `ACE_ERROR` and MUST NOT throw.                                                | M  | D1    |
 | REQ-SVC-007   | ds-server MUST publish `services.ds.state="running"` once its acceptor is up; MUST update `services.ds.uptime.sec` every 60 s via the same `ACE_Reactor` timer mechanism it uses today.         | M  | D2    |
 | REQ-SVC-008   | ds-server MUST reject `set services.ds.enable <any>` with `SchemaRejected`. The schema rejection path MUST be one of: (a) key omitted from `services.lua`, OR (b) explicit `readonly=true`.    | M  | D2    |
-| REQ-SVC-009   | net-router MUST honour `services.net-router.enable`. On `false`: stop iface_monitor, clear `net.iface.active=""`, run nft-teardown, publish `services.net-router.state="disabled"`.            | M  | D3    |
-| REQ-SVC-010   | net-router MUST restore full operation on `true`: re-spawn iface_monitor, re-install nft state, publish `services.net-router.state="running"`. Net effect MUST equal "fresh daemon start".      | M  | D3    |
-| REQ-SVC-011   | openvpn-client Supervisor MUST add a ServiceGate alongside the existing WAN gate. On `enable=false`: SIGTERM+reap the openvpn child within 5 s, publish `services.openvpn-client.state="disabled"`, set `vpn.gate.reason="disabled"`. | M | D4 |
+| REQ-SVC-009   | net-router MUST honour `services.net.router.enable`. On `false`: stop iface_monitor, clear `net.iface.active=""`, run nft-teardown, publish `services.net.router.state="disabled"`.            | M  | D3    |
+| REQ-SVC-010   | net-router MUST restore full operation on `true`: re-spawn iface_monitor, re-install nft state, publish `services.net.router.state="running"`. Net effect MUST equal "fresh daemon start".      | M  | D3    |
+| REQ-SVC-011   | openvpn-client Supervisor MUST add a ServiceGate alongside the existing WAN gate. On `enable=false`: SIGTERM+reap the openvpn child within 5 s, publish `services.openvpn.client.state="disabled"`, set `vpn.gate.reason="disabled"`. | M | D4 |
 | REQ-SVC-012   | openvpn-client gate composition MUST follow: `enable=false` dominates `wan_down`. `gate.reason="disabled"` when both are closed; never "wan_down" while disabled.                                | M  | D4    |
-| REQ-SVC-013   | openvpn-client `enable=true` while WAN-down MUST publish `services.openvpn-client.state="running"` (the daemon's idle-waiting-for-WAN state) and `vpn.gate.reason="wan_down"`. No openvpn child spawned. | M | D4 |
-| REQ-SVC-014   | lwm2m-client MUST honour `services.lwm2m-client.enable`. On `false` while registered: send Deregister, drop active observations, keep CoAP socket listening. On `true`: re-Register from scratch.    | M  | D5    |
-| REQ-SVC-015   | lwm2m-server MUST honour `services.lwm2m-server.enable`. On `false`: stop accepting new Register requests, drop active-registrations map, keep listening socket. On `true`: accept new Registers.    | M  | D5    |
-| REQ-SVC-016   | wifi-client Supervisor MUST add a ServiceGate. On `enable=false`: SIGTERM+reap wpa_supplicant + udhcpc, publish `wifi.assoc.state="disconnected"` + `services.wifi-client.state="disabled"`. Depends on L15/D6. | M | D6 |
+| REQ-SVC-013   | openvpn-client `enable=true` while WAN-down MUST publish `services.openvpn.client.state="running"` (the daemon's idle-waiting-for-WAN state) and `vpn.gate.reason="wan_down"`. No openvpn child spawned. | M | D4 |
+| REQ-SVC-014   | lwm2m-client MUST honour `services.lwm2m.client.enable`. On `false` while registered: send Deregister, drop active observations, keep CoAP socket listening. On `true`: re-Register from scratch.    | M  | D5    |
+| REQ-SVC-015   | lwm2m-server MUST honour `services.lwm2m.server.enable`. On `false`: stop accepting new Register requests, drop active-registrations map, keep listening socket. On `true`: accept new Registers.    | M  | D5    |
+| REQ-SVC-016   | wifi-client Supervisor MUST add a ServiceGate. On `enable=false`: SIGTERM+reap wpa_supplicant + udhcpc, publish `wifi.assoc.state="disconnected"` + `services.wifi.client.state="disabled"`. Depends on L15/D6. | M | D6 |
 | REQ-SVC-017   | wifi-client gate composition MUST follow: `enable=false` dominates the NM-conflict gate. `state="disabled"` takes precedence over `state="conflict"`.                                            | M  | D6    |
 | REQ-SVC-018   | ds-cli MUST gain `svc <verb>` subcommands: `list`, `enable <name>`, `disable <name>`, `status <name>`. Unknown verb MUST exit non-zero with usage on stderr.                                     | M  | D7    |
 | REQ-SVC-019   | `ds-cli svc list` MUST enumerate every `services.*.enable` row + matching `.state` + uptime if present. Order MUST be deterministic (alphabetical by name).                                       | M  | D7    |

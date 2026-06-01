@@ -25,17 +25,17 @@ existing gates. End state:
 ```
 operator                                                  ds-server
    │                                                          │
-   │  ds-cli svc disable openvpn-client                       │
+   │  ds-cli svc disable openvpn.client                       │
    ├─────────────────────────────────────────────────────────▶│
    │                                                          │
    │                                          changed event   │
    │   openvpn-client Supervisor◀─────────────────────────────┤
    │   - Gate flips closed                                    │
    │   - Active session: SIGTERM + reap openvpn(8)            │
-   │   - publish services.openvpn-client.state="disabled"     │
+   │   - publish services.openvpn.client.state="disabled"     │
    │   - WAN gate ignored while disabled                      │
    │                                                          │
-   │  ds-cli svc enable openvpn-client                        │
+   │  ds-cli svc enable openvpn.client                        │
    ├─────────────────────────────────────────────────────────▶│
    │                                                          │
    │   Supervisor◀────────────────────────────────────────────┤
@@ -76,9 +76,9 @@ Concretely, this phase delivers:
 - **RBAC.** Filesystem DAC on the ds-server socket is the only
   access control, identical to the existing get/set surface.
   Per-key ACL is FUP.
-- **Worker-internal granularity.** `services.wifi-client.enable`
+- **Worker-internal granularity.** `services.wifi.client.enable`
   toggles the whole wifi worker chain (wpa_supplicant + udhcpc);
-  there is no `services.wifi-client.dhcp.enable` sub-key in v1.
+  there is no `services.wifi.client.dhcp.enable` sub-key in v1.
 - **ds-server self-disable.** ds-server publishes
   `services.ds.state="running"` for uniformity but rejects
   `set services.ds.enable` — disabling the substrate via the
@@ -122,22 +122,22 @@ return {
     ["services.ds.uptime.sec"]             = { type = "integer", min = 0, default = 0 },
 
     -- net-router
-    ["services.net-router.enable"]         = { type = "boolean", default = true },
-    ["services.net-router.state"]          = { type = "string",  default = "running" },
+    ["services.net.router.enable"]         = { type = "boolean", default = true },
+    ["services.net.router.state"]          = { type = "string",  default = "running" },
 
     -- openvpn-client
-    ["services.openvpn-client.enable"]     = { type = "boolean", default = true },
-    ["services.openvpn-client.state"]      = { type = "string",  default = "running" },
+    ["services.openvpn.client.enable"]     = { type = "boolean", default = true },
+    ["services.openvpn.client.state"]      = { type = "string",  default = "running" },
 
     -- lwm2m-client / lwm2m-server
-    ["services.lwm2m-client.enable"]       = { type = "boolean", default = true },
-    ["services.lwm2m-client.state"]        = { type = "string",  default = "running" },
-    ["services.lwm2m-server.enable"]       = { type = "boolean", default = true },
-    ["services.lwm2m-server.state"]        = { type = "string",  default = "running" },
+    ["services.lwm2m.client.enable"]       = { type = "boolean", default = true },
+    ["services.lwm2m.client.state"]        = { type = "string",  default = "running" },
+    ["services.lwm2m.server.enable"]       = { type = "boolean", default = true },
+    ["services.lwm2m.server.state"]        = { type = "string",  default = "running" },
 
     -- wifi-client (lands when L15/D6 ships)
-    ["services.wifi-client.enable"]        = { type = "boolean", default = true },
-    ["services.wifi-client.state"]         = { type = "string",  default = "running" },
+    ["services.wifi.client.enable"]        = { type = "boolean", default = true },
+    ["services.wifi.client.state"]         = { type = "string",  default = "running" },
   },
 }
 ```
@@ -179,7 +179,7 @@ namespace data_store {
 /// other gates the Supervisor has: closed if ANY gate is closed.
 class ServiceGate {
 public:
-    explicit ServiceGate(Client& ds, std::string key); // "services.openvpn-client.enable"
+    explicit ServiceGate(Client& ds, std::string key); // "services.openvpn.client.enable"
 
     /// Snapshot the latest value (true on absent / default).
     bool enabled() const;
@@ -245,12 +245,12 @@ On `enable=false`:
 - Pause iface_monitor.
 - Run the full teardown: `nft delete table iot-fwd` (or whatever
   net-router owns), clear `net.iface.active=""`, publish
-  `services.net-router.state="disabled"`.
+  `services.net.router.state="disabled"`.
 - Stay parked in a `cv.wait` on the ServiceGate.
 
 On `enable=true`:
 - Re-prime the iface scan, re-create nft state, publish
-  `services.net-router.state="running"`.
+  `services.net.router.state="running"`.
 
 **Tests.** `net-router/test/supervisor_test.cpp::Services_disable_clears_active_iface`,
 `Services_reenable_restores_publishing`.
@@ -312,7 +312,7 @@ and D5b (server).
 
 ### D6 — wifi-client enable gate
 
-**Scope.** Wires `services.wifi-client.enable` into the
+**Scope.** Wires `services.wifi.client.enable` into the
 wifi-client Supervisor designed in L15/D6. Composes with the
 NetworkManager-conflict gate from L15/REQ-WIFI-022.
 
@@ -332,18 +332,18 @@ can enumerate the services row set without hardcoding it.
 $ ds-cli svc list
 NAME             ENABLE  STATE      UPTIME
 ds               n/a     running    1h12m
-net-router       true    running    1h12m
-openvpn-client   true    running    47m
-lwm2m-client     true    running    1h11m
-lwm2m-server     true    running    1h11m
-wifi-client      false   disabled   1h12m
+net.router       true    running    1h12m
+openvpn.client   true    running    47m
+lwm2m.client     true    running    1h11m
+lwm2m.server     true    running    1h11m
+wifi.client      false   disabled   1h12m
 
-$ ds-cli svc disable openvpn-client
+$ ds-cli svc disable openvpn.client
 ok
 
-$ ds-cli svc status openvpn-client
-services.openvpn-client.enable = true
-services.openvpn-client.state  = stopping
+$ ds-cli svc status openvpn.client
+services.openvpn.client.enable = true
+services.openvpn.client.state  = stopping
 ```
 
 `enable` `disable` `status` are thin wrappers over the existing
@@ -395,7 +395,7 @@ Candidate next phases (not committed):
 
 - **L17a — services dependency graph.** `services.<a>.depends_on`
   schema entries so disabling net-router auto-publishes a
-  `services.openvpn-client.gate.reason="dep_down"` instead of
+  `services.openvpn.client.gate.reason="dep_down"` instead of
   silently relying on the WAN gate to do the same thing.
 - **L17b — ephemeral disable.** `ds-cli svc disable --until-boot`
   → set into an in-memory overlay that doesn't persist to
