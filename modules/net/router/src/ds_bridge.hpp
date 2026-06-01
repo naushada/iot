@@ -20,6 +20,8 @@
 #include <string>
 #include <vector>
 
+namespace data_store { class Client; }   // forward decl
+
 namespace net_router {
 
 class DsBridge {
@@ -75,6 +77,13 @@ public:
     void set_last_apply_unix(std::uint32_t t);
 
     void on_change(ChangeCallback cb);
+
+    /// Access the underlying data_store::Client. Used by the L16
+    /// ServiceGate (and any future shared helper) to share one
+    /// listener thread + one socket connection across both the
+    /// net.* watch and the services.net.router.enable watch.
+    /// nullptr when !connected().
+    data_store::Client* client();
 
     /// Default ds-server socket path. Duplicated from
     /// data_store::proto::kDefaultSocketPath so this header stays

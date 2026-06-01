@@ -243,6 +243,11 @@ void DsBridge::set_last_apply_unix(std::uint32_t t) {
     m_impl->client.set(kLastApplyUnix, t);
 }
 
+data_store::Client* DsBridge::client() {
+    if (!m_ok || !m_impl) return nullptr;
+    return &m_impl->client;
+}
+
 void DsBridge::on_change(ChangeCallback cb) {
     if (!m_impl) return;
     std::lock_guard<std::mutex> g(m_impl->mtx);
