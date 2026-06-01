@@ -26,6 +26,8 @@
 #include <string>
 #include <vector>
 
+namespace data_store { class Client; }   // forward decl
+
 namespace wifi_client {
 
 class DsBridge {
@@ -107,6 +109,12 @@ public:
     /// block on locks the main thread might hold. Pass nullptr to
     /// clear a previous registration (REQ-WIFI-009).
     void on_change(ChangeCallback cb);
+
+    /// Access the underlying data_store::Client. Used by the L16
+    /// ServiceGate so the Supervisor can share one socket +
+    /// listener thread between the wifi.* watch and the
+    /// services.wifi.client.enable watch. nullptr when !connected().
+    data_store::Client* client();
 
     /// Default ds-server socket path. Duplicated from
     /// data_store::proto::kDefaultSocketPath so this header stays

@@ -291,6 +291,11 @@ void DsBridge::set_last_error(const std::string& s) {
 
 // ─────────────────────── on_change registration ─────────────────────
 
+data_store::Client* DsBridge::client() {
+    if (!m_ok || !m_impl) return nullptr;
+    return &m_impl->client;
+}
+
 void DsBridge::on_change(ChangeCallback cb) {
     if (!m_impl) return;
     std::lock_guard<std::mutex> g(m_impl->mtx);

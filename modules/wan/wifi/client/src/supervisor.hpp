@@ -26,15 +26,20 @@
 /// wpa_supplicant through to wifi.assoc.state='connected'") is
 /// exercised by log/L15/smoke.sh against fake-wpa.sh (D8).
 
+#include <atomic>
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ds_bridge.hpp"
 #include "ctrl.hpp"
 #include "lifecycle.hpp"
 #include "process.hpp"
+
+namespace data_store { class ServiceGate; }   // forward decl
 
 namespace wifi_client {
 
@@ -165,6 +170,13 @@ private:
     Process               m_dhcp;
     ctrl::Client          m_ctrl;
     Lifecycle             m_fsm;
+
+    /// L16/D6 — services.wifi.client.enable gate. Composes with the
+    /// NM-conflict gate; disable dominates conflict (the daemon
+    /// returns "disabled" even if NM would otherwise refuse start).
+    std::unique_ptr<data_store::ServiceGate> m_svc;
+    std::thread                              m_svc_watcher;
+    std::atomic<bool>                        m_svc_stop{false};
 
     /// One-shot startup: probe NM conflict, spawn wpa_supplicant,
     /// connect ctrl, ATTACH. Returns false on any fatal init
