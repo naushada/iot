@@ -14,6 +14,8 @@
 #include "nft_rules.hpp"
 #include "shell.hpp"
 
+#include "data_store/service_gate.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -172,6 +174,17 @@ Status run_daemon(const std::string& socketPath,
     std::atomic_bool wake{false};
     ds.on_change([&wake](DsBridge::Key) { wake.store(true); });
 
+    // L16/D3 — services.net.router.enable gate. When operator flips
+    // it to false: stop iface_monitor, clear net.iface.active="",
+    // publish services.net.router.state="disabled". Re-enable
+    // resumes the iface_monitor loop from scratch — same effect as
+    // a daemon restart, just without the systemctl round-trip.
+    std::unique_ptr<data_store::ServiceGate> svc;
+    if (auto* cli = ds.client()) {
+        svc = std::make_unique<data_store::ServiceGate>(*cli, "net.router");
+        svc->publish_state("running");
+    }
+
     const auto names = ordered_iface_names(ds);
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [netr:%t] %M %N:%l daemon up; priority ifaces: "
@@ -179,7 +192,45 @@ Status run_daemon(const std::string& socketPath,
                names.empty() ? "(none)" : names.front().c_str(),
                static_cast<unsigned>(names.size())));
 
+    bool was_enabled = true;   // schema default
     while (g_run.load()) {
+        const bool enabled = svc ? svc->enabled() : true;
+
+        if (!enabled) {
+            // Transition true -> false: tear down nft + clear
+            // net.iface.active, publish state="disabled". Then
+            // park on the gate until re-enabled.
+            if (was_enabled) {
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D [netr:%t] %M %N:%l services."
+                                    "net.router.enable=false; "
+                                    "tearing down\n")));
+                svc->publish_state("stopping");
+                ds.set_iface_active("");
+                ds.set_state("disabled");
+                // NB: nft rules previously installed by us stay in
+                // the kernel until re-enable refreshes them (the
+                // ruleset is idempotent), or until an operator flushes
+                // manually. Documented in DEPLOY.md (D8).
+                svc->publish_state("disabled");
+                was_enabled = false;
+            }
+            // Block on the gate; resumes on enable transition OR
+            // shutdown (which the dtor wakes via shutdown()).
+            auto next = svc->wait();
+            if (!next.has_value()) break;     // shutdown
+            continue;                          // loop re-evaluates
+        }
+
+        if (!was_enabled) {
+            // false -> true: announce, re-run the lifecycle on
+            // the next tick (lc.step pulls a fresh snapshot).
+            svc->publish_state("starting");
+            ds.set_state("running");
+            was_enabled = true;
+            svc->publish_state("running");
+        }
+
         const auto ifaces = iface::probe_all(names, shell_runner);
         auto in = snapshot_inputs(ds, ifaces);
         lc.step(in);
@@ -195,6 +246,8 @@ Status run_daemon(const std::string& socketPath,
         // Short-sleep loop so SIGTERM + on_change wake reasonably fast.
         for (unsigned slept = 0; slept < interval && g_run.load(); ++slept) {
             if (wake.exchange(false)) break;
+            // Also bail out fast if the gate flips closed mid-sleep.
+            if (svc && !svc->enabled()) break;
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
