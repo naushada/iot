@@ -1,26 +1,26 @@
-L15/D8 smoke transcript 2026-06-01 17:45:56Z
+L15/D8 smoke transcript 2026-06-01 17:54:39Z
 ===========================================
 ds.log:
-  2026-06-01 17:45:55.761106 [DS:192] LM_INFO /work/modules/data-store/src/server/main.cpp:63 socket=/tmp/wifi-smoke/ds.sock store=/tmp/wifi-smoke/store.lua schemas=/tmp/wifi-smoke/schemas
-  2026-06-01 17:45:55.761682 [DS:192] LM_INFO /work/modules/data-store/src/server/main.cpp:76 loaded 26 schema key(s) from /tmp/wifi-smoke/schemas
-  2026-06-01 17:45:55.761750 [DS:192] LM_INFO /work/modules/data-store/src/server/main.cpp:97 loaded 0 key(s) from /tmp/wifi-smoke/store.lua
-  2026-06-01 17:45:55.761874 [Worker:194] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:117 worker 0 started
-  2026-06-01 17:45:55.761948 [Worker:198] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:117 worker 4 started
-  2026-06-01 17:45:55.762007 [Worker:197] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:117 worker 3 started
-  2026-06-01 17:45:55.762068 [Worker:196] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:117 worker 2 started
-  2026-06-01 17:45:55.761951 [Worker:195] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:117 worker 1 started
-  2026-06-01 17:45:55.762268 [DS:192] LM_DEBUG /work/modules/data-store/src/server/server.cpp:74 listening on /tmp/wifi-smoke/ds.sock (mode 0660)
+  2026-06-01 17:54:38.213626 [DS:197] LM_INFO /work/modules/data-store/src/server/main.cpp:63 socket=/tmp/wifi-smoke/ds.sock store=/tmp/wifi-smoke/store.lua schemas=/tmp/wifi-smoke/schemas
+  2026-06-01 17:54:38.214141 [DS:197] LM_INFO /work/modules/data-store/src/server/main.cpp:76 loaded 26 schema key(s) from /tmp/wifi-smoke/schemas
+  2026-06-01 17:54:38.214205 [DS:197] LM_INFO /work/modules/data-store/src/server/main.cpp:97 loaded 0 key(s) from /tmp/wifi-smoke/store.lua
+  2026-06-01 17:54:38.214324 [Worker:199] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:117 worker 0 started
+  2026-06-01 17:54:38.214396 [Worker:200] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:117 worker 1 started
+  2026-06-01 17:54:38.214464 [Worker:203] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:117 worker 4 started
+  2026-06-01 17:54:38.214572 [Worker:201] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:117 worker 2 started
+  2026-06-01 17:54:38.214630 [Worker:202] LM_DEBUG /work/modules/data-store/src/server/worker.cpp:117 worker 3 started
+  2026-06-01 17:54:38.214671 [DS:197] LM_DEBUG /work/modules/data-store/src/server/server.cpp:74 listening on /tmp/wifi-smoke/ds.sock (mode 0660)
 
 wifi-client.log:
-  2026-06-01 17:45:56.290619 [wifi:205] LM_INFO /src/modules/wan/wifi/client/src/ds_bridge.cpp:84 data-store ready at /tmp/wifi-smoke/ds.sock
-  2026-06-01 17:45:56.292038 [wifi:205] LM_INFO /src/modules/wan/wifi/client/src/main_impl.cpp:141 starting on iface=wlan-smoke wpa=/src/log/L15/fake-wpa.py ctrl_dir=/tmp/wifi-smoke/wpa-ctrl
+  2026-06-01 17:54:38.743336 [wifi:210] LM_INFO /src/modules/wan/wifi/client/src/ds_bridge.cpp:84 data-store ready at /tmp/wifi-smoke/ds.sock
+  2026-06-01 17:54:38.744435 [wifi:210] LM_INFO /src/modules/wan/wifi/client/src/main_impl.cpp:141 starting on iface=wlan-smoke wpa=/src/log/L15/fake-wpa.py ctrl_dir=/tmp/wifi-smoke/wpa-ctrl
   [fake-wpa] listening at /tmp/wifi-smoke/wpa-ctrl/wlan-smoke
-  [fake-wpa] ATTACH from /tmp/wpa_ctrl_iot_205_WiGp6x
-  2026-06-01 17:45:56.349549 [wifi:205] LM_INFO /src/modules/wan/wifi/client/src/ctrl.cpp:182 ctrl attached to /tmp/wifi-smoke/wpa-ctrl/wlan-smoke
+  [fake-wpa] ATTACH from /tmp/wpa_ctrl_iot_210_qGE6JD
+  2026-06-01 17:54:38.802679 [wifi:210] LM_INFO /src/modules/wan/wifi/client/src/ctrl.cpp:190 ctrl attached to /tmp/wifi-smoke/wpa-ctrl/wlan-smoke
 
 final state:
   wifi.assoc.state=connected
   wifi.assoc.ssid=HomeAP
   wifi.assoc.bssid=aa:bb:cc:dd:ee:ff
-  wifi.scan.results=(null)
+  wifi.scan.results=[{"bssid":"aa:bb:cc:dd:ee:ff","flags":"[WPA2-PSK-CCMP][ESS]","signal":-42,"ssid":"HomeAP"},{"bssid":"11:22:33:44:55:66","flags":"[WPA2-PSK-CCMP][ESS]","signal":-67,"ssid":"GuestNet"}]
   wifi.last.error=(null)

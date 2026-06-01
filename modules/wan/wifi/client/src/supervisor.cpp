@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
@@ -299,16 +300,24 @@ int Supervisor::run() {
             continue;
         }
         m_fsm.step(*ev);
-        // FUP-L15-D8-1: on ScanResults the Supervisor should issue
-        // SCAN_RESULTS + publish wifi.scan.results JSON. Naive
-        // request() mid-loop collides with concurrent unsolicited
-        // CTRL-EVENT datagrams (real wpa_ctrl skips events between
-        // request/reply; our minimal parser doesn't). Plumbed as a
-        // follow-up — the unit tests already verify the
-        // cap_and_serialize_scan_results + parse_scan_results
-        // helpers (D6 supervisor_test.cpp), and the smoke proves
-        // the connect path end-to-end.
-        if (ev->kind == ctrl::CtrlEvent::Kind::Connected) {
+        if (ev->kind == ctrl::CtrlEvent::Kind::ScanResults) {
+            // Issue SCAN_RESULTS, parse, cap+serialize, publish.
+            // ctrl::Client::request() defers concurrent CTRL-EVENT
+            // datagrams so the CONNECTED event that often follows
+            // close on the heels of SCAN_RESULTS isn't swallowed —
+            // it lands in the listener's deferred queue and we see
+            // it on the next recv_event tick.
+            std::string reply;
+            if (m_ctrl.request("SCAN_RESULTS", reply)) {
+                auto rows = parse_scan_results(reply);
+                auto cap  = m_ds.scan_max_results().value_or(20u);
+                m_ds.set_scan_results(
+                    cap_and_serialize_scan_results(std::move(rows),
+                                                   static_cast<std::size_t>(cap)));
+                m_ds.set_scan_last_unix(static_cast<std::uint32_t>(
+                    std::time(nullptr)));
+            }
+        } else if (ev->kind == ctrl::CtrlEvent::Kind::Connected) {
             m_ds.set_assoc_ssid(ev->ssid);
             m_ds.set_assoc_bssid(ev->bssid);
             auto dhcp_path = pick_dhcp_client(

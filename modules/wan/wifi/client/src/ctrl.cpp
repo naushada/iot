@@ -1,9 +1,11 @@
 #include "ctrl.hpp"
 
 #include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <unistd.h>
 
 #include <ace/INET_Addr.h>      // for time-based send/recv (ACE_Time_Value)
@@ -122,6 +124,12 @@ struct Client::Impl {
     ACE_UNIX_Addr   peer;
     std::string     local_path;
     bool            open = false;
+    /// Datagrams received during a request() that were unsolicited
+    /// events (priority-prefixed). Drained by recv_event() before
+    /// any fresh socket recv. Real wpa_ctrl does the same — events
+    /// and replies share one socket, the client distinguishes by the
+    /// leading "<N>" prefix on events.
+    std::deque<std::string> deferred_events;
 };
 
 Client::Client() : m_impl(new Impl{}) {}
@@ -200,26 +208,65 @@ bool Client::request(const std::string& cmd, std::string& reply) {
         return false;
     }
 
-    char buf[4096];
-    ACE_UNIX_Addr src;
-    ACE_Time_Value timeout(2, 0);
-    ssize_t got = m_impl->sock.recv(buf, sizeof(buf) - 1, src, 0, &timeout);
-    if (got <= 0) {
-        ACE_ERROR((LM_WARNING,
-                   ACE_TEXT("%D [wifi:%t] %M %N:%l recv('%C') n=%d errno=%d\n"),
-                   cmd.c_str(), static_cast<int>(got), errno));
-        return false;
+    // Recv-loop with a global deadline. Datagrams starting with "<"
+    // are unsolicited events — defer them so a concurrent CTRL-EVENT
+    // burst (which is common right after SCAN_RESULTS) doesn't get
+    // mistaken for our reply. Real wpa_ctrl_request() in
+    // wpa_supplicant's own client lib does the same dance.
+    const auto deadline = std::chrono::steady_clock::now()
+                        + std::chrono::seconds(2);
+    while (std::chrono::steady_clock::now() < deadline) {
+        auto now      = std::chrono::steady_clock::now();
+        auto leftover = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            deadline - now).count();
+        if (leftover <= 0) break;
+        ACE_Time_Value tv(static_cast<time_t>(leftover / 1000),
+                          static_cast<suseconds_t>((leftover % 1000) * 1000));
+        char buf[4096];
+        ACE_UNIX_Addr src;
+        ssize_t got = m_impl->sock.recv(buf, sizeof(buf) - 1, src, 0, &tv);
+        if (got <= 0) {
+            ACE_ERROR((LM_WARNING,
+                       ACE_TEXT("%D [wifi:%t] %M %N:%l recv('%C') n=%d "
+                                "errno=%d\n"),
+                       cmd.c_str(), static_cast<int>(got), errno));
+            return false;
+        }
+        buf[got] = '\0';
+        std::string datagram(buf, got);
+        if (!datagram.empty() && datagram.front() == '<') {
+            // Unsolicited event — defer + keep waiting for our reply.
+            m_impl->deferred_events.push_back(std::move(datagram));
+            continue;
+        }
+        reply = std::move(datagram);
+        while (!reply.empty()
+               && (reply.back() == '\n' || reply.back() == '\r')) {
+            reply.pop_back();
+        }
+        return reply.compare(0, 4, "FAIL") != 0;
     }
-    buf[got] = '\0';
-    reply.assign(buf, got);
-    while (!reply.empty() && (reply.back() == '\n' || reply.back() == '\r')) {
-        reply.pop_back();
-    }
-    return reply.compare(0, 4, "FAIL") != 0;
+    ACE_ERROR((LM_WARNING,
+               ACE_TEXT("%D [wifi:%t] %M %N:%l recv('%C') timed out waiting "
+                        "for reply (events deferred=%d)\n"),
+               cmd.c_str(),
+               static_cast<int>(m_impl->deferred_events.size())));
+    return false;
 }
 
 std::optional<CtrlEvent> Client::recv_event(int timeout_ms) {
     if (!connected()) return std::nullopt;
+    // Drain any events deferred during a previous request() call
+    // before doing a fresh socket recv. This is what keeps the
+    // Supervisor's "issue SCAN_RESULTS, parse, publish" path
+    // compatible with the concurrent CTRL-EVENT burst that follows
+    // SCAN: events arriving during request() get queued here and
+    // the FSM sees them on the next event-loop tick.
+    if (!m_impl->deferred_events.empty()) {
+        auto s = std::move(m_impl->deferred_events.front());
+        m_impl->deferred_events.pop_front();
+        return Parser::classify(s);
+    }
     char buf[4096];
     ACE_UNIX_Addr src;
     ACE_Time_Value timeout(timeout_ms / 1000, (timeout_ms % 1000) * 1000);
