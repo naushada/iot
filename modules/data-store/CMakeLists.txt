@@ -49,6 +49,7 @@ link_directories(${ACE_ROOT}/lib)
 # --------------------------------------------------------------------
 add_library(datastore_client STATIC
     src/client/client.cpp
+    src/client/service_gate.cpp
     src/proto/proto.cpp)
 
 target_include_directories(datastore_client
@@ -101,6 +102,7 @@ if(BUILD_DATA_STORE_TESTS)
         test/lua_persistor_test.cpp
         test/callback_test.cpp
         test/schema_test.cpp
+        test/service_gate_test.cpp
         src/server/server.cpp
         src/server/session.cpp
         src/server/data_store.cpp
@@ -109,7 +111,8 @@ if(BUILD_DATA_STORE_TESTS)
         src/server/worker.cpp
         src/server/worker_pool.cpp
         src/proto/proto.cpp
-        src/client/client.cpp)
+        src/client/client.cpp
+        src/client/service_gate.cpp)
 
     target_link_libraries(ds-tests
         GTest::gtest_main
@@ -140,4 +143,11 @@ install(DIRECTORY inc/data_store
 # the relative SYSCONFDIR would land at /usr/etc which ds-server won't
 # scan.
 install(FILES schemas/iot.lua
+        DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
+
+# services.* schema (L16/D1) — central control plane for every iot
+# daemon's enable/state pair. Lives in data-store (not per-daemon)
+# because the set of services is small + the shape is uniform; one
+# enumerable source is what `ds-cli svc list` wants.
+install(FILES schemas/services.lua
         DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
