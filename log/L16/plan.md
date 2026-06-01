@@ -57,6 +57,117 @@ Concretely, this phase delivers:
 4. `ds-cli svc list / enable / disable / status` convenience
    subcommands.
 
+### Runtime flow (push-based, no polling)
+
+The control plane reuses the existing ds-server notification
+fan-out end-to-end — no new IPC, no polling loops, no new
+daemons. Each daemon's `Supervisor` consumes
+`services.<self>.enable` the same way openvpn-client already
+consumes `net.iface.active` for WAN-gating today (see
+`modules/openvpn/client/src/gate.hpp` +
+`src/supervisor.cpp::on_wan_event`).
+
+End-to-end on `ds-cli set services.openvpn.client.enable false`:
+
+1. **`DsBridge::watch` (daemon startup, once).** Each daemon
+   registers a `register` request for `services.<self>.enable`
+   plus any domain keys it already cares about
+   (`net.iface.active` for openvpn-client, `wifi.networks` for
+   wifi-client, …). ds-server records the subscription in the
+   per-session watch set (REQ-DS-004).
+
+2. **ds-server fan-out (reactor thread).** When the operator's
+   `set` lands, ds-server:
+   - Writes the value into the in-memory map + `data_store.lua`
+     (write-through via temp + rename + fsync, REQ-DS-001).
+   - Fires a `changed` notification — one line of JSON per
+     subscribed session — over the unix socket. Unchanged-value
+     sets are suppressed at this layer (REQ-DS-006), so an
+     idempotent `enable=true` while already enabled produces no
+     wake-up downstream.
+
+3. **Listener thread → callback (daemon, async).** Inside the
+   daemon, `data_store::Client`'s internal listener thread
+   (REQ-DS-020) reads the `changed` line, demuxes by key, and
+   invokes the per-watch callback registered at step 1.
+
+4. **Callback → cv-notify (mutex-guarded).** The callback —
+   running on the listener thread — updates the gate's snapshot
+   under a mutex and signals a condition variable. This is the
+   exact pattern `openvpn_client::Supervisor::on_wan_event` uses
+   today; `ServiceGate` (D1) is the shared abstraction over it.
+
+5. **Supervisor wakes (main thread).** The daemon's main thread,
+   blocked in `cv.wait` (or in `recv_event` with a 200–250 ms
+   timeout for liveness), wakes, re-evaluates every gate, and
+   acts on the composite verdict:
+   - **`enable=false`**: SIGTERM the worker subprocess, wait up
+     to 5 s for clean exit, SIGKILL on timeout (NFR-SVC-002),
+     publish `services.<self>.state="disabled"`, park back in
+     `cv.wait`.
+   - **`enable=true` (from disabled)**: spawn the worker,
+     publish `state="starting"` → `"running"` as the worker
+     reports readiness (mgmt-iface PUSH_REPLY for openvpn,
+     CTRL-EVENT-CONNECTED for wifi-client, OPER UP for
+     net-router).
+   - **Other gate transitions** (WAN, NM-conflict): same wake
+     path, different verdict. Composition rule from above
+     applies — `enable=false` dominates every other gate.
+
+```
+  operator                  ds-server                    daemon
+     │                          │                           │
+     │  set services.X.enable   │                           │
+     │  false                   │                           │
+     ├──────────────────────────▶                           │
+     │                          │                           │
+     │                          │  persist + changed evt    │
+     │                          ├──────────────────────────▶│ listener
+     │                          │                           │  thread
+     │                          │                           │     │
+     │                          │                           │  cb fires;
+     │                          │                           │  snapshot=false;
+     │                          │                           │  cv.notify
+     │                          │                           │     │
+     │                          │                           │   main thread
+     │                          │                           │   wakes
+     │                          │                           │     │
+     │                          │                           │   SIGTERM
+     │                          │                           │   worker;
+     │                          │                           │   reap ≤5 s
+     │                          │                           │     │
+     │                          │   set state="disabled"    │     │
+     │                          ◀───────────────────────────┤◀────┘
+     │                          │                           │
+```
+
+**Cost of one disable event.** One wire `set` from operator to
+ds-server, one wire `changed` per watching daemon, one mutex +
+cv signal per daemon, one process reap. No polling cycle, no
+per-daemon schema scan, no periodic heartbeat on the data path.
+
+**Cost of an idle daemon.** Zero. The listener thread blocks in
+`read(2)` on the socket; the main thread blocks in `cv.wait` or
+`recv_event`. CPU usage at idle matches the existing daemons'
+baseline — one ACE_Reactor heartbeat per service, no new ticks
+introduced by this phase.
+
+**Failure modes the push model handles cleanly.**
+- **ds-server restart.** The daemon's `Client` reconnects,
+  re-registers its watches, and re-primes from the post-restart
+  on-disk state. Exactly one `changed` per key that changed
+  while disconnected.
+- **Listener thread wedge** (RISK-DS-05-class). The 200–250 ms
+  `recv_event` timeout in the main thread ensures the
+  Supervisor re-evaluates within one tick of any state the
+  listener missed — push is the fast path, the poll fallback is
+  the safety net.
+- **Operator bounces rapidly** (enable=false→true 10× in 1 s).
+  ds-server suppresses unchanged-value sets (REQ-DS-006); the
+  Supervisor coalesces identical consecutive snapshots
+  (NFR-SVC-003). Net effect: at most one extra worker spawn
+  beyond the final state, regardless of bounce frequency.
+
 ### Non-goals (first-cut scope)
 
 - **systemd-unit control.** No `systemctl start/stop` from the
