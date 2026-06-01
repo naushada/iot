@@ -1,0 +1,261 @@
+#include "supervisor.hpp"
+
+#include <chrono>
+#include <cstdint>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <utility>
+
+#include <ace/Log_Msg.h>
+#include <ace/INET_Addr.h>
+#include <ace/SOCK_Connector.h>
+#include <ace/SOCK_Stream.h>
+#include <ace/Time_Value.h>
+
+#include "lifecycle.hpp"
+#include "mgmt_protocol.hpp"
+#include "process.hpp"
+
+namespace openvpn_client {
+
+namespace {
+
+/// Snapshot DsBridge into the OpenVpnConfig POD. Mirrors what the
+/// old run_daemon did inline; callers must have already verified
+/// missing_required() returns nullopt before invoking.
+OpenVpnConfig snapshot_to_config(const DsBridge& ds) {
+    OpenVpnConfig c;
+    c.remote_host  = ds.remote_host().value_or("");
+    c.remote_port  = ds.remote_port().value_or(1194);
+    c.remote_proto = ds.remote_proto().value_or("udp");
+    c.cert_path    = ds.cert_path().value_or("");
+    c.key_path     = ds.key_path().value_or("");
+    c.ca_path      = ds.ca_path().value_or("");
+    c.cipher       = ds.cipher().value_or("AES-256-GCM");
+    c.dev          = ds.dev().value_or("tun");
+    c.mgmt_port    = ds.mgmt_port().value_or(7505);
+    return c;
+}
+
+/// Block-connect to localhost:port with 100 ms retries up to total_ms.
+/// Lifted verbatim from the old main_impl.cpp connect_mgmt() — same
+/// behaviour, same 5 s default deadline.
+bool connect_mgmt(std::uint16_t port,
+                  ACE_SOCK_Stream& stream,
+                  int total_ms = 5000) {
+    ACE_INET_Addr addr(port, "127.0.0.1");
+    ACE_SOCK_Connector conn;
+    const auto deadline = std::chrono::steady_clock::now()
+                        + std::chrono::milliseconds(total_ms);
+    while (std::chrono::steady_clock::now() < deadline) {
+        ACE_Time_Value t(0, 250 * 1000);
+        if (conn.connect(stream, addr, &t) == 0) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return false;
+}
+
+} // namespace
+
+Supervisor::Supervisor(DsBridge& ds, Options opt)
+  : m_ds(ds), m_opt(std::move(opt)) {}
+
+Supervisor::~Supervisor() = default;
+
+void Supervisor::on_wan_event(const std::optional<std::string>& target) {
+    {
+        std::lock_guard<std::mutex> g(m_mtx);
+        m_pending_target = target;
+        m_wan_dirty      = true;
+    }
+    m_cv.notify_all();
+}
+
+std::optional<std::string> Supervisor::drain_target() {
+    std::lock_guard<std::mutex> g(m_mtx);
+    m_wan_dirty = false;
+    return m_pending_target;
+}
+
+bool Supervisor::wait_for_event() {
+    std::unique_lock<std::mutex> g(m_mtx);
+    m_cv.wait(g, [&]{ return m_shutdown || m_wan_dirty; });
+    return !m_shutdown;
+}
+
+bool Supervisor::wan_dirty() {
+    std::lock_guard<std::mutex> g(m_mtx);
+    return m_wan_dirty;
+}
+
+bool Supervisor::serve_one_session(const std::string& iface) {
+    OpenVpnConfig cfg = snapshot_to_config(m_ds);
+    OpenVpnProcess proc;
+    if (!proc.spawn_openvpn(cfg, m_opt.openvpn_path)) {
+        m_ds.set_state("exited");
+        return false;
+    }
+    m_ds.set_state("connecting");
+    m_ds.set_pid(static_cast<std::uint32_t>(proc.pid()));
+    ACE_DEBUG((LM_INFO,
+               ACE_TEXT("%D [ovpn:%t] %M %N:%l spawned openvpn pid=%d on "
+                        "iface=%C, waiting on mgmt 127.0.0.1:%u\n"),
+               static_cast<int>(proc.pid()),
+               iface.c_str(),
+               static_cast<unsigned>(cfg.mgmt_port)));
+
+    ACE_SOCK_Stream stream;
+    if (!connect_mgmt(static_cast<std::uint16_t>(cfg.mgmt_port), stream)) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [ovpn:%t] %M %N:%l mgmt connect timed out\n")));
+        proc.terminate();
+        m_ds.set_state("exited");
+        m_ds.set_exit_code(proc.wait());
+        return false;
+    }
+
+    Lifecycle::Sinks sinks;
+    sinks.set_state            = [this](const std::string& s) { m_ds.set_state(s); };
+    sinks.set_assigned_ip      = [this](const std::string& s) { m_ds.set_assigned_ip(s); };
+    sinks.set_assigned_gateway = [this](const std::string& s) { m_ds.set_assigned_gateway(s); };
+    sinks.set_assigned_netmask = [this](const std::string& s) { m_ds.set_assigned_netmask(s); };
+    sinks.set_assigned_dns     = [this](const std::string& s) { m_ds.set_assigned_dns(s); };
+    sinks.on_first_push_reply  = []() {
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D [ovpn:%t] %M %N:%l first PUSH_REPLY processed; "
+                            "tunnel config in data-store\n")));
+    };
+    Lifecycle    cli(std::move(sinks));
+    mgmt::Parser parser;
+
+    // Event loop — recv with a 200 ms timeout, feed Parser, step
+    // Lifecycle. Exit on:
+    //   - subprocess death
+    //   - mgmt EOF / hard error
+    //   - WAN event (drain_target wakes us; we surface that via wan_dirty)
+    //   - shutdown
+    //   - --once mode after first PUSH_REPLY
+    char buf[4096];
+    while (proc.running()) {
+        if (wan_dirty()) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l WAN event during "
+                                "session on iface=%C; tearing down\n"),
+                       iface.c_str()));
+            break;
+        }
+        {
+            std::lock_guard<std::mutex> g(m_mtx);
+            if (m_shutdown) break;
+        }
+        ACE_Time_Value t(0, 200 * 1000);
+        ssize_t n = stream.recv(buf, sizeof(buf), &t);
+        if (n > 0) {
+            parser.feed(std::string_view(buf, n));
+            while (auto ev = parser.next()) {
+                cli.step(*ev);
+            }
+            if (m_opt.once && cli.saw_push_reply()) break;
+            continue;
+        }
+        if (n == 0) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l mgmt socket EOF\n")));
+            break;
+        }
+        if (errno == ETIME || errno == ETIMEDOUT || errno == EAGAIN) continue;
+        ACE_ERROR((LM_WARNING,
+                   ACE_TEXT("%D [ovpn:%t] %M %N:%l mgmt recv errno=%d\n"),
+                   errno));
+        break;
+    }
+
+    stream.close();
+    if (proc.running()) proc.terminate();
+    int code = proc.wait();
+    m_ds.set_state("exited");
+    m_ds.set_exit_code(code);
+    return true;
+}
+
+Status Supervisor::run() {
+    m_ds.on_wan_change([this](auto t) { this->on_wan_event(t); });
+
+    // Initial publish: until proven otherwise we are gated.
+    m_ds.set_state("disconnected");
+    m_ds.set_gate_reason("wan_down");
+    m_ds.set_bound_iface("");
+
+    // Prime: the snapshot may already hold an iface (net-router was
+    // running before us). Treat it as the first event.
+    on_wan_event(m_ds.wan_iface());
+
+    while (true) {
+        if (!wait_for_event()) break;          // shutdown
+        auto target = drain_target();
+        const bool target_up = target.has_value() && !target->empty();
+
+        GateDecision decision = m_gate.evaluate(target);
+
+        if (!target_up) {
+            // Either we're already idle (Action::None) or we just
+            // tore the session down inside serve_one_session because
+            // the WAN went away (Action::Terminate; the child is
+            // already reaped). Publish + wait for the next event.
+            if (decision.action == GateDecision::Action::Terminate) {
+                m_gate.note_terminated();
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D [ovpn:%t] %M %N:%l WAN down "
+                                    "(from=%C); session torn down\n"),
+                           decision.from.c_str()));
+            }
+            m_ds.set_state("disconnected");
+            m_ds.set_gate_reason("wan_down");
+            m_ds.set_bound_iface("");
+            continue;
+        }
+
+        // Target up. None (we're already running on this iface AND
+        // the child is still healthy) only happens if serve_one_session
+        // returned for non-WAN reasons while we were inside it — but
+        // by construction serve_one_session reaps the child before
+        // returning, so the Gate's note_terminated has NOT been called
+        // yet. Defensive: any time we get here with target up, make
+        // sure the gate reflects "not running" before deciding.
+        if (m_gate.running()) {
+            // Session ended (child died or WAN changed); reflect that.
+            m_gate.note_terminated();
+            decision = m_gate.evaluate(target);
+        }
+
+        if (decision.action == GateDecision::Action::Restart) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l WAN iface changed "
+                                "%C → %C; restarting session\n"),
+                       decision.from.c_str(),
+                       decision.iface.c_str()));
+        }
+
+        m_ds.set_gate_reason("ok");
+        m_ds.set_bound_iface(*target);
+        m_gate.note_spawned(*target);
+
+        const bool spawned = serve_one_session(*target);
+        m_gate.note_terminated();
+        m_ds.set_bound_iface("");
+        if (!spawned) {
+            m_ds.set_gate_reason("spawn_failed");
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l openvpn spawn "
+                                "failed on iface=%C; waiting for next "
+                                "WAN event\n"),
+                       target->c_str()));
+        }
+
+        if (m_opt.once) break;
+    }
+    return {};
+}
+
+} // namespace openvpn_client

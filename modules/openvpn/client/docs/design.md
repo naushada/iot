@@ -1,8 +1,9 @@
 # openvpn-client — module design (L12)
 
-> **Status (2026-05-31):** L12 closed. D1+D2 (scaffold), D3 (DsBridge),
+> **Status (2026-06-01):** L12 closed. D1+D2 (scaffold), D3 (DsBridge),
 > D4 (mgmt parser), D5 (ACE_Process wrapper), D6 (lifecycle + e2e
-> smoke) all done; openvpn(8) install + cap docs in this PR.
+> smoke) all done. L15 follow-on adds the WAN gate (subscribes to
+> `net.iface.active`, only spawns openvpn while a WAN iface is up).
 
 ## What this module is
 
@@ -106,6 +107,51 @@ moves us into the same problem space NetworkManager / systemd-networkd
 already solve. L12's scope explicitly took the smaller bet: let
 openvpn do the kernel work, we just watch.
 
+## WAN gate (L15)
+
+openvpn(8) won't reach the server if there's no usable WAN. Rather
+than letting it spin in `RECONNECTING` until something happens, the
+daemon **subscribes to `net.iface.active`** (the highest-priority
+OPER UP iface that net-router has selected: eth0 / wlan0 / wwan0)
+and only spawns openvpn while that key is non-empty.
+
+State machine:
+
+| `net.iface.active`       | bound  | action               | `vpn.gate.reason` |
+|--------------------------|--------|----------------------|-------------------|
+| unset / empty            | none   | stay idle            | `wan_down`        |
+| unset / empty            | eth0   | terminate child      | `wan_down`        |
+| eth0                     | none   | spawn (bind → eth0)  | `ok`              |
+| eth0                     | eth0   | no-op                | `ok`              |
+| wlan0 (was eth0)         | eth0   | terminate + respawn  | `ok`              |
+
+The watch callback runs on the data_store::Client listener thread;
+it sets a "dirty" flag + notifies a condition variable. The mgmt
+event loop's existing 200 ms `recv` timeout doubles as the polling
+interval for the flag — on WAN change, the loop exits within one
+poll, the child is SIGTERM'd, and the supervisor's outer loop
+respawns bound to the new iface.
+
+**Hard dependency on net-router.** With no net-router running,
+`net.iface.active` is never set and openvpn-client never spawns.
+That's intentional for the L13+ product shape; dev/standalone
+runs can short-circuit by setting the key manually:
+
+```sh
+ds-cli set net.iface.active '"eth0"'
+```
+
+Two write keys back to the operator:
+- `vpn.gate.reason` — `"ok"` while running, `"wan_down"` while
+  gated, `"spawn_failed"` if the last spawn attempt failed.
+- `vpn.bound.iface` — which WAN iface the current session is
+  bound to (empty when idle).
+
+The Gate FSM itself is a pure C++ class (`src/gate.{hpp,cpp}`) —
+no I/O, no threading; fully unit-tested in `test/gate_test.cpp`.
+The Supervisor (`src/supervisor.{hpp,cpp}`) wires it to DsBridge +
+OpenVpnProcess.
+
 ## Why ACE (not libevent like grace-server)
 
 The rest of this repo (lwm2m, ds-server, ds-cli) all run on
@@ -136,13 +182,15 @@ modules/openvpn/client/
 │   └── client.hpp            v0 public API (#include "client.hpp")
 ├── src/
 │   ├── main.cpp              CLI parse + entry
-│   ├── main_impl.cpp         v0 dump-vpn-keys (D2)
-│   ├── ds_bridge.{hpp,cpp}   (D3 — pending)
-│   ├── mgmt_protocol.{hpp,cpp}  (D4 — pending)
-│   ├── process.{hpp,cpp}     (D5 — pending)
-│   └── client.cpp            lifecycle FSM (D6 — pending)
+│   ├── main_impl.cpp         v0 dump-vpn-keys + run_daemon wrapper
+│   ├── ds_bridge.{hpp,cpp}   data-store I/O (vpn.* + net.iface.active)
+│   ├── mgmt_protocol.{hpp,cpp}  openvpn mgmt-interface parser
+│   ├── process.{hpp,cpp}     ACE_Process wrapper
+│   ├── lifecycle.{hpp,cpp}   mgmt-event → vpn.* sink FSM (D6)
+│   ├── gate.{hpp,cpp}        pure WAN-gate FSM (L15)
+│   └── supervisor.{hpp,cpp}  gated spawn/serve outer loop (L15)
 ├── schemas/vpn.lua
-├── test/                     gtest suite (D3 onward)
+├── test/                     gtest suite
 └── docs/design.md            this file
 ```
 
@@ -180,7 +228,16 @@ Same `vpn.state` values the schema declares. Wire shape:
             └──────────────┘
 ```
 
-First-cut (L12/D6) quiesces at `connected`. Reconnect is FUP-L12-1.
+First-cut (L12/D6) quiesces at `connected`. The L15 WAN gate adds
+two more transitions out of every state above:
+
+- `net.iface.active` cleared → SIGTERM child → `disconnected`
+  (`vpn.gate.reason=wan_down`).
+- `net.iface.active` changes to a different iface → SIGTERM child
+  → re-enter `disconnected` → re-spawn bound to the new iface
+  (`vpn.bound.iface` updates atomically).
+
+Auto-restart on bare child crash (no WAN event) is still FUP-L12-1.
 
 ## Related docs
 

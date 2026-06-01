@@ -73,3 +73,28 @@ TEST(DsBridge, OnChangeAcceptsNullCallbackForReset) {
     ds.on_change(nullptr);
     SUCCEED();
 }
+
+TEST(DsBridge, WanAccessorReturnsNulloptWhenDisconnected) {
+    // Same contract as the vpn.* accessors: nullopt when ds is down,
+    // so the Supervisor's "WAN unknown" branch is unambiguous.
+    DsBridge ds(kBogusSocket);
+    EXPECT_FALSE(ds.wan_iface().has_value());
+}
+
+TEST(DsBridge, GateSettersNoopWhenDisconnected) {
+    // Belt-and-braces: the supervisor publishes gate.reason +
+    // bound.iface on every transition; these must not crash if
+    // ds-server died mid-session.
+    DsBridge ds(kBogusSocket);
+    ds.set_gate_reason("wan_down");
+    ds.set_bound_iface("eth0");
+    ds.set_bound_iface("");
+    SUCCEED();
+}
+
+TEST(DsBridge, OnWanChangeAcceptsNullCallbackForReset) {
+    DsBridge ds(kBogusSocket);
+    ds.on_wan_change([](const std::optional<std::string>&) {});
+    ds.on_wan_change(nullptr);
+    SUCCEED();
+}

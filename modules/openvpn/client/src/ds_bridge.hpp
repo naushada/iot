@@ -48,6 +48,13 @@ public:
 
     using ChangeCallback = std::function<void(Key)>;
 
+    /// WAN gate callback. Fires when net.iface.active is set, cleared,
+    /// or changes value. nullopt means the key is unset / empty
+    /// ("WAN down"); a value means the highest-priority OPER UP iface
+    /// net-router has currently selected. Fires on the data_store::
+    /// Client listener thread — keep it short.
+    using WanCallback = std::function<void(const std::optional<std::string>&)>;
+
     /// Connect to `socketPath` (empty → default
     /// /var/run/iot/data_store.sock), prime the snapshot, register the
     /// watch. Connection failures are silently absorbed — call
@@ -74,6 +81,14 @@ public:
     std::optional<std::string>   dev()          const;
     std::optional<std::uint32_t> mgmt_port()    const;
 
+    /// Snapshot of net.iface.active (the highest-priority OPER UP
+    /// interface net-router has currently selected). nullopt while
+    /// net-router has not yet written the key (e.g., during startup
+    /// before any iface comes up) or when WAN is genuinely down (empty
+    /// string written by net-router collapses to nullopt). Updated by
+    /// the same listener thread that drives the vpn.* watch.
+    std::optional<std::string>   wan_iface()    const;
+
     /// Returns nullopt when every required key is present
     /// (vpn.remote.host, vpn.cert.path, vpn.key.path, vpn.ca.path).
     /// Otherwise returns the list of missing key names so the caller
@@ -94,11 +109,20 @@ public:
     void set_assigned_dns(const std::string& s);
     void set_pid(std::uint32_t p);
     void set_exit_code(std::int32_t c);
+    void set_gate_reason(const std::string& s);
+    void set_bound_iface(const std::string& s);
 
     /// Register a per-key change listener. Fires on the
     /// data_store::Client's listener thread — keep it short, don't
     /// block on locks the main thread might hold.
     void on_change(ChangeCallback cb);
+
+    /// Register a WAN gate listener. Fires when net.iface.active is
+    /// set, cleared, or changes value. The callback receives the new
+    /// snapshot (nullopt = WAN down). Same threading rules as
+    /// on_change(): runs on the listener thread, do not block on the
+    /// daemon's main-thread mutex.
+    void on_wan_change(WanCallback cb);
 
     /// Default ds-server socket path. Duplicated from
     /// data_store::proto::kDefaultSocketPath so this header stays
