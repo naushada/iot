@@ -79,6 +79,16 @@ RegistrationOutcome RegistrationServer::handle(const CoAPAdapter::CoAPMessage& m
     const bool isDeregister   = (uri != "/rd") && (uri.compare(0, 4, "/rd/") == 0) &&
                                 (method == 4 /*DELETE*/);
 
+    // L16/D5b — refuse new Register while disabled. Existing
+    // clients can still Update / Deregister so they clean up
+    // gracefully; the active registrations themselves are dropped
+    // at the disable transition by main()'s watcher thread.
+    if (isRegister && m_disabled.load(std::memory_order_relaxed)) {
+        out.kind     = RegistrationOutcome::BadRequest;
+        out.response = build_simple_ack(msg, /*5.03 Service Unavailable*/ 0xA3);
+        return out;
+    }
+
     if (isRegister) {
         ServerRegistration reg;
         reg.endpoint     = get_query(msg, coapHelper, "ep");
