@@ -121,6 +121,11 @@ DsConfig::~DsConfig() {
     m_impl->client.close();
 }
 
+data_store::Client* DsConfig::client() {
+    if (!m_ok || !m_impl) return nullptr;
+    return &m_impl->client;
+}
+
 std::optional<std::string> DsConfig::endpoint() const {
     if (!m_ok) return std::nullopt;
     std::lock_guard<std::mutex> g(m_impl->mtx);

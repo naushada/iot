@@ -42,6 +42,8 @@
 #include <optional>
 #include <string>
 
+namespace data_store { class Client; }   // forward decl
+
 namespace iot {
 
 class DsConfig {
@@ -79,6 +81,12 @@ public:
     /// data_store::Client's listener thread — keep it short, don't
     /// block on locks the main thread might hold.
     void on_change(ChangeCallback cb);
+
+    /// Access the underlying data_store::Client so the L16/D5
+    /// ServiceGate can share one socket + listener thread between
+    /// the iot.* watch and the services.lwm2m.{client,server}.enable
+    /// watch. nullptr when !connected().
+    data_store::Client* client();
 
     /// Default socket path when none is supplied. Tracks ds-server's
     /// kDefaultSocketPath, duplicated here so the public header stays
