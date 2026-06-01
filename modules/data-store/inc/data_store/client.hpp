@@ -149,6 +149,13 @@ public:
     /// NOT block this — events go to BOTH paths.
     Status recv_event(Event& out, std::int32_t timeout_ms = 1000);
 
+    /// L16/D7 — issue a `SchemaDump` op against the server, return
+    /// the raw JSON string the server stamped into the response
+    /// body. ds-cli `svc list` calls this to enumerate the
+    /// `services.*` rows without hardcoding a daemon list. Empty
+    /// schema dir returns `{"namespaces":[],"keys":{}}`.
+    Status schema_dump(std::string& out, std::int32_t timeout_ms = 1000);
+
     /// Close the connection + join the listener thread. Idempotent.
     void close();
 

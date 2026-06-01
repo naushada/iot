@@ -209,11 +209,14 @@ void Worker::handle_process_request(WorkMsg* msg) {
         return;
     }
 
-    // All four request opcodes carry `keys: [...]` in the body.
-    if (!req.is_object() || !req.contains("keys") || !req["keys"].is_array()) {
-        s->send(encode_error(op, h.reqID, proto::Status::BadPayload,
-                             "missing keys array"));
-        return;
+    // Set/Get/RegisterWatch/RemoveWatch carry `keys: [...]` in the
+    // body. SchemaDump has no payload — skip the check for it.
+    if (op != proto::Op::SchemaDump) {
+        if (!req.is_object() || !req.contains("keys") || !req["keys"].is_array()) {
+            s->send(encode_error(op, h.reqID, proto::Status::BadPayload,
+                                 "missing keys array"));
+            return;
+        }
     }
 
     switch (op) {
@@ -335,6 +338,25 @@ void Worker::handle_process_request(WorkMsg* msg) {
                 s->note_unwatch(k);
             }
             s->send(encode_response(op, h.reqID, proto::Status::Ok, json{}));
+            return;
+        }
+
+        case proto::Op::SchemaDump: {
+            // L16/D7 — return the loaded schema as a JSON object so
+            // ds-cli `svc list` can enumerate services.* without
+            // hardcoding a daemon list. Always succeeds with Ok; an
+            // empty schema dir produces {"keys":{}, "namespaces":[]}.
+            json resp;
+            if (m_schema) {
+                // SchemaRegistry::dump_json returns a serialized
+                // string so the schema header stays free of
+                // <nlohmann/json.hpp>. Parse it back here.
+                resp = json::parse(m_schema->dump_json());
+            } else {
+                resp["keys"]       = json::object();
+                resp["namespaces"] = json::array();
+            }
+            s->send(encode_response(op, h.reqID, proto::Status::Ok, resp));
             return;
         }
 

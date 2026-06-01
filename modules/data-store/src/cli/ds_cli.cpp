@@ -23,6 +23,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <set>
 #include <string>
 #include <type_traits>
 #include <unistd.h>
@@ -42,7 +43,11 @@ void usage() {
         "  ds-cli [--socket=PATH] set <key> <value>\n"
         "  ds-cli [--socket=PATH] get <key> [<key>...]\n"
         "  ds-cli [--socket=PATH] watch [--count=N] <key> [<key>...]\n"
-        "  ds-cli [--socket=PATH] unwatch <key> [<key>...]\n";
+        "  ds-cli [--socket=PATH] unwatch <key> [<key>...]\n"
+        "  ds-cli [--socket=PATH] svc list\n"
+        "  ds-cli [--socket=PATH] svc enable  <name>\n"
+        "  ds-cli [--socket=PATH] svc disable <name>\n"
+        "  ds-cli [--socket=PATH] svc status  <name>\n";
 }
 
 struct Args {
@@ -192,6 +197,8 @@ int do_unwatch(data_store::Client& cli, const std::vector<std::string>& keys) {
 
 } // namespace
 
+int do_svc(data_store::Client& cli, const std::vector<std::string>& rest);
+
 int main(int argc, char** argv) {
     Args a = parse(argc, argv);
     if (a.socket.empty()) a.socket = data_store::proto::kDefaultSocketPath;
@@ -207,6 +214,157 @@ int main(int argc, char** argv) {
     else if (a.cmd == "get")     return do_get(cli, a.rest);
     else if (a.cmd == "watch")   return do_watch(cli, a.rest, a.count);
     else if (a.cmd == "unwatch") return do_unwatch(cli, a.rest);
+    else if (a.cmd == "svc")     return do_svc(cli, a.rest);
+
+    usage();
+    return 2;
+}
+
+namespace {
+
+/// Render one services.* row to stdout. Looks up enable + state
+/// + (optionally) uptime.sec per name.
+void render_svc_row(data_store::Client& cli, const std::string& name) {
+    const std::string en_k = "services." + name + ".enable";
+    const std::string st_k = "services." + name + ".state";
+    const std::string up_k = "services." + name + ".uptime.sec";
+    std::vector<data_store::Client::GetResult> got;
+    cli.get({en_k, st_k, up_k}, got);
+    auto find = [&](const std::string& k) -> std::string {
+        for (const auto& g : got) {
+            if (g.key == k && g.has_value) {
+                if (auto s = data_store::to_string(g.value)) return *s;
+                if (auto n = data_store::to_int32(g.value))
+                    return std::to_string(*n);
+                if (auto u = data_store::to_uint32(g.value))
+                    return std::to_string(*u);
+                if (auto b = data_store::to_bool(g.value))
+                    return *b ? "true" : "false";
+                return "?";
+            }
+        }
+        return "-";
+    };
+    std::string enable = (name == "ds") ? std::string("n/a") : find(en_k);
+    std::string state  = find(st_k);
+    std::string uptime = find(up_k);
+    std::printf("%-18s %-8s %-10s %s\n",
+                name.c_str(), enable.c_str(), state.c_str(),
+                uptime == "-" ? "" : uptime.c_str());
+}
+
+} // namespace
+
+int do_svc(data_store::Client& cli, const std::vector<std::string>& rest) {
+    if (rest.empty()) {
+        usage();
+        return 2;
+    }
+    const std::string verb = rest[0];
+
+    if (verb == "list") {
+        std::string body;
+        auto rs = cli.schema_dump(body);
+        if (!rs.ok) {
+            std::cerr << "[ds-cli] svc list: schema-dump failed: "
+                      << rs.err << "\n";
+            return 1;
+        }
+        // Parse the schema JSON and extract every distinct
+        // "services.<name>." prefix.
+        nlohmann::json doc;
+        try { doc = nlohmann::json::parse(body); }
+        catch (const std::exception& e) {
+            std::cerr << "[ds-cli] svc list: bad schema JSON: "
+                      << e.what() << "\n";
+            return 1;
+        }
+        std::vector<std::string> names;
+        if (doc.contains("keys") && doc["keys"].is_object()) {
+            std::set<std::string> seen;
+            for (auto it = doc["keys"].begin(); it != doc["keys"].end(); ++it) {
+                const std::string& key = it.key();
+                if (key.rfind("services.", 0) != 0) continue;
+                auto rest_str = key.substr(9);
+                // Drop the trailing ".enable" / ".state" / ".uptime.sec"
+                // by trimming at the LAST dot. "services.ds.uptime.sec"
+                // -> "ds.uptime" — that's wrong; we want "ds". Better:
+                // walk until we hit ".enable" or ".state" or
+                // ".uptime.sec" suffix.
+                static const char* suffixes[] = {
+                    ".enable", ".state", ".uptime.sec",
+                };
+                for (auto suf : suffixes) {
+                    auto slen = std::strlen(suf);
+                    if (rest_str.size() >= slen &&
+                        rest_str.compare(rest_str.size() - slen, slen, suf) == 0) {
+                        rest_str.resize(rest_str.size() - slen);
+                        break;
+                    }
+                }
+                if (!rest_str.empty()) seen.insert(rest_str);
+            }
+            names.assign(seen.begin(), seen.end());
+        }
+        std::printf("%-18s %-8s %-10s %s\n",
+                    "NAME", "ENABLE", "STATE", "UPTIME");
+        for (const auto& n : names) render_svc_row(cli, n);
+        return 0;
+    }
+
+    if (verb == "enable" || verb == "disable") {
+        if (rest.size() < 2) { usage(); return 2; }
+        const std::string& name = rest[1];
+        if (name == "ds") {
+            std::cerr << "[ds-cli] svc " << verb
+                      << ": ds is substrate; cannot be "
+                      << verb << "d via the data store (use "
+                      << "systemctl)\n";
+            return 1;
+        }
+        const std::string key = "services." + name + ".enable";
+        const bool val = (verb == "enable");
+        auto rs = cli.set(key, val);
+        if (!rs.ok) {
+            std::cerr << "[ds-cli] svc " << verb << ": " << rs.err << "\n";
+            return 2;
+        }
+        std::cout << "ok\n";
+        return 0;
+    }
+
+    if (verb == "status") {
+        if (rest.size() < 2) { usage(); return 2; }
+        const std::string& name = rest[1];
+        std::vector<std::string> keys = {
+            "services." + name + ".enable",
+            "services." + name + ".state",
+        };
+        if (name == "ds") {
+            keys[0] = "services.ds.state";   // ds has no .enable
+            keys.push_back("services.ds.uptime.sec");
+        }
+        std::vector<data_store::Client::GetResult> got;
+        auto rs = cli.get(keys, got);
+        if (!rs.ok) {
+            std::cerr << "[ds-cli] svc status: " << rs.err << "\n";
+            return 1;
+        }
+        for (const auto& g : got) {
+            std::cout << g.key << " = ";
+            if (!g.has_value) { std::cout << "(unset)\n"; continue; }
+            if (auto s = data_store::to_string(g.value)) std::cout << *s;
+            else if (auto b = data_store::to_bool(g.value))
+                std::cout << (*b ? "true" : "false");
+            else if (auto n = data_store::to_int32(g.value))
+                std::cout << *n;
+            else if (auto u = data_store::to_uint32(g.value))
+                std::cout << *u;
+            else std::cout << "(?)";
+            std::cout << "\n";
+        }
+        return 0;
+    }
 
     usage();
     return 2;

@@ -324,6 +324,19 @@ Status status_from(const PendingValue& v, const char* op_label) {
 
 } // namespace
 
+Status Client::schema_dump(std::string& out_json, std::int32_t timeout_ms) {
+    out_json.clear();
+    PendingValue out;
+    auto rs = m_impl->round_trip(proto::Op::SchemaDump,
+                                 std::string_view{},  // empty body
+                                 out, timeout_ms);
+    if (!rs.ok) return rs;
+    auto err = status_from(out, "schema-dump");
+    if (!err.ok) return err;
+    out_json = out.body.dump();
+    return {};
+}
+
 Status Client::set(const std::vector<KV>& pairs, std::int32_t timeout_ms) {
     json req;
     req["keys"] = json::array();
