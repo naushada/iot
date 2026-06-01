@@ -237,6 +237,41 @@ DNAT'd to `net.lwm2m.target.ip`. Override via `net.forward.ports`
 and add operator drops/forwards via the JSON `net.custom.rules`
 schema key (see `/etc/iot/ds-schemas/net.lua`).
 
+For the **wifi-client** unit (L15: wpa_supplicant + DHCP-client
+supervisor; publishes `wifi.*`), seed the network list and enable.
+NetworkManager MUST be masked on hosts running wifi-client — the
+daemon's startup probe writes `wifi.assoc.state="conflict"` and
+refuses to spawn wpa_supplicant if NM is active.
+
+```sh
+sudo systemctl mask NetworkManager   # avoid the conflict gate
+
+ds-cli --socket=/run/iot/data_store.sock set wifi.networks \
+    '[{"ssid":"HomeAP","psk":"correcthorse","priority":10}]'
+
+# Optional: pick a different iface or DHCP client.
+ds-cli --socket=/run/iot/data_store.sock set wifi.iface       '"wlan0"'
+ds-cli --socket=/run/iot/data_store.sock set wifi.dhcp.client '"udhcpc"'
+
+sudo systemctl enable --now iot-wifi-client.service
+journalctl -u iot-wifi-client.service -f | grep "ctrl attached\|assoc\|connected\|dhcp"
+
+# Observe the published wifi.* keys.
+ds-cli --socket=/run/iot/data_store.sock get \
+    wifi.assoc.state wifi.assoc.ssid wifi.assoc.bssid \
+    wifi.dhcp.state wifi.dhcp.ip wifi.signal.rssi
+```
+
+The unit ships with `AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW`
++ `DeviceAllow=/dev/rfkill rw`; scan needs raw sockets, key mgmt
+needs NET_ADMIN, soft-block check needs /dev/rfkill. Plaintext PSK
+posture: `wifi.networks[].psk` lives in `/var/lib/iot/data_store.lua`
+in plaintext, same as `vpn.cert.path`. Secrets-vault is FUP-L15-1.
+
+The chain closes here: wifi-client brings `wlan0` up → kernel
+flags it OPER UP → net-router writes `net.iface.active="wlan0"`
+→ openvpn-client's WAN gate fires → tunnel comes up.
+
 ### 4. Same ds-cli tuning as the container path
 
 ```sh

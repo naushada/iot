@@ -1,0 +1,59 @@
+[Unit]
+Description=IoT wifi-client (spawns wpa_supplicant + udhcpc, publishes wifi.* to ds-server)
+Documentation=file:///etc/iot/wifi-client.env
+Documentation=file:///usr/local/share/doc/iot/wifi-client-design.md
+# DsBridge connects to ds-server's unix socket; wait for it.
+After=network-online.target iot-ds.service
+Wants=network-online.target iot-ds.service
+# Refuse coexistence with NetworkManager — wifi-client probes at
+# startup and writes wifi.assoc.state="conflict" if it finds NM
+# running (REQ-WIFI-022). Operators expected to mask NM on hosts
+# running wifi-client. systemd-level Conflicts= would also work
+# but couples us tighter than necessary — the runtime probe is
+# the canonical source of truth.
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/iot/wifi-client.env
+ExecStart=/usr/local/bin/wifi-client $WIFI_CLIENT_ARGS
+
+# wpa_supplicant(8) configures iface state, manages keys, and the
+# child udhcpc binds DHCP sockets — all need CAP_NET_ADMIN. Scan
+# uses raw sockets so CAP_NET_RAW too. DynamicUser=yes works with
+# AmbientCapabilities on systemd 244+; we drop every other cap so
+# a compromised wifi-client can only manage its iface, nothing else.
+DynamicUser=yes
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+
+# wpa_supplicant queries soft-block via /dev/rfkill on startup.
+# Without it the soft-block check returns ENOENT and wpa silently
+# treats the iface as un-blocked, but the access is logged either
+# way — making it explicit avoids the noise.
+DeviceAllow=/dev/rfkill rw
+
+# Same RuntimeDirectory=iot as iot-ds.service so the daemon sees
+# the same /run/iot/data_store.sock socket file.
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+
+Restart=on-failure
+RestartSec=5s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+# PrivateTmp=yes is incompatible with wpa_supplicant putting its
+# control socket under /run/wpa_supplicant/ when systemd remaps
+# /run. Default to NO so the control-dir is shared with udhcpc
+# and any operator wpa_cli session.
+PrivateTmp=no
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

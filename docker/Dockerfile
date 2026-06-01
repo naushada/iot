@@ -3,10 +3,15 @@ FROM ubuntu:jammy
 #   openvpn(8) — the openvpn-client daemon spawns it
 #   netcat-openbsd — L12 fake-openvpn smoke harness
 #   nftables + iproute2 — the net-router daemon shells out to nft + ip
+#   wpasupplicant + udhcpc + wireless-tools — wifi-client daemon
+#                                              spawns wpa_supplicant +
+#                                              udhcpc, smoke harness
+#                                              uses wpa_cli for verify
 # None of them are link-time deps, just runtime.
 RUN apt-get update && apt-get -y upgrade && \
     apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev liblua5.3-dev python3-dev autoconf wget pkg-config \
-                       openvpn netcat-openbsd nftables iproute2
+                       openvpn netcat-openbsd nftables iproute2 \
+                       wpasupplicant udhcpc wireless-tools
 
 # ACE/TAO 7.0.0 — same install prefix as the xpmile project so the include
 # / link paths in apps/CMakeLists.txt resolve. `ssl=1` is load-bearing; without

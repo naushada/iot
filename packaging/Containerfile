@@ -48,7 +48,10 @@ RUN find /staging/etc/iot/config -name '*.lua.example' \
 # Strip the binaries — saves ~20 MB across the three.
 RUN strip /staging/usr/bin/ds-server \
           /staging/usr/bin/ds-cli \
-          /staging/usr/bin/lwm2m
+          /staging/usr/bin/lwm2m \
+          /staging/usr/bin/openvpn-client \
+          /staging/usr/bin/net-router \
+          /staging/usr/bin/wifi-client
 
 # ──────────────────────────────────────────────────────────────────────
 # Stage 2: runtime
@@ -75,7 +78,10 @@ RUN apt-get update -qq && \
         ca-certificates \
         openvpn \
         nftables \
-        iproute2 && \
+        iproute2 \
+        wpasupplicant \
+        udhcpc \
+        wireless-tools && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* /usr/share/doc/* /usr/share/man/*
 
@@ -99,6 +105,7 @@ COPY --from=build /staging/usr/bin/ds-cli          /usr/local/bin/
 COPY --from=build /staging/usr/bin/lwm2m           /usr/local/bin/
 COPY --from=build /staging/usr/bin/openvpn-client  /usr/local/bin/
 COPY --from=build /staging/usr/bin/net-router      /usr/local/bin/
+COPY --from=build /staging/usr/bin/wifi-client     /usr/local/bin/
 COPY --from=build /staging/etc/iot                 /etc/iot
 
 COPY packaging/iot-entrypoint.sh /usr/local/bin/iot-entrypoint
