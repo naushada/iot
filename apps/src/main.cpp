@@ -210,8 +210,14 @@ load_provisioning_from_config(const std::string& configDir,
 /// Attach BootstrapServer (on the Bootstrap port) + RegistrationServer +
 /// canonical ObjectStore (for Discover output) on the DeviceMgmtServer
 /// port. Install the 1 Hz tick to drive registry expiry.
-void wire_server(std::shared_ptr<App>& app, const std::string& configDir,
-                 iot::DsConfig& ds) {
+struct ServerPlumbing {
+    std::shared_ptr<::lwm2m::ClientRegistry>      registry;
+    std::shared_ptr<::lwm2m::RegistrationServer>  regServer;
+};
+
+ServerPlumbing wire_server(std::shared_ptr<App>& app,
+                           const std::string& configDir,
+                           iot::DsConfig& ds) {
     auto registry = std::make_shared<::lwm2m::ClientRegistry>();
     auto bsServer = std::make_shared<::lwm2m::bootstrap::Server>();
 
@@ -286,6 +292,8 @@ void wire_server(std::shared_ptr<App>& app, const std::string& configDir,
             }
         }
     });
+
+    return ServerPlumbing{registry, regServer};
 }
 
 /// Build the client's ObjectStore + handlers and attach them to the
@@ -431,7 +439,8 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         // Unregistered and this branch sends a fresh Register with
         // the new endpoint (via RegistrationClient::endpoint()) and/or
         // to the freshly-swapped peer above.
-        if (reg->state() == ::lwm2m::RegistrationState::Unregistered) {
+        if (reg->state() == ::lwm2m::RegistrationState::Unregistered &&
+            !reg->is_disabled()) {
             ACE_DEBUG((LM_INFO,
                        ACE_TEXT("%D [iot:%t] %M %N:%l no bootstrap; "
                                 "sending Register directly\n")));
@@ -632,10 +641,53 @@ int main(std::int32_t argc, char *argv[]) {
     }
 
     ClientPlumbing clientPlumbing;
+    ServerPlumbing serverPlumbing;
     if (UDPAdapter::CLIENT == role) {
         clientPlumbing = wire_client(app, endpoint, configDir, bsHost, bsPort, ds);
     } else {
-        wire_server(app, configDir, ds);
+        serverPlumbing = wire_server(app, configDir, ds);
+    }
+
+    // L16/D5b — watcher thread for mid-session services.lwm2m.*.enable
+    // transitions. On disable:
+    //   client: reg->set_disabled(true) — reactor tick sends
+    //           Deregister (via the auto-set pending_reregister) and
+    //           then parks the FSM in Unregistered (the is_disabled
+    //           branch skips auto-Register).
+    //   server: regServer->set_disabled(true) — handle() rejects new
+    //           Register with 5.03; we drop the active-registration
+    //           map so currently-registered clients see NotFound on
+    //           their next Update and lifetime-expire on their own.
+    // On re-enable: clear the flag; the reactor tick (client) or
+    // handle() (server) starts accepting again.
+    std::atomic<bool> svc_stop{false};
+    std::thread svc_watcher_thread;
+    if (svc_gate) {
+        auto* reg       = clientPlumbing.reg.get();
+        auto  regServer = serverPlumbing.regServer;
+        auto  registry  = serverPlumbing.registry;
+        svc_watcher_thread = std::thread(
+            [&svc_stop, gate = svc_gate.get(), reg, regServer, registry] {
+                while (!svc_stop.load(std::memory_order_acquire)) {
+                    auto v = gate->wait();
+                    if (!v.has_value()) return;            // shutdown
+                    if (*v) {
+                        // false -> true (re-enable)
+                        if (reg) reg->set_disabled(false);
+                        if (regServer) regServer->set_disabled(false);
+                        gate->publish_state("running");
+                    } else {
+                        // true -> false (disable)
+                        gate->publish_state("stopping");
+                        if (reg) reg->set_disabled(true);
+                        if (regServer) {
+                            regServer->set_disabled(true);
+                            if (registry) registry->load_from({});
+                        }
+                        gate->publish_state("disabled");
+                    }
+                }
+            });
     }
 
     // FUP-DS-9 / FUP-DS-10 / FUP-DS-11 — apply hot-reloaded values to
@@ -753,6 +805,11 @@ int main(std::int32_t argc, char *argv[]) {
         app->udpAdapter()->wait();
     }
     app->stop();
+
+    // L16/D5b cleanup — wake the watcher thread + join.
+    svc_stop.store(true, std::memory_order_release);
+    if (svc_gate) svc_gate->shutdown();
+    if (svc_watcher_thread.joinable()) svc_watcher_thread.join();
 
     return(0);
 }

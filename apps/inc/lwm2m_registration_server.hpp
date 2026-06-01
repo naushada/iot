@@ -1,6 +1,7 @@
 #ifndef __lwm2m_registration_server_hpp__
 #define __lwm2m_registration_server_hpp__
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -75,9 +76,23 @@ public:
     void on_event(EventCb cb) { m_event = std::move(cb); }
     std::shared_ptr<ClientRegistry> registry() { return m_registry; }
 
+    /// L16/D5b — operator-flipped service gate. When set true,
+    /// `handle()` rejects new Register requests (POST /rd) with
+    /// 5.03 Service Unavailable. Update / Deregister continue to
+    /// process so currently-registered clients can clean up.
+    /// Active registrations are dropped at the transition by the
+    /// caller (registry()->load_from({})).
+    void set_disabled(bool v) {
+        m_disabled.store(v, std::memory_order_relaxed);
+    }
+    bool is_disabled() const {
+        return m_disabled.load(std::memory_order_relaxed);
+    }
+
 private:
     std::shared_ptr<ClientRegistry> m_registry;
     EventCb                         m_event;
+    std::atomic<bool>               m_disabled{false};
 };
 
 } // namespace lwm2m

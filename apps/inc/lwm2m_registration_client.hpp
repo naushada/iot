@@ -131,6 +131,25 @@ public:
         m_re_register_pending.store(true, std::memory_order_relaxed);
     }
 
+    /// L16/D5b — disable gate. When set true:
+    ///   - the reactor tick's Unregistered → Register branch SKIPS,
+    ///     so a Deregister leaves the FSM parked instead of
+    ///     auto-rejoining
+    ///   - request_reregister is auto-set so the next tick sends
+    ///     Deregister if state is Registered
+    /// When set false (re-enable):
+    ///   - the reactor tick fires the Unregistered → Register path
+    ///     on its next pass
+    void set_disabled(bool v) {
+        if (v) {
+            m_re_register_pending.store(true, std::memory_order_relaxed);
+        }
+        m_disabled.store(v, std::memory_order_relaxed);
+    }
+    bool is_disabled() const {
+        return m_disabled.load(std::memory_order_relaxed);
+    }
+
     RegistrationState   state()    const { return m_state; }
     const std::string&  location() const { return m_location; }
     const ClientConfig& config()   const { return m_cfg; }
@@ -149,6 +168,9 @@ private:
     mutable std::mutex      m_endpoint_mtx;
     std::string             m_endpoint;
     std::atomic<bool>       m_re_register_pending{false};
+    /// L16/D5b — operator-flipped service gate. When true, the
+    /// reactor tick skips auto-Register on Unregistered.
+    std::atomic<bool>       m_disabled{false};
     const ObjectStore&      m_store;
     RegistrationState       m_state{RegistrationState::Unregistered};
     std::string             m_location;
