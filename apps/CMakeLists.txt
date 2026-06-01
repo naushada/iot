@@ -65,6 +65,13 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/openvpn/client
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/net/router
                  ${CMAKE_BINARY_DIR}/net-router)
 
+# wifi-client daemon (L15). Sibling under ../modules/wan/wifi/client.
+# Owns the wpa_supplicant(8) + DHCP client lifecycle for one wifi
+# iface; publishes wifi.* state into ds-server. Standalone module
+# build at modules/wan/wifi/client/ still works.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/wan/wifi/client
+                 ${CMAKE_BINARY_DIR}/wifi-client)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
