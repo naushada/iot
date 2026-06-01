@@ -1,5 +1,6 @@
 #include "schema.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -9,6 +10,7 @@
 #include <stdexcept>
 #include <sys/stat.h>
 #include <type_traits>
+#include <variant>
 #include <variant>
 
 #include <ace/Log_Msg.h>
@@ -304,6 +306,104 @@ std::optional<Value> SchemaRegistry::default_for(
     auto it = m_entries.find(key);
     if (it == m_entries.end()) return std::nullopt;
     return it->second.default_value;
+}
+
+namespace {
+const char* schema_type_name(SchemaType t) {
+    switch (t) {
+        case SchemaType::String:  return "string";
+        case SchemaType::Integer: return "integer";
+        case SchemaType::Float:   return "float";
+        case SchemaType::Boolean: return "boolean";
+        case SchemaType::Opaque:  return "opaque";
+        case SchemaType::Any:     break;
+    }
+    return "any";
+}
+
+void emit_value(std::string& out, const Value& v) {
+    // Minimal value-to-json that matches what nlohmann::json would
+    // render for the supported variants. SchemaRegistry's
+    // value.hpp::Value is a variant of monostate/string/bool/uint32
+    // /int32/double.
+    if (std::holds_alternative<std::monostate>(v)) {
+        out += "null";
+    } else if (auto* p = std::get_if<std::string>(&v)) {
+        out += '"';
+        for (char c : *p) {
+            if (c == '"' || c == '\\') out += '\\';
+            out += c;
+        }
+        out += '"';
+    } else if (auto* p = std::get_if<bool>(&v)) {
+        out += *p ? "true" : "false";
+    } else if (auto* p = std::get_if<std::uint32_t>(&v)) {
+        out += std::to_string(*p);
+    } else if (auto* p = std::get_if<std::int32_t>(&v)) {
+        out += std::to_string(*p);
+    } else if (auto* p = std::get_if<double>(&v)) {
+        out += std::to_string(*p);
+    } else {
+        out += "null";
+    }
+}
+} // namespace
+
+std::string SchemaRegistry::dump_json() const {
+    // Hand-rolled to keep nlohmann::json out of schema.{hpp,cpp}.
+    // Output is one-line JSON; ds-cli + the worker parse it back.
+    std::string out;
+    out += "{\"namespaces\":[";
+    bool first = true;
+    // Stable order: sort namespaces alphabetically for deterministic
+    // output. The unordered_set's iteration order is non-deterministic.
+    std::vector<std::string> namespaces(m_namespaces.begin(),
+                                        m_namespaces.end());
+    std::sort(namespaces.begin(), namespaces.end());
+    for (const auto& ns : namespaces) {
+        if (!first) out += ',';
+        first = false;
+        out += '"';
+        for (char c : ns) {
+            if (c == '"' || c == '\\') out += '\\';
+            out += c;
+        }
+        out += '"';
+    }
+    out += "],\"keys\":{";
+    first = true;
+    std::vector<std::string> keys;
+    keys.reserve(m_entries.size());
+    for (const auto& kv : m_entries) keys.push_back(kv.first);
+    std::sort(keys.begin(), keys.end());
+    for (const auto& key : keys) {
+        const auto& e = m_entries.at(key);
+        if (!first) out += ',';
+        first = false;
+        out += '"';
+        for (char c : key) {
+            if (c == '"' || c == '\\') out += '\\';
+            out += c;
+        }
+        out += "\":{\"type\":\"";
+        out += schema_type_name(e.type);
+        out += '"';
+        if (e.default_value.has_value()) {
+            out += ",\"default\":";
+            emit_value(out, *e.default_value);
+        }
+        if (e.min_int.has_value()) {
+            out += ",\"min\":";
+            out += std::to_string(*e.min_int);
+        }
+        if (e.max_int.has_value()) {
+            out += ",\"max\":";
+            out += std::to_string(*e.max_int);
+        }
+        out += '}';
+    }
+    out += "}}";
+    return out;
 }
 
 } // namespace data_store::server

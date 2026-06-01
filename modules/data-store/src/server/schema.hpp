@@ -34,6 +34,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "data_store/value.hpp"
 
@@ -87,6 +88,29 @@ public:
 
     std::size_t size() const { return m_entries.size(); }
     std::size_t namespace_count() const { return m_namespaces.size(); }
+
+    /// L16/D7 — JSON shape returned by the `schema-dump` protocol
+    /// op. Returns nlohmann::json by output-parameter so the header
+    /// stays free of <nlohmann/json.hpp> (it isn't strictly public);
+    /// declared as a free function in the cpp instead would also
+    /// work but bundling on the class keeps discovery simple.
+    /// Shape:
+    ///   {
+    ///     "namespaces": [ "iot", "vpn", ... ],
+    ///     "keys": {
+    ///       "iot.lifetime": {
+    ///         "type":     "integer",
+    ///         "default":  86400,
+    ///         "min":      0,
+    ///         "max":      2592000
+    ///       },
+    ///       ...
+    ///     }
+    ///   }
+    /// Defined in schema.cpp (the dump uses nlohmann::json under
+    /// the hood; ds-cli depends on nlohmann::json transitively
+    /// already).
+    std::string dump_json() const;
 
 private:
     /// Parse one schema file. Throws std::runtime_error on

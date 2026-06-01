@@ -15,6 +15,7 @@ Op parse_op(std::uint16_t raw) {
         case static_cast<std::uint16_t>(Op::Get):           return Op::Get;
         case static_cast<std::uint16_t>(Op::RegisterWatch): return Op::RegisterWatch;
         case static_cast<std::uint16_t>(Op::RemoveWatch):   return Op::RemoveWatch;
+        case static_cast<std::uint16_t>(Op::SchemaDump):    return Op::SchemaDump;
         case static_cast<std::uint16_t>(Op::NotifyEvent):   return Op::NotifyEvent;
         default:                                            return Op::Unknown;
     }
@@ -26,6 +27,7 @@ std::string op_name(Op op) {
         case Op::Get:           return "Get";
         case Op::RegisterWatch: return "RegisterWatch";
         case Op::RemoveWatch:   return "RemoveWatch";
+        case Op::SchemaDump:    return "SchemaDump";
         case Op::NotifyEvent:   return "NotifyEvent";
         case Op::Unknown:       break;
     }

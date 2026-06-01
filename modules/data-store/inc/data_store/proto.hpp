@@ -44,6 +44,7 @@ enum class Op : std::uint16_t {
     Get           = 0x0002,   ///< Client → Server: read keys
     RegisterWatch = 0x0003,   ///< Client → Server: subscribe keys
     RemoveWatch   = 0x0004,   ///< Client → Server: unsubscribe keys
+    SchemaDump    = 0x0005,   ///< Client → Server: dump full schema as JSON (L16/D7)
     NotifyEvent   = 0x0064,   ///< Server → Client (push): value changed
 };
 
