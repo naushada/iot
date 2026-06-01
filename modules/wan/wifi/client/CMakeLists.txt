@@ -35,7 +35,9 @@ add_library(wifi_client_lib STATIC
     src/main_impl.cpp
     src/ds_bridge.cpp
     src/ctrl.cpp
-    src/process.cpp)
+    src/process.cpp
+    src/lifecycle.cpp
+    src/supervisor.cpp)
 
 target_include_directories(wifi_client_lib PUBLIC src)
 
@@ -59,7 +61,9 @@ if(BUILD_WIFI_CLIENT_TESTS)
         test/schema_test.cpp
         test/ds_bridge_test.cpp
         test/ctrl_test.cpp
-        test/process_test.cpp)
+        test/process_test.cpp
+        test/lifecycle_test.cpp
+        test/supervisor_test.cpp)
 
     target_link_libraries(wifi-client-tests
         wifi_client_lib
