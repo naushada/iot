@@ -11,6 +11,8 @@
 #include <ace/Log_Msg.h>
 #include <nlohmann/json.hpp>
 
+#include "data_store/service_gate.hpp"
+
 namespace wifi_client {
 
 // ─────────────────────── Pure helpers ─────────────────────────
@@ -222,9 +224,22 @@ Supervisor::Supervisor(DsBridge& ds, SupervisorOptions opt)
         [this](const std::string& err) {
             m_ds.set_last_error(err);
         },
-    }) {}
+    }) {
+    // L16/D6 — services.wifi.client.enable gate. Constructed lazily
+    // here against the DsBridge-owned Client. The watcher thread is
+    // intentionally minimal: it just notes that a transition has
+    // landed; the run loop reads enabled() at the natural ticks.
+    if (auto* cli = m_ds.client()) {
+        m_svc = std::make_unique<data_store::ServiceGate>(*cli, "wifi.client");
+        m_svc->publish_state("running");
+    }
+}
 
-Supervisor::~Supervisor() = default;
+Supervisor::~Supervisor() {
+    m_svc_stop.store(true, std::memory_order_release);
+    if (m_svc) m_svc->shutdown();
+    if (m_svc_watcher.joinable()) m_svc_watcher.join();
+}
 
 bool Supervisor::initialize() {
     if (nm_conflict_detected(m_opt.iface, m_opt.ctrl_dir)) {
@@ -281,15 +296,45 @@ int Supervisor::run() {
     // The integration path is exercised by log/L15/smoke.sh against
     // fake-wpa.sh (D8). The Supervisor's pure helpers + a basic
     // initialize() path are unit-tested in supervisor_test.cpp.
-    //
-    // Implementation note: a full event-loop body is deliberately
-    // small here — the heavy lifting is in the pure helpers above,
-    // each independently testable. Once D8 lands the smoke covers
-    // the wire-level integration end-to-end.
+
+    // L16/D6 — services.wifi.client.enable check. disable dominates
+    // the NM-conflict gate: if operator disabled the service, we
+    // publish state="disabled" and park immediately, before
+    // initialize() probes for NM (avoids spurious "conflict" writes).
+    if (m_svc && !m_svc->enabled()) {
+        m_ds.set_assoc_state("disconnected");
+        m_svc->publish_state("disabled");
+        auto v = m_svc->wait();
+        if (!v.has_value()) return 0;
+    }
+
     if (!initialize()) return 1;
+    if (m_svc) m_svc->publish_state("running");
 
     // Outer poll loop: recv ctrl events, feed Lifecycle, react.
     while (true) {
+        // L16/D6 — operator disable mid-session: reap workers and
+        // park within one 200ms recv tick (NFR-SVC-001).
+        if (m_svc && !m_svc->enabled()) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [wifi:%t] %M %N:%l services."
+                                "wifi.client.enable=false; reaping "
+                                "workers\n")));
+            m_svc->publish_state("stopping");
+            m_dhcp.terminate();
+            m_wpa.terminate();
+            m_ctrl.close();
+            m_ds.set_pid_wpa(0u);
+            m_ds.set_pid_dhcp(0u);
+            m_ds.set_assoc_state("disconnected");
+            m_svc->publish_state("disabled");
+            // Block on the gate; re-init on re-enable.
+            auto v = m_svc->wait();
+            if (!v.has_value()) return 0;
+            if (!initialize()) return 1;
+            m_svc->publish_state("running");
+            continue;
+        }
         auto ev = m_ctrl.recv_event(/*timeout_ms=*/200);
         if (!ev.has_value()) {
             if (!m_wpa.running()) {
