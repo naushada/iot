@@ -12,6 +12,8 @@
 
 #include <ace/Log_Msg.h>
 
+#include "data_store/service_gate.hpp"
+
 #include "app.hpp"
 #include "readline.hpp"
 
@@ -603,6 +605,30 @@ int main(std::int32_t argc, char *argv[]) {
         ACE_DEBUG((LM_INFO,
                    ACE_TEXT("%D [iot:%t] %M %N:%l endpoint from data-store: %C\n"),
                    endpoint.c_str()));
+    }
+
+    // L16/D5 — services.lwm2m.{client,server}.enable gate. Minimal
+    // cut: publish state at startup, park if disabled, return when
+    // re-enabled (which the operator will follow with a daemon
+    // restart for the registration to take effect). Full
+    // mid-session Deregister + drop-observations machinery is FUP
+    // (this is the L16 plan §D5 "split into D5a/D5b if it grows
+    // past one PR" — we ship D5a here).
+    std::unique_ptr<data_store::ServiceGate> svc_gate;
+    if (auto* cli = ds.client()) {
+        const std::string svc_name =
+            (UDPAdapter::CLIENT == role) ? "lwm2m.client" : "lwm2m.server";
+        svc_gate = std::make_unique<data_store::ServiceGate>(*cli, svc_name);
+        if (!svc_gate->enabled()) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l services.%C.enable=false "
+                                "at startup; parking until re-enabled\n"),
+                       svc_name.c_str()));
+            svc_gate->publish_state("disabled");
+            auto v = svc_gate->wait();
+            if (!v.has_value()) return 0;   // shutdown
+        }
+        svc_gate->publish_state("running");
     }
 
     ClientPlumbing clientPlumbing;
