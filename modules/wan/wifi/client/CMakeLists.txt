@@ -51,7 +51,8 @@ if(BUILD_WIFI_CLIENT_TESTS)
     enable_testing()
 
     add_executable(wifi-client-tests
-        test/main_test.cpp)
+        test/main_test.cpp
+        test/schema_test.cpp)
 
     target_link_libraries(wifi-client-tests
         wifi_client_lib
