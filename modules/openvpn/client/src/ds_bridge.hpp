@@ -27,6 +27,8 @@
 #include <string>
 #include <vector>
 
+namespace data_store { class Client; }   // forward decl
+
 namespace openvpn_client {
 
 class DsBridge {
@@ -123,6 +125,13 @@ public:
     /// on_change(): runs on the listener thread, do not block on the
     /// daemon's main-thread mutex.
     void on_wan_change(WanCallback cb);
+
+    /// Access the underlying data_store::Client. Used by the L16
+    /// ServiceGate (and any future shared helper) to share one
+    /// listener thread + one socket connection across both the
+    /// vpn.* watch and the services.openvpn.client.enable watch.
+    /// nullptr when !connected().
+    data_store::Client* client();
 
     /// Default ds-server socket path. Duplicated from
     /// data_store::proto::kDefaultSocketPath so this header stays

@@ -1,5 +1,7 @@
 #include "supervisor.hpp"
 
+#include "data_store/service_gate.hpp"
+
 #include <chrono>
 #include <cstdint>
 #include <sstream>
@@ -59,9 +61,39 @@ bool connect_mgmt(std::uint16_t port,
 } // namespace
 
 Supervisor::Supervisor(DsBridge& ds, Options opt)
-  : m_ds(ds), m_opt(std::move(opt)) {}
+  : m_ds(ds), m_opt(std::move(opt)) {
+    // L16/D4 — services.openvpn.client.enable gate. We construct it
+    // lazily here (DsBridge already owns the Client + listener) and
+    // spawn a tiny watcher thread that forwards gate transitions
+    // into m_cv so the existing wait_for_event() handles both WAN
+    // events AND enable flips through the same code path.
+    if (auto* cli = m_ds.client()) {
+        m_svc = std::make_unique<data_store::ServiceGate>(*cli,
+                                                          "openvpn.client");
+        m_svc_watcher = std::thread([this] {
+            for (;;) {
+                auto v = m_svc->wait();
+                if (!v.has_value()) return;     // shutdown
+                {
+                    std::lock_guard<std::mutex> g(m_mtx);
+                    m_svc_dirty.store(true);
+                    if (m_shutdown) return;
+                }
+                m_cv.notify_all();
+            }
+        });
+    }
+}
 
-Supervisor::~Supervisor() = default;
+Supervisor::~Supervisor() {
+    {
+        std::lock_guard<std::mutex> g(m_mtx);
+        m_shutdown = true;
+    }
+    m_cv.notify_all();
+    if (m_svc) m_svc->shutdown();
+    if (m_svc_watcher.joinable()) m_svc_watcher.join();
+}
 
 void Supervisor::on_wan_event(const std::optional<std::string>& target) {
     {
@@ -80,7 +112,11 @@ std::optional<std::string> Supervisor::drain_target() {
 
 bool Supervisor::wait_for_event() {
     std::unique_lock<std::mutex> g(m_mtx);
-    m_cv.wait(g, [&]{ return m_shutdown || m_wan_dirty; });
+    m_cv.wait(g, [&]{
+        return m_shutdown
+            || m_wan_dirty
+            || m_svc_dirty.load(std::memory_order_acquire);
+    });
     return !m_shutdown;
 }
 
@@ -145,6 +181,16 @@ bool Supervisor::serve_one_session(const std::string& iface) {
                        iface.c_str()));
             break;
         }
+        // L16/D4 — gate dominates: if operator disables mid-session,
+        // tear down within one event-loop tick (NFR-SVC-001).
+        if (m_svc && !m_svc->enabled()) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l services."
+                                "openvpn.client.enable=false during "
+                                "session on iface=%C; tearing down\n"),
+                       iface.c_str()));
+            break;
+        }
         {
             std::lock_guard<std::mutex> g(m_mtx);
             if (m_shutdown) break;
@@ -186,6 +232,7 @@ Status Supervisor::run() {
     m_ds.set_state("disconnected");
     m_ds.set_gate_reason("wan_down");
     m_ds.set_bound_iface("");
+    if (m_svc) m_svc->publish_state("running");
 
     // Prime: the snapshot may already hold an iface (net-router was
     // running before us). Treat it as the first event.
@@ -193,6 +240,26 @@ Status Supervisor::run() {
 
     while (true) {
         if (!wait_for_event()) break;          // shutdown
+
+        // L16/D4 composition: enable=false dominates WAN. Even if
+        // the WAN is up, do not spawn openvpn; park at
+        // gate.reason="disabled" until the gate flips true.
+        m_svc_dirty.store(false, std::memory_order_release);
+        if (m_svc && !m_svc->enabled()) {
+            // serve_one_session reaped its own child on the way
+            // out; the Gate is in note_terminated state if we got
+            // here mid-session. Reflect the disabled state.
+            if (m_gate.running()) m_gate.note_terminated();
+            m_ds.set_state("disabled");
+            m_ds.set_gate_reason("disabled");
+            m_ds.set_bound_iface("");
+            m_svc->publish_state("disabled");
+            continue;
+        }
+        // Gate is open. If we just came back from a disabled state,
+        // publish state="starting" before the WAN evaluation below.
+        if (m_svc) m_svc->publish_state("running");
+
         auto target = drain_target();
         const bool target_up = target.has_value() && !target->empty();
 
