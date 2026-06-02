@@ -21,9 +21,10 @@ echo "════════════════════════�
 
 cd /home/builduser/yocto
 
-# Source the bitbake build environment
+# Source the bitbake build environment from the poky directory
 # shellcheck disable=SC1091
-. poky/oe-init-build-env build
+cd /home/builduser/yocto/poky
+. ./oe-init-build-env ../build
 
 # Override MACHINE in local.conf if passed via env
 if [ "$MACHINE" != "qemux86-64" ]; then

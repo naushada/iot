@@ -62,12 +62,14 @@ RUN git clone --depth=1 -b ${POKY_BRANCH} \
 COPY --chown=builduser:builduser meta-iot/ /home/builduser/yocto/meta-iot/
 
 # ── Initialise the build directory ─────────────────────────────────
-# Creates build/conf/local.conf and build/conf/bblayers.conf
-RUN cd /home/builduser/yocto && \
-    . poky/oe-init-build-env build && \
+# Creates build/conf/local.conf and build/conf/bblayers.conf.
+# oe-init-build-env must be sourced from the poky directory.
+# TEMPLATECONF is unset so we get the default poky local.conf template.
+RUN cd /home/builduser/yocto/poky && \
+    TEMPLATECONF="" . ./oe-init-build-env ../build && \
     # Add required layers to bblayers.conf
-    bitbake-layers add-layer ../meta-openembedded/meta-oe && \
-    bitbake-layers add-layer ../meta-iot
+    bitbake-layers add-layer ../../meta-openembedded/meta-oe && \
+    bitbake-layers add-layer ../../meta-iot
 
 # ── Configure local.conf ───────────────────────────────────────────
 # Write a minimal local.conf fragment that bitbake reads.
