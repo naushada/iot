@@ -13,12 +13,15 @@
 set -eo pipefail
 
 MACHINE="${MACHINE:-qemux86-64}"
-TARGET="${*:-packagegroup-iot lwm2m}"
+# Default targets if none specified
+if [ $# -eq 0 ]; then
+    set -- packagegroup-iot lwm2m
+fi
 
 echo "═══════════════════════════════════════════════════════════════"
 echo "  iot Yocto build"
 echo "  Machine:  $MACHINE"
-echo "  Target:   $TARGET"
+echo "  Targets:  $@"
 echo "═══════════════════════════════════════════════════════════════"
 
 cd /home/builduser/yocto
@@ -64,10 +67,10 @@ fi
 
 # ── 5. Run bitbake ─────────────────────────────────────────────────
 echo ""
-echo "→ Starting bitbake $TARGET for $MACHINE ..."
+echo "→ Starting bitbake for $MACHINE: $@ ..."
 echo ""
 
-bitbake "$TARGET"
+bitbake "$@"
 
 # ── 6. Report ──────────────────────────────────────────────────────
 echo ""
