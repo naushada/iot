@@ -65,3 +65,6 @@ log/L9/.cli-zip-big.json
 
 # CMake test build artifacts
 apps/test/build/
+
+# Yocto build output
+yocto/build/
