@@ -37,9 +37,9 @@ do_install() {
     install -m 0644 ${S}/*.h ${D}${includedir}/tinydtls/
 }
 
-# tinydtls is a static-library-only recipe. The main iot recipe links
-# it statically; no .so is produced.
-PACKAGES = "${PN}-staticdev ${PN}-dev"
+# tinydtls is a static-library-only recipe. Keep the default ${PN}
+# package (even though empty) so the recipe target resolves correctly.
+ALLOW_EMPTY:${PN} = "1"
 
 FILES:${PN}-staticdev = "\
     ${libdir}/libtinydtls.a \
