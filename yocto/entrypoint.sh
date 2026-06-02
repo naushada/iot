@@ -13,7 +13,7 @@
 set -eo pipefail
 
 MACHINE="${MACHINE:-qemux86-64}"
-TARGET="${1:-packagegroup-iot-core}"
+TARGET="${1:-packagegroup-iot lwm2m}"
 
 echo "═══════════════════════════════════════════════════════════════"
 echo "  iot Yocto build"
