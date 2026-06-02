@@ -51,6 +51,10 @@ IMAGE_INSTALL:append = " packagegroup-iot-core"
 # Disable mongo PACKAGECONFIG for faster builds (RegistryMirror).
 # Remove to enable the MongoDB registration mirror feature.
 PACKAGECONFIG:remove:pn-lwm2m = "mongo"
+
+# Filesystem may not support hardlinks (macOS podman host).
+# Disable sstate hardlinking to avoid cp -afl failures.
+SSTATE_HARDLINK = "0"
 YOCONF
 
 # ── 4. Override MACHINE ────────────────────────────────────────────
