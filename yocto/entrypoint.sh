@@ -1,14 +1,16 @@
 #!/bin/bash
 # entrypoint.sh — run inside the Yocto build container
 #
-# Sources the bitbake environment and runs the build. MACHINE can be
-# set via the environment at `podman run` time. Default: qemux86-64.
+# Sets up the bitbake build directory, adds the required layers,
+# writes local.conf, and runs bitbake. All at container run time
+# so permissions are correct (no volume-mount conflicts).
 #
 # Usage:
-#   podman run -e MACHINE=qemuarm64 iot-yocto-builder
-#   podman run -e MACHINE=qemuarm64 iot-yocto-builder packagegroup-iot-full
+#   podman run --name iot-build -e MACHINE=qemuarm64 iot-yocto-builder
+#   podman cp iot-build:/home/builduser/yocto/build/tmp/deploy ./build/qemuarm64/
+#   podman rm iot-build
 
-set -euo pipefail
+set -eo pipefail
 
 MACHINE="${MACHINE:-qemux86-64}"
 TARGET="${1:-packagegroup-iot-core}"
@@ -21,27 +23,55 @@ echo "════════════════════════�
 
 cd /home/builduser/yocto
 
-# Source the bitbake build environment from the poky directory
-# shellcheck disable=SC1091
-cd /home/builduser/yocto/poky
-. ./oe-init-build-env ../build
+# ── 1. Initialise the build directory ──────────────────────────────
+echo "→ Setting up build directory ..."
+cd poky
+TEMPLATECONF="" . ./oe-init-build-env ../build
+cd /home/builduser/yocto/build
 
-# Override MACHINE in local.conf if passed via env
+# ── 2. Add layers ──────────────────────────────────────────────────
+echo "→ Adding layers ..."
+bitbake-layers add-layer ../meta-openembedded/meta-oe
+bitbake-layers add-layer ../meta-iot
+
+# ── 3. Configure local.conf ────────────────────────────────────────
+cat >> conf/local.conf <<'YOCONF'
+
+# ── iot stack configuration ────────────────────────────────────────
+
+# Accept CLOSED license for iot recipes
+LICENSE_FLAGS_ACCEPTED += "CLOSED"
+
+# systemd as init manager (required for DynamicUser=, RuntimeDirectory=)
+INIT_MANAGER = "systemd"
+
+# Target packages
+IMAGE_INSTALL:append = " packagegroup-iot-core"
+
+# Disable mongo PACKAGECONFIG for faster builds (RegistryMirror).
+# Remove to enable the MongoDB registration mirror feature.
+PACKAGECONFIG:remove:pn-lwm2m = "mongo"
+YOCONF
+
+# ── 4. Override MACHINE ────────────────────────────────────────────
 if [ "$MACHINE" != "qemux86-64" ]; then
     echo "MACHINE = \"$MACHINE\"" >> conf/local.conf
 fi
 
+# ── 5. Run bitbake ─────────────────────────────────────────────────
 echo ""
-echo "→ Starting bitbake $TARGET ..."
+echo "→ Starting bitbake $TARGET for $MACHINE ..."
 echo ""
 
 bitbake "$TARGET"
 
+# ── 6. Report ──────────────────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
-echo "  Build complete"
-echo "  Artifacts: tmp/deploy/ipk/"
+echo "  Build complete — $MACHINE"
+echo "  Artifacts: build/tmp/deploy/"
 echo "═══════════════════════════════════════════════════════════════"
-
-# List the built iot packages
 find tmp/deploy/ipk -name 'iot-*.ipk' -type f 2>/dev/null | sort || true
+echo ""
+echo "On the host, extract with:"
+echo "  podman cp <container>:/home/builduser/yocto/build/tmp/deploy ./build/$MACHINE/"

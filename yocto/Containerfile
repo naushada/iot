@@ -3,22 +3,20 @@
 # Builds the entire iot stack inside a container. No host Yocto install
 # needed — only podman or docker.
 #
-# The container:
-#   1. Installs Yocto host dependencies
-#   2. Clones poky + meta-openembedded at Scarthgap (5.0 LTS)
-#   3. Copies the local meta-iot layer
-#   4. Sets up the bitbake build environment
-#   5. Runs bitbake to produce .ipk packages
+# The container image bakes in:
+#   1. Yocto host dependencies (compilers, python3, etc.)
+#   2. poky + meta-openembedded at Scarthgap (5.0 LTS)
+#   3. The local meta-iot layer
+#   4. An entrypoint that sets up the build dir and runs bitbake
 #
 # Use build.sh as the host entrypoint — it builds this image, runs the
-# container, and copies the output artifacts to yocto/build/<machine>/.
+# container, and `podman cp`s the output artifacts to yocto/build/<machine>/.
 
 FROM ubuntu:22.04
 
 # ── Yocto host dependencies ────────────────────────────────────────
 # From https://docs.yoctoproject.org/ref-manual/system-requirements.html
-# (Ubuntu 22.04 row). Added: git-lfs (some layers need it), file,
-# locales (bitbake wants en_US.UTF-8).
+# (Ubuntu 22.04 row).
 RUN apt-get update -qq && \
     apt-get install -y -qq \
         gawk wget git diffstat unzip texinfo \
@@ -38,7 +36,8 @@ ENV LANG=en_US.UTF-8
 
 # ── Build user ─────────────────────────────────────────────────────
 # Yocto refuses to run as root. Create a non-privileged user.
-RUN useradd -m -s /bin/bash builduser && \
+# uid 1000 so host-volume mounts Just Work on most Linux hosts.
+RUN useradd -m -u 1000 -s /bin/bash builduser && \
     mkdir -p /home/builduser/yocto && \
     chown -R builduser:builduser /home/builduser
 
@@ -46,8 +45,7 @@ USER builduser
 WORKDIR /home/builduser/yocto
 
 # ── Clone Yocto layers ─────────────────────────────────────────────
-# Cloned at build time so they're baked into the image. Override with
-# volume mounts for development iteration.
+# Baked into the image so they don't need fetching at run time.
 ARG POKY_BRANCH=scarthgap
 ARG OE_BRANCH=scarthgap
 
@@ -57,53 +55,14 @@ RUN git clone --depth=1 -b ${POKY_BRANCH} \
         https://git.openembedded.org/meta-openembedded
 
 # ── Copy the meta-iot layer ────────────────────────────────────────
-# Copied at build time. During development, mount over it:
-#   podman run -v ./yocto/meta-iot:/home/builduser/yocto/meta-iot:Z ...
+# Copied at build time. For development, mount over it:
+#   podman run -v ./meta-iot:/home/builduser/yocto/meta-iot:Z ...
 COPY --chown=builduser:builduser meta-iot/ /home/builduser/yocto/meta-iot/
 
-# ── Initialise the build directory ─────────────────────────────────
-# Creates build/conf/local.conf and build/conf/bblayers.conf.
-# oe-init-build-env must be sourced from the poky directory.
-# TEMPLATECONF is unset so we get the default poky local.conf template.
-RUN cd /home/builduser/yocto/poky && \
-    TEMPLATECONF="" . ./oe-init-build-env ../build && \
-    # Add required layers to bblayers.conf
-    bitbake-layers add-layer ../../meta-openembedded/meta-oe && \
-    bitbake-layers add-layer ../../meta-iot
-
-# ── Configure local.conf ───────────────────────────────────────────
-# Write a minimal local.conf fragment that bitbake reads.
-# The full conf is in build/conf/local.conf; we append.
-RUN cat >> /home/builduser/yocto/build/conf/local.conf <<'YOCONF'
-
-# ── iot stack configuration ────────────────────────────────────────
-
-# Accept CLOSED license for iot recipes
-LICENSE_FLAGS_ACCEPTED += "CLOSED"
-
-# systemd as init manager (required for DynamicUser=, RuntimeDirectory=)
-INIT_MANAGER = "systemd"
-
-# Machine — override via MACHINE env var at container run time
-MACHINE ??= "qemux86-64"
-
-# Target packages
-IMAGE_INSTALL:append = " packagegroup-iot-core"
-
-# Disable the mongo PACKAGECONFIG for faster builds in CI.
-# Remove this line for production builds that need RegistryMirror.
-PACKAGECONFIG:remove:pn-lwm2m = "mongo"
-YOCONF
-
-# ── Build entrypoint ───────────────────────────────────────────────
-# The container runs bitbake for the requested target. MACHINE can be
-# overridden at run time:
-#   podman run -e MACHINE=qemuarm64 iot-yocto-builder
-#
-# Output lands in /home/builduser/yocto/build/tmp/deploy/.
-# Mount a host directory to extract artifacts:
-#   podman run -v ./build:/home/builduser/yocto/build/tmp/deploy:Z ...
-
+# ── Entrypoint ─────────────────────────────────────────────────────
+# The entrypoint does all setup + build at container run time
+# (oe-init-build-env, add layers, configure, bitbake).
+# This keeps the build directory writable by the container user.
 COPY --chown=builduser:builduser entrypoint.sh /home/builduser/yocto/
 RUN chmod +x /home/builduser/yocto/entrypoint.sh
 

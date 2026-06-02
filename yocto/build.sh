@@ -1,31 +1,30 @@
 #!/bin/bash
 # build.sh — Containerised multi-arch Yocto build for the iot LwM2M stack
 #
-# Builds the entire iot stack inside a podman/docker container. The host
-# needs only podman or docker — no Yocto install, no kas, nothing else.
+# Builds inside a podman/docker container, then copies artifacts to the
+# host. No Yocto install needed on the host — just podman or docker.
 #
 # Usage:
-#   ./build.sh                        # Build default machine (qemux86-64)
-#   MACHINE=qemuarm64 ./build.sh      # Build for ARM64 / aarch64
-#   MACHINE=qemuarm ./build.sh        # Build for ARMv7 / armhf
-#   ./build.sh all                    # Build all supported architectures
+#   ./build.sh                        # qemux86-64 (default)
+#   MACHINE=qemuarm64 ./build.sh      # ARM64 / aarch64
+#   MACHINE=qemuarm ./build.sh        # ARMv7 / armhf
+#   ./build.sh all                    # All three architectures
 #
 # Output per machine:
-#   yocto/build/<machine>/ipk/        *.ipk packages (opkg-installable)
+#   yocto/build/<machine>/ipk/        *.ipk packages
 #   yocto/build/<machine>/images/     rootfs / kernel images
 #
 # Requirements:
 #   - podman or docker
-#   - ~30 GB free disk space (Yocto builds are large)
+#   - ~30 GB free disk space (Yocto downloads + build)
 #   - Internet access (first build fetches ~8 GB of sources)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$SCRIPT_DIR/build"
+OUT_DIR="$SCRIPT_DIR/build"
 IMAGE_NAME="${IMAGE_NAME:-iot-yocto-builder:latest}"
-CONTAINER_CMD="${CONTAINER_CMD:-podman}"
 
 # Supported architectures
 MACHINES=(
@@ -43,50 +42,56 @@ log_error()   { echo -e "${RED}ERROR: $1${NC}" >&2; }
 # ── Detect container runtime ──────────────────────────────────────────
 detect_runtime() {
     if command -v podman &>/dev/null; then
-        CONTAINER_CMD="podman"
+        echo "podman"
     elif command -v docker &>/dev/null; then
-        CONTAINER_CMD="docker"
+        echo "docker"
     else
-        log_error "Neither podman nor docker found. Install one to continue."
+        log_error "Neither podman nor docker found."
         exit 1
     fi
-    log_info "Container runtime: $CONTAINER_CMD"
 }
 
-# ── Build the container image (one time) ──────────────────────────────
+# ── Build the container image ─────────────────────────────────────────
 build_image() {
     log_section "Building container image: $IMAGE_NAME"
-    $CONTAINER_CMD build \
-        -t "$IMAGE_NAME" \
-        -f "$SCRIPT_DIR/Containerfile" \
-        "$SCRIPT_DIR"
+    $CR build -t "$IMAGE_NAME" -f "$SCRIPT_DIR/Containerfile" "$SCRIPT_DIR"
     log_info "Image ready: $IMAGE_NAME"
 }
 
-# ── Run the build inside the container ────────────────────────────────
-run_build() {
+# ── Build one architecture ────────────────────────────────────────────
+build_machine() {
     local machine="$1"
-    local out_dir="$BUILD_DIR/$machine"
-    mkdir -p "$out_dir"
+    local out="$OUT_DIR/$machine"
+    local container="iot-build-${machine//./-}"
+    mkdir -p "$out"
 
     log_section "Building for $machine"
 
-    # Run the container. Mount the per-machine output directory so
-    # deploy artifacts (ipk/, images/) land on the host.
-    $CONTAINER_CMD run --rm \
+    # Remove any stale container with the same name
+    $CR rm -f "$container" &>/dev/null || true
+
+    # Run the build. The container stays around after exit so we can
+    # copy artifacts out.
+    $CR run --name "$container" \
         -e "MACHINE=$machine" \
-        -v "$out_dir:/home/builduser/yocto/build/tmp/deploy:Z" \
         "$IMAGE_NAME" \
         packagegroup-iot-core
 
-    log_info "Artifacts: $out_dir/"
+    # Copy artifacts from the container to the host
+    log_info "Copying artifacts to $out ..."
+    $CR cp "$container:/home/builduser/yocto/build/tmp/deploy/." "$out/"
+
+    # Clean up the container
+    $CR rm "$container"
+
+    log_info "Done: $out/"
 }
 
 # ── Print summary ─────────────────────────────────────────────────────
 print_summary() {
     log_section "Build summary"
     for machine in "${MACHINES[@]}"; do
-        local d="$BUILD_DIR/$machine/ipk"
+        local d="$OUT_DIR/$machine/ipk"
         if [ -d "$d" ]; then
             local iot_count=$(find "$d" -name 'iot-*.ipk' -type f 2>/dev/null | wc -l)
             local total=$(find "$d" -name '*.ipk' -type f 2>/dev/null | wc -l)
@@ -101,25 +106,27 @@ print_summary() {
     done
     echo ""
     echo "  Install on target (example for ARM64):"
-    echo "    scp $BUILD_DIR/qemuarm64/ipk/*/iot-*.ipk root@<target>:/tmp/"
+    echo "    scp $OUT_DIR/qemuarm64/ipk/*/iot-*.ipk root@<target>:/tmp/"
     echo "    ssh root@<target> opkg install /tmp/iot-ds-server_*.ipk /tmp/iot-lwm2m_*.ipk /tmp/iot-config_*.ipk"
     echo ""
 }
 
 # ── Main ──────────────────────────────────────────────────────────────
 main() {
-    detect_runtime
+    CR=$(detect_runtime)
+    log_info "Container runtime: $CR"
+
     build_image
 
     local target="${1:-${MACHINE:-qemux86-64}}"
 
     if [ "$target" = "all" ]; then
         for machine in "${MACHINES[@]}"; do
-            run_build "$machine"
+            build_machine "$machine"
         done
         print_summary
     else
-        run_build "$target"
+        build_machine "$target"
         print_summary
     fi
 }
