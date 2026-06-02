@@ -54,6 +54,13 @@ RUN git clone --depth=1 -b ${POKY_BRANCH} \
     git clone --depth=1 -b ${OE_BRANCH} \
         https://git.openembedded.org/meta-openembedded
 
+# ── Workaround: podman overlayfs doesn't support --preserve=xattr ──
+# The oe.path.copyhardlinktree function uses cp -afl --preserve=xattr
+# which fails on podman's overlay filesystem (macOS host). Strip the
+# xattr flag so sstate operations use plain cp -afl instead.
+RUN sed -i "s/cp -afl --preserve=xattr/cp -afl/" \
+    /home/builduser/yocto/poky/meta/lib/oe/path.py
+
 # ── Copy the meta-iot layer ────────────────────────────────────────
 # Copied at build time. For development, mount over it:
 #   podman run -v ./meta-iot:/home/builduser/yocto/meta-iot:Z ...
