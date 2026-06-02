@@ -35,6 +35,8 @@ cd /home/builduser/yocto/build
 # ── 2. Add layers ──────────────────────────────────────────────────
 echo "→ Adding layers ..."
 bitbake-layers add-layer ../meta-openembedded/meta-oe
+bitbake-layers add-layer ../meta-openembedded/meta-python
+bitbake-layers add-layer ../meta-openembedded/meta-networking
 bitbake-layers add-layer ../meta-iot
 
 # ── 3. Configure local.conf ────────────────────────────────────────
