@@ -67,4 +67,4 @@ COPY --chown=builduser:builduser entrypoint.sh /home/builduser/yocto/
 RUN chmod +x /home/builduser/yocto/entrypoint.sh
 
 ENTRYPOINT ["/home/builduser/yocto/entrypoint.sh"]
-CMD ["packagegroup-iot-core"]
+CMD ["packagegroup-iot"]

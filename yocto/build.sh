@@ -75,7 +75,7 @@ build_machine() {
     $CR run --name "$container" \
         -e "MACHINE=$machine" \
         "$IMAGE_NAME" \
-        packagegroup-iot-core
+        packagegroup-iot
 
     # Copy artifacts from the container to the host
     log_info "Copying artifacts to $out ..."
