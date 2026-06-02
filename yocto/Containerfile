@@ -1,0 +1,109 @@
+# Containerfile — Yocto build container for the iot LwM2M stack
+#
+# Builds the entire iot stack inside a container. No host Yocto install
+# needed — only podman or docker.
+#
+# The container:
+#   1. Installs Yocto host dependencies
+#   2. Clones poky + meta-openembedded at Scarthgap (5.0 LTS)
+#   3. Copies the local meta-iot layer
+#   4. Sets up the bitbake build environment
+#   5. Runs bitbake to produce .ipk packages
+#
+# Use build.sh as the host entrypoint — it builds this image, runs the
+# container, and copies the output artifacts to yocto/build/<machine>/.
+
+FROM ubuntu:22.04
+
+# ── Yocto host dependencies ────────────────────────────────────────
+# From https://docs.yoctoproject.org/ref-manual/system-requirements.html
+# (Ubuntu 22.04 row). Added: git-lfs (some layers need it), file,
+# locales (bitbake wants en_US.UTF-8).
+RUN apt-get update -qq && \
+    apt-get install -y -qq \
+        gawk wget git diffstat unzip texinfo \
+        gcc g++ make cmake \
+        build-essential chrpath cpio debianutils \
+        iputils-ping python3 python3-pip python3-pexpect \
+        xz-utils debianutils locales \
+        zstd liblz4-tool file \
+        libssl-dev libgmp-dev libmpc-dev \
+        zlib1g-dev \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Locale — bitbake checks LANG
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8
+
+# ── Build user ─────────────────────────────────────────────────────
+# Yocto refuses to run as root. Create a non-privileged user.
+RUN useradd -m -s /bin/bash builduser && \
+    mkdir -p /home/builduser/yocto && \
+    chown -R builduser:builduser /home/builduser
+
+USER builduser
+WORKDIR /home/builduser/yocto
+
+# ── Clone Yocto layers ─────────────────────────────────────────────
+# Cloned at build time so they're baked into the image. Override with
+# volume mounts for development iteration.
+ARG POKY_BRANCH=scarthgap
+ARG OE_BRANCH=scarthgap
+
+RUN git clone --depth=1 -b ${POKY_BRANCH} \
+        https://git.yoctoproject.org/poky && \
+    git clone --depth=1 -b ${OE_BRANCH} \
+        https://git.openembedded.org/meta-openembedded
+
+# ── Copy the meta-iot layer ────────────────────────────────────────
+# Copied at build time. During development, mount over it:
+#   podman run -v ./yocto/meta-iot:/home/builduser/yocto/meta-iot:Z ...
+COPY --chown=builduser:builduser meta-iot/ /home/builduser/yocto/meta-iot/
+
+# ── Initialise the build directory ─────────────────────────────────
+# Creates build/conf/local.conf and build/conf/bblayers.conf
+RUN cd /home/builduser/yocto && \
+    . poky/oe-init-build-env build && \
+    # Add required layers to bblayers.conf
+    bitbake-layers add-layer ../meta-openembedded/meta-oe && \
+    bitbake-layers add-layer ../meta-iot
+
+# ── Configure local.conf ───────────────────────────────────────────
+# Write a minimal local.conf fragment that bitbake reads.
+# The full conf is in build/conf/local.conf; we append.
+RUN cat >> /home/builduser/yocto/build/conf/local.conf <<'YOCONF'
+
+# ── iot stack configuration ────────────────────────────────────────
+
+# Accept CLOSED license for iot recipes
+LICENSE_FLAGS_ACCEPTED += "CLOSED"
+
+# systemd as init manager (required for DynamicUser=, RuntimeDirectory=)
+INIT_MANAGER = "systemd"
+
+# Machine — override via MACHINE env var at container run time
+MACHINE ??= "qemux86-64"
+
+# Target packages
+IMAGE_INSTALL:append = " packagegroup-iot-core"
+
+# Disable the mongo PACKAGECONFIG for faster builds in CI.
+# Remove this line for production builds that need RegistryMirror.
+PACKAGECONFIG:remove:pn-lwm2m = "mongo"
+YOCONF
+
+# ── Build entrypoint ───────────────────────────────────────────────
+# The container runs bitbake for the requested target. MACHINE can be
+# overridden at run time:
+#   podman run -e MACHINE=qemuarm64 iot-yocto-builder
+#
+# Output lands in /home/builduser/yocto/build/tmp/deploy/.
+# Mount a host directory to extract artifacts:
+#   podman run -v ./build:/home/builduser/yocto/build/tmp/deploy:Z ...
+
+COPY --chown=builduser:builduser entrypoint.sh /home/builduser/yocto/
+RUN chmod +x /home/builduser/yocto/entrypoint.sh
+
+ENTRYPOINT ["/home/builduser/yocto/entrypoint.sh"]
+CMD ["packagegroup-iot-core"]

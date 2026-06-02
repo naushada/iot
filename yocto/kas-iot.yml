@@ -42,7 +42,9 @@ repos:
       meta-oe:
 
 # The iot layer is local (not fetched) — it lives in yocto/meta-iot/
-# relative to the repo root. kas resolves this at build time.
+# relative to the repo root. When running via build.sh, the repo is
+# mounted at /work inside the kas container, so the absolute path is
+# /work/yocto/meta-iot.
 
 # Build configuration
 local_conf_header:
@@ -59,6 +61,10 @@ local_conf_header:
   iot-packages: |
     # Packages to install in the target image
     IMAGE_INSTALL:append = " packagegroup-iot-core"
+
+bblayers_conf_header:
+  meta-iot: |
+    BBLAYERS += "${TOPDIR}/../meta-iot"
 
 # Target machine — override via MACHINE env var or --target
 machine: "${MACHINE:-qemux86-64}"

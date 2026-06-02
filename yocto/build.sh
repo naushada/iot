@@ -1,50 +1,46 @@
 #!/bin/bash
-# build.sh — Containerised Yocto build for the iot LwM2M stack
+# build.sh — Containerised multi-arch Yocto build for the iot LwM2M stack
 #
-# Runs the entire Yocto build inside the ghcr.io/siemens/kas/kas
-# container image. The host needs only podman or docker — no native
-# Yocto install, no kas CLI.
+# Builds the entire iot stack inside a podman/docker container. The host
+# needs only podman or docker — no Yocto install, no kas, nothing else.
 #
 # Usage:
-#   ./build.sh                      # Build default machine (qemux86-64)
-#   MACHINE=qemuarm64 ./build.sh    # Build for ARM64
-#   MACHINE=raspberrypi4-64 ./build.sh  # Build for Raspberry Pi 4
-#   ./build.sh all                  # Build all supported architectures
+#   ./build.sh                        # Build default machine (qemux86-64)
+#   MACHINE=qemuarm64 ./build.sh      # Build for ARM64 / aarch64
+#   MACHINE=qemuarm ./build.sh        # Build for ARMv7 / armhf
+#   ./build.sh all                    # Build all supported architectures
 #
-# Output:
-#   yocto/build/deploy/ipk/         *.ipk packages (installable on target)
-#   yocto/build/deploy/images/      rootfs images
+# Output per machine:
+#   yocto/build/<machine>/ipk/        *.ipk packages (opkg-installable)
+#   yocto/build/<machine>/images/     rootfs / kernel images
 #
 # Requirements:
 #   - podman or docker
-#   - Internet access (to fetch kas image + Yocto layers)
+#   - ~30 GB free disk space (Yocto builds are large)
+#   - Internet access (first build fetches ~8 GB of sources)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build"
-KAS_IMAGE="${KAS_IMAGE:-ghcr.io/siemens/kas/kas:latest}"
+IMAGE_NAME="${IMAGE_NAME:-iot-yocto-builder:latest}"
 CONTAINER_CMD="${CONTAINER_CMD:-podman}"
 
-# Supported architectures — mirrored in kas-iot.yml
+# Supported architectures
 MACHINES=(
     "qemux86-64"
     "qemuarm64"
     "qemuarm"
 )
 
-# ── Colour helpers ──────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Colour
-
+# ── Helpers ───────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 log_section() { echo -e "\n${GREEN}═══ $1 ═══${NC}"; }
 log_info()    { echo -e "${YELLOW} → $1${NC}"; }
 log_error()   { echo -e "${RED}ERROR: $1${NC}" >&2; }
 
-# ── Detect container runtime ────────────────────────────────────────
+# ── Detect container runtime ──────────────────────────────────────────
 detect_runtime() {
     if command -v podman &>/dev/null; then
         CONTAINER_CMD="podman"
@@ -54,71 +50,76 @@ detect_runtime() {
         log_error "Neither podman nor docker found. Install one to continue."
         exit 1
     fi
-    log_info "Using container runtime: $CONTAINER_CMD"
+    log_info "Container runtime: $CONTAINER_CMD"
 }
 
-# ── Pull kas image ──────────────────────────────────────────────────
-pull_kas() {
-    log_section "Pulling kas container image"
-    $CONTAINER_CMD pull "$KAS_IMAGE"
+# ── Build the container image (one time) ──────────────────────────────
+build_image() {
+    log_section "Building container image: $IMAGE_NAME"
+    $CONTAINER_CMD build \
+        -t "$IMAGE_NAME" \
+        -f "$SCRIPT_DIR/Containerfile" \
+        "$SCRIPT_DIR"
+    log_info "Image ready: $IMAGE_NAME"
 }
 
-# ── Build one machine ───────────────────────────────────────────────
-build_machine() {
+# ── Run the build inside the container ────────────────────────────────
+run_build() {
     local machine="$1"
-    local deploy_dir="$BUILD_DIR/$machine"
+    local out_dir="$BUILD_DIR/$machine"
+    mkdir -p "$out_dir"
 
     log_section "Building for $machine"
-    mkdir -p "$deploy_dir"
 
-    # kas-container runs kas inside the container. We bind-mount:
-    #   - the repo root at /work (so kas finds yocto/kas-iot.yml)
-    #   - a per-machine build dir so caches don't collide
+    # Run the container. Mount the per-machine output directory so
+    # deploy artifacts (ipk/, images/) land on the host.
     $CONTAINER_CMD run --rm \
-        -v "$REPO_ROOT:/work:Z" \
-        -v "$deploy_dir:/work/yocto/build:Z" \
-        -e MACHINE="$machine" \
-        -e KAS_BUILD_DIR="/work/yocto/build" \
-        "$KAS_IMAGE" \
-        kas build /work/yocto/kas-iot.yml
+        -e "MACHINE=$machine" \
+        -v "$out_dir:/home/builduser/yocto/build/tmp/deploy:Z" \
+        "$IMAGE_NAME" \
+        packagegroup-iot-core
 
-    log_info "Artifacts for $machine: $deploy_dir/deploy/"
+    log_info "Artifacts: $out_dir/"
 }
 
-# ── Print summary ───────────────────────────────────────────────────
+# ── Print summary ─────────────────────────────────────────────────────
 print_summary() {
-    log_section "Build complete"
-    echo ""
-    echo "  Deploy directory: $BUILD_DIR/"
-    echo ""
+    log_section "Build summary"
     for machine in "${MACHINES[@]}"; do
-        local d="$BUILD_DIR/$machine/deploy"
-        if [ -d "$d/ipk" ]; then
-            local count=$(find "$d/ipk" -name '*.ipk' -type f 2>/dev/null | wc -l)
-            echo "  $machine  →  $(find "$d/ipk" -name 'iot-*.ipk' -type f 2>/dev/null | wc -l) iot .ipk packages ($count total)"
+        local d="$BUILD_DIR/$machine/ipk"
+        if [ -d "$d" ]; then
+            local iot_count=$(find "$d" -name 'iot-*.ipk' -type f 2>/dev/null | wc -l)
+            local total=$(find "$d" -name '*.ipk' -type f 2>/dev/null | wc -l)
+            if [ "$iot_count" -gt 0 ]; then
+                echo "  ✅ $machine  →  $iot_count iot .ipk packages ($total total)"
+            else
+                echo "  ⚠️  $machine  →  build completed (no iot .ipk found yet)"
+            fi
+        else
+            echo "  ⬜ $machine  —  not built"
         fi
     done
     echo ""
-    echo "  Install on target:"
-    echo "    scp $BUILD_DIR/qemuarm64/deploy/ipk/cortexa57/iot-*.ipk root@<target>:/tmp/"
+    echo "  Install on target (example for ARM64):"
+    echo "    scp $BUILD_DIR/qemuarm64/ipk/*/iot-*.ipk root@<target>:/tmp/"
     echo "    ssh root@<target> opkg install /tmp/iot-ds-server_*.ipk /tmp/iot-lwm2m_*.ipk /tmp/iot-config_*.ipk"
     echo ""
 }
 
-# ── Main ────────────────────────────────────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────
 main() {
     detect_runtime
-    pull_kas
+    build_image
 
     local target="${1:-${MACHINE:-qemux86-64}}"
 
     if [ "$target" = "all" ]; then
         for machine in "${MACHINES[@]}"; do
-            build_machine "$machine"
+            run_build "$machine"
         done
         print_summary
     else
-        build_machine "$target"
+        run_build "$target"
         print_summary
     fi
 }
