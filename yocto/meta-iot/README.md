@@ -40,7 +40,7 @@ ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
 
 | Recipe                   | Produces                                                    |
 |--------------------------|-------------------------------------------------------------|
-| `lwm2m_git.bb`           | Sub-packages: `iot-ds-server`, `iot-ds-cli`, `iot-lwm2m`, `iot-openvpn-client`, `iot-net-router`, `iot-wifi-client`, `iot-httpd`, `iot-config` |
+| `iot_git.bb`             | `PN=iot`; sub-packages: `iot-ds-server`, `iot-ds-cli`, `iot-lwm2m`, `iot-openvpn-client`, `iot-net-router`, `iot-wifi-client`, `iot-httpd`, `iot-config` |
 | `images/iot-image.bb`    | Full bootable distribution (`packagegroup-iot-full` + kernel modules + RPi Wi-Fi/BT firmware + sshd + opkg) → `*.wic.bz2` |
 | `ace-tao_7.0.0.bb`       | `libACE.so.7.0.0`, `libACE_SSL.so.7.0.0`, dev headers       |
 | `tinydtls_git.bb`        | `libtinydtls.a` (static archive)                             |
@@ -56,7 +56,7 @@ ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
 | `packagegroup-iot-full`    | core + httpd + openvpn-client + net-router + wifi-client + runtime deps |
 | `packagegroup-iot-debug`   | full + test binaries (when PACKAGECONFIG[gtest] is on)      |
 
-## PACKAGECONFIG options (lwm2m recipe)
+## PACKAGECONFIG options (iot recipe)
 
 | Option   | Default | Effect                                                      |
 |----------|---------|-------------------------------------------------------------|
@@ -67,7 +67,7 @@ ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
 Override in `local.conf` or kas config:
 
 ```
-PACKAGECONFIG:remove:pn-lwm2m = "mongo"
+PACKAGECONFIG:remove:pn-iot = "mongo"
 ```
 
 ## Using on a target

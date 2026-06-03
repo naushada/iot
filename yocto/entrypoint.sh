@@ -63,7 +63,7 @@ PACKAGE_CLASSES = "package_ipk"
 
 # Disable mongo PACKAGECONFIG for faster builds (RegistryMirror).
 # Remove to enable the MongoDB registration mirror feature.
-PACKAGECONFIG:remove:pn-lwm2m = "mongo"
+PACKAGECONFIG:remove:pn-iot = "mongo"
 
 # Filesystem may not support hardlinks (macOS podman host).
 # Disable sstate hardlinking to avoid cp -afl failures.

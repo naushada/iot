@@ -183,7 +183,7 @@ deploy walkthrough: [`DEPLOY.md`](DEPLOY.md) Path C.
 Override in `local.conf` or via kas:
 
 ```
-PACKAGECONFIG:remove:pn-lwm2m = "mongo"
+PACKAGECONFIG:remove:pn-iot = "mongo"
 ```
 
 ### Package split
