@@ -42,8 +42,11 @@ RDEPENDS:${PN}-full = "\
     nftables \
     iproute2 \
     wpa-supplicant \
-    wireless-tools \
 "
+# Note: no wireless-tools (iwconfig/iwlist) — it was dropped from modern
+# Yocto and the wifi-client daemon never used it; scanning goes through
+# wpa_cli. The DHCP client comes from the recipe's
+# RRECOMMENDS:iot-wifi-client = busybox-udhcpc.
 
 # ── Debug: includes test binaries ─────────────────────────────────
 # For CI and developer images.
