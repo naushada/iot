@@ -6,6 +6,17 @@ LICENSE = "MIT"
 
 inherit packagegroup
 
+# The packagegroup class does NOT auto-create tiered sub-packages — they
+# must be declared here, otherwise nothing RPROVIDES packagegroup-iot-full
+# and an image RDEPENDing on it fails to parse. The base ${PN} stays as an
+# empty meta-package; -core/-full/-debug carry the RDEPENDS below.
+PACKAGES = "\
+    ${PN} \
+    ${PN}-core \
+    ${PN}-full \
+    ${PN}-debug \
+"
+
 # ── Core: minimal LwM2M device ────────────────────────────────────
 # ds-server + lwm2m + ds-cli + config. Suitable for resource-constrained
 # endpoints that only need CoAP device management.
