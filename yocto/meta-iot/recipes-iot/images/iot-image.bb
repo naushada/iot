@@ -23,7 +23,7 @@ EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
 
 # ── Payload ────────────────────────────────────────────────────────
 # packagegroup-iot-full pulls the whole gateway daemon set + runtime deps
-# (openvpn, nftables, iproute2, wpa-supplicant, wireless-tools).
+# (openvpn, nftables, iproute2, wpa-supplicant).
 # kernel-modules drags in every built module so USB/net/etc. drivers are
 # present ("all required drivers"). The bcm43430 firmware + pi-bluetooth
 # light up the Pi 3B's onboard SDIO Wi-Fi and UART Bluetooth.
