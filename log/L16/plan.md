@@ -12,7 +12,10 @@
 > ship without touching L15; D5 + D6 land after their respective
 > daemons are in.
 >
-> **Status (2026-06-01):** plan only.
+> **Status (2026-06-02):** **CLOSED.** D1–D8 all merged.
+> D5 split into D5a (startup gate, PR #73) + D5b
+> (mid-session gate, PR #74) per the risk-budget the original
+> §D5 flagged. Plan-revision history at the bottom of this file.
 
 ---
 
@@ -400,26 +403,64 @@ Composition rule: **disable dominates WAN.**
 
 ### D5 — lwm2m-client + lwm2m-server enable gate
 
-**Scope.** `apps/src/lwm2m_main.cpp` (or wherever the role
-dispatch sits) plus a gate-aware Register loop.
+> Implemented as **D5a + D5b** per the risk-budget split below.
+> D5a (PR #73, commit `e4132f4`) lands the startup gate against
+> `DsConfig`'s existing Client. D5b (PR #74, commit `6cf86b4`)
+> closes the mid-session story for both roles in one PR — the
+> server-side surgery turned out to be a small addition to
+> `RegistrationServer::handle()` rather than the deeper FSM
+> rework the original §D5 feared.
+
+**Scope.** `apps/src/main.cpp` (role dispatch + Supervisor-style
+watcher thread) plus `apps/src/lwm2m_registration_{client,server}.cpp`
+(the `set_disabled` hooks each FSM consults).
 
 lwm2m has no spawnable worker — it *is* the worker. "Disabled"
 means:
 
-- **lwm2m-client**: skip Register at startup if disabled. If
-  disabled while registered, send Deregister + clear active
-  observations; keep the CoAP socket listening so we can be
-  re-enabled without restart.
-- **lwm2m-server**: stop accepting Register requests
-  (HTTP 503-ish at the LwM2M layer; precise code at D5). Drop
-  the active-registrations map but keep the listening socket.
+- **lwm2m-client**: skip Register at startup if disabled; if
+  disabled while registered, send Deregister + park the FSM in
+  `Unregistered`; the CoAP socket stays listening so re-enable
+  fires a fresh Register without a daemon restart.
+- **lwm2m-server**: reject new Register requests with **5.03
+  Service Unavailable** while disabled; allow in-flight
+  Update/Deregister to process so registered clients can clean
+  up; drop the active-registrations map at the transition
+  (`registry->load_from({})`).
 
-This is the most invasive piece — touches the registration FSM.
-Risk-budget it: if D5 grows past one PR, split into D5a (client)
-and D5b (server).
+#### D5a — startup gate (shipped)
 
-**Tests.** `apps/test/lwm2m_lifecycle_test.cpp::Services_disable_deregisters_and_stops_polling`,
-`Services_reenable_reregisters_from_scratch`.
+- `DsConfig` gains `data_store::Client* client()` matching the
+  same accessor net-router/openvpn-client/wifi-client added.
+- `main` constructs `ServiceGate` keyed by role (`lwm2m.client` /
+  `lwm2m.server`) right after `DsConfig`, parks via
+  `gate.wait()` when disabled at startup, publishes
+  `state="running"` once through.
+
+#### D5b — mid-session gate (shipped)
+
+- `RegistrationClient::set_disabled(bool)` (`std::atomic<bool>`).
+  When true, `m_re_register_pending` auto-flips → reactor tick
+  Deregisters → state lands `Unregistered`; the
+  `Unregistered → Register` branch now also consults
+  `is_disabled()` so the FSM parks instead of auto-rejoining.
+- `RegistrationServer::set_disabled(bool)`. `handle()` returns
+  5.03 on new Register requests while disabled;
+  Update/Deregister keep working so registered clients clean up.
+- main spawns a watcher thread that loops on `svc_gate->wait()`:
+  - `v=true`  → clear disabled, publish `"running"`
+  - `v=false` → publish `"stopping"`, set disabled on the FSM,
+    `registry->load_from({})` for the server role, publish
+    `"disabled"`.
+
+**Tests.** No new unit tests landed in D5a/D5b — the LwM2M
+registration FSM is exercised by the existing
+`apps/test/lwm2m_lifecycle_test.cpp` suite (which still passes);
+the gate plumbing is mechanically identical to the patterns in
+modules/data-store/test/service_gate_test.cpp (D1) that the rest
+of L16 relies on. A dedicated lwm2m mid-session smoke transcript
+is a documented follow-up; the L16/D8 net-router smoke proves
+the end-to-end push-based flow.
 
 ### D6 — wifi-client enable gate
 
@@ -520,3 +561,20 @@ Candidate next phases (not committed):
   L16f candidate from the L15 plan.
 
 Pick one when L16 is in.
+
+---
+
+## 5. Revision history
+
+| Date       | Change                                                                |
+|------------|-----------------------------------------------------------------------|
+| 2026-06-01 | Plan written (status: plan only).                                     |
+| 2026-06-01 | D1 — `services.lua` + `ServiceGate` (PR #66 → `165e5c3`).             |
+| 2026-06-01 | D2 — ds-server self-publishes + namespace-claimed rejection (PR #67 → `b6703b9`). |
+| 2026-06-01 | D3 — net-router enable gate (PR #68 → `fd92e29`).                     |
+| 2026-06-01 | D4 — openvpn-client gate; disable dominates WAN (PR #69 → `22edb86`). |
+| 2026-06-01 | D6 — wifi-client gate; disable dominates NM-conflict (PR #70 → `dacd9dc`). |
+| 2026-06-01 | D7 — `ds-cli svc` + `Op::SchemaDump` (PR #71 → `327b2fb`).            |
+| 2026-06-01 | D8 — `log/L16/smoke.sh` + DEPLOY.md operator section (PR #72 → `18d60db`). |
+| 2026-06-01 | D5a — lwm2m startup gate (PR #73 → `e4132f4`).                        |
+| 2026-06-02 | D5b — lwm2m mid-session gate, client + server (PR #74 → `6cf86b4`); L16 CLOSED. |
