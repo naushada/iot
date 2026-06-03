@@ -48,11 +48,14 @@ WORKDIR /home/builduser/yocto
 # Baked into the image so they don't need fetching at run time.
 ARG POKY_BRANCH=scarthgap
 ARG OE_BRANCH=scarthgap
+ARG RPI_BRANCH=scarthgap
 
 RUN git clone --depth=1 -b ${POKY_BRANCH} \
         https://git.yoctoproject.org/poky && \
     git clone --depth=1 -b ${OE_BRANCH} \
-        https://git.openembedded.org/meta-openembedded
+        https://git.openembedded.org/meta-openembedded && \
+    git clone --depth=1 -b ${RPI_BRANCH} \
+        https://git.yoctoproject.org/meta-raspberrypi
 
 # ── Workaround: podman overlayfs doesn't support --preserve=xattr ──
 # The oe.path.copyhardlinktree function uses cp -afl --preserve=xattr
@@ -74,4 +77,4 @@ COPY --chown=builduser:builduser entrypoint.sh /home/builduser/yocto/
 RUN chmod +x /home/builduser/yocto/entrypoint.sh
 
 ENTRYPOINT ["/home/builduser/yocto/entrypoint.sh"]
-CMD ["packagegroup-iot", "lwm2m"]
+CMD ["iot-image"]

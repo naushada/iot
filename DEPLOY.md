@@ -6,7 +6,7 @@ Three paths, your choice:
 |-----------------|-------------------------------------------------------------------------------------------|------------------------|
 | **Container**   | Cloud, edge devices that already run a container engine, local hacking                  | 5 min                  |
 | **Bare metal**  | Single-purpose appliances, embedded Linux without container runtime                     | 15 min                 |
-| **Yocto**       | Custom embedded Linux images, cross-compilation, multi-arch (x86-64, ARM64, ARMv7)      | 2–4 hours (first build)|
+| **Yocto**       | Custom embedded Linux images (full bootable RPi 3B SD card + `.ipk` feed), cross-compilation | 2–4 hours (first build)|
 
 After install both paths boot `ds-server` (the typed-value config plane)
 plus one of the `lwm2m` roles (client or server). Live config flows
@@ -139,46 +139,91 @@ last run is captured at [`log/L11/e2e-smoke.txt`](log/L11/e2e-smoke.txt).
 
 ---
 
-## Path C — Yocto / OpenEmbedded (cross-compiled packages)
+## Path C — Yocto / OpenEmbedded (full distribution for Raspberry Pi 3B)
 
-This path produces **installable `.ipk` / `.rpm` packages** for any
-Linux target, cross-compiled inside a podman/docker container. The
-host needs only podman or docker — no Yocto SDK or kas CLI.
+This path builds a **complete bootable Linux distribution** — the
+`iot-image` — cross-compiled inside a podman/docker container. The host
+needs only podman or docker; no Yocto SDK, no host Yocto install. The
+build runs entirely in the container and the artifacts are copied back
+to the host.
 
-### 1. Build the packages
+Two artifacts come out per machine:
+
+- **`iot-image-*.wic.bz2`** — a flashable SD-card image. The default
+  `MACHINE` is `raspberrypi3-64` (Pi 3B, 64-bit). It bundles the full
+  gateway stack (`packagegroup-iot-full`), all kernel modules, the Pi's
+  onboard Wi-Fi/Bluetooth firmware, an SSH server, and `opkg`.
+- **`.ipk` feed** — the same per-daemon packages, for pushing app
+  updates to an already-running target over ssh.
+
+> First boot needs a physical SD-card flash — a Pi can't be
+> bootstrapped purely over ssh. Once it's booted with sshd, all
+> subsequent app updates go over ssh via the `.ipk` feed.
+
+### 1. Build the image
 
 ```sh
 cd yocto
-./build.sh                        # qemux86-64 (default)
-MACHINE=qemuarm64 ./build.sh      # ARM64 / aarch64
-MACHINE=qemuarm ./build.sh        # ARMv7 / armhf
-./build.sh all                    # all three architectures
+./build.sh                           # raspberrypi3-64 image (default)
+MACHINE=qemuarm64 ./build.sh         # ARM64 qemu image
+TARGET=packagegroup-iot ./build.sh   # just the .ipk feed, skip the image
+./build.sh all                       # every machine in build.sh
 ```
 
-The script builds a container image (`iot-yocto-builder`), runs
-`bitbake`, and copies the output to `yocto/build/<machine>/deploy/`.
+The script builds the container image (`iot-yocto-builder`, defined by
+`yocto/Containerfile`), runs `bitbake iot-image`, and copies the output
+to `yocto/build/<machine>/` (`images/<machine>/*.wic.bz2` + `ipk/`).
 
-### 2. Install on target
+### 2. Flash the SD card
+
+Find the SD device first (`/dev/sdX` on Linux, `/dev/diskN` on macOS),
+then write it. `bmaptool` is fast and verified; plain `dd` also works:
 
 ```sh
-scp yocto/build/qemuarm64/deploy/ipk/cortexa57/iot-*.ipk root@<target>:/tmp/
-ssh root@<target> opkg install /tmp/iot-ds-server_*.ipk /tmp/iot-lwm2m_*.ipk /tmp/iot-config_*.ipk
+IMG=yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-*.wic.bz2
+
+# Verified write (recommended — needs bmaptool, picks up the .bmap automatically)
+bmaptool copy $IMG /dev/sdX
+
+# Or plain dd
+bzcat $IMG | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
 ```
 
-### 3. Start the services
+### 3. Boot + ssh in
+
+Insert the card, power the Pi (ethernet is simplest for first bring-up;
+a serial console is on the GPIO UART since `ENABLE_UART=1`). The image
+runs `sshd`; `debug-tweaks` leaves the root password empty for the first
+login:
 
 ```sh
-ssh root@<target> systemctl enable --now iot-ds iot-lwm2m-client
-ssh root@<target> ds-cli --socket=/run/iot/data_store.sock get iot.endpoint
+ssh root@<pi-ip>
+# Production hardening: set a password / provision an ssh key, then
+# rebuild without debug-tweaks (EXTRA_IMAGE_FEATURES is overridable).
 ```
 
-For gateway-class devices, add the optional daemons:
+`ds-server` and the full gateway stack are already installed and managed
+by systemd. Only `iot-ds.service` auto-starts; enable the role daemons
+you need (see Path B for the per-daemon ds-cli seeding):
 
 ```sh
-opkg install iot-openvpn-client_*.ipk iot-net-router_*.ipk iot-wifi-client_*.ipk
+systemctl enable --now iot-lwm2m-client iot-httpd
+ds-cli --socket=/run/iot/data_store.sock get iot.endpoint
 ```
 
-Full Yocto docs: [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md).
+### 4. Push app updates over ssh (the `.ipk` feed)
+
+After the device is up, ship new daemon builds without reflashing —
+`opkg` and the feed config are baked into the image:
+
+```sh
+scp yocto/build/raspberrypi3-64/ipk/*/iot-*.ipk root@<pi-ip>:/tmp/
+ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk && systemctl restart iot-httpd'
+```
+
+Full Yocto / layer docs, including how to change the architecture, the
+image payload, or the Wi-Fi firmware package:
+[`yocto/meta-iot/README.md`](yocto/meta-iot/README.md).
 
 ---
 

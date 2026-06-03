@@ -20,9 +20,10 @@ RRECOMMENDS:${PN}-core = "\
 "
 
 # ── Full: gateway-class device ────────────────────────────────────
-# Adds OpenVPN, nftables NAT/routing, and Wi-Fi management.
+# Adds the HTTP REST API, OpenVPN, nftables NAT/routing, and Wi-Fi mgmt.
 RDEPENDS:${PN}-full = "\
     ${PN}-core \
+    iot-httpd \
     iot-openvpn-client \
     iot-net-router \
     iot-wifi-client \

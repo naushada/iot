@@ -138,32 +138,39 @@ are owned by the Leshan interop pass, not the unit-test build.
 ## Yocto / OpenEmbedded build
 
 A complete [Yocto](https://www.yoctoproject.org/) layer (`meta-iot`)
-ships under `yocto/meta-iot/`. It delivers all six daemons as
-separate `.ipk` / `.rpm` packages for embedded Linux targets with
-no host-side Yocto install — the entire build runs inside a
+ships under `yocto/meta-iot/`. It builds a **full bootable distribution**
+(`iot-image`) for the **Raspberry Pi 3B** — and the per-daemon `.ipk`
+feed — with no host-side Yocto install. The entire build runs inside a
 podman/docker container.
 
 ```sh
 cd yocto
-./build.sh                        # qemux86-64 (default)
-MACHINE=qemuarm64 ./build.sh      # ARM64 / aarch64
-MACHINE=qemuarm ./build.sh        # ARMv7 / armhf
-./build.sh all                    # all three architectures
+./build.sh                           # raspberrypi3-64 image (default)
+MACHINE=qemuarm64 ./build.sh         # ARM64 qemu image
+TARGET=packagegroup-iot ./build.sh   # just the .ipk feed, no image
+./build.sh all                       # every supported machine
 ```
 
 The host needs only **podman** or **docker**. The container image
-clones poky + meta-openembedded at Scarthgap (5.0 LTS), copies
-`meta-iot`, and runs `bitbake`. Output artifacts land in
-`yocto/build/<machine>/deploy/ipk/`.
+clones poky + meta-openembedded + meta-raspberrypi at Scarthgap
+(5.0 LTS), copies `meta-iot`, and runs `bitbake iot-image`. Output lands
+in `yocto/build/<machine>/`:
 
-Install on target:
+- `images/<machine>/iot-image-*.wic.bz2` — flashable SD-card image
+  (full gateway stack + kernel modules + Pi Wi-Fi/BT firmware + sshd + opkg)
+- `ipk/` — the `.ipk` feed for `opkg install` over ssh
+
+Flash, boot, ssh in, then push app updates over ssh:
 
 ```sh
-opkg install iot-ds-server_*.ipk iot-lwm2m_*.ipk iot-config_*.ipk
-systemctl enable --now iot-ds iot-lwm2m-client
+bmaptool copy yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-*.wic.bz2 /dev/sdX
+ssh root@<pi-ip>                                   # sshd baked in (debug-tweaks)
+scp yocto/build/raspberrypi3-64/ipk/*/iot-*.ipk root@<pi-ip>:/tmp/   # later updates
+ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
 ```
 
-Full docs: [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md).
+Full docs: [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md) ·
+deploy walkthrough: [`DEPLOY.md`](DEPLOY.md) Path C.
 
 ### PACKAGECONFIG
 

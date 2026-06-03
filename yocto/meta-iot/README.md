@@ -1,26 +1,47 @@
 # meta-iot — Yocto Layer for the iot LwM2M Stack
 
 Yocto/OpenEmbedded layer that builds the iot LwM2M 1.1.1 device management
-stack and all its third-party dependencies. Six daemons are delivered as
-separate installable packages so embedded images pull only what they need.
+stack and all its third-party dependencies. Seven daemons are delivered as
+separate installable packages so embedded images pull only what they need,
+plus a full bootable `iot-image` distribution.
 
 ## Quick-start (containerised build — no host Yocto install)
 
 ```sh
 cd yocto
-./build.sh
+./build.sh                       # raspberrypi3-64 image, default
+MACHINE=qemuarm64 ./build.sh     # ARM64 qemu
+TARGET=packagegroup-iot ./build.sh   # just the .ipk feed, no image
 ```
 
-`build.sh` runs the entire Yocto build inside the
-[ghcr.io/siemens/kas/kas](https://github.com/siemens/kas) container image.
-The host needs only **podman** or **docker**. Output packages land in
-`yocto/build/deploy/ipk/`.
+`build.sh` builds the entire Yocto stack inside a container defined by
+`Containerfile` (Ubuntu 22.04 + poky + meta-openembedded + meta-raspberrypi,
+all at the Scarthgap 5.0 LTS branch). The host needs only **podman** or
+**docker**. Per-machine output lands in `yocto/build/<machine>/`:
+
+- `images/<machine>/iot-image-*.wic.bz2` — flashable SD-card image
+- `ipk/` — the `.ipk` feed for `opkg install` over ssh
+
+### Deploy to a Raspberry Pi 3B
+
+```sh
+# 1. Flash the SD card (verified write; or use dd — see build.sh summary)
+bmaptool copy yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-*.wic.bz2 /dev/sdX
+
+# 2. Boot the Pi, then ssh in (image runs sshd; debug-tweaks → empty root pw)
+ssh root@<pi-ip>
+
+# 3. Push app updates later over ssh via the .ipk feed
+scp yocto/build/raspberrypi3-64/ipk/*/iot-*.ipk root@<pi-ip>:/tmp/
+ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
+```
 
 ## What this layer provides
 
 | Recipe                   | Produces                                                    |
 |--------------------------|-------------------------------------------------------------|
-| `lwm2m_git.bb`           | Six sub-packages: `iot-ds-server`, `iot-ds-cli`, `iot-lwm2m`, `iot-openvpn-client`, `iot-net-router`, `iot-wifi-client`, `iot-config` |
+| `lwm2m_git.bb`           | Sub-packages: `iot-ds-server`, `iot-ds-cli`, `iot-lwm2m`, `iot-openvpn-client`, `iot-net-router`, `iot-wifi-client`, `iot-httpd`, `iot-config` |
+| `images/iot-image.bb`    | Full bootable distribution (`packagegroup-iot-full` + kernel modules + RPi Wi-Fi/BT firmware + sshd + opkg) → `*.wic.bz2` |
 | `ace-tao_7.0.0.bb`       | `libACE.so.7.0.0`, `libACE_SSL.so.7.0.0`, dev headers       |
 | `tinydtls_git.bb`        | `libtinydtls.a` (static archive)                             |
 | `mongo-c-driver_1.19.bb` | `libbson-1.0.so`, `libmongoc-1.0.so`                        |
@@ -32,7 +53,7 @@ The host needs only **podman** or **docker**. Output packages land in
 | Group                      | Contents                                                    |
 |----------------------------|-------------------------------------------------------------|
 | `packagegroup-iot-core`    | ds-server + lwm2m + ds-cli + config (minimal device/fleet)  |
-| `packagegroup-iot-full`    | core + openvpn-client + net-router + wifi-client + runtime deps |
+| `packagegroup-iot-full`    | core + httpd + openvpn-client + net-router + wifi-client + runtime deps |
 | `packagegroup-iot-debug`   | full + test binaries (when PACKAGECONFIG[gtest] is on)      |
 
 ## PACKAGECONFIG options (lwm2m recipe)
@@ -66,17 +87,22 @@ ds-cli --socket=/run/iot/data_store.sock get iot.endpoint
 
 ## Layer dependencies
 
-- `poky` (scarthgap branch) — core layer
-- `meta-openembedded` (scarthgap branch) — provides lua, nlohmann-json, gtest
+- `poky` (scarthgap) — core layer
+- `meta-openembedded` (scarthgap) — `meta-oe` (lua, nlohmann-json, gtest),
+  `meta-python`, `meta-networking` (openvpn)
+- `meta-raspberrypi` (scarthgap) — `raspberrypi3-64` MACHINE, bootfiles,
+  `pi-bluetooth`, rpidistro Wi-Fi/BT firmware
 
-These are fetched automatically by `kas-iot.yml` when using the containerised
-build.
+`Containerfile` clones all of these into the builder image; `kas-iot.yml`
+declares the same set for the kas-driven path.
 
 ## Target machines
 
-Default machine is `qemux86-64` for CI/verification. For a physical device,
-override `MACHINE` in a kas include or `local.conf`:
+Default machine is `raspberrypi3-64` (Raspberry Pi 3B, 64-bit). For other
+boards or qemu, override `MACHINE`:
 
 ```sh
-MACHINE=raspberrypi4-64 ./build.sh
+MACHINE=qemux86-64 ./build.sh    # x86-64 qemu (CI)
+MACHINE=qemuarm64  ./build.sh    # ARM64 qemu
+./build.sh all                   # every machine in build.sh's MACHINES list
 ```

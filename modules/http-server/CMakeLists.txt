@@ -46,7 +46,11 @@ add_executable(iot-httpd src/main.cpp)
 target_link_libraries(iot-httpd PRIVATE http_server_lib)
 
 # ─────────────────────────── Tests ─────────────────────────────
-option(BUILD_HTTP_SERVER_TESTS "Build http-server gtest suite" ON)
+# OFF by default (like the sibling modules) so a packaging/yocto build
+# doesn't pull in GTest. The Dockerfile + standalone dev builds pass
+# -DBUILD_HTTP_SERVER_TESTS=ON explicitly; the recipe's gtest
+# PACKAGECONFIG flips it on too.
+option(BUILD_HTTP_SERVER_TESTS "Build http-server gtest suite" OFF)
 if(BUILD_HTTP_SERVER_TESTS)
     find_package(GTest REQUIRED)
     enable_testing()

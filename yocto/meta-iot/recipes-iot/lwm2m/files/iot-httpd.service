@@ -1,0 +1,36 @@
+[Unit]
+Description=IoT HTTP REST API server (iot-httpd, fronts ds-server over /run/iot/data_store.sock)
+Documentation=https://github.com/naushada/iot
+After=network-online.target iot-ds.service
+Wants=network-online.target
+Requires=iot-ds.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/iot/httpd.env
+ExecStart=/usr/bin/iot-httpd $HTTPD_ARGS
+
+DynamicUser=yes
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+
+# Lets the dynamic user bind :80/:443 when http.listen.port is set low.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+Restart=on-failure
+RestartSec=2s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

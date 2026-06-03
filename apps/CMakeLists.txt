@@ -72,6 +72,14 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/net/router
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/wan/wifi/client
                  ${CMAKE_BINARY_DIR}/wifi-client)
 
+# http-server daemon (L18). Sibling under ../modules/http-server.
+# Lands the iot-httpd binary + http.lua schema in the same install
+# tree. data-store is already added above, so http-server reuses the
+# existing datastore_client target (its add_subdirectory is guarded by
+# `NOT TARGET datastore_client`). Standalone module build still works.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/http-server
+                 ${CMAKE_BINARY_DIR}/http-server)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)

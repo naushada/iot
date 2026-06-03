@@ -1,8 +1,9 @@
 SUMMARY = "IoT LwM2M 1.1.1 stack — device management daemons"
 DESCRIPTION = "C++17 OMA LwM2M 1.1.1 device management stack built on ACE, \
-CoAP, and DTLS (tinydtls). Delivers six daemons as separate installable \
+CoAP, and DTLS (tinydtls). Delivers seven daemons as separate installable \
 packages: ds-server (typed KV config plane), ds-cli (debug CLI), lwm2m \
-(combined client/server), openvpn-client, net-router, wifi-client. \
+(combined client/server), openvpn-client, net-router, wifi-client, \
+iot-httpd (HTTP REST API fronting ds-server). \
 Supports x86-64, ARM64, and ARMv7 targets via Yocto MACHINE selection."
 HOMEPAGE = "https://github.com/naushada/iot"
 LICENSE = "CLOSED"
@@ -22,12 +23,14 @@ SRC_URI = "\
     file://iot-openvpn-client.service \
     file://iot-net-router.service \
     file://iot-wifi-client.service \
+    file://iot-httpd.service \
     file://iot.conf \
     file://lwm2m-client.env \
     file://lwm2m-server.env \
     file://openvpn-client.env \
     file://net-router.env \
     file://wifi-client.env \
+    file://httpd.env \
 "
 SRCREV = "${AUTOREV}"
 
@@ -76,11 +79,13 @@ PACKAGECONFIG[gtest] = "\
     -DBUILD_DATA_STORE_TESTS=ON \
       -DBUILD_OPENVPN_CLIENT_TESTS=ON \
       -DBUILD_NET_ROUTER_TESTS=ON \
-      -DBUILD_WIFI_CLIENT_TESTS=ON, \
+      -DBUILD_WIFI_CLIENT_TESTS=ON \
+      -DBUILD_HTTP_SERVER_TESTS=ON, \
     -DBUILD_DATA_STORE_TESTS=OFF \
       -DBUILD_OPENVPN_CLIENT_TESTS=OFF \
       -DBUILD_NET_ROUTER_TESTS=OFF \
-      -DBUILD_WIFI_CLIENT_TESTS=OFF, \
+      -DBUILD_WIFI_CLIENT_TESTS=OFF \
+      -DBUILD_HTTP_SERVER_TESTS=OFF, \
     gtest, \
 "
 
@@ -122,6 +127,7 @@ do_install() {
         install -m 0644 ${WORKDIR}/iot-openvpn-client.service ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-net-router.service     ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-wifi-client.service    ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-httpd.service          ${D}${systemd_system_unitdir}/
 
         # tmpfiles.d fallback
         install -d ${D}${nonarch_libdir}/tmpfiles.d
@@ -134,6 +140,7 @@ do_install() {
         install -m 0644 ${WORKDIR}/openvpn-client.env ${D}${sysconfdir}/iot/
         install -m 0644 ${WORKDIR}/net-router.env     ${D}${sysconfdir}/iot/
         install -m 0644 ${WORKDIR}/wifi-client.env    ${D}${sysconfdir}/iot/
+        install -m 0644 ${WORKDIR}/httpd.env          ${D}${sysconfdir}/iot/
     fi
 }
 
@@ -149,6 +156,7 @@ PACKAGE_BEFORE_PN = "\
     ${PN}-openvpn-client \
     ${PN}-net-router \
     ${PN}-wifi-client \
+    ${PN}-httpd \
     ${PN}-config \
 "
 
@@ -231,6 +239,16 @@ RRECOMMENDS:${PN}-wifi-client = "\
     busybox-udhcpc \
 "
 
+# httpd — HTTP REST API server fronting ds-server (L18)
+FILES:${PN}-httpd = "\
+    ${bindir}/iot-httpd \
+"
+RDEPENDS:${PN}-httpd = "ace-tao"
+RRECOMMENDS:${PN}-httpd = "\
+    ${PN}-ds-server \
+    ${PN}-config \
+"
+
 # config — schema files, env files, config templates (shared substrate)
 FILES:${PN}-config = "\
     ${sysconfdir}/iot \
@@ -242,6 +260,7 @@ SYSTEMD_SERVICE:${PN}-lwm2m = "iot-lwm2m-client.service iot-lwm2m-server.service
 SYSTEMD_SERVICE:${PN}-openvpn-client = "iot-openvpn-client.service"
 SYSTEMD_SERVICE:${PN}-net-router = "iot-net-router.service"
 SYSTEMD_SERVICE:${PN}-wifi-client = "iot-wifi-client.service"
+SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service"
 
 # Only ds-server auto-starts. Role units are enabled by the operator
 # after writing the matching .env file — see DEPLOY.md.
@@ -250,6 +269,7 @@ SYSTEMD_AUTO_ENABLE:${PN}-lwm2m = "disable"
 SYSTEMD_AUTO_ENABLE:${PN}-openvpn-client = "disable"
 SYSTEMD_AUTO_ENABLE:${PN}-net-router = "disable"
 SYSTEMD_AUTO_ENABLE:${PN}-wifi-client = "disable"
+SYSTEMD_AUTO_ENABLE:${PN}-httpd = "disable"
 
 # ── Sanity checks ──────────────────────────────────────────────────
 # Inhibit the "binary already stripped" QA warning — we build with -g
@@ -260,3 +280,4 @@ INSANE_SKIP:${PN}-ds-cli = "already-stripped"
 INSANE_SKIP:${PN}-openvpn-client = "already-stripped"
 INSANE_SKIP:${PN}-net-router = "already-stripped"
 INSANE_SKIP:${PN}-wifi-client = "already-stripped"
+INSANE_SKIP:${PN}-httpd = "already-stripped"

@@ -1,20 +1,19 @@
 # kas-iot.yml — Yocto build configuration for the iot LwM2M stack
 #
 # Uses kas (https://github.com/siemens/kas) to fetch all layers and
-# drive bitbake. Run inside the kas container:
+# drive bitbake. This is an alternative to the Containerfile/entrypoint.sh
+# build path that build.sh uses by default; the two are kept in sync.
 #
-#   cd yocto
-#   ./build.sh                    # builds default machine (qemux86-64)
-#   MACHINE=qemuarm64 ./build.sh  # builds for ARM64
-#   ./build.sh all                # builds all supported architectures
+#   kas build yocto/kas-iot.yml                       # raspberrypi3-64
+#   MACHINE=qemuarm64 kas build yocto/kas-iot.yml     # ARM64 (qemu)
 #
 # Supported machines:
-#   qemux86-64       x86-64 (default, CI verification)
-#   qemuarm64        ARM64 / aarch64
-#   qemuarm          ARMv7 / armhf
-#   raspberrypi4-64  Raspberry Pi 4 (64-bit)
+#   raspberrypi3-64  Raspberry Pi 3B (64-bit, default)
+#   qemuarm64        ARM64 / aarch64 (qemu)
+#   qemux86-64       x86-64 (qemu, CI verification)
 #
-# For a physical board, set MACHINE in the env or add a kas include.
+# Default target `iot-image` is the full bootable distribution. For just
+# the .ipk feed, run `kas build yocto/kas-iot.yml:packagegroup-iot`.
 
 header:
   version: 14
@@ -34,12 +33,23 @@ repos:
       meta:
       meta-poky:
 
-  # meta-openembedded — lua, nlohmann-json, gtest
+  # meta-openembedded — lua, nlohmann-json, gtest, openvpn (networking).
+  # meta-networking depends on meta-python, so both are enabled.
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
     refspec: scarthgap
     layers:
       meta-oe:
+      meta-python:
+      meta-networking:
+
+  # meta-raspberrypi — raspberrypi3-64 MACHINE, bootfiles, pi-bluetooth,
+  # and the rpidistro onboard Wi-Fi/Bluetooth firmware.
+  meta-raspberrypi:
+    url: https://git.yoctoproject.org/meta-raspberrypi
+    refspec: scarthgap
+    layers:
+      meta-raspberrypi:
 
 # The iot layer is local (not fetched) — it lives in yocto/meta-iot/
 # relative to the repo root. When running via build.sh, the repo is
@@ -49,26 +59,30 @@ repos:
 # Build configuration
 local_conf_header:
   iot-base: |
-    # Accept the CLOSED license for iot recipes
-    LICENSE_FLAGS_ACCEPTED += "CLOSED"
+    # Accept the CLOSED license for iot recipes, plus the rpidistro
+    # Wi-Fi/Bluetooth firmware (synaptics-killswitch).
+    LICENSE_FLAGS_ACCEPTED += "CLOSED synaptics-killswitch"
 
     # Systemd as init manager (required for DynamicUser=, RuntimeDirectory=)
     INIT_MANAGER = "systemd"
 
-    # Image features
+    # .ipk packages → on-target opkg + a flat ipk feed under tmp/deploy/ipk
+    # so iot-*.ipk can be installed over ssh.
+    PACKAGE_CLASSES = "package_ipk"
+
+    # Empty root password for first-boot ssh. REMOVE for production.
     EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
 
-  iot-packages: |
-    # Packages to install in the target image
-    IMAGE_INSTALL:append = " packagegroup-iot-core"
+    # Serial console on the GPIO header (no-op on qemu machines).
+    ENABLE_UART = "1"
 
 bblayers_conf_header:
   meta-iot: |
     BBLAYERS += "${TOPDIR}/../meta-iot"
 
 # Target machine — override via MACHINE env var or --target
-machine: "${MACHINE:-qemux86-64}"
+machine: "${MACHINE:-raspberrypi3-64}"
 
-# Target recipe to build
+# Target recipe to build — the full bootable distribution.
 target:
-  - packagegroup-iot-core
+  - iot-image

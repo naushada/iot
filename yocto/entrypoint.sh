@@ -13,9 +13,9 @@
 set -eo pipefail
 
 MACHINE="${MACHINE:-qemux86-64}"
-# Default targets if none specified
+# Default target if none specified — the full bootable distribution.
 if [ $# -eq 0 ]; then
-    set -- packagegroup-iot lwm2m
+    set -- iot-image
 fi
 
 echo "═══════════════════════════════════════════════════════════════"
@@ -37,6 +37,10 @@ echo "→ Adding layers ..."
 bitbake-layers add-layer ../meta-openembedded/meta-oe
 bitbake-layers add-layer ../meta-openembedded/meta-python
 bitbake-layers add-layer ../meta-openembedded/meta-networking
+# meta-raspberrypi provides the raspberrypi3-64 MACHINE, bootfiles,
+# pi-bluetooth, and the rpidistro Wi-Fi firmware. Harmless for the qemu
+# machines (only its recipes for the selected MACHINE are pulled in).
+bitbake-layers add-layer ../meta-raspberrypi
 bitbake-layers add-layer ../meta-iot
 
 # ── 3. Configure local.conf ────────────────────────────────────────
@@ -44,14 +48,18 @@ cat >> conf/local.conf <<'YOCONF'
 
 # ── iot stack configuration ────────────────────────────────────────
 
-# Accept CLOSED license for iot recipes
-LICENSE_FLAGS_ACCEPTED += "CLOSED"
+# Accept CLOSED license for iot recipes, plus the Raspberry Pi distro
+# Wi-Fi/Bluetooth firmware licenses (synaptics-killswitch gates the
+# rpidistro brcm firmware).
+LICENSE_FLAGS_ACCEPTED += "CLOSED synaptics-killswitch"
 
 # systemd as init manager (required for DynamicUser=, RuntimeDirectory=)
 INIT_MANAGER = "systemd"
 
-# Target packages
-IMAGE_INSTALL:append = " packagegroup-iot-core"
+# .ipk packages → on-target opkg + a flat ipk feed under tmp/deploy/ipk,
+# so iot-*.ipk can be scp'd and `opkg install`ed over ssh. (Poky defaults
+# to rpm; without this the ipk feed the scripts reference is never built.)
+PACKAGE_CLASSES = "package_ipk"
 
 # Disable mongo PACKAGECONFIG for faster builds (RegistryMirror).
 # Remove to enable the MongoDB registration mirror feature.
@@ -73,6 +81,18 @@ if [ "$MACHINE" != "qemux86-64" ]; then
     echo "MACHINE = \"$MACHINE\"" >> conf/local.conf
 fi
 
+# Raspberry Pi tunables: serial console on the GPIO header for headless
+# bring-up debugging. (No-op on the qemu machines.)
+case "$MACHINE" in
+    raspberrypi*)
+        cat >> conf/local.conf <<'RPICONF'
+
+# ── Raspberry Pi ───────────────────────────────────────────────────
+ENABLE_UART = "1"
+RPICONF
+        ;;
+esac
+
 # ── 5. Run bitbake ─────────────────────────────────────────────────
 echo ""
 echo "→ Starting bitbake for $MACHINE: $@ ..."
@@ -86,6 +106,9 @@ echo "════════════════════════�
 echo "  Build complete — $MACHINE"
 echo "  Artifacts: build/tmp/deploy/"
 echo "═══════════════════════════════════════════════════════════════"
+echo "── SD-card image(s): ──"
+find tmp/deploy/images -name '*.wic.bz2' -type f 2>/dev/null | sort || true
+echo "── iot .ipk feed: ──"
 find tmp/deploy/ipk -name 'iot-*.ipk' -type f 2>/dev/null | sort || true
 echo ""
 echo "On the host, extract with:"

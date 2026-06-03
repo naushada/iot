@@ -1,0 +1,52 @@
+[Unit]
+Description=IoT HTTP REST API server (iot-httpd, fronts ds-server over /run/iot/data_store.sock)
+Documentation=file:///usr/local/share/doc/iot/http-server-design.md
+# Needs ds-server up — iot-httpd connects to the unix socket on
+# startup and bails if the connect fails. network-online so the
+# listen socket binds a real address rather than racing iface setup.
+After=network-online.target iot-ds.service
+Wants=network-online.target
+Requires=iot-ds.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+# Optional (`-`): unit still starts on defaults if the env file is absent.
+EnvironmentFile=-/etc/iot/httpd.env
+# Args default to ds-socket=/var/run/iot/data_store.sock,
+# http-ip=0.0.0.0, http-port=8080; the http.listen.* keys in the
+# data store override ip/port at runtime. $HTTPD_ARGS lets an
+# operator pin them without editing the unit.
+ExecStart=/usr/local/bin/iot-httpd $HTTPD_ARGS
+
+# DynamicUser auto-allocates a system user/group `iot-httpd`; it sees
+# the same /run/iot/data_store.sock that iot-ds.service publishes via
+# its identically-named RuntimeDirectory=iot.
+DynamicUser=yes
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+
+# Default port 8080 is unprivileged, but operators commonly front it
+# on :80/:443 via http.listen.port. CAP_NET_BIND_SERVICE lets the
+# dynamic user bind low ports without running as root.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+Restart=on-failure
+RestartSec=2s
+
+# journald captures stdout/stderr (ACE logging writes to stderr) so
+# `journalctl -u iot-httpd` works out of the box.
+StandardOutput=journal
+StandardError=journal
+
+# Modest hardening, matching the rest of the iot units.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -5,18 +5,21 @@
 # host. No Yocto install needed on the host — just podman or docker.
 #
 # Usage:
-#   ./build.sh                        # qemux86-64 (default)
-#   MACHINE=qemuarm64 ./build.sh      # ARM64 / aarch64
-#   MACHINE=qemuarm ./build.sh        # ARMv7 / armhf
-#   ./build.sh all                    # All three architectures
+#   ./build.sh                        # raspberrypi3-64 (default)
+#   MACHINE=qemuarm64 ./build.sh      # ARM64 / aarch64 (qemu)
+#   MACHINE=qemux86-64 ./build.sh     # x86-64 (qemu, CI)
+#   ./build.sh all                    # All supported machines
+#
+# Default target is the full bootable distribution `iot-image`. Override:
+#   TARGET=packagegroup-iot ./build.sh   # build just the .ipk feed
 #
 # Output per machine:
-#   yocto/build/<machine>/ipk/        *.ipk packages
-#   yocto/build/<machine>/images/     rootfs / kernel images
+#   yocto/build/<machine>/images/<machine>/*.wic.bz2   flashable SD image
+#   yocto/build/<machine>/ipk/                          *.ipk feed (opkg)
 #
 # Requirements:
 #   - podman or docker
-#   - ~30 GB free disk space (Yocto downloads + build)
+#   - ~50 GB free disk space (Yocto downloads + build + image)
 #   - Internet access (first build fetches ~8 GB of sources)
 
 set -euo pipefail
@@ -25,12 +28,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_DIR="$SCRIPT_DIR/build"
 IMAGE_NAME="${IMAGE_NAME:-iot-yocto-builder:latest}"
+# bitbake target — the full bootable distribution by default.
+TARGET="${TARGET:-iot-image}"
+DEFAULT_MACHINE="${MACHINE:-raspberrypi3-64}"
 
-# Supported architectures
+# Supported machines (used by `./build.sh all`)
 MACHINES=(
-    "qemux86-64"
+    "raspberrypi3-64"
     "qemuarm64"
-    "qemuarm"
+    "qemux86-64"
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -75,9 +81,9 @@ build_machine() {
     $CR run --name "$container" \
         -e "MACHINE=$machine" \
         "$IMAGE_NAME" \
-        packagegroup-iot
+        $TARGET
 
-    # Copy artifacts from the container to the host
+    # Copy artifacts (images/ + ipk/) from the container to the host
     log_info "Copying artifacts to $out ..."
     $CR cp "$container:/home/builduser/yocto/build/tmp/deploy/." "$out/"
 
@@ -91,23 +97,43 @@ build_machine() {
 print_summary() {
     log_section "Build summary"
     for machine in "${MACHINES[@]}"; do
-        local d="$OUT_DIR/$machine/ipk"
-        if [ -d "$d" ]; then
-            local iot_count=$(find "$d" -name 'iot-*.ipk' -type f 2>/dev/null | wc -l)
-            local total=$(find "$d" -name '*.ipk' -type f 2>/dev/null | wc -l)
-            if [ "$iot_count" -gt 0 ]; then
-                echo "  ✅ $machine  →  $iot_count iot .ipk packages ($total total)"
-            else
-                echo "  ⚠️  $machine  →  build completed (no iot .ipk found yet)"
-            fi
+        local img
+        img=$(find "$OUT_DIR/$machine/images" -name 'iot-image*.wic.bz2' -type f 2>/dev/null | sort | tail -1)
+        local ipk_count
+        ipk_count=$(find "$OUT_DIR/$machine/ipk" -name 'iot-*.ipk' -type f 2>/dev/null | wc -l | tr -d ' ')
+        if [ -n "$img" ]; then
+            echo "  ✅ $machine  →  $(basename "$img")  +  ${ipk_count} iot .ipk"
+        elif [ "$ipk_count" -gt 0 ]; then
+            echo "  ⚠️  $machine  →  ${ipk_count} iot .ipk (no image — package-only build)"
+        elif [ -d "$OUT_DIR/$machine" ]; then
+            echo "  ⚠️  $machine  →  build completed (no artifacts found)"
         else
             echo "  ⬜ $machine  —  not built"
         fi
     done
-    echo ""
-    echo "  Install on target (example for ARM64):"
-    echo "    scp $OUT_DIR/qemuarm64/ipk/*/iot-*.ipk root@<target>:/tmp/"
-    echo "    ssh root@<target> opkg install /tmp/iot-ds-server_*.ipk /tmp/iot-lwm2m_*.ipk /tmp/iot-config_*.ipk"
+
+    # Concrete next steps for the primary RPi target if it was built.
+    local rpi_img
+    rpi_img=$(find "$OUT_DIR/raspberrypi3-64/images" -name 'iot-image*.wic.bz2' -type f 2>/dev/null | sort | tail -1)
+    if [ -n "$rpi_img" ]; then
+        cat <<EOF
+
+  ── Flash the SD card (Raspberry Pi 3B) ──────────────────────────────
+    # Find the SD device first (e.g. /dev/sdX on Linux, /dev/diskN on macOS).
+    # Fast + verified (recommended, needs bmaptool):
+    bmaptool copy "$rpi_img" /dev/sdX
+    # Or plain dd:
+    bzcat "$rpi_img" | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
+
+  ── First boot + ssh in ──────────────────────────────────────────────
+    # The image runs sshd with debug-tweaks (empty root password).
+    ssh root@<pi-ip>          # then: passwd, provision keys for production
+
+  ── Push iot app updates over ssh (opkg feed) ────────────────────────
+    scp $OUT_DIR/raspberrypi3-64/ipk/*/iot-*.ipk root@<pi-ip>:/tmp/
+    ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
+EOF
+    fi
     echo ""
 }
 
@@ -118,15 +144,16 @@ main() {
 
     build_image
 
-    local target="${1:-${MACHINE:-qemux86-64}}"
+    log_info "Target recipe: $TARGET"
+    local machine="${1:-$DEFAULT_MACHINE}"
 
-    if [ "$target" = "all" ]; then
-        for machine in "${MACHINES[@]}"; do
-            build_machine "$machine"
+    if [ "$machine" = "all" ]; then
+        for m in "${MACHINES[@]}"; do
+            build_machine "$m"
         done
         print_summary
     else
-        build_machine "$target"
+        build_machine "$machine"
         print_summary
     fi
 }
