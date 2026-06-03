@@ -253,16 +253,28 @@ parser.done() → enqueue ──▶ dequeue
 
 ### 2.6 Configuration
 
-```sh
-iot-httpd \
-    http-listen=0.0.0.0:8080 \
-    ds-socket=/var/run/iot/data_store.sock \
-    worker-threads=4 \
-    max-connections=128
+`iot-httpd` reads its listen parameters from the data store at
+startup via the `http.*` schema (shipped alongside `iot.lua`,
+`services.lua`, etc. in `/etc/iot/ds-schemas/http.lua`):
+
+```lua
+-- http.listen.ip     = "0.0.0.0"   (default: all interfaces)
+-- http.listen.port   = 8080        (default, 1..65535)
+-- http.listen.scheme = "http"      (v1 only; "https" reserved)
 ```
 
-Defaults: listen on `0.0.0.0:8080`, 4 worker threads, unlimited
-connections (gated by ulimit).
+CLI overrides (for development / smoke):
+
+```sh
+iot-httpd \
+    ds-socket=/var/run/iot/data_store.sock \
+    worker-threads=4
+```
+
+The server reads `http.listen.{ip,port,scheme}` at startup via
+`data_store::Client::get()`. If the keys are unset, schema
+defaults apply. Hot-reload of listen params is FUP — changing
+ip/port requires a restart in v1.
 
 ## 3. REST API
 

@@ -57,3 +57,10 @@ if(BUILD_HTTP_SERVER_TESTS)
 
     add_test(NAME http-parser-tests COMMAND http-parser-tests)
 endif()
+
+# ─────────────────────────── Install ───────────────────────────
+include(GNUInstallDirs)
+if(NOT DEFINED IOT_PACKAGING_INSTALL OR IOT_PACKAGING_INSTALL)
+    install(FILES schemas/http.lua
+            DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
+endif()
