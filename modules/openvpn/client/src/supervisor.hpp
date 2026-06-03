@@ -30,7 +30,7 @@
 #include "ds_bridge.hpp"
 #include "gate.hpp"
 
-namespace data_store { class ServiceGate; }   // forward decl
+namespace data_store { class ServiceGate; class DepWatch; }   // forward decl
 
 namespace openvpn_client {
 
@@ -69,6 +69,13 @@ private:
     std::unique_ptr<data_store::ServiceGate> m_svc;
     std::thread                              m_svc_watcher;
     std::atomic<bool>                        m_svc_dirty{false};
+
+    /// L17a/D3 — dependency watch. If any declared dependency (e.g.
+    /// net.router) goes unhealthy, gate.reason="dep_down:<name>"
+    /// dominates both the enable gate and WAN.
+    std::unique_ptr<data_store::DepWatch>    m_dep;
+    std::thread                              m_dep_watcher;
+    std::atomic<bool>                        m_dep_dirty{false};
 
     std::mutex                 m_mtx;
     std::condition_variable    m_cv;

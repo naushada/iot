@@ -399,6 +399,51 @@ ds-cli --socket=/run/iot/data_store.sock svc status openvpn.client
 `ds-cli svc disable` is for the everyday "I want this OFF for now
 but keep the daemon ready to come back fast" path.
 
+### Dependency graph (L17a)
+
+Each service's `enable` key in `services.lua` declares a
+`depends_on` array. When a dependency goes disabled, every
+dependent daemon sets `gate.reason="dep_down:<name>"` and parks.
+This replaces the old implicit "wan_down" cascade.
+
+The graph in v1:
+
+```
+net.router (leaf — no dependencies)
+  ↑
+  ├── openvpn.client
+  ├── wifi.client
+  ├── lwm2m.client
+  └── lwm2m.server
+```
+
+Check the graph at runtime:
+
+```sh
+ds-cli svc list
+# NAME             ENABLE  STATE      DEPENDS     UPTIME
+# net.router       true    running    -           1h12m
+# openvpn.client   true    running    net.router  47m
+```
+
+If openvpn-client shows `gate.reason="dep_down:net.router"`, the
+root cause is that net-router is disabled — check its state first:
+
+```sh
+ds-cli svc status openvpn.client
+# vpn.gate.reason = dep_down:net.router
+
+ds-cli svc status net.router
+# services.net.router.state = disabled
+
+# Fix:
+ds-cli svc enable net.router
+```
+
+The composition priority across gates is: **dep_down > disabled >
+wan_down (or NM-conflict)**. A dependency failure blocks everything
+below it regardless of the service's own enable flag or WAN state.
+
 ---
 
 ## Common operator tasks

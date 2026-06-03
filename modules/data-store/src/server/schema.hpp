@@ -54,6 +54,7 @@ struct SchemaEntry {
     std::optional<Value>        default_value;
     std::optional<long long>    min_int;
     std::optional<long long>    max_int;
+    std::vector<std::string>    depends_on;  ///< L17a: service names this key depends on
 };
 
 class SchemaRegistry {

@@ -7,9 +7,11 @@
 #include <dirent.h>
 #include <limits>
 #include <memory>
+#include <queue>
 #include <stdexcept>
 #include <sys/stat.h>
 #include <type_traits>
+#include <unordered_set>
 #include <variant>
 #include <variant>
 
@@ -180,6 +182,21 @@ void SchemaRegistry::load_one(const std::string& path) {
         }
         lua_pop(L.get(), 1);
 
+        // L17a/D1 — parse optional depends_on array
+        lua_getfield(L.get(), -1, "depends_on");
+        if (lua_istable(L.get(), -1)) {
+            lua_pushnil(L.get());
+            while (lua_next(L.get(), -2) != 0) {
+                if (lua_isstring(L.get(), -1)) {
+                    std::size_t dlen = 0;
+                    const char* dc = lua_tolstring(L.get(), -1, &dlen);
+                    e.depends_on.emplace_back(dc, dlen);
+                }
+                lua_pop(L.get(), 1);
+            }
+        }
+        lua_pop(L.get(), 1);
+
         auto [it, inserted] = m_entries.emplace(key, e);
         if (!inserted) {
             ACE_ERROR((LM_WARNING,
@@ -216,6 +233,54 @@ std::size_t SchemaRegistry::load_directory(const std::string& dir) {
         }
     }
     ::closedir(d);
+
+    // L17a/D1 — cycle detection on depends_on graph. Walk every
+    // node's dependencies with DFS; a back-edge means a cycle.
+    // Reject the schema set on any cycle found so the daemon refuses
+    // to start with a clear diagnostic.
+    {
+        // Build adjacency: enable-key → set of bare dep names.
+        std::unordered_map<std::string, std::vector<std::string>> adj;
+        for (const auto& kv : m_entries) {
+            if (!kv.second.depends_on.empty()) {
+                adj[kv.first] = kv.second.depends_on;
+            }
+        }
+        // For each node, DFS to detect cycles.
+        for (const auto& kv : adj) {
+            std::unordered_set<std::string> visited;
+            std::unordered_set<std::string> in_stack;
+            std::function<bool(const std::string&)> dfs =
+                [&](const std::string& node) -> bool {
+                visited.insert(node);
+                in_stack.insert(node);
+                auto it = adj.find(node);
+                if (it != adj.end()) {
+                    for (const auto& dep : it->second) {
+                        // Resolve bare dep name → the enable key
+                        std::string dep_key = "services." + dep + ".enable";
+                        if (in_stack.count(dep_key)) {
+                            ACE_ERROR((LM_ERROR,
+                                       ACE_TEXT("%D [Schema:%t] %M %N:%l cycle "
+                                                "detected in depends_on: %C → %C\n"),
+                                       node.c_str(), dep.c_str()));
+                            return true;
+                        }
+                        if (!visited.count(dep_key)) {
+                            if (dfs(dep_key)) return true;
+                        }
+                    }
+                }
+                in_stack.erase(node);
+                return false;
+            };
+            if (dfs(kv.first)) {
+                throw std::runtime_error(
+                    "depends_on cycle detected; refusing to start");
+            }
+        }
+    }
+
     return m_entries.size();
 }
 
@@ -399,6 +464,21 @@ std::string SchemaRegistry::dump_json() const {
         if (e.max_int.has_value()) {
             out += ",\"max\":";
             out += std::to_string(*e.max_int);
+        }
+        if (!e.depends_on.empty()) {
+            out += ",\"depends_on\":[";
+            bool dfirst = true;
+            for (const auto& dep : e.depends_on) {
+                if (!dfirst) out += ',';
+                dfirst = false;
+                out += '"';
+                for (char c : dep) {
+                    if (c == '"' || c == '\\') out += '\\';
+                    out += c;
+                }
+                out += '"';
+            }
+            out += ']';
         }
         out += '}';
     }

@@ -39,7 +39,7 @@
 #include "lifecycle.hpp"
 #include "process.hpp"
 
-namespace data_store { class ServiceGate; }   // forward decl
+namespace data_store { class ServiceGate; class DepWatch; }   // forward decl
 
 namespace wifi_client {
 
@@ -177,6 +177,10 @@ private:
     std::unique_ptr<data_store::ServiceGate> m_svc;
     std::thread                              m_svc_watcher;
     std::atomic<bool>                        m_svc_stop{false};
+
+    /// L17a/D4 — dependency watch. dep_down dominates both
+    /// svc-enable and NM-conflict.
+    std::unique_ptr<data_store::DepWatch>    m_dep;
 
     /// One-shot startup: probe NM conflict, spawn wpa_supplicant,
     /// connect ctrl, ATTACH. Returns false on any fatal init

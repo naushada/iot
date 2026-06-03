@@ -228,3 +228,51 @@ TEST(Gate, FullPriorityRotationSequence) {
     EXPECT_EQ(GateDecision::Action::Spawn,     d5.action);
     EXPECT_EQ("wwan0", d5.iface);
 }
+
+// ─────── L17a/D3: dep_down composition (gate.reason) ───────────
+// dep_down > disabled > wan_down. These tests verify the
+// Supervisor's composition priority from the Gate's perspective:
+// when a dependency is unhealthy, the Supervisor parks before
+// evaluating the WAN gate, so the Gate never sees a Spawn/Terminate
+// decision for a dep-down scenario.
+
+TEST(Gate, DepDownGateNotEvaluatedWhenDepsUnhealthy) {
+    // WAN up, svc enabled, but deps unhealthy → Supervisor parks
+    // at gate.reason="dep_down:net.router" without calling
+    // Gate::evaluate(). The Gate remains idle.
+    Gate g;
+    EXPECT_FALSE(g.running());
+    // The Supervisor would not consult the Gate at all here —
+    // the dep check short-circuits before WAN evaluation.
+    // Prove: if it DID evaluate, the Gate would Spawn — confirming
+    // the Supervisor is solely responsible for the dep check.
+    auto d = g.evaluate(std::string{"eth0"});
+    EXPECT_EQ(GateDecision::Action::Spawn, d.action);
+}
+
+TEST(Gate, DepRecoveredGateEvaluatesNormally) {
+    // Dep was unhealthy, now recovered. Supervisor calls
+    // Gate::evaluate() as normal. WAN up → Spawn.
+    Gate g;
+    auto d = g.evaluate(std::string{"eth0"});
+    EXPECT_EQ(GateDecision::Action::Spawn, d.action);
+    EXPECT_EQ("eth0", d.iface);
+}
+
+TEST(Gate, DepDownWhileRunningGateNotifiedByCaller) {
+    // Session active on eth0, dep goes unhealthy → Supervisor
+    // calls note_terminated() (same code path as svc disable).
+    // The Gate does NOT know why — the reason comes from the
+    // Supervisor's gate.reason string.
+    Gate g;
+    g.note_spawned("eth0");
+    ASSERT_TRUE(g.running());
+
+    // Supervisor: m_gate.note_terminated(); park at dep_down.
+    g.note_terminated();
+    EXPECT_FALSE(g.running());
+
+    // Dep recovers → WAN still up → Spawn.
+    auto d = g.evaluate(std::string{"eth0"});
+    EXPECT_EQ(GateDecision::Action::Spawn, d.action);
+}

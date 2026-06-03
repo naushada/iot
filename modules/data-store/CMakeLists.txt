@@ -50,6 +50,7 @@ link_directories(${ACE_ROOT}/lib)
 add_library(datastore_client STATIC
     src/client/client.cpp
     src/client/service_gate.cpp
+    src/client/dep_watch.cpp
     src/proto/proto.cpp)
 
 target_include_directories(datastore_client
@@ -103,6 +104,7 @@ if(BUILD_DATA_STORE_TESTS)
         test/callback_test.cpp
         test/schema_test.cpp
         test/service_gate_test.cpp
+        test/dep_watch_test.cpp
         src/server/server.cpp
         src/server/session.cpp
         src/server/data_store.cpp
@@ -112,7 +114,8 @@ if(BUILD_DATA_STORE_TESTS)
         src/server/worker_pool.cpp
         src/proto/proto.cpp
         src/client/client.cpp
-        src/client/service_gate.cpp)
+        src/client/service_gate.cpp
+        src/client/dep_watch.cpp)
 
     target_link_libraries(ds-tests
         GTest::gtest_main

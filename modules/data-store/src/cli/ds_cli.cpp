@@ -224,7 +224,8 @@ namespace {
 
 /// Render one services.* row to stdout. Looks up enable + state
 /// + (optionally) uptime.sec per name.
-void render_svc_row(data_store::Client& cli, const std::string& name) {
+void render_svc_row(data_store::Client& cli, const std::string& name,
+                    const std::string& deps) {
     const std::string en_k = "services." + name + ".enable";
     const std::string st_k = "services." + name + ".state";
     const std::string up_k = "services." + name + ".uptime.sec";
@@ -248,8 +249,10 @@ void render_svc_row(data_store::Client& cli, const std::string& name) {
     std::string enable = (name == "ds") ? std::string("n/a") : find(en_k);
     std::string state  = find(st_k);
     std::string uptime = find(up_k);
-    std::printf("%-18s %-8s %-10s %s\n",
+    std::string dep_col = deps.empty() ? "-" : deps;
+    std::printf("%-18s %-8s %-10s %-12s %s\n",
                 name.c_str(), enable.c_str(), state.c_str(),
+                dep_col.c_str(),
                 uptime == "-" ? "" : uptime.c_str());
 }
 
@@ -280,6 +283,9 @@ int do_svc(data_store::Client& cli, const std::vector<std::string>& rest) {
             return 1;
         }
         std::vector<std::string> names;
+        // L17a/D5 — map service name → comma-joined depends_on list
+        // for the DEPENDS column.
+        std::map<std::string, std::string> deps_map;
         if (doc.contains("keys") && doc["keys"].is_object()) {
             std::set<std::string> seen;
             for (auto it = doc["keys"].begin(); it != doc["keys"].end(); ++it) {
@@ -302,13 +308,30 @@ int do_svc(data_store::Client& cli, const std::vector<std::string>& rest) {
                         break;
                     }
                 }
-                if (!rest_str.empty()) seen.insert(rest_str);
+                if (!rest_str.empty()) {
+                    seen.insert(rest_str);
+                    // L17a/D5 — extract depends_on if present
+                    if (it.value().contains("depends_on") &&
+                        it.value()["depends_on"].is_array()) {
+                        std::string joined;
+                        for (const auto& dep : it.value()["depends_on"]) {
+                            if (dep.is_string()) {
+                                if (!joined.empty()) joined += ',';
+                                joined += dep.get<std::string>();
+                            }
+                        }
+                        deps_map[rest_str] = joined;
+                    }
+                }
             }
             names.assign(seen.begin(), seen.end());
         }
-        std::printf("%-18s %-8s %-10s %s\n",
-                    "NAME", "ENABLE", "STATE", "UPTIME");
-        for (const auto& n : names) render_svc_row(cli, n);
+        std::printf("%-18s %-8s %-10s %-12s %s\n",
+                    "NAME", "ENABLE", "STATE", "DEPENDS", "UPTIME");
+        for (const auto& n : names) {
+            auto dit = deps_map.find(n);
+            render_svc_row(cli, n, dit != deps_map.end() ? dit->second : "");
+        }
         return 0;
     }
 

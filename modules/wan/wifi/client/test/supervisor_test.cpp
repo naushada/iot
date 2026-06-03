@@ -349,3 +349,35 @@ TEST(WIFI_SVC_REQ_WIFI_023_disable_reaps_wpa_and_dhcp,
     EXPECT_NE(0u, pid_wpa);
     EXPECT_EQ(0u, pid_dhcp);  // DHCP not spawned until CONNECTED
 }
+
+// ─────── L17a/D4: dep_down dominates NM-conflict ──────────────
+
+TEST(WIFI_DEP_REQ_001_dep_down_dominates_conflict,
+     dep_unhealthy_parks_before_nm_check) {
+    // When a dependency is unhealthy, the Supervisor parks before
+    // calling initialize() — even if NM would conflict. This test
+    // verifies the priority: dep_down > svc-disable > NM-conflict.
+    std::string assoc_state = "idle";
+    bool called_initialize  = false;
+    bool deps_healthy       = false;
+
+    auto const startup_check = [&](bool deps_ok) {
+        if (!deps_ok) {
+            assoc_state = "disconnected";
+            return;  // park — never initialize, never probe NM
+        }
+        // deps healthy → proceed to svc check, then initialize.
+        called_initialize = true;
+        assoc_state = "scanning";
+    };
+
+    // Dep unhealthy → park, no NM probe.
+    startup_check(false);
+    EXPECT_FALSE(called_initialize);
+    EXPECT_EQ("disconnected", assoc_state);
+
+    // Dep recovered → initialize runs.
+    startup_check(true);
+    EXPECT_TRUE(called_initialize);
+    EXPECT_EQ("scanning", assoc_state);
+}

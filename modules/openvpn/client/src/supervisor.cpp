@@ -1,6 +1,7 @@
 #include "supervisor.hpp"
 
 #include "data_store/service_gate.hpp"
+#include "data_store/dep_watch.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -82,6 +83,25 @@ Supervisor::Supervisor(DsBridge& ds, Options opt)
                 m_cv.notify_all();
             }
         });
+
+        // L17a/D3 — dependency watch. Construct DepWatch with the
+        // declared dependencies from services.lua (v1: just
+        // net.router). The dep watcher thread forwards dep health
+        // transitions into m_cv so wait_for_event() handles dep,
+        // svc, and WAN events through one cv.
+        m_dep = std::make_unique<data_store::DepWatch>(
+            *cli, std::vector<std::string>{"net.router"});
+        m_dep_watcher = std::thread([this] {
+            for (;;) {
+                if (!m_dep->wait()) return;     // shutdown
+                {
+                    std::lock_guard<std::mutex> g(m_mtx);
+                    m_dep_dirty.store(true);
+                    if (m_shutdown) return;
+                }
+                m_cv.notify_all();
+            }
+        });
     }
 }
 
@@ -92,7 +112,9 @@ Supervisor::~Supervisor() {
     }
     m_cv.notify_all();
     if (m_svc) m_svc->shutdown();
+    if (m_dep) m_dep->shutdown();
     if (m_svc_watcher.joinable()) m_svc_watcher.join();
+    if (m_dep_watcher.joinable()) m_dep_watcher.join();
 }
 
 void Supervisor::on_wan_event(const std::optional<std::string>& target) {
@@ -115,7 +137,8 @@ bool Supervisor::wait_for_event() {
     m_cv.wait(g, [&]{
         return m_shutdown
             || m_wan_dirty
-            || m_svc_dirty.load(std::memory_order_acquire);
+            || m_svc_dirty.load(std::memory_order_acquire)
+            || m_dep_dirty.load(std::memory_order_acquire);
     });
     return !m_shutdown;
 }
@@ -181,6 +204,15 @@ bool Supervisor::serve_one_session(const std::string& iface) {
                        iface.c_str()));
             break;
         }
+        // L17a/D3 — dep dominates: if a dependency goes unhealthy
+        // mid-session, tear down within one event-loop tick.
+        if (m_dep && !m_dep->healthy()) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l dep %C unhealthy "
+                                "during session on iface=%C; tearing down\n"),
+                       m_dep->unhealthy_dep().c_str(), iface.c_str()));
+            break;
+        }
         // L16/D4 — gate dominates: if operator disables mid-session,
         // tear down within one event-loop tick (NFR-SVC-001).
         if (m_svc && !m_svc->enabled()) {
@@ -241,10 +273,24 @@ Status Supervisor::run() {
     while (true) {
         if (!wait_for_event()) break;          // shutdown
 
+        // L17a/D3 composition (highest priority):
+        // dep_down > disabled > wan_down.
+        // If a dependency is unhealthy, park immediately regardless
+        // of the svc gate or WAN state.
+        m_dep_dirty.store(false, std::memory_order_release);
+        m_svc_dirty.store(false, std::memory_order_release);
+        if (m_dep && !m_dep->healthy()) {
+            if (m_gate.running()) m_gate.note_terminated();
+            m_ds.set_state("disabled");
+            m_ds.set_gate_reason("dep_down:" + m_dep->unhealthy_dep());
+            m_ds.set_bound_iface("");
+            if (m_svc) m_svc->publish_state("disabled");
+            continue;
+        }
+
         // L16/D4 composition: enable=false dominates WAN. Even if
         // the WAN is up, do not spawn openvpn; park at
         // gate.reason="disabled" until the gate flips true.
-        m_svc_dirty.store(false, std::memory_order_release);
         if (m_svc && !m_svc->enabled()) {
             // serve_one_session reaped its own child on the way
             // out; the Gate is in note_terminated state if we got

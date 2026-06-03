@@ -13,6 +13,7 @@
 #include <ace/Log_Msg.h>
 
 #include "data_store/service_gate.hpp"
+#include "data_store/dep_watch.hpp"
 
 #include "app.hpp"
 #include "readline.hpp"
@@ -623,11 +624,29 @@ int main(std::int32_t argc, char *argv[]) {
     // mid-session Deregister + drop-observations machinery is FUP
     // (this is the L16 plan §D5 "split into D5a/D5b if it grows
     // past one PR" — we ship D5a here).
+    // L17a/D4 — dependency watch alongside the svc gate. Both
+    // lwm2m.client and lwm2m.server depend on net.router for
+    // forwarding. When net.router is disabled, the lwm2m daemon
+    // parks via the same set_disabled path the svc gate uses.
     std::unique_ptr<data_store::ServiceGate> svc_gate;
+    std::unique_ptr<data_store::DepWatch>    dep_watch;
     if (auto* cli = ds.client()) {
         const std::string svc_name =
             (UDPAdapter::CLIENT == role) ? "lwm2m.client" : "lwm2m.server";
         svc_gate = std::make_unique<data_store::ServiceGate>(*cli, svc_name);
+        dep_watch = std::make_unique<data_store::DepWatch>(
+            *cli, std::vector<std::string>{"net.router"});
+
+        // L17a/D4 — dep check before svc check (dep_down > disabled).
+        if (!dep_watch->healthy()) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l dep %C unhealthy "
+                                "at startup; parking\n"),
+                       dep_watch->unhealthy_dep().c_str()));
+            svc_gate->publish_state("disabled");
+            dep_watch->wait();
+        }
+
         if (!svc_gate->enabled()) {
             ACE_DEBUG((LM_INFO,
                        ACE_TEXT("%D [iot:%t] %M %N:%l services.%C.enable=false "
@@ -662,6 +681,7 @@ int main(std::int32_t argc, char *argv[]) {
     // handle() (server) starts accepting again.
     std::atomic<bool> svc_stop{false};
     std::thread svc_watcher_thread;
+    std::thread dep_watcher_thread;
     if (svc_gate) {
         auto* reg       = clientPlumbing.reg.get();
         auto  regServer = serverPlumbing.regServer;
@@ -685,6 +705,33 @@ int main(std::int32_t argc, char *argv[]) {
                             if (registry) registry->load_from({});
                         }
                         gate->publish_state("disabled");
+                    }
+                }
+            });
+
+        // L17a/D4 — dep watcher thread. On dep transition:
+        //   dep unhealthy → set_disabled (same as svc disable)
+        //   dep recovered  → clear_disabled (re-enable, if svc also
+        //                     says enabled — checked via is_disabled()).
+        dep_watcher_thread = std::thread(
+            [&svc_stop, dw = dep_watch.get(),
+             gate = svc_gate.get(), reg, regServer, registry] {
+                while (!svc_stop.load(std::memory_order_acquire)) {
+                    if (!dw->wait()) return;               // shutdown
+                    if (!dw->healthy()) {
+                        // dep went unhealthy → publish + disable
+                        gate->publish_state("stopping");
+                        if (reg) reg->set_disabled(true);
+                        if (regServer) {
+                            regServer->set_disabled(true);
+                            if (registry) registry->load_from({});
+                        }
+                        gate->publish_state("disabled");
+                    } else {
+                        // deps recovered → re-enable
+                        if (reg) reg->set_disabled(false);
+                        if (regServer) regServer->set_disabled(false);
+                        gate->publish_state("running");
                     }
                 }
             });
@@ -809,7 +856,9 @@ int main(std::int32_t argc, char *argv[]) {
     // L16/D5b cleanup — wake the watcher thread + join.
     svc_stop.store(true, std::memory_order_release);
     if (svc_gate) svc_gate->shutdown();
+    if (dep_watch) dep_watch->shutdown();
     if (svc_watcher_thread.joinable()) svc_watcher_thread.join();
+    if (dep_watcher_thread.joinable()) dep_watcher_thread.join();
 
     return(0);
 }

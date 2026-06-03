@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include "data_store/service_gate.hpp"
+#include "data_store/dep_watch.hpp"
 
 namespace wifi_client {
 
@@ -232,12 +233,17 @@ Supervisor::Supervisor(DsBridge& ds, SupervisorOptions opt)
     if (auto* cli = m_ds.client()) {
         m_svc = std::make_unique<data_store::ServiceGate>(*cli, "wifi.client");
         m_svc->publish_state("running");
+
+        // L17a/D4 — dependency watch for net.router.
+        m_dep = std::make_unique<data_store::DepWatch>(
+            *cli, std::vector<std::string>{"net.router"});
     }
 }
 
 Supervisor::~Supervisor() {
     m_svc_stop.store(true, std::memory_order_release);
     if (m_svc) m_svc->shutdown();
+    if (m_dep) m_dep->shutdown();
     if (m_svc_watcher.joinable()) m_svc_watcher.join();
 }
 
@@ -297,6 +303,14 @@ int Supervisor::run() {
     // fake-wpa.sh (D8). The Supervisor's pure helpers + a basic
     // initialize() path are unit-tested in supervisor_test.cpp.
 
+    // L17a/D4 — dep check (highest priority). If a dependency is
+    // unhealthy, park immediately before anything else.
+    if (m_dep && !m_dep->healthy()) {
+        m_ds.set_assoc_state("disconnected");
+        m_svc->publish_state("disabled");
+        m_dep->wait();
+    }
+
     // L16/D6 — services.wifi.client.enable check. disable dominates
     // the NM-conflict gate: if operator disabled the service, we
     // publish state="disabled" and park immediately, before
@@ -313,6 +327,27 @@ int Supervisor::run() {
 
     // Outer poll loop: recv ctrl events, feed Lifecycle, react.
     while (true) {
+        // L17a/D4 — dep unhealthy mid-session: reap workers and
+        // park within one 200ms recv tick (same as svc disable).
+        if (m_dep && !m_dep->healthy()) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [wifi:%t] %M %N:%l dep %C unhealthy; "
+                                "reaping workers\n"),
+                       m_dep->unhealthy_dep().c_str()));
+            m_svc->publish_state("stopping");
+            m_dhcp.terminate();
+            m_wpa.terminate();
+            m_ctrl.close();
+            m_ds.set_pid_wpa(0u);
+            m_ds.set_pid_dhcp(0u);
+            m_ds.set_assoc_state("disconnected");
+            m_svc->publish_state("disabled");
+            if (!m_dep->wait()) return 0;
+            if (!initialize()) return 1;
+            m_svc->publish_state("running");
+            continue;
+        }
+
         // L16/D6 — operator disable mid-session: reap workers and
         // park within one 200ms recv tick (NFR-SVC-001).
         if (m_svc && !m_svc->enabled()) {
