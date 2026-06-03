@@ -399,6 +399,26 @@ ds-cli --socket=/run/iot/data_store.sock svc status openvpn.client
 `ds-cli svc disable` is for the everyday "I want this OFF for now
 but keep the daemon ready to come back fast" path.
 
+### Ephemeral disable (L17b)
+
+`ds-cli svc disable --until-boot <name>` writes the value to an
+in-memory overlay only — it is NOT persisted to `data_store.lua`.
+The daemon's worker parks as usual, but on the next ds-server
+restart the value reverts to the schema default (`true`).
+Useful for maintenance windows where you want the service
+temporarily off without leaving persistent state:
+
+```sh
+# Temporary: survives until next ds-server restart (or a persistent set).
+ds-cli svc disable --until-boot openvpn.client
+
+# Permanent: written to data_store.lua; survives reboot.
+ds-cli svc disable openvpn.client
+
+# Revert a volatile disable to persistent default.
+ds-cli svc enable openvpn.client
+```
+
 ### Dependency graph (L17a)
 
 Each service's `enable` key in `services.lua` declares a

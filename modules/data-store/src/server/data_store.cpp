@@ -30,6 +30,9 @@ std::size_t DataStore::size() const {
 
 std::optional<Value> DataStore::get(const std::string& key) const {
     std::lock_guard<std::mutex> g(m_mtx);
+    // L17b — volatile overlay takes precedence.
+    auto vit = m_volatile.find(key);
+    if (vit != m_volatile.end()) return vit->second;
     auto it = m_data.find(key);
     if (it == m_data.end()) return std::nullopt;
     return it->second;
@@ -40,6 +43,10 @@ SetResult DataStore::set(const std::string& key, Value value) {
     std::unordered_map<std::string, Value> snapshot;
     {
         std::lock_guard<std::mutex> g(m_mtx);
+
+        // L17b — persistent write clears any volatile overlay entry
+        // for the same key so the new value survives reboot.
+        m_volatile.erase(key);
 
         auto it = m_data.find(key);
         if (it == m_data.end()) {
@@ -64,6 +71,39 @@ SetResult DataStore::set(const std::string& key, Value value) {
         if (m_persistor) snapshot = m_data;
     }
     flush_locked_release(std::move(snapshot));
+    return out;
+}
+
+SetResult DataStore::set_volatile(const std::string& key, Value value) {
+    SetResult out;
+    {
+        std::lock_guard<std::mutex> g(m_mtx);
+
+        // L17b — write to the volatile overlay only. No persist.
+        // The persistent m_data is untouched; a server restart
+        // clears this entry.
+        auto vit = m_volatile.find(key);
+        if (vit != m_volatile.end()) {
+            if (vit->second == value) return out;      // unchanged
+            out.prev    = std::move(vit->second);
+            out.changed = true;
+            vit->second = std::move(value);
+        } else {
+            // Capture the previous value (from volatile or persistent)
+            // for the change notification.
+            auto dit = m_data.find(key);
+            if (dit != m_data.end()) out.prev = dit->second;
+            m_volatile.emplace(key, std::move(value));
+            out.changed = true;
+        }
+
+        auto wit = m_watchers.find(key);
+        if (wit != m_watchers.end()) {
+            out.watchers.reserve(wit->second.size());
+            for (Session* s : wit->second) out.watchers.push_back(s);
+        }
+        // NO flush to persistor — volatile by design.
+    }
     return out;
 }
 

@@ -48,7 +48,16 @@ public:
     std::optional<Value> get(const std::string& key) const;
 
     /// Write. Returns SetResult describing the change + watchers.
+    /// If a volatile entry exists for this key, it is cleared
+    /// (persistent write takes precedence).
     SetResult set(const std::string& key, Value value);
+
+    /// Volatile write (L17b). Writes to an in-memory overlay that
+    /// is NOT flushed to the persistor. Survives until the server
+    /// restarts OR a persistent `set()` clears it. Fires the same
+    /// change notifications as a normal set so watchers see the
+    /// transition.
+    SetResult set_volatile(const std::string& key, Value value);
 
     /// Remove. Returns true if the key existed.
     bool remove(const std::string& key);
@@ -65,6 +74,7 @@ private:
 
     mutable std::mutex                                              m_mtx;
     std::unordered_map<std::string, Value>                          m_data;
+    std::unordered_map<std::string, Value>                          m_volatile;  // L17b: in-memory overlay
     std::unordered_map<std::string, std::unordered_set<Session*>>   m_watchers;
     LuaPersistor*                                                   m_persistor = nullptr;
 };

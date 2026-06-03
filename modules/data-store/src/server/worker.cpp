@@ -231,6 +231,10 @@ void Worker::handle_process_request(WorkMsg* msg) {
             };
             std::vector<Push> pushes;
 
+            // L17b — volatile flag: write to in-memory overlay only.
+            // The value survives until server restart (not persisted).
+            const bool volatile_set = req.value("volatile", false);
+
             for (const auto& e : req["keys"]) {
                 if (!e.is_object() || e.size() != 1) {
                     s->send(encode_error(op, h.reqID,
@@ -253,7 +257,9 @@ void Worker::handle_process_request(WorkMsg* msg) {
                         return;
                     }
                 }
-                auto r = m_store->set(k, v);
+                auto r = volatile_set
+                       ? m_store->set_volatile(k, v)
+                       : m_store->set(k, v);
                 if (!r.changed) continue;
                 std::string frame = encode_notify_push(k, v, r.prev);
                 for (Session* w : r.watchers) {

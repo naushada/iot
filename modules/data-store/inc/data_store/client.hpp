@@ -70,6 +70,17 @@ public:
         return set(std::vector<KV>{{k, std::move(v)}}, timeout_ms);
     }
 
+    /// L17b — volatile set. Writes to the server's in-memory overlay
+    /// only; NOT persisted to disk. Survives until server restart or
+    /// a persistent `set()` for the same key. Same wire-level fan-out
+    /// as normal set (watchers see the change).
+    Status set_volatile(const std::vector<KV>& pairs,
+                        std::int32_t timeout_ms = 1000);
+    Status set_volatile(const std::string& k, Value v,
+                        std::int32_t timeout_ms = 1000) {
+        return set_volatile(std::vector<KV>{{k, std::move(v)}}, timeout_ms);
+    }
+
     struct GetResult {
         std::string key;
         Value       value;

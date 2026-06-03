@@ -341,9 +341,6 @@ Status Client::set(const std::vector<KV>& pairs, std::int32_t timeout_ms) {
     json req;
     req["keys"] = json::array();
     for (const auto& kv : pairs) {
-        // Wire shape per opcode 0x0001 Set: keys is an array of
-        // single-key objects so each value round-trips through JSON's
-        // native type system.
         json e;
         e[kv.first] = value_to_json(kv.second);
         req["keys"].push_back(e);
@@ -355,6 +352,25 @@ Status Client::set(const std::vector<KV>& pairs, std::int32_t timeout_ms) {
                                  out, timeout_ms);
     if (!rs.ok) return rs;
     return status_from(out, "set");
+}
+
+Status Client::set_volatile(const std::vector<KV>& pairs,
+                             std::int32_t timeout_ms) {
+    json req;
+    req["volatile"] = true;
+    req["keys"] = json::array();
+    for (const auto& kv : pairs) {
+        json e;
+        e[kv.first] = value_to_json(kv.second);
+        req["keys"].push_back(e);
+    }
+    const std::string body = req.dump();
+    PendingValue out;
+    auto rs = m_impl->round_trip(proto::Op::Set,
+                                 std::string_view(body.data(), body.size()),
+                                 out, timeout_ms);
+    if (!rs.ok) return rs;
+    return status_from(out, "set_volatile");
 }
 
 Status Client::get(const std::vector<std::string>& keys,

@@ -46,7 +46,7 @@ void usage() {
         "  ds-cli [--socket=PATH] unwatch <key> [<key>...]\n"
         "  ds-cli [--socket=PATH] svc list\n"
         "  ds-cli [--socket=PATH] svc enable  <name>\n"
-        "  ds-cli [--socket=PATH] svc disable <name>\n"
+        "  ds-cli [--socket=PATH] svc disable <name> [--until-boot]\n"
         "  ds-cli [--socket=PATH] svc status  <name>\n";
 }
 
@@ -336,8 +336,18 @@ int do_svc(data_store::Client& cli, const std::vector<std::string>& rest) {
     }
 
     if (verb == "enable" || verb == "disable") {
-        if (rest.size() < 2) { usage(); return 2; }
-        const std::string& name = rest[1];
+        // L17b — support --until-boot for volatile disable.
+        // enable ignores --until-boot (no-op; enable is always persistent).
+        bool until_boot = false;
+        std::string name;
+        for (std::size_t i = 1; i < rest.size(); ++i) {
+            if (rest[i] == "--until-boot") {
+                until_boot = true;
+            } else {
+                name = rest[i];
+            }
+        }
+        if (name.empty()) { usage(); return 2; }
         if (name == "ds") {
             std::cerr << "[ds-cli] svc " << verb
                       << ": ds is substrate; cannot be "
@@ -347,12 +357,18 @@ int do_svc(data_store::Client& cli, const std::vector<std::string>& rest) {
         }
         const std::string key = "services." + name + ".enable";
         const bool val = (verb == "enable");
-        auto rs = cli.set(key, val);
+        auto rs = (until_boot && verb == "disable")
+                ? cli.set_volatile(key, val)
+                : cli.set(key, val);
         if (!rs.ok) {
             std::cerr << "[ds-cli] svc " << verb << ": " << rs.err << "\n";
             return 2;
         }
-        std::cout << "ok\n";
+        if (until_boot) {
+            std::cout << "ok  (volatile — survives until ds-server restart)\n";
+        } else {
+            std::cout << "ok\n";
+        }
         return 0;
     }
 
