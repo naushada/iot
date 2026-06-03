@@ -6,9 +6,8 @@
 > instead of silently falling through to "wan_down" when a
 > dependency is disabled.
 >
-> Runs independently of all other phases. D1–D4 ship together
-> and touch only `services.lua` + the per-daemon Supervisor
-> loops — no new IPC, no new daemons, no polling.
+> **Status (2026-06-03):** **CLOSED.** D1–D6 all shipped in
+> one commit (`354bba4`).
 
 ---
 
