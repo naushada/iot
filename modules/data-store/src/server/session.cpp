@@ -8,6 +8,8 @@
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <ace/Log_Msg.h>
 #include <ace/Reactor.h>
@@ -22,6 +24,14 @@ Session::Session(ACE_LSOCK_Stream stream,
     m_owner(owner),
     m_store(store),
     m_server(server) {
+    // L17c — capture peer credentials for per-key ACL.
+    uid_t uid = 0xFFFFFFFFu;
+    gid_t gid = 0xFFFFFFFFu;
+    int fd = const_cast<ACE_LSOCK_Stream&>(m_stream).get_handle();
+    if (fd >= 0 && ::getpeereid(fd, &uid, &gid) == 0) {
+        m_uid = static_cast<std::uint32_t>(uid);
+        m_gid = static_cast<std::uint32_t>(gid);
+    }
 }
 
 ACE_HANDLE Session::get_handle() const {

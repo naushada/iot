@@ -419,6 +419,43 @@ ds-cli svc disable openvpn.client
 ds-cli svc enable openvpn.client
 ```
 
+### Per-key ACL (L17c)
+
+Each schema key can declare a `write_acl` array restricting which
+peers may set the key. The ACL is checked via Unix peer credentials
+(`SO_PEERCRED` / `getpeereid`) at connection time — no explicit
+auth tokens needed. An empty or absent ACL means unrestricted.
+
+Entry format:
+- `"uid:N"` — allow uid N (e.g. `"uid:0"` for root)
+- `"gid:name"` — allow members of group `name` (e.g. `"gid:iot-operators"`)
+
+Default policy (v1): `services.*.enable` keys are root-only.
+State keys are daemon-writable (unrestricted).
+
+```sh
+# As root: works.
+sudo ds-cli svc disable openvpn.client
+# → ok
+
+# As non-root: rejected by ACL.
+ds-cli svc disable openvpn.client
+# → [ds-cli] svc disable: write_acl(services.openvpn.client.enable):
+#   access denied for uid=1000 gid=1000
+```
+
+To add a non-root operator group:
+
+```lua
+-- In /etc/iot/ds-schemas/services.lua:
+["services.openvpn.client.enable"] = {
+    type = "boolean", default = true,
+    write_acl = {"uid:0", "gid:iot-operators"}
+}
+```
+
+Then add operators to the group: `sudo usermod -aG iot-operators alice`.
+
 ### Dependency graph (L17a)
 
 Each service's `enable` key in `services.lua` declares a

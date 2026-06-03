@@ -16,6 +16,7 @@
 ///     enqueues a SessionClosed message to the Worker so it can
 ///     unwatch + delete the Session.
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -51,6 +52,12 @@ public:
     Worker*    owner()    const { return m_owner; }
     DataStore* store()    const { return m_store; }
 
+    /// L17c — peer credentials captured at accept() time via
+    /// SO_PEERCRED (Linux) or getpeereid() (macOS). uid=0 means
+    /// root; gid is the primary group.
+    std::uint32_t peer_uid() const { return m_uid; }
+    std::uint32_t peer_gid() const { return m_gid; }
+
     /// Watch-set bookkeeping mirrors what DataStore knows so the
     /// reactor thread can fast-clean on disconnect without locking.
     /// Mutated only by the owner Worker.
@@ -71,6 +78,8 @@ private:
     Worker*                         m_owner;
     DataStore*                      m_store;
     Server*                         m_server;
+    std::uint32_t                   m_uid = 0xFFFFFFFFu;  // unknown (L17c)
+    std::uint32_t                   m_gid = 0xFFFFFFFFu;  // unknown (L17c)
     std::string                     m_recvBuf;
     std::unordered_set<std::string> m_watches;
     bool                            m_closed_in_reactor = false;

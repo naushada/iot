@@ -5,13 +5,16 @@
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
+#include <grp.h>
 #include <limits>
 #include <memory>
 #include <queue>
+#include <sstream>
 #include <stdexcept>
 #include <sys/stat.h>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 #include <variant>
 #include <variant>
 
@@ -196,6 +199,25 @@ void SchemaRegistry::load_one(const std::string& path) {
             }
         }
         lua_pop(L.get(), 1);
+
+        // L17c — parse optional write_acl / read_acl arrays
+        for (auto [field, target] : {
+                 std::pair{"write_acl", &e.write_acl},
+                 std::pair{"read_acl",  &e.read_acl}}) {
+            lua_getfield(L.get(), -1, field);
+            if (lua_istable(L.get(), -1)) {
+                lua_pushnil(L.get());
+                while (lua_next(L.get(), -2) != 0) {
+                    if (lua_isstring(L.get(), -1)) {
+                        std::size_t alen = 0;
+                        const char* ac = lua_tolstring(L.get(), -1, &alen);
+                        target->emplace_back(ac, alen);
+                    }
+                    lua_pop(L.get(), 1);
+                }
+            }
+            lua_pop(L.get(), 1);
+        }
 
         auto [it, inserted] = m_entries.emplace(key, e);
         if (!inserted) {
@@ -414,6 +436,34 @@ void emit_value(std::string& out, const Value& v) {
 }
 } // namespace
 
+std::optional<std::string> SchemaRegistry::check_write_acl(
+        const std::string& key, std::uint32_t uid, std::uint32_t gid) const {
+    auto it = m_entries.find(key);
+    if (it == m_entries.end()) return std::nullopt;  // unknown key: passthrough
+    const auto& acl = it->second.write_acl;
+    if (acl.empty()) return std::nullopt;             // no ACL: unrestricted
+
+    for (const auto& entry : acl) {
+        if (entry.rfind("uid:", 0) == 0) {
+            auto n = static_cast<std::uint32_t>(std::strtoul(
+                entry.c_str() + 4, nullptr, 10));
+            if (n == uid) return std::nullopt;        // uid match
+        } else if (entry.rfind("gid:", 0) == 0) {
+            // gid match — check by group name via getgrnam().
+            // We compare the peer's gid against the named group's gid.
+            std::string grp(entry, 4);
+            struct group* gr = ::getgrnam(grp.c_str());
+            if (gr && static_cast<std::uint32_t>(gr->gr_gid) == gid)
+                return std::nullopt;
+        }
+    }
+
+    std::ostringstream ss;
+    ss << "write_acl(" << key << "): access denied for uid="
+       << uid << " gid=" << gid;
+    return ss.str();
+}
+
 std::string SchemaRegistry::dump_json() const {
     // Hand-rolled to keep nlohmann::json out of schema.{hpp,cpp}.
     // Output is one-line JSON; ds-cli + the worker parse it back.
@@ -479,6 +529,28 @@ std::string SchemaRegistry::dump_json() const {
                 out += '"';
             }
             out += ']';
+        }
+        // L17c — emit ACLs if declared
+        for (auto [field, vec] : {
+                 std::pair{"write_acl", &e.write_acl},
+                 std::pair{"read_acl",  &e.read_acl}}) {
+            if (!vec->empty()) {
+                out += ",\"";
+                out += field;
+                out += "\":[";
+                bool afirst = true;
+                for (const auto& a : *vec) {
+                    if (!afirst) out += ',';
+                    afirst = false;
+                    out += '"';
+                    for (char c : a) {
+                        if (c == '"' || c == '\\') out += '\\';
+                        out += c;
+                    }
+                    out += '"';
+                }
+                out += ']';
+            }
         }
         out += '}';
     }

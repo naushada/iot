@@ -55,6 +55,8 @@ struct SchemaEntry {
     std::optional<long long>    min_int;
     std::optional<long long>    max_int;
     std::vector<std::string>    depends_on;  ///< L17a: service names this key depends on
+    std::vector<std::string>    write_acl;   ///< L17c: "uid:N" or "gid:name" allowed to write
+    std::vector<std::string>    read_acl;    ///< L17c: "uid:N" or "gid:name" allowed to read
 };
 
 class SchemaRegistry {
@@ -86,6 +88,14 @@ public:
     /// namespace IS owned (L16/D2 — supports the
     /// "services.ds.enable is intentionally absent" pattern).
     bool is_namespace_claimed(const std::string& key) const;
+
+    /// L17c — check whether a peer with the given uid/gid is
+    /// allowed to write `key`. Returns an empty optional on success;
+    /// a diagnostic string on rejection. An empty ACL (undeclared)
+    /// returns success — the key is unrestricted.
+    std::optional<std::string> check_write_acl(
+        const std::string& key,
+        std::uint32_t uid, std::uint32_t gid) const;
 
     std::size_t size() const { return m_entries.size(); }
     std::size_t namespace_count() const { return m_namespaces.size(); }

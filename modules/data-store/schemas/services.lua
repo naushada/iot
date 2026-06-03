@@ -11,14 +11,14 @@
 -- of bare service names (e.g. "net.router"). When a dependency is
 -- disabled, dependents set gate.reason="dep_down:<name>".
 --
+-- L17c — write_acl restricts which peers can set a key. An empty
+-- or absent ACL means unrestricted. v1 policy: services.*.enable
+-- keys are root-only; state keys are daemon-writable (unrestricted
+-- since daemons typically run as root anyway).
+--
 -- ds-server is special: it cannot self-disable (the very socket
 -- carrying the command would go dead). services.ds.enable is
--- intentionally OMITTED from this schema — ds-server's
--- SchemaRegistry namespace-claimed-but-key-not-declared path
--- rejects any set against it. The runtime state surface
--- (services.ds.state, services.ds.uptime.sec) is still published
--- so `ds-cli svc list` has a uniform shape (ENABLE column shows
--- "n/a" for ds).
+-- intentionally OMITTED from this schema.
 --
 -- Install at /etc/iot/ds-schemas/services.lua (ds-server
 -- auto-loads on boot).
@@ -32,25 +32,30 @@ return {
 
     -- net-router (leaf: no dependencies)
     ["services.net.router.enable"]         = { type = "boolean", default = true,
-                                               depends_on = {} },
+                                               depends_on = {},
+                                               write_acl = {"uid:0"} },
     ["services.net.router.state"]          = { type = "string",  default = "running" },
 
     -- openvpn-client (depends on net.router for forwarding)
     ["services.openvpn.client.enable"]     = { type = "boolean", default = true,
-                                               depends_on = {"net.router"} },
+                                               depends_on = {"net.router"},
+                                               write_acl = {"uid:0"} },
     ["services.openvpn.client.state"]      = { type = "string",  default = "running" },
 
-    -- lwm2m-client / lwm2m-server (depend on net.router for forwarding)
+    -- lwm2m-client / lwm2m-server
     ["services.lwm2m.client.enable"]       = { type = "boolean", default = true,
-                                               depends_on = {"net.router"} },
+                                               depends_on = {"net.router"},
+                                               write_acl = {"uid:0"} },
     ["services.lwm2m.client.state"]        = { type = "string",  default = "running" },
     ["services.lwm2m.server.enable"]       = { type = "boolean", default = true,
-                                               depends_on = {"net.router"} },
+                                               depends_on = {"net.router"},
+                                               write_acl = {"uid:0"} },
     ["services.lwm2m.server.state"]        = { type = "string",  default = "running" },
 
-    -- wifi-client (depends on net.router for DHCP forwarding)
+    -- wifi-client
     ["services.wifi.client.enable"]        = { type = "boolean", default = true,
-                                               depends_on = {"net.router"} },
+                                               depends_on = {"net.router"},
+                                               write_acl = {"uid:0"} },
     ["services.wifi.client.state"]         = { type = "string",  default = "running" },
   },
 }

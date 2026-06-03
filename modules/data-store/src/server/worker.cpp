@@ -256,6 +256,17 @@ void Worker::handle_process_request(WorkMsg* msg) {
                                              *err));
                         return;
                     }
+                    // L17c — per-key ACL check. Reject before
+                    // touching the store if the peer's credentials
+                    // don't match the key's write_acl.
+                    auto acl_err = m_schema->check_write_acl(
+                        k, s->peer_uid(), s->peer_gid());
+                    if (acl_err) {
+                        s->send(encode_error(op, h.reqID,
+                                             proto::Status::SchemaRejected,
+                                             *acl_err));
+                        return;
+                    }
                 }
                 auto r = volatile_set
                        ? m_store->set_volatile(k, v)
