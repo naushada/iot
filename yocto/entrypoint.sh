@@ -60,6 +60,11 @@ PACKAGECONFIG:remove:pn-lwm2m = "mongo"
 # Filesystem may not support hardlinks (macOS podman host).
 # Disable sstate hardlinking to avoid cp -afl failures.
 SSTATE_HARDLINK = "0"
+
+# Limit parallelism for constrained VMs (4 GB RAM default).
+# Override with -e BB_THREADS=4 -e PARALLEL_MAKE=-j4 at run time.
+BB_NUMBER_THREADS = "${BB_THREADS:-2}"
+PARALLEL_MAKE = "${PARALLEL_MAKE:--j2}"
 YOCONF
 
 # ── 4. Override MACHINE ────────────────────────────────────────────
