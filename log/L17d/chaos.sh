@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # L17d — chaos harness: randomly flips services.*.enable gates
 # and asserts every daemon stays alive through the churn.
 #
@@ -85,7 +85,6 @@ while [ "$i" -lt "$CYCLES" ]; do
     }
 
     # Random inter-cycle sleep
-    local isleep
     isleep=$(awk "BEGIN { printf \"%.1f\", $MIN_SLEEP + rand() * ($MAX_SLEEP - $MIN_SLEEP) }")
     sleep "$isleep"
 

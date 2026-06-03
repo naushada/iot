@@ -28,9 +28,21 @@ Session::Session(ACE_LSOCK_Stream stream,
     uid_t uid = 0xFFFFFFFFu;
     gid_t gid = 0xFFFFFFFFu;
     int fd = const_cast<ACE_LSOCK_Stream&>(m_stream).get_handle();
-    if (fd >= 0 && ::getpeereid(fd, &uid, &gid) == 0) {
-        m_uid = static_cast<std::uint32_t>(uid);
-        m_gid = static_cast<std::uint32_t>(gid);
+    if (fd >= 0) {
+#if defined(__linux__)
+        struct ucred cred;
+        socklen_t len = sizeof(cred);
+        if (::getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) == 0) {
+            uid = cred.uid;
+            gid = cred.gid;
+        }
+#elif defined(__APPLE__)
+        ::getpeereid(fd, &uid, &gid);
+#endif
+        if (uid != 0xFFFFFFFFu) {
+            m_uid = static_cast<std::uint32_t>(uid);
+            m_gid = static_cast<std::uint32_t>(gid);
+        }
     }
 }
 
