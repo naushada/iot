@@ -1,0 +1,34 @@
+[Unit]
+Description=IoT data-store daemon (ds-server, EMP over unix socket)
+Documentation=https://github.com/naushada/iot
+After=local-fs.target
+StartLimitBurst=3
+StartLimitIntervalSec=30s
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ds-server \
+    ds-socket=/run/iot/data_store.sock \
+    ds-store=/var/lib/iot/data_store.lua \
+    ds-schema-dir=/etc/iot/ds-schemas
+
+DynamicUser=yes
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+StateDirectory=iot
+StateDirectoryMode=0750
+
+Restart=on-failure
+RestartSec=2s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

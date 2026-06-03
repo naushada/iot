@@ -1,0 +1,77 @@
+# Containerfile — Yocto build container for the iot LwM2M stack
+#
+# Builds the entire iot stack inside a container. No host Yocto install
+# needed — only podman or docker.
+#
+# The container image bakes in:
+#   1. Yocto host dependencies (compilers, python3, etc.)
+#   2. poky + meta-openembedded at Scarthgap (5.0 LTS)
+#   3. The local meta-iot layer
+#   4. An entrypoint that sets up the build dir and runs bitbake
+#
+# Use build.sh as the host entrypoint — it builds this image, runs the
+# container, and `podman cp`s the output artifacts to yocto/build/<machine>/.
+
+FROM ubuntu:22.04
+
+# ── Yocto host dependencies ────────────────────────────────────────
+# From https://docs.yoctoproject.org/ref-manual/system-requirements.html
+# (Ubuntu 22.04 row).
+RUN apt-get update -qq && \
+    apt-get install -y -qq \
+        gawk wget git diffstat unzip texinfo \
+        gcc g++ make cmake \
+        build-essential chrpath cpio debianutils \
+        iputils-ping python3 python3-pip python3-pexpect \
+        xz-utils debianutils locales \
+        zstd liblz4-tool file \
+        libssl-dev libgmp-dev libmpc-dev \
+        zlib1g-dev \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Locale — bitbake checks LANG
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8
+
+# ── Build user ─────────────────────────────────────────────────────
+# Yocto refuses to run as root. Create a non-privileged user.
+# uid 1000 so host-volume mounts Just Work on most Linux hosts.
+RUN useradd -m -u 1000 -s /bin/bash builduser && \
+    mkdir -p /home/builduser/yocto && \
+    chown -R builduser:builduser /home/builduser
+
+USER builduser
+WORKDIR /home/builduser/yocto
+
+# ── Clone Yocto layers ─────────────────────────────────────────────
+# Baked into the image so they don't need fetching at run time.
+ARG POKY_BRANCH=scarthgap
+ARG OE_BRANCH=scarthgap
+
+RUN git clone --depth=1 -b ${POKY_BRANCH} \
+        https://git.yoctoproject.org/poky && \
+    git clone --depth=1 -b ${OE_BRANCH} \
+        https://git.openembedded.org/meta-openembedded
+
+# ── Workaround: podman overlayfs doesn't support --preserve=xattr ──
+# The oe.path.copyhardlinktree function uses cp -afl --preserve=xattr
+# which fails on podman's overlay filesystem (macOS host). Strip the
+# xattr flag so sstate operations use plain cp -afl instead.
+RUN sed -i "s/cp -afl --preserve=xattr/cp -afl/" \
+    /home/builduser/yocto/poky/meta/lib/oe/path.py
+
+# ── Copy the meta-iot layer ────────────────────────────────────────
+# Copied at build time. For development, mount over it:
+#   podman run -v ./meta-iot:/home/builduser/yocto/meta-iot:Z ...
+COPY --chown=builduser:builduser meta-iot/ /home/builduser/yocto/meta-iot/
+
+# ── Entrypoint ─────────────────────────────────────────────────────
+# The entrypoint does all setup + build at container run time
+# (oe-init-build-env, add layers, configure, bitbake).
+# This keeps the build directory writable by the container user.
+COPY --chown=builduser:builduser entrypoint.sh /home/builduser/yocto/
+RUN chmod +x /home/builduser/yocto/entrypoint.sh
+
+ENTRYPOINT ["/home/builduser/yocto/entrypoint.sh"]
+CMD ["packagegroup-iot", "lwm2m"]

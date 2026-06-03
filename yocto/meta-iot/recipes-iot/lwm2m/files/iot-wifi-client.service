@@ -1,0 +1,36 @@
+[Unit]
+Description=IoT wifi-client (wpa_supplicant + DHCP supervisor)
+Documentation=https://github.com/naushada/iot
+After=network-online.target iot-ds.service
+Wants=network-online.target iot-ds.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/iot/wifi-client.env
+ExecStart=/usr/bin/wifi-client $WIFI_CLIENT_ARGS
+
+DynamicUser=yes
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+
+DeviceAllow=/dev/rfkill rw
+
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+
+Restart=on-failure
+RestartSec=5s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=no
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

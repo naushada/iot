@@ -1,0 +1,31 @@
+[Unit]
+Description=IoT LwM2M client (device role)
+Documentation=https://github.com/naushada/iot
+After=network-online.target iot-ds.service
+Wants=network-online.target iot-ds.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/iot/lwm2m-client.env
+ExecStart=/usr/bin/lwm2m $LWM2M_ARGS
+
+DynamicUser=yes
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+
+Restart=on-failure
+RestartSec=5s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

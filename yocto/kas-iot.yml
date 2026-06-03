@@ -1,0 +1,74 @@
+# kas-iot.yml — Yocto build configuration for the iot LwM2M stack
+#
+# Uses kas (https://github.com/siemens/kas) to fetch all layers and
+# drive bitbake. Run inside the kas container:
+#
+#   cd yocto
+#   ./build.sh                    # builds default machine (qemux86-64)
+#   MACHINE=qemuarm64 ./build.sh  # builds for ARM64
+#   ./build.sh all                # builds all supported architectures
+#
+# Supported machines:
+#   qemux86-64       x86-64 (default, CI verification)
+#   qemuarm64        ARM64 / aarch64
+#   qemuarm          ARMv7 / armhf
+#   raspberrypi4-64  Raspberry Pi 4 (64-bit)
+#
+# For a physical board, set MACHINE in the env or add a kas include.
+
+header:
+  version: 14
+
+# Default values — override via environment or --target
+defaults:
+  repos:
+    refspec: scarthgap
+
+# Layer repositories fetched by kas
+repos:
+  # Poky — the Yocto reference distro
+  poky:
+    url: https://git.yoctoproject.org/poky
+    refspec: scarthgap
+    layers:
+      meta:
+      meta-poky:
+
+  # meta-openembedded — lua, nlohmann-json, gtest
+  meta-openembedded:
+    url: https://git.openembedded.org/meta-openembedded
+    refspec: scarthgap
+    layers:
+      meta-oe:
+
+# The iot layer is local (not fetched) — it lives in yocto/meta-iot/
+# relative to the repo root. When running via build.sh, the repo is
+# mounted at /work inside the kas container, so the absolute path is
+# /work/yocto/meta-iot.
+
+# Build configuration
+local_conf_header:
+  iot-base: |
+    # Accept the CLOSED license for iot recipes
+    LICENSE_FLAGS_ACCEPTED += "CLOSED"
+
+    # Systemd as init manager (required for DynamicUser=, RuntimeDirectory=)
+    INIT_MANAGER = "systemd"
+
+    # Image features
+    EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
+
+  iot-packages: |
+    # Packages to install in the target image
+    IMAGE_INSTALL:append = " packagegroup-iot-core"
+
+bblayers_conf_header:
+  meta-iot: |
+    BBLAYERS += "${TOPDIR}/../meta-iot"
+
+# Target machine — override via MACHINE env var or --target
+machine: "${MACHINE:-qemux86-64}"
+
+# Target recipe to build
+target:
+  - packagegroup-iot-core
