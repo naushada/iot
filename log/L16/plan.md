@@ -366,8 +366,17 @@ On `enable=true`:
 - Re-prime the iface scan, re-create nft state, publish
   `services.net.router.state="running"`.
 
-**Tests.** `net-router/test/supervisor_test.cpp::Services_disable_clears_active_iface`,
-`Services_reenable_restores_publishing`.
+**Tests.** `net-router/test/supervisor_test.cpp` (4 tests, `7eb030c`):
+- `SVC_REQ_NR_001_disable_clears_active_iface` — disable writes
+  `set_iface_active("")` + `set_state("disabled")` through the same
+  sink lambdas the Lifecycle uses.
+- `SVC_REQ_NR_002_reenable_restores_publishing` — re-enable writes
+  `set_state("running")`, then Lifecycle::step() re-probes and
+  reaches Steady.
+- `SVC_REQ_NR_003_disabled_skips_nft_and_routes` — while parked on
+  the gate, step() is never called; nft/routes counts don't change.
+- `SVC_REQ_NR_004_reboot_resilience` — iface flip while disabled is
+  picked up on the fresh re-enable probe.
 
 ### D4 — openvpn-client enable gate (composes with WAN)
 
@@ -393,13 +402,21 @@ loop:
 Composition rule: **disable dominates WAN.**
 `gate.reason="disabled"` when both are closed, never "wan_down".
 
-**Tests.**
-- `supervisor_test.cpp::Services_disable_kills_active_session` —
-  during `running`, flip enable=false, prove the openvpn child is
-  reaped + state="disabled" within one event-loop tick.
-- `Services_reenable_after_wan_returns_starts_session` — enable
-  false, then WAN comes/goes, then enable=true — confirm exactly
-  one spawn at the end.
+**Tests.** `gate_test.cpp` (5 tests added, `7eb030c`):
+- `DisabledDominatesWanUpIdleStaysIdle` — Gate would Spawn, but the
+  Supervisor checks `enabled()` first and never calls evaluate.
+- `DisabledMidSessionGateNotEvaluated_wanUpDoesNotRetrigger` —
+  mid-session disable → note_terminated → Gate idle; WAN still up.
+- `ReenableAfterDisableResumesNormalWanEvaluation` — full round-trip:
+  idle→spawn→disable→reap→re-enable→fresh spawn (not restart).
+- `DisableMidSessionThenWanDropsThenReenable` — WAN drops while
+  parked; re-enable with WAN down → None.
+- `DisableMidSessionWanFlipsDuringParkThenReturnsOnReenable` — WAN
+  flips eth0→wlan0 during park; re-enable spawns on wlan0.
+
+Note: the plan originally called for `supervisor_test.cpp`, but the
+Gate class is pure — testing the composition rule at the Gate layer
+is more maintainable and doesn't require a live ds-server/Supervisor.
 
 ### D5 — lwm2m-client + lwm2m-server enable gate
 
@@ -472,7 +489,20 @@ Depends on L15 D6 landing. If L16/D6 runs before L15/D6, the
 plan slips D6 to "after L15 closes" — D1..D5 + D7 can ship
 independently.
 
-**Tests.** `wifi-client/test/supervisor_test.cpp::Services_disable_reaps_wpa_and_dhcp`.
+**Tests.** `wifi-client/test/supervisor_test.cpp` (3 tests under
+`WIFI_SVC_REQ_WIFI_023`, `7eb030c`):
+- `disable_writes_disconnected_and_disabled` — disable path:
+  `assoc_state="disconnected"` + `svc_state="disabled"`; re-enable:
+  `assoc_state="scanning"` + `svc_state="running"`.
+- `disable_before_initialize_avoids_nm_conflict_write` — disabled at
+  startup parks immediately; never calls initialize(), never probes NM.
+- `workers_reaped_on_disable_pids_cleared` — mid-session disable reaps
+  wpa+dhcp, clears PIDs; re-enable spawns fresh wpa with new PID.
+
+Note: full event-loop integration (Supervisor driving wpa_supplicant
+through to connected) is exercised by the existing `log/L15/smoke.sh`;
+these tests cover the pure state-machine contract the Supervisor
+implements.
 
 ### D7 — `ds-cli svc` subcommand
 
@@ -578,3 +608,4 @@ Pick one when L16 is in.
 | 2026-06-01 | D8 — `log/L16/smoke.sh` + DEPLOY.md operator section (PR #72 → `18d60db`). |
 | 2026-06-01 | D5a — lwm2m startup gate (PR #73 → `e4132f4`).                        |
 | 2026-06-02 | D5b — lwm2m mid-session gate, client + server (PR #74 → `6cf86b4`); L16 CLOSED. |
+| 2026-06-03 | D3/D4/D6 unit tests (12 tests) — close TDD gap noted during L16 closure review (`7eb030c`). |
