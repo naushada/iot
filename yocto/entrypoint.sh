@@ -62,9 +62,10 @@ PACKAGECONFIG:remove:pn-lwm2m = "mongo"
 SSTATE_HARDLINK = "0"
 
 # Limit parallelism for constrained VMs (4 GB RAM default).
-# Override with -e BB_THREADS=4 -e PARALLEL_MAKE=-j4 at run time.
-BB_NUMBER_THREADS = "${BB_THREADS:-2}"
-PARALLEL_MAKE = "${PARALLEL_MAKE:--j2}"
+# Override at run time with -e BB_NUMBER_THREADS=4 and
+# -e PARALLEL_MAKE=-j4.
+BB_NUMBER_THREADS ?= "2"
+PARALLEL_MAKE ?= "-j2"
 YOCONF
 
 # ── 4. Override MACHINE ────────────────────────────────────────────
