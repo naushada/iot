@@ -11,7 +11,7 @@ One binary, `lwm2m`, plays either role:
 | `server` | `local=` Bootstrap port + `:5683` DM port   | LwM2M Server + Bootstrap-Server |
 | `client` | `local=` LwM2M Client port                  | LwM2M Client (device)        |
 
-## Status (2026-05-31)
+## Status (2026-06-03)
 
 | Phase | Closes (RDD §6) | State |
 |------:|-----------------|-------|
@@ -28,6 +28,9 @@ One binary, `lwm2m`, plays either role:
 | L11 | Packaging: systemd units, GNUInstallDirs install rules, OCI runtime image, end-to-end smoke, [`DEPLOY.md`](DEPLOY.md) | ✅ |
 | L16 | `services.*.enable` control plane — per-daemon enable/state gate via ds-server | ✅ |
 | L17 | Yocto / OpenEmbedded layer (`meta-iot`) — containerised multi-arch build (x86-64, ARM64, ARMv7) | ✅ |
+| L17a | Dependency graph — `depends_on` schema, `DepWatch` helper, `gate.reason="dep_down:<name>"` | ✅ |
+| L17b | Ephemeral disable — `ds-cli svc disable --until-boot`, in-memory volatile overlay | ✅ |
+| L17c | Per-key ACL — `write_acl`/`read_acl` in schema, Unix peer credential enforcement | ✅ |
 
 All six binding decisions (D1–D6) are recorded in
 [`apps/docs/lwm2m-rdd.md`](apps/docs/lwm2m-rdd.md#11-decisions-log) and
@@ -266,7 +269,15 @@ docker/
 log/
 ├── L9/                        pcap captures + interop run scripts
 ├── L10/                       data-store phase closure + smokes
-└── L11/                       packaging phase plan + e2e smoke
+├── L11/                       packaging phase plan + e2e smoke
+├── L12/                       openvpn-client WAN-gate smokes
+├── L13/                       net-router lifecycle smokes
+├── L14/                       full-stack compose smokes
+├── L15/                       wifi-client smokes
+├── L16/                       services.* enable plane plan + smokes
+├── L17a/                      dependency graph plan + smokes
+├── L17b/                      ephemeral disable plan
+└── L17c/                      per-key ACL plan
 
 DEPLOY.md                      top-level deploy walkthrough (container + bare metal)
 ```
