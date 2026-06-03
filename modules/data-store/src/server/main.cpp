@@ -90,11 +90,20 @@ int main(int argc, char** argv) {
     std::string schemaDir = arg_value(argc, argv, "ds-schema-dir");
     if (schemaDir.empty()) schemaDir = data_store::proto::kDefaultSchemaDir;
 
+    std::string rateLimitStr = arg_value(argc, argv, "rate-limit-ms");
+    std::uint32_t rateLimitMs = 0;
+    if (!rateLimitStr.empty()) {
+        rateLimitMs = static_cast<std::uint32_t>(
+            std::strtoul(rateLimitStr.c_str(), nullptr, 10));
+    }
+
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [DS:%t] %M %N:%l socket=%C store=%C schemas=%C\n"),
+               ACE_TEXT("%D [DS:%t] %M %N:%l socket=%C store=%C schemas=%C "
+                        "rate-limit-ms=%u\n"),
                socketPath.c_str(),
                storePath.c_str(),
-               schemaDir.c_str()));
+               schemaDir.c_str(),
+               static_cast<unsigned>(rateLimitMs)));
 
     // Schema (optional) — load every *.lua under ds-schema-dir/. A
     // missing directory loads zero keys and the daemon still boots —
@@ -124,6 +133,7 @@ int main(int argc, char** argv) {
         return 3;
     }
     store->set_persistor(&persistor);
+    store->set_rate_limit_ms(rateLimitMs);
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [DS:%t] %M %N:%l loaded %u key(s) from %C\n"),
                static_cast<unsigned>(store->size()), storePath.c_str()));

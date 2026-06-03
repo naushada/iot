@@ -8,7 +8,9 @@
 /// Shared across all Worker threads, so every public method takes
 /// the internal mutex.
 
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -39,6 +41,12 @@ public:
     /// flush after every successful state change.
     void set_persistor(LuaPersistor* p) { m_persistor = p; }
 
+    /// L17d — rate-limit window in milliseconds. 0 = disabled.
+    /// When non-zero, any set()/set_volatile() within this window
+    /// of the last set on the same key returns RateLimited.
+    void set_rate_limit_ms(std::uint32_t ms) { m_rate_limit_ms = ms; }
+    std::uint32_t rate_limit_ms() const { return m_rate_limit_ms; }
+
     /// Bulk replace — called at startup after LuaPersistor::load().
     void load_from(std::unordered_map<std::string, Value> data);
 
@@ -59,6 +67,11 @@ public:
     /// transition.
     SetResult set_volatile(const std::string& key, Value value);
 
+    /// L17d — check whether `key` was set within the rate-limit
+    /// window. Returns true when the set should be rejected.
+    /// When the window is 0, always returns false.
+    bool is_rate_limited(const std::string& key);
+
     /// Remove. Returns true if the key existed.
     bool remove(const std::string& key);
 
@@ -77,6 +90,9 @@ private:
     std::unordered_map<std::string, Value>                          m_volatile;  // L17b: in-memory overlay
     std::unordered_map<std::string, std::unordered_set<Session*>>   m_watchers;
     LuaPersistor*                                                   m_persistor = nullptr;
+    std::uint32_t                                                   m_rate_limit_ms = 0;  // L17d: 0=off
+    std::unordered_map<std::string,
+        std::chrono::steady_clock::time_point>                      m_last_set;  // L17d: per-key last-set time
 };
 
 } // namespace data_store::server

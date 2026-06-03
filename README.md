@@ -31,6 +31,7 @@ One binary, `lwm2m`, plays either role:
 | L17a | Dependency graph — `depends_on` schema, `DepWatch` helper, `gate.reason="dep_down:<name>"` | ✅ |
 | L17b | Ephemeral disable — `ds-cli svc disable --until-boot`, in-memory volatile overlay | ✅ |
 | L17c | Per-key ACL — `write_acl`/`read_acl` in schema, Unix peer credential enforcement | ✅ |
+| L17d | Rate-limit + chaos coverage — set-rate throttling, random gate-flip harness | ✅ |
 
 All six binding decisions (D1–D6) are recorded in
 [`apps/docs/lwm2m-rdd.md`](apps/docs/lwm2m-rdd.md#11-decisions-log) and
@@ -277,7 +278,8 @@ log/
 ├── L16/                       services.* enable plane plan + smokes
 ├── L17a/                      dependency graph plan + smokes
 ├── L17b/                      ephemeral disable plan
-└── L17c/                      per-key ACL plan
+├── L17c/                      per-key ACL plan
+└── L17d/                      rate-limit + chaos harness
 
 DEPLOY.md                      top-level deploy walkthrough (container + bare metal)
 ```

@@ -48,6 +48,9 @@ SetResult DataStore::set(const std::string& key, Value value) {
         // for the same key so the new value survives reboot.
         m_volatile.erase(key);
 
+        // L17d — record last-set timestamp for rate-limit.
+        m_last_set[key] = std::chrono::steady_clock::now();
+
         auto it = m_data.find(key);
         if (it == m_data.end()) {
             m_data.emplace(key, std::move(value));
@@ -79,6 +82,9 @@ SetResult DataStore::set_volatile(const std::string& key, Value value) {
     {
         std::lock_guard<std::mutex> g(m_mtx);
 
+        // L17d — record last-set timestamp.
+        m_last_set[key] = std::chrono::steady_clock::now();
+
         // L17b — write to the volatile overlay only. No persist.
         // The persistent m_data is untouched; a server restart
         // clears this entry.
@@ -105,6 +111,16 @@ SetResult DataStore::set_volatile(const std::string& key, Value value) {
         // NO flush to persistor — volatile by design.
     }
     return out;
+}
+
+bool DataStore::is_rate_limited(const std::string& key) {
+    if (m_rate_limit_ms == 0) return false;
+    std::lock_guard<std::mutex> g(m_mtx);
+    auto it = m_last_set.find(key);
+    if (it == m_last_set.end()) return false;
+    auto elapsed = std::chrono::steady_clock::now() - it->second;
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               elapsed).count() < static_cast<long long>(m_rate_limit_ms);
 }
 
 bool DataStore::remove(const std::string& key) {

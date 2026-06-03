@@ -256,9 +256,7 @@ void Worker::handle_process_request(WorkMsg* msg) {
                                              *err));
                         return;
                     }
-                    // L17c — per-key ACL check. Reject before
-                    // touching the store if the peer's credentials
-                    // don't match the key's write_acl.
+                    // L17c — per-key ACL check.
                     auto acl_err = m_schema->check_write_acl(
                         k, s->peer_uid(), s->peer_gid());
                     if (acl_err) {
@@ -267,6 +265,14 @@ void Worker::handle_process_request(WorkMsg* msg) {
                                              *acl_err));
                         return;
                     }
+                }
+                // L17d — rate-limit check. Reject sets within the
+                // configured window of the last set on the same key.
+                if (m_store->is_rate_limited(k)) {
+                    s->send(encode_error(op, h.reqID,
+                                         proto::Status::RateLimited,
+                                         "rate-limited: " + k));
+                    return;
                 }
                 auto r = volatile_set
                        ? m_store->set_volatile(k, v)

@@ -72,6 +72,7 @@ enum class Status : std::uint16_t {
     SchemaRejected  = 0x8004,   ///< SchemaRegistry::validate_set said no
     NotFound        = 0x8005,   ///< (reserved for future single-key reads)
     InternalError   = 0x8006,   ///< caught exception on the server side
+    RateLimited     = 0x8007,   ///< L17d: set rejected by rate-limit window
 };
 
 const char* status_name(Status s);

@@ -43,6 +43,7 @@ const char* status_name(Status s) {
         case Status::SchemaRejected: return "SchemaRejected";
         case Status::NotFound:       return "NotFound";
         case Status::InternalError:  return "InternalError";
+        case Status::RateLimited:    return "RateLimited";
     }
     return "Unknown";
 }

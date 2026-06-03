@@ -501,6 +501,30 @@ The composition priority across gates is: **dep_down > disabled >
 wan_down (or NM-conflict)**. A dependency failure blocks everything
 below it regardless of the service's own enable flag or WAN state.
 
+### Rate-limit (L17d)
+
+ds-server can reject rapid re-sets on the same key with a
+configurable window (default 0 = disabled). Prevents operator
+churn from flooding daemons with spawn/reap cycles.
+
+```sh
+# Start ds-server with a 1-second rate-limit window
+ds-server rate-limit-ms=1000
+
+# Rapid disable/enable within 1s → second set gets RateLimited
+ds-cli svc disable openvpn.client    # ok
+ds-cli svc enable openvpn.client     # rejected: rate-limited
+```
+
+### Chaos harness (L17d)
+
+`log/L17d/chaos.sh` randomly flips every `services.*.enable` gate
+and asserts daemons stay alive through the churn. Run manually:
+
+```sh
+bash log/L17d/chaos.sh --cycles=100
+```
+
 ---
 
 ## Common operator tasks
