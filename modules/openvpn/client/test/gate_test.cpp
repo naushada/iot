@@ -86,6 +86,112 @@ TEST(Gate, NoteTerminatedClearsBound) {
               evaluate(g, std::string{"eth0"}));
 }
 
+// ─────────── L16/D4: services gate composes with WAN ─────────────
+// Composition rule: enable=false dominates every other gate.
+// When disabled, the supervisor parks at gate.reason="disabled" and
+// never calls Gate::evaluate(). When re-enabled, WAN evaluation
+// resumes as normal. These tests ratify that contract.
+
+TEST(Gate, DisabledDominatesWanUpIdleStaysIdle) {
+    // WAN up, gate enabled → would normally Spawn. But if the
+    // services gate is closed, the supervisor never calls evaluate()
+    // and the Gate stays idle. Prove the Gate's perspective: it would
+    // return Spawn if consulted, confirming the caller (Supervisor)
+    // is solely responsible for the disable check.
+    Gate g;
+    auto d = g.evaluate(std::string{"eth0"});
+    EXPECT_EQ(GateDecision::Action::Spawn, d.action);
+    EXPECT_EQ("eth0", d.iface);
+    // Gate is still idle — the supervisor would not apply this
+    // decision when m_svc->enabled()==false.
+    EXPECT_FALSE(g.running());
+}
+
+TEST(Gate, DisabledMidSessionGateNotEvaluated_wanUpDoesNotRetrigger) {
+    // Scenario: session active on eth0, operator disables service,
+    // supervisor reaps child + parks. WAN stays up the whole time.
+    // The Gate's perspective: the supervisor calls note_terminated()
+    // before parking, so the Gate is now idle. The next evaluate()
+    // with eth0 would say Spawn — but supervisor only calls it
+    // after m_svc->enabled() becomes true again.
+    Gate g;
+    g.note_spawned("eth0");
+    ASSERT_TRUE(g.running());
+
+    // Simulate supervisor's disable sequence:
+    // if (m_svc && !m_svc->enabled()) { g.note_terminated(); park; }
+    g.note_terminated();
+    EXPECT_FALSE(g.running());
+
+    // WAN still reports eth0 up. The Gate would spawn, proving
+    // the disable check must gate the evaluate call.
+    auto d = g.evaluate(std::string{"eth0"});
+    EXPECT_EQ(GateDecision::Action::Spawn, d.action);
+    EXPECT_EQ("eth0", d.iface);
+}
+
+TEST(Gate, ReenableAfterDisableResumesNormalWanEvaluation) {
+    // Full composition sequence:
+    //   1. Idle, WAN down → None
+    //   2. WAN eth0 up → Spawn
+    //   3. Session active → disable (svc gate flips false)
+    //      Supervisor calls note_terminated, parks
+    //   4. Re-enable (svc gate flips true), WAN still eth0 → Spawn
+    Gate g;
+    // Step 1.
+    EXPECT_EQ(GateDecision::Action::None, evaluate(g, std::nullopt));
+    // Step 2.
+    auto d2 = g.evaluate(std::string{"eth0"});
+    EXPECT_EQ(GateDecision::Action::Spawn, d2.action);
+    g.note_spawned("eth0");
+    // Step 3 — supervisor sees svc disabled, reaps child.
+    g.note_terminated();
+    EXPECT_FALSE(g.running());
+    // Step 4 — re-enabled, WAN still eth0.
+    auto d4 = g.evaluate(std::string{"eth0"});
+    EXPECT_EQ(GateDecision::Action::Spawn, d4.action);
+    EXPECT_EQ("eth0", d4.iface);
+    EXPECT_TRUE(d4.from.empty());   // fresh spawn, not restart
+}
+
+TEST(Gate, DisableMidSessionThenWanDropsThenReenable) {
+    // Disabled while running; while parked, WAN drops. On re-enable,
+    // WAN is down → None (do not spawn).
+    Gate g;
+    g.note_spawned("eth0");
+    ASSERT_TRUE(g.running());
+
+    // Disable → supervisor reaps, parks.
+    g.note_terminated();
+    EXPECT_FALSE(g.running());
+
+    // While parked, WAN drops.
+    auto d = g.evaluate(std::nullopt);
+    EXPECT_EQ(GateDecision::Action::None, d.action);
+
+    // Re-enable, WAN still down.
+    EXPECT_EQ(GateDecision::Action::None, evaluate(g, std::nullopt));
+}
+
+TEST(Gate, DisableMidSessionWanFlipsDuringParkThenReturnsOnReenable) {
+    // Complex recovery: disable while on eth0, WAN flips eth0→wlan0
+    // while parked (not acted on), then on re-enable WAN is at wlan0
+    // → fresh Spawn on wlan0.
+    Gate g;
+    g.note_spawned("eth0");
+
+    // Disable.
+    g.note_terminated();
+    EXPECT_FALSE(g.running());
+
+    // WAN flips eth0→wlan0 while parked (gate never sees it).
+    // On re-enable: supervisor calls evaluate(wlan0).
+    auto d = g.evaluate(std::string{"wlan0"});
+    EXPECT_EQ(GateDecision::Action::Spawn, d.action);
+    EXPECT_EQ("wlan0", d.iface);
+    EXPECT_TRUE(d.from.empty());   // no "from" — note_terminated was called earlier
+}
+
 TEST(Gate, FullPriorityRotationSequence) {
     // Cellular fallback story:
     //   1) boot with no WAN

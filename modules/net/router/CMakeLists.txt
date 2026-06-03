@@ -70,7 +70,8 @@ if(BUILD_NET_ROUTER_TESTS)
         test/iface_monitor_test.cpp
         test/ip_route_test.cpp
         test/apply_test.cpp
-        test/lifecycle_test.cpp)
+        test/lifecycle_test.cpp
+        test/supervisor_test.cpp)
 
     target_link_libraries(net-router-tests
         net_router_lib
