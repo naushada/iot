@@ -1,11 +1,12 @@
 # Deploying iot
 
-Two paths, your choice:
+Three paths, your choice:
 
-| Path        | When                                                                                    | Time-to-first-`get`  |
-|-------------|------------------------------------------------------------------------------------------|----------------------|
-| **Container** | Cloud, edge devices that already run a container engine, local hacking                | 5 min                |
-| **Bare metal** | Single-purpose appliances, embedded Linux without container runtime                  | 15 min               |
+| Path            | When                                                                                      | Time-to-first-`get`    |
+|-----------------|-------------------------------------------------------------------------------------------|------------------------|
+| **Container**   | Cloud, edge devices that already run a container engine, local hacking                  | 5 min                  |
+| **Bare metal**  | Single-purpose appliances, embedded Linux without container runtime                     | 15 min                 |
+| **Yocto**       | Custom embedded Linux images, cross-compilation, multi-arch (x86-64, ARM64, ARMv7)      | 2–4 hours (first build)|
 
 After install both paths boot `ds-server` (the typed-value config plane)
 plus one of the `lwm2m` roles (client or server). Live config flows
@@ -135,6 +136,49 @@ sh log/L11/e2e-smoke.sh
 It builds the image, starts both containers, mutates a key, asserts
 the hot-apply landed, and confirms schema rejection still gates. The
 last run is captured at [`log/L11/e2e-smoke.txt`](log/L11/e2e-smoke.txt).
+
+---
+
+## Path C — Yocto / OpenEmbedded (cross-compiled packages)
+
+This path produces **installable `.ipk` / `.rpm` packages** for any
+Linux target, cross-compiled inside a podman/docker container. The
+host needs only podman or docker — no Yocto SDK or kas CLI.
+
+### 1. Build the packages
+
+```sh
+cd yocto
+./build.sh                        # qemux86-64 (default)
+MACHINE=qemuarm64 ./build.sh      # ARM64 / aarch64
+MACHINE=qemuarm ./build.sh        # ARMv7 / armhf
+./build.sh all                    # all three architectures
+```
+
+The script builds a container image (`iot-yocto-builder`), runs
+`bitbake`, and copies the output to `yocto/build/<machine>/deploy/`.
+
+### 2. Install on target
+
+```sh
+scp yocto/build/qemuarm64/deploy/ipk/cortexa57/iot-*.ipk root@<target>:/tmp/
+ssh root@<target> opkg install /tmp/iot-ds-server_*.ipk /tmp/iot-lwm2m_*.ipk /tmp/iot-config_*.ipk
+```
+
+### 3. Start the services
+
+```sh
+ssh root@<target> systemctl enable --now iot-ds iot-lwm2m-client
+ssh root@<target> ds-cli --socket=/run/iot/data_store.sock get iot.endpoint
+```
+
+For gateway-class devices, add the optional daemons:
+
+```sh
+opkg install iot-openvpn-client_*.ipk iot-net-router_*.ipk iot-wifi-client_*.ipk
+```
+
+Full Yocto docs: [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md).
 
 ---
 

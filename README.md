@@ -26,6 +26,8 @@ One binary, `lwm2m`, plays either role:
 | L9 | App-level wiring + Leshan interop harness + first pcap pass | ✅ |
 | L10 | Data-store: typed values (variant), EMP framing, schema, live watch + hot-apply for `iot.{endpoint, lifetime, server.uri}` | ✅ |
 | L11 | Packaging: systemd units, GNUInstallDirs install rules, OCI runtime image, end-to-end smoke, [`DEPLOY.md`](DEPLOY.md) | ✅ |
+| L16 | `services.*.enable` control plane — per-daemon enable/state gate via ds-server | ✅ |
+| L17 | Yocto / OpenEmbedded layer (`meta-iot`) — containerised multi-arch build (x86-64, ARM64, ARMv7) | ✅ |
 
 All six binding decisions (D1–D6) are recorded in
 [`apps/docs/lwm2m-rdd.md`](apps/docs/lwm2m-rdd.md#11-decisions-log) and
@@ -129,6 +131,65 @@ The unit-test target deliberately doesn't link tinydtls or ACE — the
 observe engine, object store). Runtime regressions for DTLS / network I/O
 are owned by the Leshan interop pass, not the unit-test build.
 
+## Yocto / OpenEmbedded build
+
+A complete [Yocto](https://www.yoctoproject.org/) layer (`meta-iot`)
+ships under `yocto/meta-iot/`. It delivers all six daemons as
+separate `.ipk` / `.rpm` packages for embedded Linux targets with
+no host-side Yocto install — the entire build runs inside a
+podman/docker container.
+
+```sh
+cd yocto
+./build.sh                        # qemux86-64 (default)
+MACHINE=qemuarm64 ./build.sh      # ARM64 / aarch64
+MACHINE=qemuarm ./build.sh        # ARMv7 / armhf
+./build.sh all                    # all three architectures
+```
+
+The host needs only **podman** or **docker**. The container image
+clones poky + meta-openembedded at Scarthgap (5.0 LTS), copies
+`meta-iot`, and runs `bitbake`. Output artifacts land in
+`yocto/build/<machine>/deploy/ipk/`.
+
+Install on target:
+
+```sh
+opkg install iot-ds-server_*.ipk iot-lwm2m_*.ipk iot-config_*.ipk
+systemctl enable --now iot-ds iot-lwm2m-client
+```
+
+Full docs: [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md).
+
+### PACKAGECONFIG
+
+| Option   | Default | Effect |
+|----------|---------|--------|
+| `mongo`  | ON      | Links mongocxx/bsoncxx. RegistryMirror. Turn OFF for embedded IoT. |
+| `gtest`  | OFF     | Builds unit-test binaries. |
+| `systemd`| ON      | Installs systemd units + env files. OFF for sysvinit images. |
+
+Override in `local.conf` or via kas:
+
+```
+PACKAGECONFIG:remove:pn-lwm2m = "mongo"
+```
+
+### Package split
+
+| Package                 | Binary                 | Runtime deps |
+|-------------------------|------------------------|-------------|
+| `iot-ds-server`         | `/usr/bin/ds-server`   | ACE, Lua |
+| `iot-ds-cli`            | `/usr/bin/ds-cli`      | ACE |
+| `iot-lwm2m`             | `/usr/bin/lwm2m`       | ACE, Lua, OpenSSL, tinydtls, ±mongo |
+| `iot-openvpn-client`    | `/usr/bin/openvpn-client` | ACE, openvpn |
+| `iot-net-router`        | `/usr/bin/net-router`  | ACE, nftables, iproute2 |
+| `iot-wifi-client`       | `/usr/bin/wifi-client` | ACE, wpa-supplicant, udhcpc |
+| `iot-config`            | `/etc/iot/`            | — |
+
+Tiered `packagegroup-iot-{core,full,debug}` meta-packages pull in
+what you need — from a minimal LwM2M device to a full gateway.
+
 ## Leshan interop pass (NFR-INTEROP-001)
 
 Full procedure and acceptance matrices are in
@@ -191,6 +252,12 @@ packaging/                     L11 deploy artefacts
 ├── Containerfile              multi-stage OCI runtime build (~119 MB)
 ├── iot-entrypoint.sh          IOT_ROLE dispatcher
 └── README.md                  packaging internals + size budget
+
+yocto/                         L17 Yocto / OpenEmbedded layer
+├── build.sh                   host-entry build script (podman/docker)
+├── Containerfile              Yocto build container image
+├── kas-iot.yml                kas configuration
+└── meta-iot/                  meta-iot Yocto layer
 
 docker/
 ├── Dockerfile                 dev build image (naushada/iot:latest)
