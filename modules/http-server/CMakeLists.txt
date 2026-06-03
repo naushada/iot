@@ -10,18 +10,21 @@ endif()
 
 set(HTTP_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Pull in the sibling data-store module for datastore_client.
-# Skip when just building parser tests (no ACE/Lua needed for D1).
+# Pull in data-store for datastore_client (needed by handlers + main).
 option(HTTP_SKIP_DATA_STORE "Skip data-store subdir (parser-only build)" OFF)
 if(NOT HTTP_SKIP_DATA_STORE AND NOT TARGET datastore_client)
     add_subdirectory(${HTTP_MODULE_DIR}/../data-store
                      ${CMAKE_BINARY_DIR}/data-store)
 endif()
 
+# nlohmann::json — vendored under apps/3rdparty/json/
+set(NLOHMANN_JSON_INCLUDE
+    ${HTTP_MODULE_DIR}/../../apps/3rdparty/json/single_include)
+
 include_directories(
     ${HTTP_MODULE_DIR}/inc
     ${HTTP_MODULE_DIR}/../data-store/inc
-    ${HTTP_MODULE_DIR}/../../apps/3rdparty/json/single_include
+    ${NLOHMANN_JSON_INCLUDE}
     ${ACE_ROOT}/include
 )
 
@@ -29,11 +32,18 @@ link_directories(${ACE_ROOT}/lib)
 
 # Static lib — sources added as D-items land.
 add_library(http_server_lib STATIC
-    src/parser.cpp)
+    src/parser.cpp
+    src/router.cpp
+    src/session.cpp
+    src/handler.cpp)
 
 target_include_directories(http_server_lib PUBLIC src)
 target_link_libraries(http_server_lib
     PUBLIC datastore_client ACE pthread)
+
+# ─────────────────────────── Binary ────────────────────────────
+add_executable(iot-httpd src/main.cpp)
+target_link_libraries(iot-httpd PRIVATE http_server_lib)
 
 # ─────────────────────────── Tests ─────────────────────────────
 option(BUILD_HTTP_SERVER_TESTS "Build http-server gtest suite" ON)
@@ -41,26 +51,47 @@ if(BUILD_HTTP_SERVER_TESTS)
     find_package(GTest REQUIRED)
     enable_testing()
 
-    # D1 — parser tests are pure C++17, no ACE needed.
-    # Compile parser.cpp directly to avoid ACE/Lua link deps.
+    # D1 — parser tests: pure C++17, no ACE needed.
     add_executable(http-parser-tests
         test/parser_test.cpp
         src/parser.cpp)
-
     target_include_directories(http-parser-tests
         PRIVATE ${HTTP_MODULE_DIR}/inc
         PRIVATE ${HTTP_MODULE_DIR}/src)
-
     target_link_libraries(http-parser-tests
-        GTest::gtest_main
-        GTest::gtest)
-
+        GTest::gtest_main GTest::gtest)
     add_test(NAME http-parser-tests COMMAND http-parser-tests)
+
+    # D2 — router tests: pure C++17, no ACE needed.
+    add_executable(http-router-tests
+        test/router_test.cpp
+        src/router.cpp)
+    target_include_directories(http-router-tests
+        PRIVATE ${HTTP_MODULE_DIR}/inc
+        PRIVATE ${HTTP_MODULE_DIR}/src)
+    target_link_libraries(http-router-tests
+        GTest::gtest_main GTest::gtest)
+    add_test(NAME http-router-tests COMMAND http-router-tests)
+
+    # D4 — handler tests: needs ds-server + datastore_client + ACE.
+    # Only built when data-store is available.
+    if(NOT HTTP_SKIP_DATA_STORE)
+        add_executable(http-handler-tests
+            test/handler_test.cpp
+            src/handler.cpp
+            src/router.cpp)
+        target_link_libraries(http-handler-tests
+            http_server_lib
+            GTest::gtest_main GTest::gtest)
+        add_test(NAME http-handler-tests COMMAND http-handler-tests)
+    endif()
 endif()
 
 # ─────────────────────────── Install ───────────────────────────
 include(GNUInstallDirs)
 if(NOT DEFINED IOT_PACKAGING_INSTALL OR IOT_PACKAGING_INSTALL)
+    install(TARGETS iot-httpd
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(FILES schemas/http.lua
             DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
 endif()

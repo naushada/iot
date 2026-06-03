@@ -525,6 +525,36 @@ and asserts daemons stay alive through the churn. Run manually:
 bash log/L17d/chaos.sh --cycles=100
 ```
 
+### HTTP REST API (L18)
+
+`iot-httpd` exposes the data store over HTTP/1.1 on port 8080
+(configurable via `http.listen.{ip,port,scheme}` schema keys).
+Three endpoints:
+
+```sh
+# Read keys
+curl -X POST http://localhost:8080/api/v1/db/get \
+  -H 'Content-Type: application/json' \
+  -d '{"keys":["iot.endpoint","services.net.router.state"]}'
+
+# Write keys
+curl -X POST http://localhost:8080/api/v1/db/set \
+  -H 'Content-Type: application/json' \
+  -d '{"pairs":[{"key":"iot.endpoint","value":"new-value"}]}'
+
+# Long-poll: block until key changes (up to N seconds)
+curl 'http://localhost:8080/api/v1/db/get?key=services.net.router.state&timeout=30'
+```
+
+Start the server:
+
+```sh
+iot-httpd ds-socket=/var/run/iot/data_store.sock http-port=8080
+```
+
+TLS termination is handled by a reverse proxy (nginx/haproxy) in
+front of iot-httpd — the server itself speaks plain HTTP/1.1.
+
 ---
 
 ## Common operator tasks
