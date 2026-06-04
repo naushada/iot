@@ -250,8 +250,13 @@ RRECOMMENDS:${PN}-httpd = "\
 "
 
 # config — schema files, env files, config templates (shared substrate)
+# Includes the tmpfiles.d drop-in (creates /run/iot); it lives under
+# ${nonarch_libdir} (not ${sysconfdir}), and since FILES:${PN} is overridden
+# above the default tmpfiles pattern no longer ships it — claim it here so
+# do_package doesn't fail with "installed but not shipped".
 FILES:${PN}-config = "\
     ${sysconfdir}/iot \
+    ${nonarch_libdir}/tmpfiles.d/iot.conf \
 "
 
 # ── systemd ─────────────────────────────────────────────────────────
