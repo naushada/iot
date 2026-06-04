@@ -25,18 +25,25 @@ S = "${WORKDIR}/git"
 
 inherit autotools
 
-# tinydtls ships without a pre-built configure script. Generate it at
-# configure time (matches the autoconf && autoheader step in Dockerfile).
-# master-swi's session.h pulls <platform/inet.h> + <platform/types.h>,
-# platform shims the legato build supplies but the repo doesn't ship for
-# Linux — provide them here (same files the iot repo vendors).
-do_configure:prepend() {
+# Full override of the autotools do_configure (which runs autoreconf):
+# tinydtls is autoconf-only (Makefile.in, no Makefile.am). Under autoreconf
+# the aclocal pass makes AM_PROG_AR available, so the
+# `m4_ifdef([AM_PROG_AR], …)` in configure.ac expands to it and then fails
+# with "required file 'ar-lib' not found" (automake never runs to install
+# it). Plain `autoconf` takes the `[AR=ar]` fallback instead. configure.ac
+# has no AC_CANONICAL_*, so the cross ./configure needs no config.sub.
+#
+# Also install the platform shims master-swi's session.h pulls in
+# (<platform/inet.h> + <platform/types.h>) — the legato build supplies
+# these but the repo doesn't ship them for Linux.
+do_configure() {
     cd ${S}
     install -d ${S}/platform
     install -m 0644 ${WORKDIR}/platform-inet.h  ${S}/platform/inet.h
     install -m 0644 ${WORKDIR}/platform-types.h ${S}/platform/types.h
     autoconf
     autoheader
+    oe_runconf
 }
 
 # tinydtls only produces a static library.
