@@ -158,8 +158,14 @@ build_machine() {
     # The :U flag chowns the volumes to the in-container builduser (uid 1000)
     # — without it a fresh root-owned volume is unwritable by the build user.
     # TMPDIR stays in the overlay but is kept small by rm_work (entrypoint).
+    #
+    # meta-iot is also bind-mounted (ro) over the copy baked into the image,
+    # so edits to recipes take effect on the next run WITHOUT rebuilding the
+    # builder image. (The bitbake recipe lives in the image; without this a
+    # recipe fix only applies after `podman build` re-COPYs meta-iot.)
     $CR run --name "$container" \
         -e "MACHINE=$machine" \
+        -v "$SCRIPT_DIR/meta-iot:/home/builduser/yocto/meta-iot:ro" \
         -v "${DOWNLOADS_VOLUME}:/home/builduser/yocto/build/downloads:U" \
         -v "${SSTATE_VOLUME}:/home/builduser/yocto/build/sstate-cache:U" \
         "$IMAGE_NAME" \
