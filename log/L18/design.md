@@ -308,8 +308,19 @@ iot-httpd \
 
 The server reads `http.listen.{ip,port,scheme}` and `http.tls.{cert,key,ca}`
 at startup via `data_store::Client::get()`. If the keys are unset, schema
-defaults apply. Hot-reload of listen/TLS params is FUP-L18-2 — changing
-ip/port/cert requires a restart in v1.
+defaults apply.
+
+**Hot-reload (FUP-L18-2).** The main loop re-reads those keys from the data
+store every ~2 s; when an operator changes one via `ds-cli`, it applies
+without a restart — re-binding the acceptor on an `http.listen.{ip,port}`
+change, and rebuilding the `TlsContext` on a `scheme`/cert/key/ca change.
+Cert rotation is seamless: a live `TlsConn`'s `SSL_new()` holds a reference
+to its `SSL_CTX`, so swapping in the fresh context lets existing
+connections finish on the old cert while new ones use the rotated one. A
+failed reload (bad bind, bad cert) logs and keeps the current config. At
+runtime the data-store values are authoritative (CLI args are startup
+defaults); `http.workers` is *not* hot-reloadable (pool resize needs a
+restart).
 
 ### 2.7 TLS termination (https + mTLS)
 
@@ -580,5 +591,5 @@ modules/http-server/                 # new top-level module
 | ID | Item | Notes |
 |----|------|-------|
 | ~~FUP-L18-1~~ | **Worker pool for handlers — DONE** | Implemented as the `http.workers` thread pool (§2.8): handlers run off the reactor thread, the reactor sends via `handle_exception` after a worker `notify()`s, suspend/resume serialises one request per connection. Default 0 (inline). |
-| FUP-L18-2 | Hot-reload of `http.listen.*` / `http.tls.*` | Read once at startup today; changing ip/port or rotating the TLS cert needs a restart (§2.6). Watch the keys and rebind / reload `SSL_CTX`. |
+| ~~FUP-L18-2~~ | **Hot-reload of `http.listen.*` / `http.tls.*` — DONE** | The loop polls the keys every ~2 s and re-binds the acceptor / rebuilds the `TlsContext` on change (cert rotation seamless via `SSL_CTX` refcounting). §2.6. `http.workers` still needs a restart. |
 | ~~FUP-L18-3~~ | **Strict `411 Length Required` — DONE** | The parser rejects POST/PUT/PATCH with neither `Content-Length` nor chunked; the session returns `411` (vs `400` for malformed). D6, §2.1. |

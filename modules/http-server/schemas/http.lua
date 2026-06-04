@@ -1,7 +1,10 @@
 -- http.* schema (L18/D2).
 --
 -- Configuration surface for the iot-httpd REST API server.
--- Values are read at startup; hot-reload is FUP.
+-- http.listen.{ip,port,scheme} and http.tls.{cert,key,ca} are
+-- hot-reloaded at runtime (FUP-L18-2): change them with ds-cli and
+-- iot-httpd re-binds / rotates the cert within ~2s, no restart. Only
+-- http.workers needs a restart.
 --
 -- Install at /etc/iot/ds-schemas/http.lua (ds-server auto-loads
 -- on boot; iot-httpd reads them at startup via data_store::Client).

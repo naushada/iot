@@ -57,6 +57,39 @@ std::string arg_value(int argc, char** argv, std::string_view key) {
     return {};
 }
 
+// Raw snapshot of the hot-reloadable http.* keys (empty string = unset).
+// Used to detect operator changes made via ds-cli at runtime (FUP-L18-2).
+struct DsHttpCfg {
+    std::string ip, port, scheme, cert, key, ca;
+};
+
+DsHttpCfg read_ds_http_cfg(data_store::Client& ds) {
+    DsHttpCfg c;
+    std::vector<data_store::Client::GetResult> got;
+    auto rs = ds.get({"http.listen.ip", "http.listen.port", "http.listen.scheme",
+                      "http.tls.cert", "http.tls.key", "http.tls.ca"}, got);
+    if (rs.ok) {
+        for (const auto& g : got) {
+            if (!g.has_value) continue;
+            if (g.key == "http.listen.ip") {
+                if (auto s = data_store::to_string(g.value)) c.ip = *s;
+            } else if (g.key == "http.listen.port") {
+                if (auto n = data_store::to_uint32(g.value))
+                    c.port = std::to_string(*n);
+            } else if (g.key == "http.listen.scheme") {
+                if (auto s = data_store::to_string(g.value)) c.scheme = *s;
+            } else if (g.key == "http.tls.cert") {
+                if (auto s = data_store::to_string(g.value)) c.cert = *s;
+            } else if (g.key == "http.tls.key") {
+                if (auto s = data_store::to_string(g.value)) c.key = *s;
+            } else if (g.key == "http.tls.ca") {
+                if (auto s = data_store::to_string(g.value)) c.ca = *s;
+            }
+        }
+    }
+    return c;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -194,7 +227,70 @@ int main(int argc, char** argv) {
     ::signal(SIGTERM, on_signal);
     ::signal(SIGPIPE, SIG_IGN);
 
+    // ── Hot-reload (FUP-L18-2) ────────────────────────────────
+    // Poll the hot-reloadable http.* keys; when an operator changes one via
+    // ds-cli at runtime, apply it without a restart. ds values are
+    // authoritative at runtime (CLI args are startup defaults). http.workers
+    // is NOT hot-reloadable — resizing the pool needs a restart.
+    DsHttpCfg lastDs = read_ds_http_cfg(ds);
+
+    // Rebuild the TLS context from the current effective scheme/cert/key/ca.
+    // On https, SSL_new() in live TlsConns holds a ref to the old SSL_CTX, so
+    // swapping tlsCtx is safe: existing connections keep their cert until they
+    // close; new ones use the rotated cert. A failed load keeps the old.
+    auto reload_tls = [&]() {
+        if (httpScheme == "https") {
+            if (tlsCert.empty() || tlsKey.empty()) {
+                ACE_ERROR((LM_ERROR,
+                           ACE_TEXT("%D [http:%t] %M %N:%l reload: https needs "
+                                    "cert+key — keeping current\n")));
+                return;
+            }
+            http_server::TlsContext fresh;
+            if (!fresh.load_server(tlsCert, tlsKey, tlsCa)) {
+                ACE_ERROR((LM_ERROR,
+                           ACE_TEXT("%D [http:%t] %M %N:%l reload: TLS load "
+                                    "failed: %C — keeping current\n"),
+                           fresh.err().c_str()));
+                return;
+            }
+            tlsCtx = std::move(fresh);
+            tlsPtr = &tlsCtx;
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [http:%t] %M %N:%l TLS reloaded "
+                                "(mtls=%d)\n"), tlsCtx.mtls()));
+        } else {
+            tlsPtr = nullptr;
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [http:%t] %M %N:%l scheme=http — TLS off "
+                                "for new connections\n")));
+        }
+    };
+
+    // Re-bind the listening socket to a new ip:port. Open the new one first
+    // and only swap on success, so a failed bind (e.g. port in use) leaves
+    // the current listener serving.
+    auto rebind = [&]() {
+        ACE_INET_Addr na(httpPort, httpIp.c_str());
+        ACE_SOCK_Acceptor fresh;
+        if (fresh.open(na, 1) == -1) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [http:%t] %M %N:%l reload: bind %C:%d "
+                                "failed (errno=%d) — keeping current\n"),
+                       httpIp.c_str(), httpPort, errno));
+            return;
+        }
+        sock_acceptor.close();
+        sock_acceptor.set_handle(fresh.get_handle());
+        fresh.set_handle(ACE_INVALID_HANDLE);
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D [http:%t] %M %N:%l re-bound to %C:%d\n"),
+                   httpIp.c_str(), httpPort));
+    };
+
     ACE_Time_Value tv(0, 50 * 1000);  // 50ms tick for accept
+    int reload_tick = 0;
+    constexpr int kReloadEvery = 40;  // 40 * 50ms ≈ 2s
     while (!g_stop.load()) {
         // Accept pending connections
         ACE_SOCK_Stream stream;
@@ -218,6 +314,31 @@ int main(int argc, char** argv) {
                        ACE_TEXT("%D [http:%t] %M %N:%l handle_events "
                                 "rc=%d errno=%d\n"), rc, errno));
             break;
+        }
+
+        // ~Every 2s, check for operator config changes via the data store.
+        if (++reload_tick >= kReloadEvery) {
+            reload_tick = 0;
+            DsHttpCfg cur = read_ds_http_cfg(ds);
+            bool tlsDirty = false, listenDirty = false;
+            // Update the effective values for keys the operator changed.
+            // A non-empty scheme/ip/port is required to take effect; tls
+            // paths may change freely (reload_tls validates).
+            if (cur.scheme != lastDs.scheme && !cur.scheme.empty()) {
+                httpScheme = cur.scheme; tlsDirty = true;
+            }
+            if (cur.cert != lastDs.cert) { tlsCert = cur.cert; tlsDirty = true; }
+            if (cur.key  != lastDs.key)  { tlsKey  = cur.key;  tlsDirty = true; }
+            if (cur.ca   != lastDs.ca)   { tlsCa   = cur.ca;   tlsDirty = true; }
+            if (cur.ip != lastDs.ip && !cur.ip.empty()) {
+                httpIp = cur.ip; listenDirty = true;
+            }
+            if (cur.port != lastDs.port && !cur.port.empty()) {
+                httpPort = std::atoi(cur.port.c_str()); listenDirty = true;
+            }
+            lastDs = cur;
+            if (tlsDirty) reload_tls();
+            if (listenDirty) rebind();
         }
     }
 
