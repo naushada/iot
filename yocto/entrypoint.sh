@@ -69,6 +69,12 @@ PACKAGECONFIG:remove:pn-iot = "mongo"
 # Disable sstate hardlinking to avoid cp -afl failures.
 SSTATE_HARDLINK = "0"
 
+# Delete each recipe's WORKDIR right after it builds. Keeps TMPDIR small
+# on the constrained container overlay (a full image build is ~50 GB of
+# work dirs otherwise). The persistent sstate-cache volume still makes
+# reruns fast, so this costs little. The image recipe is auto-excluded.
+INHERIT += "rm_work"
+
 # Limit parallelism for constrained VMs (4 GB RAM default).
 # Override at run time with -e BB_NUMBER_THREADS=4 and
 # -e PARALLEL_MAKE=-j4.

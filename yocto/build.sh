@@ -21,6 +21,12 @@
 #   - podman or docker
 #   - ~50 GB free disk space (Yocto downloads + build + image)
 #   - Internet access (first build fetches ~8 GB of sources)
+#
+# Persistent caches (named volumes, survive across runs → incremental):
+#   iot-yocto-downloads   fetched source tarballs
+#   iot-yocto-sstate      shared-state cache
+# Reset them for a fully clean rebuild:
+#   podman volume rm iot-yocto-downloads iot-yocto-sstate
 
 set -euo pipefail
 
@@ -76,10 +82,18 @@ build_machine() {
     # Remove any stale container with the same name
     $CR rm -f "$container" &>/dev/null || true
 
-    # Run the build. The container stays around after exit so we can
-    # copy artifacts out.
+    # Persist the two heavy, reusable Yocto caches on named volumes so the
+    # build does NOT balloon the container's ephemeral overlay and so reruns
+    # are incremental (sstate restores most tasks instead of rebuilding):
+    #   downloads     — fetched source tarballs (arch-independent, shared)
+    #   sstate-cache  — shared state cache (hash-keyed, safe to share)
+    # The :U flag chowns the volumes to the in-container builduser (uid 1000)
+    # — without it a fresh root-owned volume is unwritable by the build user.
+    # TMPDIR stays in the overlay but is kept small by rm_work (entrypoint).
     $CR run --name "$container" \
         -e "MACHINE=$machine" \
+        -v iot-yocto-downloads:/home/builduser/yocto/build/downloads:U \
+        -v iot-yocto-sstate:/home/builduser/yocto/build/sstate-cache:U \
         "$IMAGE_NAME" \
         $TARGET
 
