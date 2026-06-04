@@ -113,7 +113,8 @@ private:
 via `Connection: keep-alive`. Closes after each request by default.
 Request bodies may be either `Content-Length`-delimited or
 `Transfer-Encoding: chunked`; chunked wins when both are present
-(RFC 7230 §3.3.3).
+(RFC 7230 §3.3.3). A POST/PUT/PATCH with neither is rejected with
+`411 Length Required` (FUP-L18-3).
 
 **Chunked decoding.** `parse_body()` dispatches to a resumable
 sub-state machine (`Chunk::{Size, Data, DataCrlf, Trailer}`) that
@@ -568,7 +569,7 @@ modules/http-server/                 # new top-level module
 | D3 | One shared `data_store::Client*`, injected via handler closures | `install_handlers()` binds it into each route; the router/session stay decoupled from the data store. The unix socket is used serially from the single reactor thread, so no pooling is needed in v1 |
 | D4 | JSON for both request and response bodies | Matches existing ds-cli/ds-server protocol; operators already know the shape |
 | D5 | Long-poll uses pull-style watch (not callback) | Simpler — handler blocks on `recv_event()`, wakes on change or timeout. No callback threading issues |
-| D6 | Body is `Content-Length`-delimited **or** `Transfer-Encoding: chunked`; absent → empty body (no `411`) | Both framings supported (chunked wins when both present, §2.1). A request with neither is parsed as a zero-length body rather than rejected — strict `411` enforcement is FUP-L18-3. Malformed request lines → `400` |
+| D6 | Body is `Content-Length`-delimited **or** `Transfer-Encoding: chunked` | Both framings supported (chunked wins when both present, §2.1). A body-bearing method (POST/PUT/PATCH) with neither header → **`411 Length Required`**; other methods (GET/…) with no length simply have no body. Malformed request lines → `400` |
 | D7 | Keep-alive opt-in per request | Default `Connection: close` reduces resource leaks from forgotten clients |
 | D8 | TLS via OpenSSL memory BIOs, not `ACE_SSL_SOCK_*`/`SSL_set_fd` | Keeps the non-blocking reactor model — ciphertext is pumped between BIOs and the socket, so the handshake never blocks the reactor thread or needs a worker |
 | D9 | mTLS = presence of `http.tls.ca` | One knob: a CA bundle both verifies clients and flips `SSL_VERIFY_FAIL_IF_NO_PEER_CERT`. Reuses the fleet's openvpn CA (`vpn.ca.path`) when a shared trust domain is wanted |
@@ -580,4 +581,4 @@ modules/http-server/                 # new top-level module
 |----|------|-------|
 | ~~FUP-L18-1~~ | **Worker pool for handlers — DONE** | Implemented as the `http.workers` thread pool (§2.8): handlers run off the reactor thread, the reactor sends via `handle_exception` after a worker `notify()`s, suspend/resume serialises one request per connection. Default 0 (inline). |
 | FUP-L18-2 | Hot-reload of `http.listen.*` / `http.tls.*` | Read once at startup today; changing ip/port or rotating the TLS cert needs a restart (§2.6). Watch the keys and rebind / reload `SSL_CTX`. |
-| FUP-L18-3 | Strict `411 Length Required` | Reject a body-bearing method that carries neither `Content-Length` nor `Transfer-Encoding: chunked`, instead of treating it as empty-body (D6). |
+| ~~FUP-L18-3~~ | **Strict `411 Length Required` — DONE** | The parser rejects POST/PUT/PATCH with neither `Content-Length` nor chunked; the session returns `411` (vs `400` for malformed). D6, §2.1. |

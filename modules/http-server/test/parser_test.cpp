@@ -278,3 +278,69 @@ TEST(Parser, Parse_chunked_bad_size_errors) {
     EXPECT_TRUE(p.error());
     EXPECT_FALSE(p.done());
 }
+
+// ─────────── 411 Length Required (FUP-L18-3) ───────────────────
+
+TEST(Parser, Post_without_length_is_411) {
+    HttpParser p;
+    Capture c;
+    c.install(p);
+
+    std::string req = "POST /x HTTP/1.1\r\nHost: y\r\n\r\n";  // no CL, no TE
+    p.feed(req.data(), req.size());
+    EXPECT_TRUE(p.error());
+    EXPECT_FALSE(p.done());
+    EXPECT_EQ(p.error_status(), 411);
+    EXPECT_FALSE(c.fired);
+}
+
+TEST(Parser, Put_without_length_is_411) {
+    HttpParser p;
+    Capture c;
+    c.install(p);
+
+    std::string req = "PUT /x HTTP/1.1\r\n\r\n";
+    p.feed(req.data(), req.size());
+    EXPECT_TRUE(p.error());
+    EXPECT_EQ(p.error_status(), 411);
+}
+
+TEST(Parser, Post_with_zero_length_is_ok) {
+    HttpParser p;
+    Capture c;
+    c.install(p);
+
+    // Explicit Content-Length: 0 is a valid empty-body POST, not 411.
+    std::string req = "POST /x HTTP/1.1\r\nContent-Length: 0\r\n\r\n";
+    p.feed(req.data(), req.size());
+    EXPECT_FALSE(p.error());
+    EXPECT_TRUE(p.done());
+    EXPECT_EQ(c.req.body, "");
+}
+
+TEST(Parser, Get_without_length_is_ok) {
+    HttpParser p;
+    Capture c;
+    c.install(p);
+
+    // GET has no body; absence of Content-Length is fine (not 411).
+    std::string req = "GET /x HTTP/1.1\r\nHost: y\r\n\r\n";
+    p.feed(req.data(), req.size());
+    EXPECT_FALSE(p.error());
+    EXPECT_TRUE(p.done());
+}
+
+TEST(Parser, Post_chunked_without_length_is_ok) {
+    HttpParser p;
+    Capture c;
+    c.install(p);
+
+    // chunked supplies the length, so no Content-Length is required.
+    std::string req =
+        "POST /x HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "3\r\nabc\r\n0\r\n\r\n";
+    p.feed(req.data(), req.size());
+    EXPECT_FALSE(p.error());
+    EXPECT_TRUE(p.done());
+    EXPECT_EQ(c.req.body, "abc");
+}

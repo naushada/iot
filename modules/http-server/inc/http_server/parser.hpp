@@ -65,6 +65,11 @@ public:
     /// The error message from the last failed parse.
     const std::string& error_msg() const { return m_error_msg; }
 
+    /// HTTP status the caller should return for the current error: 400 for
+    /// a malformed request, 411 when a body-bearing method lacks both
+    /// Content-Length and Transfer-Encoding. Valid only when error().
+    int error_status() const { return m_error_status; }
+
     /// Take the handler's response string. Valid only when done().
     std::string take_response() { return std::move(m_response); }
 
@@ -83,11 +88,13 @@ private:
 
     State       m_state = State::MethodLine;
     bool        m_error = false;
+    int         m_error_status = 400;             // 400 default, 411 on length-required
     std::string m_error_msg;
     Request     m_req;
     Handler     m_handler;
     std::string m_response;      // captured from handler
     std::string m_buf;           // rolling buffer
+    bool        m_has_content_length = false;      // Content-Length header seen
     std::size_t m_content_length = 0;
     std::size_t m_body_read      = 0;
 

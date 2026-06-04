@@ -143,12 +143,27 @@ bool HttpParser::parse_headers() {
                     return true;
                 }
             }
-            if (m_content_length > 0) {
-                m_state = State::Body;
-            } else {
-                m_state = State::Done;
-                fire_handler();
+            if (m_has_content_length) {
+                if (m_content_length > 0) {
+                    m_state = State::Body;
+                } else {
+                    m_state = State::Done;   // explicit empty body
+                    fire_handler();
+                }
+                return true;
             }
+            // Neither Content-Length nor chunked. A body-bearing method
+            // must declare a length (RFC 7230 §3.3.3) → 411. Other methods
+            // simply have no body.
+            if (m_req.method == "POST" || m_req.method == "PUT" ||
+                m_req.method == "PATCH") {
+                m_error = true;
+                m_error_status = 411;
+                m_error_msg = "Content-Length required";
+                return false;
+            }
+            m_state = State::Done;
+            fire_handler();
             return true;
         }
 
@@ -164,6 +179,7 @@ bool HttpParser::parse_headers() {
         m_req.headers[name] = value;
 
         if (name == "content-length") {
+            m_has_content_length = true;
             m_content_length = static_cast<std::size_t>(
                 std::strtoul(value.c_str(), nullptr, 10));
         }
@@ -299,10 +315,12 @@ void HttpParser::fire_handler() {
 void HttpParser::reset() {
     m_state = State::MethodLine;
     m_error = false;
+    m_error_status = 400;
     m_error_msg.clear();
     m_req = Request{};
     m_response.clear();
     // Keep any leftover bytes in m_buf for the next request.
+    m_has_content_length = false;
     m_content_length = 0;
     m_body_read = 0;
     m_chunked = false;

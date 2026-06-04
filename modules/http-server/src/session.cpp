@@ -68,9 +68,12 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
         ACE_DEBUG((LM_WARNING,
                    ACE_TEXT("%D [http:%t] %M %N:%l parse error: %C\n"),
                    m_parser.error_msg().c_str()));
-        const char* bad = "HTTP/1.1 400 Bad Request\r\n"
-                          "Content-Length: 0\r\n"
-                          "Connection: close\r\n\r\n";
+        const char* bad =
+            (m_parser.error_status() == 411)
+                ? "HTTP/1.1 411 Length Required\r\n"
+                  "Content-Length: 0\r\nConnection: close\r\n\r\n"
+                : "HTTP/1.1 400 Bad Request\r\n"
+                  "Content-Length: 0\r\nConnection: close\r\n\r\n";
         send_bytes(bad, std::strlen(bad));
         return -1;
     }
