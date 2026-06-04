@@ -10,12 +10,14 @@ LICENSE = "CLOSED"
 SECTION = "net"
 
 # ── Fetch ──────────────────────────────────────────────────────────
-# gitsm:// fetches the repo with its two git submodules:
-#   apps/3rdparty/json      → nlohmann/json (header-only)
-#   apps/3rdparty/tinydtls  → legatoproject/tinydtls (headers only —
-#                             the .a comes from the tinydtls recipe)
+# Plain git:// (NOT gitsm://): apps/3rdparty/{json,tinydtls} are committed
+# into the repo as plain trees, not live submodule gitlinks (.gitmodules is
+# stale). gitsm mistakes the tree hash for a submodule commit and fails to
+# fetch it from nlohmann/json. git:// fetches the committed files directly:
+#   apps/3rdparty/json/single_include  → nlohmann/json (used by the build)
+#   tinydtls headers + .a come from the separate tinydtls recipe (sysroot).
 SRC_URI = "\
-    gitsm://github.com/naushada/iot.git;protocol=https;branch=main \
+    git://github.com/naushada/iot.git;protocol=https;branch=main \
     file://0001-cmake-use-yocto-sysroot-paths.patch \
     file://iot-ds.service \
     file://iot-lwm2m-client.service \
