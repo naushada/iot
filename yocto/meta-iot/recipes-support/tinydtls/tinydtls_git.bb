@@ -22,12 +22,15 @@ SRC_URI = "git://github.com/legatoproject/tinydtls.git;protocol=https;branch=mas
 SRCREV = "9ae4f917d7687df71d521803446b8a4e9e41f59d"
 
 S = "${WORKDIR}/git"
-# tinydtls only supports an in-tree build (its Makefile.in has no VPATH
-# handling); build where configure generates the Makefile, not the default
-# separate ${WORKDIR}/build, else do_compile finds "no makefile".
-B = "${S}"
 
 inherit autotools
+
+# tinydtls only supports an in-tree build (its Makefile.in has no VPATH
+# handling); build where configure generates the Makefile. This MUST come
+# after `inherit autotools` — the class sets B = ${WORKDIR}/build, and
+# setting B before the inherit gets overridden by it (do_compile then runs
+# make in the empty build dir → "no makefile found").
+B = "${S}"
 
 # Full override of the autotools do_configure (which runs autoreconf):
 # tinydtls is autoconf-only (Makefile.in, no Makefile.am). Under autoreconf
