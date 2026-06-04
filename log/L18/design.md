@@ -43,7 +43,7 @@
 ```
 
 > **v1 note.** Handlers run **inline on the single reactor thread** — there
-> is no ACE_Task worker pool yet (it is FUP). One consequence: a long-poll
+> is no ACE_Task worker pool yet (FUP-L18-1). One consequence: a long-poll
 > handler blocks the reactor for the duration of its wait. See §2.5 and D1.
 
 ## 2. Components
@@ -110,8 +110,17 @@ private:
 
 **Conformance:** HTTP/1.1 only. Persistent connections (keep-alive)
 via `Connection: keep-alive`. Closes after each request by default.
-Chunked transfer encoding is NOT supported in v1 — all requests
-must carry `Content-Length`.
+Request bodies may be either `Content-Length`-delimited or
+`Transfer-Encoding: chunked`; chunked wins when both are present
+(RFC 7230 §3.3.3).
+
+**Chunked decoding.** `parse_body()` dispatches to a resumable
+sub-state machine (`Chunk::{Size, Data, DataCrlf, Trailer}`) that
+dechunks into `m_req.body` as bytes arrive — so a body split across many
+`feed()` calls works byte-for-byte. Chunk extensions (`size;ext`) and
+trailer headers are accepted and ignored. A non-hex size errors out; the
+decoded body is capped at 8 MiB (`kMaxBody`, also applied to the
+`Content-Length` path) so an endless chunk stream can't exhaust memory.
 
 ### 2.2 HttpSession (ACE_Svc_Handler)
 
@@ -224,7 +233,7 @@ h.body = resp.dump();
 > **v1 caveat.** `recv_event` blocks the **reactor thread** (handlers run
 > inline — D1), so an in-flight long-poll stalls all other connections
 > until it returns or times out. Moving handlers onto an ACE_Task pool is
-> FUP; until then, keep `timeout` small or run long-poll clients against a
+> FUP-L18-1; until then, keep `timeout` small or run long-poll clients against a
 > dedicated instance.
 
 ### 2.5 Main loop (hand-rolled accept + ACE_Reactor)
@@ -264,7 +273,7 @@ handle_events():
 ```
 
 A worker pool (ACE_Task) to lift blocking/long-poll handlers off the
-reactor is **FUP** (see D1).
+reactor is **FUP-L18-1** (see D1 and §7).
 
 ### 2.6 Configuration
 
@@ -294,7 +303,7 @@ iot-httpd \
 
 The server reads `http.listen.{ip,port,scheme}` and `http.tls.{cert,key,ca}`
 at startup via `data_store::Client::get()`. If the keys are unset, schema
-defaults apply. Hot-reload of listen/TLS params is FUP — changing
+defaults apply. Hot-reload of listen/TLS params is FUP-L18-2 — changing
 ip/port/cert requires a restart in v1.
 
 ### 2.7 TLS termination (https + mTLS)
@@ -489,12 +498,9 @@ modules/http-server/                 # new top-level module
 ## 5. Non-goals (v1)
 
 - WebSocket upgrade
-- Chunked transfer encoding
 - HTTP/2
 - Application-level authn/authz (transport client auth is available via
   mTLS — §2.7; per-key authorization still reuses the L17c ds-server ACL)
-- ACE_Task worker pool / async handlers (handlers run inline — D1)
-- Strict `411 Length Required` enforcement (D6)
 - Rate limiting (reuses L17d ds-server rate-limit)
 - Static file serving
 - Request logging to file (ACE_DEBUG to stderr is sufficient for v1)
@@ -504,13 +510,21 @@ modules/http-server/                 # new top-level module
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
-| D1 | v1: handlers run **inline on the reactor thread**; ACE_Task pool is FUP | Simplest correct thing first. Trade-off: a long-poll handler blocks the reactor for its wait (§2.4). Lifting handlers onto a pool is the first scaling step |
+| D1 | v1: handlers run **inline on the reactor thread**; ACE_Task pool is FUP-L18-1 | Simplest correct thing first. Trade-off: a long-poll handler blocks the reactor for its wait (§2.4). Lifting handlers onto a pool is the first scaling step |
 | D2 | HttpParser is push-based (no pull/peek) | Matches reactor pattern — bytes arrive asynchronously, parser consumes what it can |
 | D3 | One shared `data_store::Client*`, injected via handler closures | `install_handlers()` binds it into each route; the router/session stay decoupled from the data store. The unix socket is used serially from the single reactor thread, so no pooling is needed in v1 |
 | D4 | JSON for both request and response bodies | Matches existing ds-cli/ds-server protocol; operators already know the shape |
 | D5 | Long-poll uses pull-style watch (not callback) | Simpler — handler blocks on `recv_event()`, wakes on change or timeout. No callback threading issues |
-| D6 | Body is `Content-Length`-delimited; absent → empty body (no `411`) | Chunked TE unsupported; a request without `Content-Length` is parsed as a zero-length body rather than rejected. Strict `411`/length enforcement is FUP. Malformed request lines → `400` |
+| D6 | Body is `Content-Length`-delimited **or** `Transfer-Encoding: chunked`; absent → empty body (no `411`) | Both framings supported (chunked wins when both present, §2.1). A request with neither is parsed as a zero-length body rather than rejected — strict `411` enforcement is FUP-L18-3. Malformed request lines → `400` |
 | D7 | Keep-alive opt-in per request | Default `Connection: close` reduces resource leaks from forgotten clients |
 | D8 | TLS via OpenSSL memory BIOs, not `ACE_SSL_SOCK_*`/`SSL_set_fd` | Keeps the non-blocking reactor model — ciphertext is pumped between BIOs and the socket, so the handshake never blocks the reactor thread or needs a worker |
 | D9 | mTLS = presence of `http.tls.ca` | One knob: a CA bundle both verifies clients and flips `SSL_VERIFY_FAIL_IF_NO_PEER_CERT`. Reuses the fleet's openvpn CA (`vpn.ca.path`) when a shared trust domain is wanted |
 | D10 | Native TLS termination supersedes "reverse proxy only" | TLS 1.2 floor + no-renegotiation; a proxy is still valid (leave scheme `http`) but no longer required |
+
+## 7. Follow-up items (FUP)
+
+| ID | Item | Notes |
+|----|------|-------|
+| **FUP-L18-1** | **ACE_Task worker pool for handlers** | Lift handler execution — especially the blocking long-poll `recv_event()` — off the single reactor thread so one slow/long-poll request can't stall other connections (D1, §2.4, §2.5). The session's `peer().send()` is already `ACE_MT_SYNCH`, so responding from a worker thread is safe; the pool just needs to enqueue `(session, Request)` and post the response back. First scaling step for iot-httpd. |
+| FUP-L18-2 | Hot-reload of `http.listen.*` / `http.tls.*` | Read once at startup today; changing ip/port or rotating the TLS cert needs a restart (§2.6). Watch the keys and rebind / reload `SSL_CTX`. |
+| FUP-L18-3 | Strict `411 Length Required` | Reject a body-bearing method that carries neither `Content-Length` nor `Transfer-Encoding: chunked`, instead of treating it as empty-body (D6). |

@@ -5,7 +5,8 @@
 ///
 /// Push-based, callback-driven. No external dependencies — pure
 /// C++17 with std::string. Following RFC 7230 minimal subset:
-/// method-line, headers, Content-Length-delimited body.
+/// method-line, headers, and either a Content-Length-delimited or
+/// Transfer-Encoding: chunked body.
 ///
 /// Usage:
 ///   HttpParser p;
@@ -77,6 +78,9 @@ public:
 private:
     enum class State { MethodLine, Headers, Body, Done };
 
+    // Sub-state for Transfer-Encoding: chunked bodies (RFC 7230 §4.1).
+    enum class Chunk { Size, Data, DataCrlf, Trailer };
+
     State       m_state = State::MethodLine;
     bool        m_error = false;
     std::string m_error_msg;
@@ -87,11 +91,16 @@ private:
     std::size_t m_content_length = 0;
     std::size_t m_body_read      = 0;
 
+    bool        m_chunked        = false;          // Transfer-Encoding: chunked
+    Chunk       m_chunk_state    = Chunk::Size;
+    std::size_t m_chunk_remaining = 0;             // bytes left in current chunk
+
     // Parse helpers — each consumes from m_buf, returns true when
     // that stage is complete.
     bool parse_method_line();
     bool parse_headers();
     bool parse_body();
+    bool parse_chunked();        // dechunk into m_req.body, resumable
 
     /// Fire the handler (if set) and capture the response.
     void fire_handler();

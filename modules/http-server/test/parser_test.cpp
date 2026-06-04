@@ -194,3 +194,87 @@ TEST(Parser, Parse_reset_for_next_request) {
     EXPECT_EQ("/second", c.req.path);
     EXPECT_EQ("world", c.req.body);
 }
+
+// ─────────── Transfer-Encoding: chunked ────────────────────────
+
+TEST(Parser, Parse_chunked_body) {
+    HttpParser p;
+    Capture c;
+    c.install(p);
+
+    std::string req =
+        "POST /api/v1/db/set HTTP/1.1\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "\r\n"
+        "4\r\nWiki\r\n"
+        "5\r\npedia\r\n"
+        "0\r\n\r\n";
+    p.feed(req.data(), req.size());
+    ASSERT_TRUE(p.done());
+    EXPECT_EQ("POST", c.req.method);
+    EXPECT_EQ("Wikipedia", c.req.body);   // dechunked
+}
+
+TEST(Parser, Parse_chunked_incremental) {
+    HttpParser p;
+    Capture c;
+    c.install(p);
+
+    // Same body fed one byte at a time — exercises resumability across
+    // every sub-state boundary (size line, data, CRLF, trailer).
+    std::string req =
+        "POST /x HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "3\r\nabc\r\n"
+        "2\r\nde\r\n"
+        "0\r\n\r\n";
+    for (std::size_t i = 0; i < req.size() && !p.done(); ++i) {
+        p.feed(req.data() + i, 1);
+    }
+    ASSERT_TRUE(p.done());
+    EXPECT_EQ("abcde", c.req.body);
+}
+
+TEST(Parser, Parse_chunked_with_extension_and_trailer) {
+    HttpParser p;
+    Capture c;
+    c.install(p);
+
+    std::string req =
+        "POST /x HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "4;name=value\r\nWiki\r\n"   // chunk extension is ignored
+        "0\r\n"
+        "X-Checksum: deadbeef\r\n"   // trailer header accepted + ignored
+        "\r\n";
+    p.feed(req.data(), req.size());
+    ASSERT_TRUE(p.done());
+    EXPECT_EQ("Wiki", c.req.body);
+}
+
+TEST(Parser, Parse_chunked_takes_precedence_over_content_length) {
+    HttpParser p;
+    Capture c;
+    c.install(p);
+
+    // RFC 7230 §3.3.3: when both are present, chunked wins, CL ignored.
+    std::string req =
+        "POST /x HTTP/1.1\r\n"
+        "Content-Length: 999\r\n"
+        "Transfer-Encoding: chunked\r\n\r\n"
+        "5\r\nhello\r\n0\r\n\r\n";
+    p.feed(req.data(), req.size());
+    ASSERT_TRUE(p.done());
+    EXPECT_EQ("hello", c.req.body);
+}
+
+TEST(Parser, Parse_chunked_bad_size_errors) {
+    HttpParser p;
+    Capture c;
+    c.install(p);
+
+    std::string req =
+        "POST /x HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "zz\r\n";   // not a hex chunk size
+    p.feed(req.data(), req.size());
+    EXPECT_TRUE(p.error());
+    EXPECT_FALSE(p.done());
+}

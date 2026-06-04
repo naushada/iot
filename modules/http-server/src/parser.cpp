@@ -163,7 +163,19 @@ bool HttpParser::parse_headers() {
 
         trim(line);
         if (line.empty()) {
-            // Empty line = end of headers
+            // Empty line = end of headers. Transfer-Encoding: chunked takes
+            // precedence over Content-Length (RFC 7230 §3.3.3).
+            auto te = m_req.headers.find("transfer-encoding");
+            if (te != m_req.headers.end()) {
+                std::string v = te->second;
+                lower(v);
+                if (v.find("chunked") != std::string::npos) {
+                    m_chunked = true;
+                    m_chunk_state = Chunk::Size;
+                    m_state = State::Body;
+                    return true;
+                }
+            }
             if (m_content_length > 0) {
                 m_state = State::Body;
             } else {
@@ -191,9 +203,20 @@ bool HttpParser::parse_headers() {
     }
 }
 
+// Cap the decoded body so a hostile/endless chunk stream can't exhaust
+// memory. Applies to both framings.
+static constexpr std::size_t kMaxBody = 8u * 1024 * 1024;  // 8 MiB
+
 bool HttpParser::parse_body() {
+    if (m_chunked) return parse_chunked();
+
     std::size_t remaining = m_content_length - m_body_read;
     std::size_t take = std::min(remaining, m_buf.size());
+    if (m_req.body.size() + take > kMaxBody) {
+        m_error = true;
+        m_error_msg = "body exceeds limit";
+        return false;
+    }
     m_req.body.append(m_buf.data(), take);
     m_body_read += take;
     m_buf.erase(0, take);
@@ -204,6 +227,100 @@ bool HttpParser::parse_body() {
         return true;
     }
     return false;  // need more data
+}
+
+// Dechunk into m_req.body. Resumable across feed() calls: m_chunk_state +
+// m_chunk_remaining persist between partial reads. Returns true if it made
+// progress (consumed bytes or reached Done); false when it needs more data.
+bool HttpParser::parse_chunked() {
+    bool advanced = false;
+    for (;;) {
+        switch (m_chunk_state) {
+        case Chunk::Size: {
+            auto crlf = m_buf.find("\r\n");
+            if (crlf == std::string::npos) {
+                crlf = m_buf.find('\n');
+                if (crlf == std::string::npos) return advanced;  // need more
+            }
+            std::string line = m_buf.substr(0, crlf);
+            std::size_t skip = crlf + (m_buf[crlf] == '\r' ? 2 : 1);
+            m_buf.erase(0, skip);
+            advanced = true;
+
+            // chunk-size [ ";" chunk-ext ] — keep only the hex size.
+            auto semi = line.find(';');
+            std::string hex = (semi == std::string::npos) ? line
+                                                          : line.substr(0, semi);
+            trim(hex);
+            char* end = nullptr;
+            unsigned long sz = std::strtoul(hex.c_str(), &end, 16);
+            if (hex.empty() || end == hex.c_str()) {
+                m_error = true;
+                m_error_msg = "chunked: bad chunk size";
+                return advanced;
+            }
+            if (sz == 0) {
+                m_chunk_state = Chunk::Trailer;       // last-chunk
+            } else {
+                if (m_req.body.size() + sz > kMaxBody) {
+                    m_error = true;
+                    m_error_msg = "chunked: body exceeds limit";
+                    return advanced;
+                }
+                m_chunk_remaining = sz;
+                m_chunk_state = Chunk::Data;
+            }
+            break;
+        }
+        case Chunk::Data: {
+            std::size_t take = std::min(m_chunk_remaining, m_buf.size());
+            m_req.body.append(m_buf.data(), take);
+            m_buf.erase(0, take);
+            m_chunk_remaining -= take;
+            if (take) advanced = true;
+            if (m_chunk_remaining > 0) return advanced;  // need more
+            m_chunk_state = Chunk::DataCrlf;
+            break;
+        }
+        case Chunk::DataCrlf: {
+            // The CRLF that terminates a chunk's data.
+            if (m_buf.empty()) return advanced;
+            if (m_buf[0] == '\r') {
+                if (m_buf.size() < 2) return advanced;   // wait for the \n
+                m_buf.erase(0, 2);
+            } else if (m_buf[0] == '\n') {
+                m_buf.erase(0, 1);
+            } else {
+                m_error = true;
+                m_error_msg = "chunked: missing CRLF after chunk data";
+                return advanced;
+            }
+            advanced = true;
+            m_chunk_state = Chunk::Size;
+            break;
+        }
+        case Chunk::Trailer: {
+            // Optional trailer headers, then a blank line ends the message.
+            auto crlf = m_buf.find("\r\n");
+            if (crlf == std::string::npos) {
+                crlf = m_buf.find('\n');
+                if (crlf == std::string::npos) return advanced;
+            }
+            std::string line = m_buf.substr(0, crlf);
+            std::size_t skip = crlf + (m_buf[crlf] == '\r' ? 2 : 1);
+            m_buf.erase(0, skip);
+            advanced = true;
+            trim(line);
+            if (line.empty()) {
+                m_state = State::Done;
+                fire_handler();
+                return advanced;
+            }
+            // Trailer header lines are accepted but ignored in v1.
+            break;
+        }
+        }
+    }
 }
 
 void HttpParser::fire_handler() {
@@ -221,6 +338,9 @@ void HttpParser::reset() {
     // Keep any leftover bytes in m_buf for the next request.
     m_content_length = 0;
     m_body_read = 0;
+    m_chunked = false;
+    m_chunk_state = Chunk::Size;
+    m_chunk_remaining = 0;
 }
 
 std::map<std::string, std::string> HttpParser::parse_query(
