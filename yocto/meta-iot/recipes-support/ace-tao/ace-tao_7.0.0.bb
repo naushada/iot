@@ -43,10 +43,16 @@ EXTRA_OEMAKE = "\
     RANLIB='${RANLIB}' \
     CFLAGS='${CFLAGS}' \
     CXXFLAGS='${CXXFLAGS}' \
-    LDFLAGS='${LDFLAGS}' \
+    LDFLAGS='${LDFLAGS} -L${S}/lib' \
     debug=0 \
     optimize=0 \
 "
+# ACE's wrapper_macros.GNU does `LDFLAGS += -L$(INSLIB)` (INSLIB =
+# $(ACE_ROOT)/lib) so its sub-libraries (ACE_Compression, ACE_ETCL, …) can
+# find the freshly-built libACE. Passing LDFLAGS on the make command line
+# (above) overrides that append (a command-line var can't be appended to in
+# the makefile), so we add -L${S}/lib ourselves — without it the sub-libs
+# fail to link with "cannot find -lACE".
 
 do_configure() {
     # ACE bootstraps its build by reading ace/config.h and
