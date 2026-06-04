@@ -78,26 +78,29 @@ do_compile() {
 # directly from the build tree instead. (do_compile builds libs into
 # ${S}/lib and ACE's headers live under ${S}/ace.)
 do_install() {
+    # Use `cp -dR` (preserve symlinks, recurse) NOT `cp -a`: -a also
+    # preserves the build user's uid/gid (1000), which under pseudo records
+    # non-root ownership and makes do_package fail with "getpwuid(): uid not
+    # found: 1000 ... host contamination". -dR creates the copies as the
+    # pseudo-root user, so they're root-owned to begin with.
     install -d ${D}${libdir}
     # Versioned shared libs + their .so / .so.MAJOR symlinks.
-    cp -a ${S}/lib/libACE.so*     ${D}${libdir}/
-    cp -a ${S}/lib/libACE_SSL.so* ${D}${libdir}/
+    cp -dR ${S}/lib/libACE.so*     ${D}${libdir}/
+    cp -dR ${S}/lib/libACE_SSL.so* ${D}${libdir}/
 
     # Public headers: the ace/ tree (*.h, *.inl, and the template *.cpp
     # files that headers #include), minus build artifacts. ACE_SSL headers
     # live under ace/SSL/.
     install -d ${D}${includedir}/ace
-    cp -a ${S}/ace/. ${D}${includedir}/ace/
+    cp -dR ${S}/ace/. ${D}${includedir}/ace/
     find ${D}${includedir}/ace -depth -type d \
         \( -name '.shobj' -o -name '.obj' \) -exec rm -rf {} +
     find ${D}${includedir}/ace -type f \
         \( -name '*.o' -o -name '*.a' -o -name '*.so' -o -name '*.so.*' \
            -o -name 'GNUmakefile*' \) -delete
 
-    # `cp -a` preserves the build user's uid/gid (1000); under pseudo that
-    # records non-root ownership and do_package fails with
-    # "getpwuid(): uid not found: 1000 ... host contamination". Reset to
-    # root (-h reowns the .so symlinks too).
+    # Belt-and-suspenders: force root ownership regardless (-h reowns the
+    # .so symlinks too).
     chown -hR root:root ${D}${libdir} ${D}${includedir}/ace
 }
 
