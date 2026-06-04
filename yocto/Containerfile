@@ -44,6 +44,12 @@ RUN useradd -m -u 1000 -s /bin/bash builduser && \
 USER builduser
 WORKDIR /home/builduser/yocto
 
+# Pre-create the build dir owned by builduser. build.sh mounts named
+# volumes at build/downloads + build/sstate-cache; if build/ doesn't
+# already exist, podman auto-creates that parent as root and
+# oe-init-build-env (run as builduser) then can't write build/conf.
+RUN mkdir -p /home/builduser/yocto/build
+
 # ── Clone Yocto layers ─────────────────────────────────────────────
 # Baked into the image so they don't need fetching at run time.
 ARG POKY_BRANCH=scarthgap
