@@ -1,7 +1,7 @@
 # L18 Design — HTTP REST API for the data store
 
-> ACE-backed HTTP/1.1 server with in-house parser, Active Object
-> worker pool, and long-poll support. Mirror of the xpmile
+> ACE-backed HTTP/1.1 server with in-house parser, long-poll support,
+> and optional native TLS / mutual-TLS termination. Mirror of the xpmile
 > UniService pattern applied to the iot data store.
 
 ## 1. Architecture
@@ -260,21 +260,85 @@ startup via the `http.*` schema (shipped alongside `iot.lua`,
 ```lua
 -- http.listen.ip     = "0.0.0.0"   (default: all interfaces)
 -- http.listen.port   = 8080        (default, 1..65535)
--- http.listen.scheme = "http"      (v1 only; "https" reserved)
+-- http.listen.scheme = "http"      ("http" | "https")
+-- http.tls.cert      = ""          (PEM cert chain; required for https)
+-- http.tls.key       = ""          (PEM private key; required for https)
+-- http.tls.ca        = ""          (PEM CA bundle; non-empty → mTLS)
 ```
 
-CLI overrides (for development / smoke):
+CLI overrides (for development / smoke; CLI wins over the data store):
 
 ```sh
 iot-httpd \
     ds-socket=/var/run/iot/data_store.sock \
-    worker-threads=4
+    http-scheme=https \
+    http-cert=/etc/iot/tls/server.crt \
+    http-key=/etc/iot/tls/server.key \
+    http-ca=/etc/iot/tls/clients-ca.crt   # optional → mTLS
 ```
 
-The server reads `http.listen.{ip,port,scheme}` at startup via
-`data_store::Client::get()`. If the keys are unset, schema
-defaults apply. Hot-reload of listen params is FUP — changing
-ip/port requires a restart in v1.
+The server reads `http.listen.{ip,port,scheme}` and `http.tls.{cert,key,ca}`
+at startup via `data_store::Client::get()`. If the keys are unset, schema
+defaults apply. Hot-reload of listen/TLS params is FUP — changing
+ip/port/cert requires a restart in v1.
+
+### 2.7 TLS termination (https + mTLS)
+
+With `http.listen.scheme = "https"`, `iot-httpd` terminates TLS itself —
+no reverse proxy required (one can still front it; leave the scheme
+`http`). The design mirrors the xpmile inner-TLS pattern: an OpenSSL `SSL`
+object driven through a pair of **memory BIOs** rather than `SSL_set_fd`.
+The session shuttles ciphertext between the BIOs and the existing
+`ACE_SOCK_Stream`, so OpenSSL never performs socket I/O and never blocks
+the reactor thread — the handshake advances incrementally as bytes
+arrive, exactly like the plaintext path. No `ACE_SSL_SOCK_*`, no blocking
+`SSL_accept`, no extra threads.
+
+```
+   socket (ciphertext)                         OpenSSL                app
+   ──────────────────                          ───────                ───
+   peer().recv() ───▶ feed_ciphertext() ─▶ [ rbio ] ─▶ SSL ─▶ read_plaintext() ─▶ parser
+   peer().send_n() ◀── drain_outgoing() ◀─ [ wbio ] ◀─ SSL ◀─ write_plaintext() ◀─ response
+```
+
+**Two classes (`tls.hpp`/`tls.cpp`):**
+
+```cpp
+// Process-wide; one SSL_CTX shared by every connection.
+class TlsContext {
+    bool load_server(cert_path, key_path, ca_path = "");  // TLS 1.2 floor
+    bool mtls() const;            // true when a CA was supplied
+};
+
+// Per-connection engine over two memory BIOs.
+class TlsConn {
+    void        feed_ciphertext(data, len);   // socket  → rbio
+    int         handshake();                  // 1 done / 0 again / -1 fail
+    int         read_plaintext(out);          // SSL_read loop
+    int         write_plaintext(data, len);   // SSL_write → wbio
+    std::size_t drain_outgoing(out);          // wbio    → socket
+};
+```
+
+**`HttpSession::handle_input()` gains an optional TLS leg** (the plaintext
+path is unchanged when `m_tls == nullptr`):
+
+1. `recv()` bytes — ciphertext on https.
+2. `feed_ciphertext()`; if the handshake isn't done, `handshake()` and
+   flush `drain_outgoing()` to the peer; return early until it completes.
+3. `read_plaintext()` → the decrypted request bytes → `parser.feed()`.
+4. Response goes back through `write_plaintext()` + `drain_outgoing()`
+   (unified behind `send_bytes()`, which is a straight `send_n()` on
+   plain HTTP).
+
+**Mutual-TLS.** A non-empty `http.tls.ca` switches `SSL_CTX_set_verify`
+to `SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT`: clients must
+present a certificate that chains to that CA, else the handshake is
+rejected. The CA can be the iot fleet's existing openvpn CA
+(`vpn.ca.path`, e.g. `/etc/iot/vpn/ca.crt`) for a single shared trust
+domain, or a dedicated bundle to keep the VPN and HTTP identity sets
+distinct. Hardening: TLS 1.2 floor (`SSL_CTX_set_min_proto_version`) and
+`SSL_OP_NO_RENEGOTIATION`.
 
 ## 3. REST API
 
@@ -389,24 +453,26 @@ modules/http-server/                 # new top-level module
 │       ├── parser.hpp               # HttpParser
 │       ├── session.hpp              # HttpSession (ACE_Svc_Handler)
 │       ├── router.hpp               # Router
-│       └── handler.hpp              # HttpResponse + handler fns
+│       ├── handler.hpp              # HttpResponse + handler fns
+│       └── tls.hpp                  # TlsContext + TlsConn (https/mTLS)
 ├── src/
 │   ├── main.cpp                     # entry point + acceptor + reactor
 │   ├── parser.cpp
 │   ├── session.cpp
 │   ├── router.cpp
-│   └── handler.cpp                  # /api/v1/db/* handlers
+│   ├── handler.cpp                  # /api/v1/db/* handlers
+│   └── tls.cpp                      # OpenSSL memory-BIO TLS engine
 ├── test/
 │   ├── parser_test.cpp              # HttpParser unit tests
 │   ├── router_test.cpp              # Router dispatch tests
-│   ├── handler_test.cpp             # API handler tests
-│   └── integration_test.cpp         # end-to-end with ds-server
-└── schemas/                         # (empty — uses data-store schemas)
+│   ├── handler_test.cpp             # API handler tests (needs ds-server)
+│   └── tls_test.cpp                 # handshake + echo + mTLS (OpenSSL-only)
+└── schemas/
+    └── http.lua                     # http.listen.* + http.tls.* schema
 ```
 
 ## 5. Non-goals (v1)
 
-- TLS (HTTPS) — use a reverse proxy (nginx/haproxy) for TLS termination
 - WebSocket upgrade
 - Chunked transfer encoding
 - HTTP/2
@@ -427,3 +493,6 @@ modules/http-server/                 # new top-level module
 | D5 | Long-poll uses pull-style watch (not callback) | Simpler — handler blocks on `recv_event()`, wakes on change or timeout. No callback threading issues |
 | D6 | No `Content-Length` → `411 Length Required` | Chunked TE not supported in v1; strict enforcement avoids parser ambiguity |
 | D7 | Keep-alive opt-in per request | Default `Connection: close` reduces resource leaks from forgotten clients |
+| D8 | TLS via OpenSSL memory BIOs, not `ACE_SSL_SOCK_*`/`SSL_set_fd` | Keeps the non-blocking reactor model — ciphertext is pumped between BIOs and the socket, so the handshake never blocks the reactor thread or needs a worker |
+| D9 | mTLS = presence of `http.tls.ca` | One knob: a CA bundle both verifies clients and flips `SSL_VERIFY_FAIL_IF_NO_PEER_CERT`. Reuses the fleet's openvpn CA (`vpn.ca.path`) when a shared trust domain is wanted |
+| D10 | Native TLS termination supersedes "reverse proxy only" | TLS 1.2 floor + no-renegotiation; a proxy is still valid (leave scheme `http`) but no longer required |
