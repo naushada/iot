@@ -174,6 +174,21 @@ The script builds the container image (`iot-yocto-builder`, defined by
 `yocto/Containerfile`), runs `bitbake iot-image`, and copies the output
 to `yocto/build/<machine>/` (`images/<machine>/*.wic.bz2` + `ipk/`).
 
+The **first** build compiles the whole distribution (toolchain, glibc,
+ACE, kernel…) — hours. Reruns are incremental via the persistent
+`iot-yocto-sstate` / `iot-yocto-downloads` volumes (only `meta-iot`
+recompiles). To skip the distro compile on another machine / CI, publish a
+cache image once and consume it elsewhere:
+
+```sh
+podman login docker.io
+CACHE_IMAGE=docker.io/<you>/iot-yocto-builder:cache ./build.sh publish        # after a full build
+CACHE_IMAGE=docker.io/<you>/iot-yocto-builder:cache IOT_USE_CACHE=1 ./build.sh # elsewhere → only meta-iot rebuilds
+```
+
+See [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md) for the full
+build-steps walkthrough.
+
 ### 2. Flash the SD card
 
 Find the SD device first (`/dev/sdX` on Linux, `/dev/diskN` on macOS),

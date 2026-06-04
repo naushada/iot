@@ -5,27 +5,55 @@ stack and all its third-party dependencies. Seven daemons are delivered as
 separate installable packages so embedded images pull only what they need,
 plus a full bootable `iot-image` distribution.
 
-## Quick-start (containerised build — no host Yocto install)
+## Build steps
+
+No host Yocto install — everything runs in a container. The host needs
+only **podman** (or **docker**), ~50 GB free disk, and internet for the
+first source fetch. All commands run from the `yocto/` directory.
+
+**1. Build the image.**
 
 ```sh
 cd yocto
-./build.sh                       # raspberrypi3-64 image, default
-MACHINE=qemuarm64 ./build.sh     # ARM64 qemu
-TARGET=packagegroup-iot ./build.sh   # just the .ipk feed, no image
+./build.sh                           # raspberrypi3-64 iot-image (default)
+# MACHINE=qemuarm64 ./build.sh       # a different machine
+# TARGET=packagegroup-iot ./build.sh # just the .ipk feed, no full image
+# ./build.sh all                     # every machine in build.sh
 ```
 
-`build.sh` builds the entire Yocto stack inside a container defined by
-`Containerfile` (Ubuntu 22.04 + poky + meta-openembedded + meta-raspberrypi,
-all at the Scarthgap 5.0 LTS branch). The host needs only **podman** or
-**docker**. Per-machine output lands in `yocto/build/<machine>/`:
+`build.sh` builds the `iot-yocto-builder` container (Ubuntu 22.04 + poky +
+meta-openembedded + meta-raspberrypi, all at Scarthgap 5.0 LTS), runs
+`bitbake` inside it, and copies the artifacts back to the host. The **first**
+run compiles the whole distribution (toolchain, glibc, ACE, kernel…) — hours.
+
+**2. Collect the output** — per machine, under `yocto/build/<machine>/`:
 
 - `images/<machine>/iot-image-*.wic.bz2` — flashable SD-card image
 - `ipk/` — the `.ipk` feed for `opkg install` over ssh
 
-The first build compiles the whole distribution (toolchain, glibc, ACE,
-kernel…) — hours. After that the persistent `iot-yocto-sstate` /
-`iot-yocto-downloads` volumes make reruns **incremental**: only changed
-`meta-iot` recipes recompile.
+The persistent `iot-yocto-sstate` / `iot-yocto-downloads` volumes make
+**reruns incremental** — after the first build, only changed `meta-iot`
+recipes recompile (minutes).
+
+**3. (Optional) Publish a cache image** so other machines skip the distro
+compile — see *Shareable cache image* below:
+
+```sh
+podman login docker.io
+CACHE_IMAGE=docker.io/<you>/iot-yocto-builder:cache ./build.sh publish
+```
+
+**4. (Optional) Build elsewhere from the cache** — pulls the image and
+recompiles only `meta-iot`:
+
+```sh
+CACHE_IMAGE=docker.io/<you>/iot-yocto-builder:cache IOT_USE_CACHE=1 ./build.sh
+```
+
+**5. Flash + deploy** to the Pi — see *Deploy to a Raspberry Pi 3B* below.
+
+Reset for a fully clean rebuild: `podman volume rm iot-yocto-sstate
+iot-yocto-downloads`.
 
 ### Shareable cache image (skip the distro compile on a fresh machine)
 
