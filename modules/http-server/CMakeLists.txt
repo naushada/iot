@@ -10,6 +10,9 @@ endif()
 
 set(HTTP_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
+# OpenSSL — native TLS termination (https) in the session layer.
+find_package(OpenSSL REQUIRED)
+
 # Pull in data-store for datastore_client (needed by handlers + main).
 option(HTTP_SKIP_DATA_STORE "Skip data-store subdir (parser-only build)" OFF)
 if(NOT HTTP_SKIP_DATA_STORE AND NOT TARGET datastore_client)
@@ -35,11 +38,12 @@ add_library(http_server_lib STATIC
     src/parser.cpp
     src/router.cpp
     src/session.cpp
-    src/handler.cpp)
+    src/handler.cpp
+    src/tls.cpp)
 
 target_include_directories(http_server_lib PUBLIC src)
 target_link_libraries(http_server_lib
-    PUBLIC datastore_client ACE pthread)
+    PUBLIC datastore_client ACE pthread OpenSSL::SSL OpenSSL::Crypto)
 
 # ─────────────────────────── Binary ────────────────────────────
 add_executable(iot-httpd src/main.cpp)
@@ -76,6 +80,18 @@ if(BUILD_HTTP_SERVER_TESTS)
     target_link_libraries(http-router-tests
         GTest::gtest_main GTest::gtest)
     add_test(NAME http-router-tests COMMAND http-router-tests)
+
+    # TLS tests: OpenSSL only, no ACE — a full handshake + echo between a
+    # real OpenSSL client and our TlsConn server over in-memory transport.
+    add_executable(http-tls-tests
+        test/tls_test.cpp
+        src/tls.cpp)
+    target_include_directories(http-tls-tests
+        PRIVATE ${HTTP_MODULE_DIR}/inc
+        PRIVATE ${HTTP_MODULE_DIR}/src)
+    target_link_libraries(http-tls-tests
+        GTest::gtest_main GTest::gtest OpenSSL::SSL OpenSSL::Crypto)
+    add_test(NAME http-tls-tests COMMAND http-tls-tests)
 
     # D4 — handler tests: needs ds-server + datastore_client + ACE.
     # Only built when data-store is available.

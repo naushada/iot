@@ -4,10 +4,16 @@
 #include <ace/Reactor.h>
 #include <ace/Time_Value.h>
 
+#include <cstring>
+#include <memory>
+
 namespace http_server {
 
-HttpSession::HttpSession(const Router& router)
+HttpSession::HttpSession(const Router& router, const TlsContext* tls)
     : m_router(router) {
+    if (tls && *tls) {
+        m_tls = std::make_unique<TlsConn>(*tls);
+    }
     m_parser.set_handler([this](const HttpParser::Request& req) {
         auto resp = m_router.route(req);
         return resp.to_string();
@@ -26,12 +32,41 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
         return 0;  // timeout — stay registered
     }
 
-    m_parser.feed(buf, static_cast<std::size_t>(n));
+    // Turn this read into plaintext application bytes. On https the bytes
+    // off the wire are ciphertext: feed them to the TLS engine, advance the
+    // handshake, then decrypt. On plain HTTP the bytes are the request.
+    std::string app;
+    if (m_tls) {
+        m_tls->feed_ciphertext(buf, static_cast<std::size_t>(n));
+
+        if (!m_tls->handshake_done()) {
+            int hs = m_tls->handshake();
+            // Flush handshake output (ServerHello, certificate, …) to the peer.
+            std::string out;
+            if (m_tls->drain_outgoing(out)) peer().send_n(out.data(), out.size());
+            if (hs < 0) {
+                ACE_DEBUG((LM_WARNING,
+                           ACE_TEXT("%D [http:%t] %M %N:%l TLS handshake "
+                                    "failed\n")));
+                return -1;
+            }
+            if (hs == 0) return 0;  // need more handshake bytes — stay registered
+            // hs == 1: handshake done — fall through to read any early app data
+        }
+
+        if (m_tls->read_plaintext(app) < 0) {
+            return -1;  // close_notify or fatal TLS error
+        }
+        if (app.empty()) return 0;  // nothing decrypted yet — stay registered
+    } else {
+        app.assign(buf, static_cast<std::size_t>(n));
+    }
+
+    m_parser.feed(app.data(), app.size());
 
     if (m_parser.done()) {
-        // Send response
         std::string resp = m_parser.take_response();
-        peer().send_n(resp.data(), resp.size());
+        send_bytes(resp.data(), resp.size());
 
         // Check keep-alive
         bool keep_alive = false;
@@ -54,14 +89,34 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
         const char* bad = "HTTP/1.1 400 Bad Request\r\n"
                           "Content-Length: 0\r\n"
                           "Connection: close\r\n\r\n";
-        peer().send_n(bad, std::strlen(bad));
+        send_bytes(bad, std::strlen(bad));
         return -1;
     }
 
     return 0;
 }
 
+void HttpSession::send_bytes(const char* data, std::size_t len) {
+    if (m_tls) {
+        // Encrypt then flush the resulting ciphertext to the socket.
+        if (m_tls->write_plaintext(data, len) == 0) {
+            std::string out;
+            if (m_tls->drain_outgoing(out)) {
+                peer().send_n(out.data(), out.size());
+            }
+        }
+    } else {
+        peer().send_n(data, len);
+    }
+}
+
 int HttpSession::handle_close(ACE_HANDLE /*fd*/, ACE_Reactor_Mask /*mask*/) {
+    if (m_tls) {
+        // Best-effort close_notify so the client sees a clean shutdown.
+        m_tls->shutdown();
+        std::string out;
+        if (m_tls->drain_outgoing(out)) peer().send_n(out.data(), out.size());
+    }
     peer().close();
     delete this;
     return 0;

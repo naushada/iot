@@ -591,14 +591,61 @@ curl -X POST http://localhost:8080/api/v1/db/set \
 curl 'http://localhost:8080/api/v1/db/get?key=services.net.router.state&timeout=30'
 ```
 
-Start the server:
+Start the server (plain HTTP):
 
 ```sh
 iot-httpd ds-socket=/var/run/iot/data_store.sock http-port=8080
 ```
 
-TLS termination is handled by a reverse proxy (nginx/haproxy) in
-front of iot-httpd — the server itself speaks plain HTTP/1.1.
+#### Native TLS (https)
+
+iot-httpd terminates TLS itself — no reverse proxy required (though you
+can still front it with one and leave the scheme `http`). Point it at a
+PEM certificate chain + private key, via CLI or the `http.tls.*` schema
+keys:
+
+```sh
+# CLI
+iot-httpd http-scheme=https http-port=8443 \
+    http-cert=/etc/iot/tls/server.crt \
+    http-key=/etc/iot/tls/server.key
+
+# …or via ds-cli (read at startup; CLI args win over these)
+ds-cli set http.listen.scheme '"https"'
+ds-cli set http.tls.cert      '"/etc/iot/tls/server.crt"'
+ds-cli set http.tls.key       '"/etc/iot/tls/server.key"'
+
+curl --cacert /etc/iot/tls/ca.crt https://<host>:8443/api/v1/db/get \
+    -d '{"keys":["iot.endpoint"]}'
+```
+
+TLS floor is 1.2. Set `http.tls.ca` (or `http-ca=`) to a CA bundle to
+enforce **mutual-TLS** — clients must then present a certificate that
+verifies against it:
+
+```sh
+ds-cli set http.tls.ca '"/etc/iot/tls/clients-ca.crt"'
+curl --cacert ca.crt --cert client.crt --key client.key \
+    https://<host>:8443/api/v1/db/get -d '{"keys":["iot.endpoint"]}'
+```
+
+**Reusing the openvpn-client CA.** `http.tls.ca` takes any PEM CA, so you
+can point it at the same CA the VPN already trusts (`vpn.ca.path`,
+typically `/etc/iot/vpn/ca.crt`) — then any device holding a CA-signed
+client cert authenticates to both planes:
+
+```sh
+ds-cli set http.tls.ca '"/etc/iot/vpn/ca.crt"'   # = vpn.ca.path
+```
+
+Only the CA *certificate* (public) is shared — never the private key. The
+trade-off is a single trust domain: every VPN client cert is also valid
+for the HTTP API. Use a separate CA if those identity sets should differ.
+
+The key file should be mode `0600`. Under systemd the dynamic `iot-httpd`
+user needs read access — place certs where it can reach them (e.g.
+`/etc/iot/tls/`, or mount `/etc/iot/vpn:ro` as the openvpn unit does) or
+add a drop-in with `LoadCredential=`.
 
 ---
 

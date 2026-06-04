@@ -17,8 +17,22 @@ return {
     ["http.listen.port"]   = { type = "integer", default = 8080,
                                min = 1, max = 65535 },
 
-    -- Scheme. "http" only in v1 (TLS terminated by reverse proxy).
-    -- Reserved for future "https" support.
+    -- Scheme. "http" = plain HTTP/1.1; "https" = native TLS termination
+    -- (requires http.tls.cert + http.tls.key below). A reverse proxy in
+    -- front can still terminate TLS instead — leave this "http" if so.
     ["http.listen.scheme"] = { type = "string",  default = "http" },
+
+    -- TLS server certificate chain (PEM, leaf first). Required when
+    -- scheme = "https". CLI override: http-cert=<path>.
+    ["http.tls.cert"]      = { type = "string",  default = "" },
+
+    -- TLS private key (PEM) matching http.tls.cert. Required when
+    -- scheme = "https". CLI override: http-key=<path>. Keep mode 0600.
+    ["http.tls.key"]       = { type = "string",  default = "" },
+
+    -- Optional CA bundle (PEM). When set, mutual-TLS is enforced: clients
+    -- must present a certificate that verifies against this CA. Empty =
+    -- server-only TLS. CLI override: http-ca=<path>.
+    ["http.tls.ca"]        = { type = "string",  default = "" },
   },
 }

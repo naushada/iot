@@ -45,8 +45,15 @@ std::string make_temp_dir() {
 }
 
 std::string find_ds_server() {
-    for (auto p : {"./ds-server", "../ds-server",
-                   "modules/data-store/build/ds-server"}) {
+    // Check cmake build output first (when run via ctest),
+    // then common dev paths, then installed path.
+    for (auto p : {
+            "./data-store/ds-server",          // ctest from build dir
+            "../data-store/ds-server",
+            "./ds-server",
+            "../ds-server",
+            "modules/data-store/build/ds-server",
+            "/usr/local/bin/ds-server"}) {
         struct ::stat st;
         if (::stat(p, &st) == 0 && (st.st_mode & S_IXUSR)) return p;
     }
@@ -54,10 +61,13 @@ std::string find_ds_server() {
 }
 
 std::string find_services_lua() {
-    for (auto p : {"../schemas/services.lua",
-                   "../../schemas/services.lua",
-                   "schemas/services.lua",
-                   "modules/data-store/schemas/services.lua"}) {
+    for (auto p : {
+            "/src/modules/data-store/schemas/services.lua",
+            "../data-store/../schemas/services.lua",
+            "../schemas/services.lua",
+            "../../schemas/services.lua",
+            "schemas/services.lua",
+            "modules/data-store/schemas/services.lua"}) {
         std::ifstream in(p);
         if (in.good()) return p;
     }

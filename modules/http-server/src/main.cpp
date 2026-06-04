@@ -1,16 +1,23 @@
 /// iot-httpd — HTTP REST API server for the iot data store (L18/D5).
 ///
-/// Binds an ACE_Acceptor on the configured ip:port, dispatches
+/// Binds a listening socket on the configured ip:port, dispatches
 /// connections to HttpSession instances registered with the reactor.
 /// Handlers run inline on the reactor thread (v1 — ACE_Task pool is
 /// FUP for long-poll / heavy handlers).
 ///
 /// CLI:
 ///   iot-httpd [ds-socket=<path>] [http-ip=<ip>] [http-port=<N>]
+///            [http-scheme=http|https]
+///            [http-cert=<pem>] [http-key=<pem>] [http-ca=<pem>]
+///
+/// With http-scheme=https the server terminates TLS itself (cert + key
+/// required; a CA bundle switches on mutual-TLS). Otherwise it speaks
+/// plain HTTP/1.1, as before.
 
 #include "http_server/handler.hpp"
 #include "http_server/router.hpp"
 #include "http_server/session.hpp"
+#include "http_server/tls.hpp"
 
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"
@@ -22,7 +29,6 @@
 #include <string>
 #include <string_view>
 
-#include <ace/Acceptor.h>
 #include <ace/INET_Addr.h>
 #include <ace/Log_Msg.h>
 #include <ace/Reactor.h>
@@ -50,8 +56,6 @@ std::string arg_value(int argc, char** argv, std::string_view key) {
     return {};
 }
 
-using HttpAcceptor = ACE_Acceptor<http_server::HttpSession, ACE_SOCK_Acceptor>;
-
 } // namespace
 
 int main(int argc, char** argv) {
@@ -68,6 +72,13 @@ int main(int argc, char** argv) {
         httpPort = std::atoi(httpPortStr.c_str());
     }
 
+    // TLS config (CLI > data-store http.tls.* > off). https requires
+    // cert + key; a CA bundle additionally enables mutual-TLS.
+    std::string httpScheme = arg_value(argc, argv, "http-scheme");
+    std::string tlsCert    = arg_value(argc, argv, "http-cert");
+    std::string tlsKey     = arg_value(argc, argv, "http-key");
+    std::string tlsCa      = arg_value(argc, argv, "http-ca");
+
     // ── Connect to ds-server ──────────────────────────────────
     data_store::Client ds;
     auto cs = ds.connect(dsPath);
@@ -79,11 +90,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Read http.listen.* from data store (schema defaults apply if unset)
+    // Read http.* from data store (schema defaults apply if unset).
+    // Only fill a field the CLI didn't already set (CLI takes precedence).
     {
         std::vector<data_store::Client::GetResult> got;
         auto rs = ds.get({"http.listen.ip", "http.listen.port",
-                          "http.listen.scheme"}, got);
+                          "http.listen.scheme", "http.tls.cert",
+                          "http.tls.key", "http.tls.ca"}, got);
         if (rs.ok) {
             for (const auto& g : got) {
                 if (!g.has_value) continue;
@@ -92,10 +105,43 @@ int main(int argc, char** argv) {
                 } else if (g.key == "http.listen.port") {
                     if (auto n = data_store::to_uint32(g.value))
                         httpPort = static_cast<int>(*n);
+                } else if (g.key == "http.listen.scheme" && httpScheme.empty()) {
+                    if (auto s = data_store::to_string(g.value)) httpScheme = *s;
+                } else if (g.key == "http.tls.cert" && tlsCert.empty()) {
+                    if (auto s = data_store::to_string(g.value)) tlsCert = *s;
+                } else if (g.key == "http.tls.key" && tlsKey.empty()) {
+                    if (auto s = data_store::to_string(g.value)) tlsKey = *s;
+                } else if (g.key == "http.tls.ca" && tlsCa.empty()) {
+                    if (auto s = data_store::to_string(g.value)) tlsCa = *s;
                 }
-                // scheme is read but v1 only supports "http"
             }
         }
+    }
+    if (httpScheme.empty()) httpScheme = "http";
+
+    // ── TLS context (shared by every https session) ───────────
+    http_server::TlsContext tlsCtx;
+    const http_server::TlsContext* tlsPtr = nullptr;
+    if (httpScheme == "https") {
+        if (tlsCert.empty() || tlsKey.empty()) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [http:%t] %M %N:%l https requires "
+                                "http.tls.cert + http.tls.key\n")));
+            return 1;
+        }
+        if (!tlsCtx.load_server(tlsCert, tlsKey, tlsCa)) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [http:%t] %M %N:%l TLS init failed: %C\n"),
+                       tlsCtx.err().c_str()));
+            return 1;
+        }
+        tlsPtr = &tlsCtx;
+    } else if (httpScheme != "http") {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [http:%t] %M %N:%l unknown http.listen.scheme "
+                            "'%C' (expected http|https)\n"),
+                   httpScheme.c_str()));
+        return 1;
     }
 
     // ── Router + handlers ─────────────────────────────────────
@@ -103,20 +149,12 @@ int main(int argc, char** argv) {
     http_server::install_handlers(router, &ds);
 
     // ── Acceptor ──────────────────────────────────────────────
+    // Hand-rolled accept loop rather than ACE_Acceptor<HttpSession>: the
+    // latter requires a default-constructible session, but HttpSession needs
+    // the router (and TLS context). We open a plain ACE_SOCK_Acceptor and
+    // poll it non-blocking in the event loop below, constructing each session
+    // with its dependencies.
     ACE_INET_Addr addr(httpPort, httpIp.c_str());
-    HttpAcceptor acceptor;
-
-    // The acceptor needs a reference to the router for each new
-    // session. ACE_Acceptor's default constructor pattern doesn't
-    // pass extra args — we use a static/global approach.
-    // v1 workaround: sessions get the router via a captured ref.
-    // ACE_Acceptor<SESSION, ACE_SOCK_Acceptor> calls SESSION()
-    // with no args. We wrap HttpSession in a factory acceptor.
-    //
-    // Alternative: use ACE_Strategy_Acceptor or hand-rolled accept.
-    // v1: simple hand-rolled accept loop for clarity.
-
-    // We'll hand-roll the accept loop to pass the router.
     ACE_SOCK_Acceptor sock_acceptor;
     if (sock_acceptor.open(addr, 1) == -1) {
         ACE_ERROR((LM_ERROR,
@@ -127,27 +165,14 @@ int main(int argc, char** argv) {
     }
 
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [http:%t] %M %N:%l listening on %C:%d "
-                        "ds=%C\n"),
-               httpIp.c_str(), httpPort, dsPath.c_str()));
+               ACE_TEXT("%D [http:%t] %M %N:%l listening on %C://%C:%d "
+                        "ds=%C%C\n"),
+               httpScheme.c_str(), httpIp.c_str(), httpPort, dsPath.c_str(),
+               (tlsPtr && tlsCtx.mtls()) ? " (mTLS)" : ""));
 
-    // Register the acceptor with the reactor for READ_MASK
-    if (ACE_Reactor::instance()->register_handler(
-            sock_acceptor.get_handle(),
-            new ACE_Event_Handler,
-            ACE_Event_Handler::READ_MASK) == -1) {
-        ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [http:%t] %M %N:%l register_handler failed\n")));
-        return 1;
-    }
-
-    // Register a timer-based accept handler since ACE_Acceptor wiring
-    // is complex with custom constructor args. Simpler: periodic timer
-    // that calls accept().
-    //
-    // Actually, let's just do a simple event loop with accept+read+reactor.
-    // The reactor handles session reads; accept is driven by the main loop.
-
+    // The listening socket is polled directly via non-blocking accept() in
+    // the loop below; only the per-connection sessions are registered with
+    // the reactor (for their READ events).
     ::signal(SIGINT,  on_signal);
     ::signal(SIGTERM, on_signal);
     ::signal(SIGPIPE, SIG_IGN);
@@ -159,7 +184,7 @@ int main(int argc, char** argv) {
         ACE_INET_Addr peer;
         ACE_Time_Value accept_tv(0, 0);  // non-blocking
         if (sock_acceptor.accept(stream, &peer, &accept_tv) != -1) {
-            auto* session = new http_server::HttpSession(router);
+            auto* session = new http_server::HttpSession(router, tlsPtr);
             session->set_handle(stream.get_handle());
             stream.set_handle(ACE_INVALID_HANDLE);
             if (ACE_Reactor::instance()->register_handler(
