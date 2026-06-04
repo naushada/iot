@@ -662,6 +662,18 @@ user needs read access — place certs where it can reach them (e.g.
 `/etc/iot/tls/`, or mount `/etc/iot/vpn:ro` as the openvpn unit does) or
 add a drop-in with `LoadCredential=`.
 
+**Hot-reload (no restart).** `http.listen.{ip,port,scheme}` and
+`http.tls.{cert,key,ca}` are applied live — `iot-httpd` re-reads them every
+~2 s. Rotate a cert by replacing the files and bumping the key:
+
+```sh
+ds-cli set http.tls.cert '"/etc/iot/tls/server.crt.new"'   # → re-points + reloads
+```
+
+New connections use the new cert; in-flight ones finish on the old one. A
+bad cert / in-use port is logged and the current config is kept.
+`http.workers` is the exception — changing it needs a restart.
+
 ---
 
 ## Common operator tasks
