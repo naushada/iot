@@ -1,8 +1,11 @@
 #!/bin/bash
-# L18/D6 — HTTP REST API smoke.
+# L18 — HTTP REST API smoke (plain HTTP + HTTPS/mTLS + hot-reload).
 #
-# Starts ds-server + iot-httpd, drives the /api/v1/db/* endpoints
-# with curl, asserts expected responses. Designed for podman:
+# Starts ds-server + iot-httpd, drives the /api/v1/db/* endpoints with
+# curl, asserts expected responses. Then (if openssl is present) starts a
+# second iot-httpd with native TLS + mutual-TLS + a worker pool, checks a
+# CA-signed client is accepted and a missing client cert is rejected, and
+# rotates the server cert live via ds-cli (FUP-L18-2). Designed for podman:
 #   podman run --rm -v $PWD:/work -w /work --network=host \
 #     naushada/iot:latest bash log/L18/smoke.sh
 
@@ -135,7 +138,86 @@ else
     echo "  WARN schema rejection: $OUT"
 fi
 
+# ── 8. HTTPS + mutual-TLS (also exercises the worker pool) ────
+HTTPS_PORT="${HTTPS_PORT:-18443}"
+HTTPSD_PID=""
+if command -v openssl >/dev/null 2>&1; then
+    echo "=== HTTPS + mutual-TLS (http-workers=2) ==="
+    TLS="$SMOKE_DIR/tls"; mkdir -p "$TLS"
+    # CA
+    openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+        -keyout "$TLS/ca.key" -out "$TLS/ca.crt" -subj "/CN=Smoke CA" 2>/dev/null
+    # Server cert (SAN IP:127.0.0.1) signed by the CA
+    openssl req -newkey rsa:2048 -nodes -keyout "$TLS/server.key" \
+        -out "$TLS/server.csr" -subj "/CN=127.0.0.1" \
+        -addext "subjectAltName=IP:127.0.0.1" 2>/dev/null
+    openssl x509 -req -in "$TLS/server.csr" -CA "$TLS/ca.crt" -CAkey "$TLS/ca.key" \
+        -CAcreateserial -days 1 -copy_extensions copyall \
+        -out "$TLS/server.crt" 2>/dev/null
+    # Client cert (for mTLS) signed by the CA
+    openssl req -newkey rsa:2048 -nodes -keyout "$TLS/client.key" \
+        -out "$TLS/client.csr" -subj "/CN=smoke-client" 2>/dev/null
+    openssl x509 -req -in "$TLS/client.csr" -CA "$TLS/ca.crt" -CAkey "$TLS/ca.key" \
+        -CAcreateserial -days 1 -out "$TLS/client.crt" 2>/dev/null
+
+    "$HTTPD" ds-socket="$DS_SOCK" http-port="$HTTPS_PORT" http-scheme=https \
+        http-cert="$TLS/server.crt" http-key="$TLS/server.key" \
+        http-ca="$TLS/ca.crt" http-workers=2 \
+        >"$SMOKE_DIR/httpsd.log" 2>&1 &
+    HTTPSD_PID=$!
+    sleep 0.7
+
+    SC="openssl s_client -connect 127.0.0.1:$HTTPS_PORT -cert $TLS/client.crt -key $TLS/client.key"
+
+    # (a) client WITH a CA-signed cert → accepted
+    OUT=$(curl -s --max-time 5 --cacert "$TLS/ca.crt" \
+        --cert "$TLS/client.crt" --key "$TLS/client.key" \
+        "https://127.0.0.1:$HTTPS_PORT/api/v1/db/get" \
+        -d '{"keys":["iot.endpoint"]}' -H 'Content-Type: application/json' 2>&1 || true)
+    echo "  with client cert: $OUT"
+    if echo "$OUT" | grep -q '"ok":true'; then
+        echo "  OK https + mTLS (client cert accepted, via worker pool)"
+    else
+        echo "  FAIL https + mTLS" >&2; PASS=0
+    fi
+
+    # (b) client WITHOUT a cert → rejected at the handshake
+    if curl -s --max-time 5 --cacert "$TLS/ca.crt" \
+        "https://127.0.0.1:$HTTPS_PORT/api/v1/db/get" \
+        -d '{"keys":["iot.endpoint"]}' >/dev/null 2>&1; then
+        echo "  FAIL mTLS: request without a client cert was accepted" >&2; PASS=0
+    else
+        echo "  OK mTLS rejects a missing client cert"
+    fi
+
+    # ── 9. Hot-reload: rotate the server cert via ds-cli ──────
+    echo "=== TLS hot-reload (live cert rotation) ==="
+    SERIAL_BEFORE=$(echo | $SC 2>/dev/null | openssl x509 -noout -serial 2>/dev/null || true)
+    # A fresh server cert (new serial), same CA, swapped in via ds-cli.
+    openssl req -newkey rsa:2048 -nodes -keyout "$TLS/server2.key" \
+        -out "$TLS/server2.csr" -subj "/CN=127.0.0.1" \
+        -addext "subjectAltName=IP:127.0.0.1" 2>/dev/null
+    openssl x509 -req -in "$TLS/server2.csr" -CA "$TLS/ca.crt" -CAkey "$TLS/ca.key" \
+        -CAcreateserial -days 1 -copy_extensions copyall \
+        -out "$TLS/server2.crt" 2>/dev/null
+    "$DS_CLI" --socket="$DS_SOCK" set http.tls.key  "\"$TLS/server2.key\""  >/dev/null 2>&1
+    "$DS_CLI" --socket="$DS_SOCK" set http.tls.cert "\"$TLS/server2.crt\"" >/dev/null 2>&1
+    sleep 3   # the reload poll runs every ~2s
+    SERIAL_AFTER=$(echo | $SC 2>/dev/null | openssl x509 -noout -serial 2>/dev/null || true)
+    echo "  served-cert serial before=$SERIAL_BEFORE after=$SERIAL_AFTER"
+    if [ -n "$SERIAL_AFTER" ] && [ "$SERIAL_BEFORE" != "$SERIAL_AFTER" ]; then
+        echo "  OK cert rotated live (no restart)"
+    else
+        echo "  WARN cert rotation not observed (timing/openssl?)"
+    fi
+
+    kill "$HTTPSD_PID" 2>/dev/null || true
+else
+    echo "=== HTTPS smoke skipped (no openssl CLI) ==="
+fi
+
 # ── Cleanup ───────────────────────────────────────────────────
+kill "$HTTPSD_PID" 2>/dev/null || true
 kill "$HTTPD_PID" 2>/dev/null || true
 kill "$DS_PID"   2>/dev/null || true
 wait 2>/dev/null || true

@@ -97,8 +97,8 @@ int main(int argc, char** argv) {
     std::string dsPath = arg_value(argc, argv, "ds-socket");
     if (dsPath.empty()) dsPath = "/var/run/iot/data_store.sock";
 
-    std::string httpIp = arg_value(argc, argv, "http-ip");
-    if (httpIp.empty()) httpIp = "0.0.0.0";
+    std::string httpIpCli = arg_value(argc, argv, "http-ip");
+    std::string httpIp = httpIpCli.empty() ? "0.0.0.0" : httpIpCli;
 
     std::string httpPortStr = arg_value(argc, argv, "http-port");
     int httpPort = 8080;
@@ -140,9 +140,9 @@ int main(int argc, char** argv) {
         if (rs.ok) {
             for (const auto& g : got) {
                 if (!g.has_value) continue;
-                if (g.key == "http.listen.ip") {
+                if (g.key == "http.listen.ip" && httpIpCli.empty()) {
                     if (auto s = data_store::to_string(g.value)) httpIp = *s;
-                } else if (g.key == "http.listen.port") {
+                } else if (g.key == "http.listen.port" && httpPortStr.empty()) {
                     if (auto n = data_store::to_uint32(g.value))
                         httpPort = static_cast<int>(*n);
                 } else if (g.key == "http.listen.scheme" && httpScheme.empty()) {
