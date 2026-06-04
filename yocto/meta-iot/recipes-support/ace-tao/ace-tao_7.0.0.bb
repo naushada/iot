@@ -71,13 +71,28 @@ do_compile() {
     oe_runmake -C ${S}/ace
 }
 
+# ACE's own `make install` also installs (and perl-post-processes) its
+# MPC/build-system tree under share/ace; that step assumes share/ace was
+# populated and dies with "Directory nonexistent" in a packaging sysroot —
+# and we throw share/ away anyway. Install the runtime libs + headers
+# directly from the build tree instead. (do_compile builds libs into
+# ${S}/lib and ACE's headers live under ${S}/ace.)
 do_install() {
-    oe_runmake -C ${S}/ace install
+    install -d ${D}${libdir}
+    # Versioned shared libs + their .so / .so.MAJOR symlinks.
+    cp -a ${S}/lib/libACE.so*     ${D}${libdir}/
+    cp -a ${S}/lib/libACE_SSL.so* ${D}${libdir}/
 
-    # Remove TAO, Kokyu, and other services we don't need.
-    rm -rf ${D}${prefix}/include/tao
-    rm -rf ${D}${prefix}/include/orbsvcs
-    rm -rf ${D}${prefix}/share
+    # Public headers: the ace/ tree (*.h, *.inl, and the template *.cpp
+    # files that headers #include), minus build artifacts. ACE_SSL headers
+    # live under ace/SSL/.
+    install -d ${D}${includedir}/ace
+    cp -a ${S}/ace/. ${D}${includedir}/ace/
+    find ${D}${includedir}/ace -depth -type d \
+        \( -name '.shobj' -o -name '.obj' \) -exec rm -rf {} +
+    find ${D}${includedir}/ace -type f \
+        \( -name '*.o' -o -name '*.a' -o -name '*.so' -o -name '*.so.*' \
+           -o -name 'GNUmakefile*' \) -delete
 }
 
 # ── Package split ──────────────────────────────────────────────────────
