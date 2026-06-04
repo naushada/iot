@@ -34,5 +34,10 @@ return {
     -- must present a certificate that verifies against this CA. Empty =
     -- server-only TLS. CLI override: http-ca=<path>.
     ["http.tls.ca"]        = { type = "string",  default = "" },
+
+    -- Handler thread-pool size. 0 = run handlers inline on the reactor
+    -- thread (default). >0 off-loads handlers to N worker threads so a
+    -- blocking long-poll can't stall other connections. CLI: http-workers=N.
+    ["http.workers"]       = { type = "integer", default = 0, min = 0, max = 64 },
   },
 }

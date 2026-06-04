@@ -42,9 +42,10 @@
                     └─────────────────────┘
 ```
 
-> **v1 note.** Handlers run **inline on the single reactor thread** — there
-> is no ACE_Task worker pool yet (FUP-L18-1). One consequence: a long-poll
-> handler blocks the reactor for the duration of its wait. See §2.5 and D1.
+> **Note.** By default (`http.workers = 0`) handlers run **inline on the
+> single reactor thread**, so a long-poll blocks the reactor. Set
+> `http.workers = N` to run them on a thread pool (§2.8) — then only a
+> worker blocks. See §2.5, §2.8 and D1.
 
 ## 2. Components
 
@@ -230,11 +231,12 @@ else {
 h.body = resp.dump();
 ```
 
-> **v1 caveat.** `recv_event` blocks the **reactor thread** (handlers run
-> inline — D1), so an in-flight long-poll stalls all other connections
-> until it returns or times out. Moving handlers onto an ACE_Task pool is
-> FUP-L18-1; until then, keep `timeout` small or run long-poll clients against a
-> dedicated instance.
+> **Concurrency.** `recv_event` blocks the thread that runs the handler.
+> With `http.workers = 0` (default) that's the **reactor thread**, so an
+> in-flight long-poll stalls all other connections. Set `http.workers = N`
+> to run handlers on a worker pool (§2.8) — then a long-poll blocks only a
+> worker, and the reactor keeps serving everyone else. `data_store::Client`
+> is thread-safe, so the single shared client serves all workers.
 
 ### 2.5 Main loop (hand-rolled accept + ACE_Reactor)
 
@@ -272,8 +274,8 @@ handle_events():
                  → send_bytes(take_response())  [TLS encrypt]
 ```
 
-A worker pool (ACE_Task) to lift blocking/long-poll handlers off the
-reactor is **FUP-L18-1** (see D1 and §7).
+With `http.workers > 0` the handler runs on a worker pool instead of
+inline — see §2.8.
 
 ### 2.6 Configuration
 
@@ -288,6 +290,7 @@ startup via the `http.*` schema (shipped alongside `iot.lua`,
 -- http.tls.cert      = ""          (PEM cert chain; required for https)
 -- http.tls.key       = ""          (PEM private key; required for https)
 -- http.tls.ca        = ""          (PEM CA bundle; non-empty → mTLS)
+-- http.workers       = 0           (handler pool size; 0 = inline; §2.8)
 ```
 
 CLI overrides (for development / smoke; CLI wins over the data store):
@@ -298,7 +301,8 @@ iot-httpd \
     http-scheme=https \
     http-cert=/etc/iot/tls/server.crt \
     http-key=/etc/iot/tls/server.key \
-    http-ca=/etc/iot/tls/clients-ca.crt   # optional → mTLS
+    http-ca=/etc/iot/tls/clients-ca.crt \  # optional → mTLS
+    http-workers=4                          # 0 = inline (default)
 ```
 
 The server reads `http.listen.{ip,port,scheme}` and `http.tls.{cert,key,ca}`
@@ -363,6 +367,52 @@ rejected. The CA can be the iot fleet's existing openvpn CA
 domain, or a dedicated bundle to keep the VPN and HTTP identity sets
 distinct. Hardening: TLS 1.2 floor (`SSL_CTX_set_min_proto_version`) and
 `SSL_OP_NO_RENEGOTIATION`.
+
+### 2.8 Handler thread pool (`http.workers`)
+
+With `http.workers = N > 0`, handlers run on a pool of N threads instead
+of inline on the reactor — the Half-Sync/Half-Async pattern. This stops a
+blocking handler (notably a long-poll `recv_event`) from stalling every
+other connection. `http.workers = 0` (default) keeps the original inline
+behaviour.
+
+`WorkerPool` (`worker.{hpp,cpp}`) is a plain std::thread pool with a
+mutex/condvar job queue; `submit()` runs the job inline when size is 0, so
+callers are agnostic. **All socket and TLS I/O stays on the reactor
+thread** — workers only compute — so there are no TLS races and no
+cross-thread socket writes:
+
+```
+reactor thread                         worker thread
+──────────────                         ─────────────
+handle_input(): parse request
+  suspend_handler(this)  ──────────────▶ route(req) → m_response
+                                          reactor.notify(this, EXCEPT_MASK)
+handle_exception(): ◀──────────────────── (notify)
+  send_bytes(m_response) [TLS encrypt]
+  keep-alive → resume_handler(this)
+  else       → return -1 → handle_close
+```
+
+Why this is safe without ACE reference counting:
+
+- **One request in flight per connection.** On dispatch the session calls
+  `suspend_handler(this)`, so the reactor fires no `handle_input` /
+  `handle_close` on it while a worker owns it — the worker can't be racing
+  a close, and responses stay ordered. `notify()` still reaches a
+  suspended handler (it's not gated on fd readiness), so `handle_exception`
+  runs.
+- **Shared `m_response` is race-free** — exactly one writer (the worker)
+  then one reader (the reactor), ordered by the notify.
+- **Shared ds client is thread-safe** (its own listener thread owns the
+  socket; `recv_event` blocks only the caller), so all workers share one
+  client — no per-worker connection pool.
+- **Shutdown** stops the pool (joins workers) before tearing down the
+  reactor, so no worker is left holding a session.
+
+Known limitation: concurrent long-polls share the Client's pull-style
+event queue; per-watch isolation (callback-style) is a follow-up. The
+reactor never blocks regardless.
 
 ## 3. REST API
 
@@ -478,21 +528,24 @@ modules/http-server/                 # new top-level module
 │       ├── session.hpp              # HttpSession (ACE_Svc_Handler)
 │       ├── router.hpp               # Router
 │       ├── handler.hpp              # HttpResponse + handler fns
-│       └── tls.hpp                  # TlsContext + TlsConn (https/mTLS)
+│       ├── tls.hpp                  # TlsContext + TlsConn (https/mTLS)
+│       └── worker.hpp               # WorkerPool (handler thread pool)
 ├── src/
 │   ├── main.cpp                     # entry point + acceptor + reactor
 │   ├── parser.cpp
 │   ├── session.cpp
 │   ├── router.cpp
 │   ├── handler.cpp                  # /api/v1/db/* handlers
-│   └── tls.cpp                      # OpenSSL memory-BIO TLS engine
+│   ├── tls.cpp                      # OpenSSL memory-BIO TLS engine
+│   └── worker.cpp                   # std::thread handler pool
 ├── test/
 │   ├── parser_test.cpp              # HttpParser unit tests
 │   ├── router_test.cpp              # Router dispatch tests
 │   ├── handler_test.cpp             # API handler tests (needs ds-server)
-│   └── tls_test.cpp                 # handshake + echo + mTLS (OpenSSL-only)
+│   ├── tls_test.cpp                 # handshake + echo + mTLS (OpenSSL-only)
+│   └── worker_test.cpp              # WorkerPool tests (pure C++17)
 └── schemas/
-    └── http.lua                     # http.listen.* + http.tls.* schema
+    └── http.lua                     # http.listen.* + http.tls.* + http.workers
 ```
 
 ## 5. Non-goals (v1)
@@ -510,7 +563,7 @@ modules/http-server/                 # new top-level module
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
-| D1 | v1: handlers run **inline on the reactor thread**; ACE_Task pool is FUP-L18-1 | Simplest correct thing first. Trade-off: a long-poll handler blocks the reactor for its wait (§2.4). Lifting handlers onto a pool is the first scaling step |
+| D1 | Handlers run **inline on the reactor thread** by default; an optional thread pool (`http.workers > 0`, §2.8) off-loads them | Inline is simplest and correct for light loads; the pool removes the long-poll-blocks-reactor problem (§2.4) without per-worker ds connections (the client is thread-safe). Socket/TLS I/O stays on the reactor for both |
 | D2 | HttpParser is push-based (no pull/peek) | Matches reactor pattern — bytes arrive asynchronously, parser consumes what it can |
 | D3 | One shared `data_store::Client*`, injected via handler closures | `install_handlers()` binds it into each route; the router/session stay decoupled from the data store. The unix socket is used serially from the single reactor thread, so no pooling is needed in v1 |
 | D4 | JSON for both request and response bodies | Matches existing ds-cli/ds-server protocol; operators already know the shape |
@@ -525,6 +578,6 @@ modules/http-server/                 # new top-level module
 
 | ID | Item | Notes |
 |----|------|-------|
-| **FUP-L18-1** | **ACE_Task worker pool for handlers** | Lift handler execution — especially the blocking long-poll `recv_event()` — off the single reactor thread so one slow/long-poll request can't stall other connections (D1, §2.4, §2.5). The session's `peer().send()` is already `ACE_MT_SYNCH`, so responding from a worker thread is safe; the pool just needs to enqueue `(session, Request)` and post the response back. First scaling step for iot-httpd. |
+| ~~FUP-L18-1~~ | **Worker pool for handlers — DONE** | Implemented as the `http.workers` thread pool (§2.8): handlers run off the reactor thread, the reactor sends via `handle_exception` after a worker `notify()`s, suspend/resume serialises one request per connection. Default 0 (inline). |
 | FUP-L18-2 | Hot-reload of `http.listen.*` / `http.tls.*` | Read once at startup today; changing ip/port or rotating the TLS cert needs a restart (§2.6). Watch the keys and rebind / reload `SSL_CTX`. |
 | FUP-L18-3 | Strict `411 Length Required` | Reject a body-bearing method that carries neither `Content-Length` nor `Transfer-Encoding: chunked`, instead of treating it as empty-body (D6). |

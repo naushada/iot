@@ -40,11 +40,12 @@ COPY . .
 RUN mkdir -p modules/http-server/build && cd modules/http-server/build && \
     cmake .. -DBUILD_HTTP_SERVER_TESTS=ON -DCMAKE_BUILD_TYPE=Release && \
     make -j$(nproc) iot-httpd http-parser-tests http-router-tests \
-                    http-handler-tests http-tls-tests
+                    http-handler-tests http-tls-tests http-worker-tests
 
 # Run the full test suite
 CMD cd /src/modules/http-server/build && \
     echo "=== Parser ===" && ./http-parser-tests && \
     echo "=== Router ===" && ./http-router-tests && \
     echo "=== Handlers ===" && ./http-handler-tests && \
-    echo "=== TLS ===" && ./http-tls-tests
+    echo "=== TLS ===" && ./http-tls-tests && \
+    echo "=== Workers ===" && ./http-worker-tests

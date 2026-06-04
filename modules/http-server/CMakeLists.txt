@@ -39,7 +39,8 @@ add_library(http_server_lib STATIC
     src/router.cpp
     src/session.cpp
     src/handler.cpp
-    src/tls.cpp)
+    src/tls.cpp
+    src/worker.cpp)
 
 target_include_directories(http_server_lib PUBLIC src)
 target_link_libraries(http_server_lib
@@ -92,6 +93,17 @@ if(BUILD_HTTP_SERVER_TESTS)
     target_link_libraries(http-tls-tests
         GTest::gtest_main GTest::gtest OpenSSL::SSL OpenSSL::Crypto)
     add_test(NAME http-tls-tests COMMAND http-tls-tests)
+
+    # Worker-pool tests: pure C++17 threads, no ACE.
+    add_executable(http-worker-tests
+        test/worker_test.cpp
+        src/worker.cpp)
+    target_include_directories(http-worker-tests
+        PRIVATE ${HTTP_MODULE_DIR}/inc
+        PRIVATE ${HTTP_MODULE_DIR}/src)
+    target_link_libraries(http-worker-tests
+        GTest::gtest_main GTest::gtest pthread)
+    add_test(NAME http-worker-tests COMMAND http-worker-tests)
 
     # D4 — handler tests: needs ds-server + datastore_client + ACE.
     # Only built when data-store is available.

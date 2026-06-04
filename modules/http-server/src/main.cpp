@@ -18,6 +18,7 @@
 #include "http_server/router.hpp"
 #include "http_server/session.hpp"
 #include "http_server/tls.hpp"
+#include "http_server/worker.hpp"
 
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"
@@ -79,6 +80,12 @@ int main(int argc, char** argv) {
     std::string tlsKey     = arg_value(argc, argv, "http-key");
     std::string tlsCa      = arg_value(argc, argv, "http-ca");
 
+    // Handler thread pool size (FUP-L18-1). 0 = run handlers inline on the
+    // reactor thread (default; original behaviour). >0 off-loads handlers
+    // so a blocking long-poll can't stall other connections.
+    std::string workersStr = arg_value(argc, argv, "http-workers");
+    int httpWorkers = 0;
+
     // ── Connect to ds-server ──────────────────────────────────
     data_store::Client ds;
     auto cs = ds.connect(dsPath);
@@ -96,7 +103,7 @@ int main(int argc, char** argv) {
         std::vector<data_store::Client::GetResult> got;
         auto rs = ds.get({"http.listen.ip", "http.listen.port",
                           "http.listen.scheme", "http.tls.cert",
-                          "http.tls.key", "http.tls.ca"}, got);
+                          "http.tls.key", "http.tls.ca", "http.workers"}, got);
         if (rs.ok) {
             for (const auto& g : got) {
                 if (!g.has_value) continue;
@@ -113,11 +120,16 @@ int main(int argc, char** argv) {
                     if (auto s = data_store::to_string(g.value)) tlsKey = *s;
                 } else if (g.key == "http.tls.ca" && tlsCa.empty()) {
                     if (auto s = data_store::to_string(g.value)) tlsCa = *s;
+                } else if (g.key == "http.workers" && workersStr.empty()) {
+                    if (auto n = data_store::to_uint32(g.value))
+                        httpWorkers = static_cast<int>(*n);
                 }
             }
         }
     }
     if (httpScheme.empty()) httpScheme = "http";
+    if (!workersStr.empty()) httpWorkers = std::atoi(workersStr.c_str());
+    if (httpWorkers < 0) httpWorkers = 0;
 
     // ── TLS context (shared by every https session) ───────────
     http_server::TlsContext tlsCtx;
@@ -148,6 +160,11 @@ int main(int argc, char** argv) {
     http_server::Router router;
     http_server::install_handlers(router, &ds);
 
+    // ── Handler thread pool (FUP-L18-1) ───────────────────────
+    // 0 workers → handlers run inline on the reactor thread (default).
+    http_server::WorkerPool pool(static_cast<std::size_t>(httpWorkers));
+    pool.start();
+
     // ── Acceptor ──────────────────────────────────────────────
     // Hand-rolled accept loop rather than ACE_Acceptor<HttpSession>: the
     // latter requires a default-constructible session, but HttpSession needs
@@ -166,9 +183,9 @@ int main(int argc, char** argv) {
 
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [http:%t] %M %N:%l listening on %C://%C:%d "
-                        "ds=%C%C\n"),
+                        "ds=%C%C workers=%d\n"),
                httpScheme.c_str(), httpIp.c_str(), httpPort, dsPath.c_str(),
-               (tlsPtr && tlsCtx.mtls()) ? " (mTLS)" : ""));
+               (tlsPtr && tlsCtx.mtls()) ? " (mTLS)" : "", httpWorkers));
 
     // The listening socket is polled directly via non-blocking accept() in
     // the loop below; only the per-connection sessions are registered with
@@ -184,7 +201,8 @@ int main(int argc, char** argv) {
         ACE_INET_Addr peer;
         ACE_Time_Value accept_tv(0, 0);  // non-blocking
         if (sock_acceptor.accept(stream, &peer, &accept_tv) != -1) {
-            auto* session = new http_server::HttpSession(router, tlsPtr);
+            auto* session =
+                new http_server::HttpSession(router, tlsPtr, &pool);
             session->set_handle(stream.get_handle());
             stream.set_handle(ACE_INVALID_HANDLE);
             if (ACE_Reactor::instance()->register_handler(
@@ -205,6 +223,9 @@ int main(int argc, char** argv) {
 
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [http:%t] %M %N:%l shutting down\n")));
+    // Join the workers before tearing down the reactor/sessions so no
+    // in-flight handler is left holding a session that's about to vanish.
+    pool.stop();
     sock_acceptor.close();
     return 0;
 }

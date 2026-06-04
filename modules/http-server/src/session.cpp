@@ -6,18 +6,18 @@
 
 #include <cstring>
 #include <memory>
+#include <utility>
 
 namespace http_server {
 
-HttpSession::HttpSession(const Router& router, const TlsContext* tls)
-    : m_router(router) {
+HttpSession::HttpSession(const Router& router, const TlsContext* tls,
+                         WorkerPool* pool)
+    : m_router(router), m_pool(pool) {
     if (tls && *tls) {
         m_tls = std::make_unique<TlsConn>(*tls);
     }
-    m_parser.set_handler([this](const HttpParser::Request& req) {
-        auto resp = m_router.route(req);
-        return resp.to_string();
-    });
+    // No parser handler: the session drives routing itself (inline or, with
+    // a worker pool, off the reactor thread). The parser just parses.
 }
 
 int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
@@ -64,36 +64,60 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
 
     m_parser.feed(app.data(), app.size());
 
-    if (m_parser.done()) {
-        std::string resp = m_parser.take_response();
-        send_bytes(resp.data(), resp.size());
-
-        // Check keep-alive
-        bool keep_alive = false;
-        auto it = m_parser.request().headers.find("connection");
-        if (it != m_parser.request().headers.end() &&
-            it->second == "keep-alive") {
-            keep_alive = true;
-        }
-
-        if (keep_alive) {
-            m_parser.reset();
-        } else {
-            return -1;   // close after response
-        }
-    } else if (m_parser.error()) {
+    if (m_parser.error()) {
         ACE_DEBUG((LM_WARNING,
                    ACE_TEXT("%D [http:%t] %M %N:%l parse error: %C\n"),
                    m_parser.error_msg().c_str()));
-        // Send 400
         const char* bad = "HTTP/1.1 400 Bad Request\r\n"
                           "Content-Length: 0\r\n"
                           "Connection: close\r\n\r\n";
         send_bytes(bad, std::strlen(bad));
         return -1;
     }
+    if (!m_parser.done()) return 0;  // partial request — wait for more
 
-    return 0;
+    // ── Complete request ──────────────────────────────────────────────
+    // Copy it out (the worker outlives this stack frame), capture the
+    // keep-alive decision, and ready the parser for the next request.
+    HttpParser::Request req = m_parser.request();
+    auto it = req.headers.find("connection");
+    m_keep_alive = (it != req.headers.end() && it->second == "keep-alive");
+    m_parser.reset();
+
+    if (m_pool && m_pool->size() > 0) {
+        // Off-load the handler to a worker thread. Suspend reads so no other
+        // request (or close) is dispatched on this connection while the
+        // worker owns it; the worker routes, stores m_response, and notifies
+        // the reactor, which sends from handle_exception() on this thread.
+        if (reactor()) reactor()->suspend_handler(this);
+        m_pool->submit([this, req = std::move(req)]() mutable {
+            m_response = m_router.route(req).to_string();
+            if (reactor()) {
+                reactor()->notify(this, ACE_Event_Handler::EXCEPT_MASK);
+            }
+        });
+        return 0;
+    }
+
+    // Inline (no pool): route + send on the reactor thread, as before.
+    m_response = m_router.route(req).to_string();
+    return finish_response();
+}
+
+int HttpSession::handle_exception(ACE_HANDLE /*fd*/) {
+    // A worker finished and notify()'d us; we're back on the reactor thread,
+    // so it's safe to touch the socket / TLS engine.
+    int rc = finish_response();
+    if (rc == 0 && reactor()) {
+        reactor()->resume_handler(this);  // keep-alive: re-enable reads
+    }
+    return rc;  // -1 → reactor removes us → handle_close → delete this
+}
+
+int HttpSession::finish_response() {
+    send_bytes(m_response.data(), m_response.size());
+    m_response.clear();
+    return m_keep_alive ? 0 : -1;
 }
 
 void HttpSession::send_bytes(const char* data, std::size_t len) {
