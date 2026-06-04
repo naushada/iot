@@ -5,7 +5,14 @@ Uses its own GNUmakefile build system; the recipe writes config.h and \
 platform_macros.GNU at configure time then drives `make -C ace`."
 HOMEPAGE = "https://github.com/DOCGroup/ACE_TAO"
 LICENSE = "DOC-ACE"
-LIC_FILES_CHKSUM = "file://ACE-INSTALL.html;beginline=102;endline=115;md5=668a2e2fd4837f04043230c2c7e1ffa0"
+# Track the canonical license file (ACE_wrappers/COPYING — the full DOC
+# license text) rather than a line-range in ACE-INSTALL.html, whose line
+# numbers shifted when DOCGroup re-published the 7.0.0 tarball. Whole-file
+# md5 is stable unless the license itself changes.
+LIC_FILES_CHKSUM = "file://COPYING;md5=d2c090e9c730fd91677782d8e2091d77"
+# DOC-ACE is not an SPDX/generic license; map it to the in-tree COPYING so
+# do_populate_lic has a license file (silences the license-exists QA warn).
+NO_GENERIC_LICENSE[DOC-ACE] = "COPYING"
 SECTION = "libs"
 
 # Fetch the official GitHub release tarball (~40 MB) rather than a git
