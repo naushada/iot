@@ -93,6 +93,12 @@ do_install() {
     find ${D}${includedir}/ace -type f \
         \( -name '*.o' -o -name '*.a' -o -name '*.so' -o -name '*.so.*' \
            -o -name 'GNUmakefile*' \) -delete
+
+    # `cp -a` preserves the build user's uid/gid (1000); under pseudo that
+    # records non-root ownership and do_package fails with
+    # "getpwuid(): uid not found: 1000 ... host contamination". Reset to
+    # root (-h reowns the .so symlinks too).
+    chown -hR root:root ${D}${libdir} ${D}${includedir}/ace
 }
 
 # ── Package split ──────────────────────────────────────────────────────
