@@ -12,7 +12,11 @@ SECTION = "libs"
 # clone of the full repo (~1.2 GB). The tarball is the same artefact
 # used in docker/Dockerfile.
 SRC_URI = "https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_0/ACE+TAO-7.0.0.tar.gz"
-SRC_URI[sha256sum] = "0e4d4a32ad295613ef663d3d0ae45b4e94a53e19f67c0b4a6156e7e5c32321e3"
+# DOCGroup re-published the 7.0.0 release asset upstream, so its bytes (and
+# thus sha256) changed from the original pin (0e4d4a32…). The value below
+# was verified by two independent downloads of the official release URL
+# (41384345 bytes, valid gzip of ACE_wrappers/).
+SRC_URI[sha256sum] = "75bc65d77d3f9dec716adcb37c4ff29658d5a5691d6430d8d3a6fac5b45d238b"
 
 S = "${WORKDIR}/ACE_wrappers"
 
