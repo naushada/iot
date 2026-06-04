@@ -22,6 +22,35 @@ all at the Scarthgap 5.0 LTS branch). The host needs only **podman** or
 - `images/<machine>/iot-image-*.wic.bz2` — flashable SD-card image
 - `ipk/` — the `.ipk` feed for `opkg install` over ssh
 
+The first build compiles the whole distribution (toolchain, glibc, ACE,
+kernel…) — hours. After that the persistent `iot-yocto-sstate` /
+`iot-yocto-downloads` volumes make reruns **incremental**: only changed
+`meta-iot` recipes recompile.
+
+### Shareable cache image (skip the distro compile on a fresh machine)
+
+To get that incremental behaviour on a *different* machine / CI without
+rebuilding the toolchain, publish a cache image — the base builder with the
+populated sstate + downloads baked in as read-only Yocto mirrors:
+
+```sh
+# One-time, after a full ./build.sh has populated the volumes:
+podman login docker.io
+CACHE_IMAGE=docker.io/<you>/iot-yocto-builder:cache ./build.sh publish
+
+# Then on any machine — pulls the image, restores the toolchain/distro from
+# baked sstate, and recompiles ONLY meta-iot (minutes, not hours):
+CACHE_IMAGE=docker.io/<you>/iot-yocto-builder:cache IOT_USE_CACHE=1 ./build.sh
+```
+
+`publish` snapshots the `iot-yocto-sstate` + `iot-yocto-downloads` volumes
+into image layers (via `podman commit`) and pushes. The image is large
+(several GB — it carries the whole sstate) and `publish` needs ~2× the
+sstate size of free space while it copies. The baked mirrors also insulate
+the build from upstream source rug-pulls (a vanished tarball / rebased Git
+ref is served from the cache). `entrypoint.sh` auto-detects the baked
+mirrors and wires `SSTATE_MIRRORS` / `own-mirrors`.
+
 ### Deploy to a Raspberry Pi 3B
 
 ```sh

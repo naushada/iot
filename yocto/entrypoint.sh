@@ -99,6 +99,24 @@ RPICONF
         ;;
 esac
 
+# ── Baked cache mirrors (present only in a published cache image) ──
+# `build.sh publish` bakes a populated sstate-cache + downloads into the
+# image at these paths. When present, use them as read-only mirrors so a
+# fresh build restores the whole toolchain/distro from sstate and only the
+# changed meta-iot recipes recompile.
+if [ -d /home/builduser/yocto/sstate-mirror ]; then
+    echo '→ Using baked sstate mirror (only changed recipes will rebuild)'
+    echo 'SSTATE_MIRRORS ?= "file://.* file:///home/builduser/yocto/sstate-mirror/PATH"' \
+        >> conf/local.conf
+fi
+if [ -d /home/builduser/yocto/dl-mirror ]; then
+    echo '→ Using baked downloads mirror'
+    cat >> conf/local.conf <<'DLCONF'
+SOURCE_MIRROR_URL ?= "file:///home/builduser/yocto/dl-mirror"
+INHERIT += "own-mirrors"
+DLCONF
+fi
+
 # ── 5. Run bitbake ─────────────────────────────────────────────────
 echo ""
 echo "→ Starting bitbake for $MACHINE: $@ ..."

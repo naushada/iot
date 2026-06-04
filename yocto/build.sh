@@ -27,6 +27,12 @@
 #   iot-yocto-sstate      shared-state cache
 # Reset them for a fully clean rebuild:
 #   podman volume rm iot-yocto-downloads iot-yocto-sstate
+#
+# Shareable cache image (skip the whole distro compile on a fresh machine):
+#   ./build.sh publish            # after one full build: bake the populated
+#                                 # sstate+downloads into $CACHE_IMAGE and push
+#   IOT_USE_CACHE=1 ./build.sh    # pull $CACHE_IMAGE and build — only the
+#                                 # meta-iot recipes recompile (minutes, not hours)
 
 set -euo pipefail
 
@@ -34,6 +40,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_DIR="$SCRIPT_DIR/build"
 IMAGE_NAME="${IMAGE_NAME:-iot-yocto-builder:latest}"
+# Published cache image (base builder + baked sstate/downloads mirrors).
+CACHE_IMAGE="${CACHE_IMAGE:-docker.io/naushada/iot-yocto-builder:cache}"
+SSTATE_VOLUME="iot-yocto-sstate"
+DOWNLOADS_VOLUME="iot-yocto-downloads"
 # bitbake target — the full bootable distribution by default.
 TARGET="${TARGET:-iot-image}"
 DEFAULT_MACHINE="${MACHINE:-raspberrypi3-64}"
@@ -70,6 +80,64 @@ build_image() {
     log_info "Image ready: $IMAGE_NAME"
 }
 
+# Decide the builder image to run with: pull the published cache image
+# (sstate floor → only meta-iot rebuilds) when IOT_USE_CACHE is set,
+# otherwise build the base image locally.
+prepare_image() {
+    if [ -n "${IOT_USE_CACHE:-}" ]; then
+        log_section "Pulling cache image: $CACHE_IMAGE"
+        $CR pull "$CACHE_IMAGE"
+        IMAGE_NAME="$CACHE_IMAGE"
+        log_info "Using baked sstate from $CACHE_IMAGE — only meta-iot recompiles"
+    else
+        build_image
+    fi
+}
+
+# ── Publish a cache image (base builder + baked sstate/downloads) ──────
+# Snapshots the populated volumes into image-layer dirs via a throwaway
+# container, commits, and pushes. Run AFTER one full `./build.sh` has
+# populated the volumes, and after `podman login docker.io`.
+publish() {
+    build_image   # ensure the base builder is current
+
+    if ! $CR volume exists "$SSTATE_VOLUME" 2>/dev/null; then
+        log_error "Volume $SSTATE_VOLUME is missing — run a full ./build.sh first."
+        exit 1
+    fi
+
+    local snap="iot-cache-snapshot"
+    $CR rm -f "$snap" &>/dev/null || true
+
+    log_section "Baking sstate + downloads into image layers"
+    # Mount the populated volumes read-only and copy them into plain overlay
+    # dirs (NOT volumes), so `commit` captures them in the image.
+    $CR run --name "$snap" \
+        -v "${SSTATE_VOLUME}:/mnt/sstate:ro" \
+        -v "${DOWNLOADS_VOLUME}:/mnt/dl:ro" \
+        --entrypoint bash \
+        "$IMAGE_NAME" -c '
+            mkdir -p /home/builduser/yocto/sstate-mirror /home/builduser/yocto/dl-mirror
+            cp -a /mnt/sstate/. /home/builduser/yocto/sstate-mirror/ 2>/dev/null || true
+            cp -a /mnt/dl/.     /home/builduser/yocto/dl-mirror/     2>/dev/null || true
+            du -sh /home/builduser/yocto/sstate-mirror /home/builduser/yocto/dl-mirror'
+
+    log_section "Committing cache image: $CACHE_IMAGE"
+    # The snapshot ran with --entrypoint bash; restore the base image's
+    # runtime config so the cache image behaves like the builder.
+    $CR commit \
+        --change 'ENTRYPOINT ["/home/builduser/yocto/entrypoint.sh"]' \
+        --change 'CMD ["iot-image"]' \
+        --change 'USER builduser' \
+        --change 'WORKDIR /home/builduser/yocto' \
+        "$snap" "$CACHE_IMAGE"
+    $CR rm "$snap"
+
+    log_section "Pushing $CACHE_IMAGE"
+    $CR push "$CACHE_IMAGE"
+    log_info "Published. On any machine: IOT_USE_CACHE=1 ./build.sh"
+}
+
 # ── Build one architecture ────────────────────────────────────────────
 build_machine() {
     local machine="$1"
@@ -92,8 +160,8 @@ build_machine() {
     # TMPDIR stays in the overlay but is kept small by rm_work (entrypoint).
     $CR run --name "$container" \
         -e "MACHINE=$machine" \
-        -v iot-yocto-downloads:/home/builduser/yocto/build/downloads:U \
-        -v iot-yocto-sstate:/home/builduser/yocto/build/sstate-cache:U \
+        -v "${DOWNLOADS_VOLUME}:/home/builduser/yocto/build/downloads:U" \
+        -v "${SSTATE_VOLUME}:/home/builduser/yocto/build/sstate-cache:U" \
         "$IMAGE_NAME" \
         $TARGET
 
@@ -156,7 +224,13 @@ main() {
     CR=$(detect_runtime)
     log_info "Container runtime: $CR"
 
-    build_image
+    # Subcommand: publish the cache image (no machine build).
+    if [ "${1:-}" = "publish" ]; then
+        publish
+        return
+    fi
+
+    prepare_image
 
     log_info "Target recipe: $TARGET"
     local machine="${1:-$DEFAULT_MACHINE}"
