@@ -10,30 +10,28 @@
                           ┌──────────────────────────────────────┐
                           │           iot-httpd                   │
                           │                                      │
-  HTTP client ──────────▶ │  ACE_Acceptor                        │
-  (curl, browser,         │    │                                 │
+  HTTP(S) client ───────▶ │  accept loop (poll ACE_SOCK_Acceptor)│
+  (curl, browser,         │    │ new HttpSession(router, tls?)   │
    script)                │    ▼                                 │
                           │  HttpSession (ACE_Svc_Handler)       │
-                          │    │ register with reactor            │
-                          │    │ handle_input() → read bytes     │
+                          │    │ register with ACE_Reactor        │
+                          │    │ handle_input():                  │
+                          │    │   [TlsConn: decrypt if https]    │
                           │    ▼                                 │
                           │  HttpParser (in-house, push-based)    │
-                          │    │ feed bytes → callback on complete│
+                          │    │ feed bytes → handler on complete │
                           │    ▼                                 │
-                          │  Router: match method+path            │
-                          │    │                                 │
+                          │  Router: match (method, path)         │
                           │    ├── POST /api/v1/db/get           │
                           │    ├── POST /api/v1/db/set           │
                           │    └── GET  /api/v1/db/get?timeout=N │
-                          │    │                                 │
-                          │    ▼                                 │
-                          │  Worker Pool (ACE_Task)              │
-                          │    │ enqueue Request + data_store     │
-                          │    │ Client → ds-server unix socket  │
+                          │    │ handler runs INLINE (reactor     │
+                          │    │ thread); closes over ds Client*  │
                           │    ▼                                 │
                           │  Response: HTTP/1.1 + JSON body      │
-                          │                                      │
-                          │  data_store::Client (reuse)          │
+                          │    │ [TlsConn: encrypt if https]      │
+                          │    ▼ send_bytes() → peer              │
+                          │  data_store::Client* (one, shared)    │
                           │    │ unix socket → ds-server         │
                           └────┼──────────────────────────────────┘
                                │
@@ -43,6 +41,10 @@
                     │  data_store.sock     │
                     └─────────────────────┘
 ```
+
+> **v1 note.** Handlers run **inline on the single reactor thread** — there
+> is no ACE_Task worker pool yet (it is FUP). One consequence: a long-poll
+> handler blocks the reactor for the duration of its wait. See §2.5 and D1.
 
 ## 2. Components
 
@@ -114,142 +116,155 @@ must carry `Content-Length`.
 ### 2.2 HttpSession (ACE_Svc_Handler)
 
 One per TCP connection. Registered with `ACE_Reactor` for
-`READ_MASK`. On `handle_input()`:
+`READ_MASK`. The session owns the parser and (on https) a `TlsConn`; it
+does **not** hold a `data_store::Client` — handlers close over that (§2.3).
+On `handle_input()`:
 
-1. `recv()` up to 4096 bytes into a buffer
-2. Feed bytes to `HttpParser::feed()`
-3. When `parser.done()`:
-   - Route request → handler
-   - `send()` HTTP response
-   - If `Connection: keep-alive`: `parser.reset()`, stay registered
-   - Else: close
+1. `recv()` up to 4096 bytes into a buffer.
+2. On https, feed the ciphertext to `TlsConn` (advance handshake, then
+   decrypt); on plain HTTP the bytes are the request as-is.
+3. `HttpParser::feed()` the (plaintext) bytes; the parser fires the
+   handler set via `set_handler()` and captures its response string.
+4. When `parser.done()`:
+   - `send_bytes(parser.take_response())` — straight `send_n()` on plain
+     HTTP, or `SSL_write` + drain on https.
+   - If `Connection: keep-alive`: `parser.reset()`, stay registered.
+   - Else: return `-1` (close).
+   On `parser.error()`: send `400 Bad Request` and close.
 
 ```cpp
 class HttpSession : public ACE_Svc_Handler<ACE_SOCK_Stream, ACE_MT_SYNCH> {
 public:
-    HttpSession(data_store::Client& ds, const Router& router);
+    // tls == nullptr → plain HTTP; non-null → terminate TLS (§2.7).
+    explicit HttpSession(const Router& router, const TlsContext* tls = nullptr);
 
     int handle_input(ACE_HANDLE fd) override;
     int handle_close(ACE_HANDLE fd, ACE_Reactor_Mask mask) override;
 
 private:
-    data_store::Client& m_ds;
-    const Router&       m_router;
-    HttpParser          m_parser;
-    std::string         m_recv_buf;
+    const Router&            m_router;
+    HttpParser               m_parser;
+    std::string              m_recv_buf;
+    std::unique_ptr<TlsConn> m_tls;   // null on a plain-HTTP listener
+
+    void send_bytes(const char* data, std::size_t len);  // clear or TLS
 };
 ```
 
 ### 2.3 Router
 
 Minimal path dispatcher. Matches `(method, path)` to handler
-functions. The handler receives the parsed request + a
-`data_store::Client&` and returns an HTTP response status+body.
+functions. The handler receives only the parsed request and returns an
+HTTP response status+body; `route()` is `const` and returns `404` when no
+route matches. The `data_store::Client*` is **not** a `route()` argument —
+`install_handlers()` injects it by capturing it in each handler's closure
+(§2.5), so the router and session stay decoupled from the data store.
 
 ```cpp
 struct HttpResponse {
     int         status = 200;
     std::string content_type = "application/json";
     std::string body;
+    std::string to_string() const;   // status-line + headers + body
 };
 
 class Router {
 public:
-    using HandlerFn = std::function<HttpResponse(
-        const HttpParser::Request&, data_store::Client&)>;
+    using HandlerFn = std::function<HttpResponse(const HttpParser::Request&)>;
 
     void add(std::string method, std::string path, HandlerFn fn);
-    HttpResponse route(const HttpParser::Request& req,
-                       data_store::Client& ds);
+    HttpResponse route(const HttpParser::Request& req) const;   // 404 if no match
 
 private:
-    // (method, path) → handler
-    std::map<std::pair<std::string,std::string>, HandlerFn> m_routes;
+    using Key = std::pair<std::string, std::string>;  // (method, path)
+    std::map<Key, HandlerFn> m_routes;
 };
+
+// handler.hpp — installs /api/v1/db/* on the router, binding `ds` into
+// each handler closure. `ds` must outlive the router (owned by main).
+void install_handlers(Router& router, data_store::Client* ds);
 ```
 
 ### 2.4 Long-poll support
 
 `GET /api/v1/db/get?key=<name>&timeout=<seconds>`
 
-The handler:
-1. Reads the current value via `data_store::Client::get()`
-2. If the key exists and `timeout=0` (or absent): return immediately
-3. If `timeout=N` and the key exists: register a one-shot watch,
-   block on `recv_event()` up to N seconds
-4. If the watch fires (value changed): return the new value
-5. If the timeout expires: return `{"changed":false}`
+The handler (a closure over `ds`, registered by `install_handlers`):
+1. Reads the current value via `ds->get({key})`.
+2. `timeout` absent or `0`: return the current value immediately
+   (`changed:false`). `timeout` is clamped to `[0, 300]` seconds.
+3. Otherwise `ds->watch(key)`, block on `ds->recv_event(ev, timeout*1000)`,
+   then `ds->unwatch(key)`.
+4. Event fired: `changed:true` with the new `value` (and `prev` when the
+   previous value was a string). Timeout expired: `changed:false` with the
+   primed current value.
 
 ```cpp
-HttpResponse handle_long_poll(const HttpParser::Request& req,
-                               data_store::Client& ds) {
-    std::string key = query_param(req, "key");
-    int timeout = query_param_int(req, "timeout", 0);
+// install_handlers(): router.add("GET", "/api/v1/db/get", [ds](const Request& req){
+HttpResponse h;
+std::string key = req.query.at("key");
+int timeout = clamp(atoi(req.query["timeout"]), 0, 300);
 
-    // Prime: get current value
-    std::vector<Client::GetResult> got;
-    ds.get({key}, got);
+std::vector<Client::GetResult> got;
+auto rs = ds->get({key}, got);            // prime
+json resp; resp["key"] = key;
 
-    if (timeout == 0) {
-        // Immediate return
-        return json_response(got);
-    }
-
-    // Long poll: watch + wait
-    ds.watch(key);  // pull-style
+if (timeout == 0) { resp["changed"] = false; resp["value"] = ...; }
+else {
+    ds->watch(key);
     Client::Event ev;
-    auto rs = ds.recv_event(ev, timeout * 1000);
-    ds.unwatch(key);
-
-    if (rs.ok) {
-        return json_response({{"changed", true}, {"value", ev.value}});
-    } else {
-        return json_response({{"changed", false}});
-    }
+    auto ev_rs = ds->recv_event(ev, timeout * 1000);   // BLOCKS this thread
+    ds->unwatch(key);
+    if (ev_rs.ok) { resp["changed"] = true; resp["value"] = ev.value; /* +prev */ }
+    else          { resp["changed"] = false; resp["value"] = primed; }
 }
+h.body = resp.dump();
 ```
 
-### 2.5 Main loop (ACE_Reactor + ACE_Task)
+> **v1 caveat.** `recv_event` blocks the **reactor thread** (handlers run
+> inline — D1), so an in-flight long-poll stalls all other connections
+> until it returns or times out. Moving handlers onto an ACE_Task pool is
+> FUP; until then, keep `timeout` small or run long-poll clients against a
+> dedicated instance.
+
+### 2.5 Main loop (hand-rolled accept + ACE_Reactor)
+
+v1 does **not** use `ACE_Acceptor` (it would require a default-constructible
+session) nor a worker pool. `main()` opens a plain `ACE_SOCK_Acceptor` and
+drives a single loop that polls for new connections and pumps the reactor:
 
 ```
 main()
-  ├── data_store::Client::connect(ds-socket)    // to ds-server
-  ├── Router::add("POST", "/api/v1/db/get", ...)
-  ├── Router::add("POST", "/api/v1/db/set", ...)
-  ├── Router::add("GET",  "/api/v1/db/get", ...)  // long-poll variant
-  ├── ACE_Acceptor::open(addr)                   // listen on :8080
-  ├── WorkerPool (ACE_Task, N threads)           // for CPU-bound handlers
-  └── ACE_Reactor::run_reactor_event_loop()      // blocks until SIGTERM
+  ├── data_store::Client::connect(ds-socket)        // to ds-server
+  ├── read http.listen.* / http.tls.* (CLI > ds)
+  ├── install_handlers(router, &ds)                 // binds ds into closures
+  ├── if scheme == https: TlsContext.load_server(cert, key, ca)
+  ├── ACE_SOCK_Acceptor.open(addr)                  // listen on ip:port
+  └── while (!stop):                                // SIGINT/SIGTERM set stop
+        ├── accept(stream, &peer, 0)  // non-blocking poll
+        │     └── new HttpSession(router, tlsPtr)
+        │         → set_handle(fd) → reactor.register_handler(READ_MASK)
+        └── reactor.handle_events(50ms)             // services session reads
 ```
 
-The reactor handles:
-- Accept: new connection → new HttpSession → register READ_MASK
-- Read: bytes arrive → parser → handler → response → send
-- Timeout: long-poll `recv_event` timeout → return unchanged response
-
-The ACE_Task worker pool handles blocking handlers (e.g., a handler
-that needs to call ds-server and wait). But since `data_store::Client`
-is synchronous (send+recv on unix socket), simple handlers can run
-on the reactor thread directly. Long-poll handlers MUST run on a
-worker thread because `recv_event` blocks the calling thread.
-
-**Decision (D1):** All handlers enqueue onto the ACE_Task pool.
-The reactor thread only does accept + recv + parse. Handler
-execution is fully asynchronous. Response is sent from the worker
-thread via the session's send() (ACE_Svc_Handler::peer().send() is
-thread-safe with ACE_MT_SYNCH).
+The reactor services per-connection reads; the listening socket is polled
+directly each 50 ms tick (not registered with the reactor). Everything —
+accept, decrypt, parse, handler, encrypt, send — happens on this one
+thread:
 
 ```
-Reactor thread            Worker thread
-─────────────            ─────────────
-accept()
-recv() → parser.feed()
-parser.done() → enqueue ──▶ dequeue
-                              route() → handler(ds)
-                              ds.set(...) / ds.get(...)
-                              session->send(response)
-                              return
+single reactor thread
+─────────────────────
+accept() → new HttpSession(router, tls?)
+handle_events():
+  handle_input() → [TLS decrypt] → parser.feed()
+                 → parser fires handler INLINE → route() → handler(req)
+                   └─ ds->get/set/watch (may block on long-poll)
+                 → send_bytes(take_response())  [TLS encrypt]
 ```
+
+A worker pool (ACE_Task) to lift blocking/long-poll handlers off the
+reactor is **FUP** (see D1).
 
 ### 2.6 Configuration
 
@@ -476,7 +491,10 @@ modules/http-server/                 # new top-level module
 - WebSocket upgrade
 - Chunked transfer encoding
 - HTTP/2
-- Authentication (reuses unix socket DAC + future L17c ACL)
+- Application-level authn/authz (transport client auth is available via
+  mTLS — §2.7; per-key authorization still reuses the L17c ds-server ACL)
+- ACE_Task worker pool / async handlers (handlers run inline — D1)
+- Strict `411 Length Required` enforcement (D6)
 - Rate limiting (reuses L17d ds-server rate-limit)
 - Static file serving
 - Request logging to file (ACE_DEBUG to stderr is sufficient for v1)
@@ -486,12 +504,12 @@ modules/http-server/                 # new top-level module
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
-| D1 | All handlers run on ACE_Task worker threads | Keeps reactor thread free for I/O; long-poll blocks a worker, not the acceptor |
+| D1 | v1: handlers run **inline on the reactor thread**; ACE_Task pool is FUP | Simplest correct thing first. Trade-off: a long-poll handler blocks the reactor for its wait (§2.4). Lifting handlers onto a pool is the first scaling step |
 | D2 | HttpParser is push-based (no pull/peek) | Matches reactor pattern — bytes arrive asynchronously, parser consumes what it can |
-| D3 | `data_store::Client` is per-request, not pooled | Client already supports concurrent use from multiple threads; connection is a unix socket (low overhead) |
+| D3 | One shared `data_store::Client*`, injected via handler closures | `install_handlers()` binds it into each route; the router/session stay decoupled from the data store. The unix socket is used serially from the single reactor thread, so no pooling is needed in v1 |
 | D4 | JSON for both request and response bodies | Matches existing ds-cli/ds-server protocol; operators already know the shape |
 | D5 | Long-poll uses pull-style watch (not callback) | Simpler — handler blocks on `recv_event()`, wakes on change or timeout. No callback threading issues |
-| D6 | No `Content-Length` → `411 Length Required` | Chunked TE not supported in v1; strict enforcement avoids parser ambiguity |
+| D6 | Body is `Content-Length`-delimited; absent → empty body (no `411`) | Chunked TE unsupported; a request without `Content-Length` is parsed as a zero-length body rather than rejected. Strict `411`/length enforcement is FUP. Malformed request lines → `400` |
 | D7 | Keep-alive opt-in per request | Default `Connection: close` reduces resource leaks from forgotten clients |
 | D8 | TLS via OpenSSL memory BIOs, not `ACE_SSL_SOCK_*`/`SSL_set_fd` | Keeps the non-blocking reactor model — ciphertext is pumped between BIOs and the socket, so the handshake never blocks the reactor thread or needs a worker |
 | D9 | mTLS = presence of `http.tls.ca` | One knob: a CA bundle both verifies clients and flips `SSL_VERIFY_FAIL_IF_NO_PEER_CERT`. Reuses the fleet's openvpn CA (`vpn.ca.path`) when a shared trust domain is wanted |
