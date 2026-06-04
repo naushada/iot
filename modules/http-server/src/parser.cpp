@@ -10,28 +10,6 @@ namespace http_server {
 
 namespace {
 
-/// Consume up to `max` bytes from `src` into `dst`, stopping at
-/// `delim`. Returns number of bytes consumed (including delim).
-/// If delim not found within max, returns 0.
-std::size_t consume_until(std::string_view src, std::string& dst,
-                           char delim, std::size_t max = 8192) {
-    for (std::size_t i = 0; i < max && i < src.size(); ++i) {
-        if (src[i] == delim) {
-            dst.append(src.data(), i);
-            return i + 1;
-        }
-    }
-    return 0;
-}
-
-/// Consume exactly `n` bytes if available.
-bool consume_exact(std::string_view src, std::string& dst,
-                   std::size_t n) {
-    if (src.size() < n) return false;
-    dst.append(src.data(), n);
-    return true;
-}
-
 /// Trim leading/trailing whitespace in-place.
 void trim(std::string& s) {
     while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front())))
@@ -45,17 +23,6 @@ void lower(std::string& s) {
     for (auto& c : s) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
-}
-
-/// Return true if s starts with prefix (case-insensitive).
-bool istarts_with(std::string_view s, std::string_view prefix) {
-    if (s.size() < prefix.size()) return false;
-    for (std::size_t i = 0; i < prefix.size(); ++i) {
-        if (std::tolower(static_cast<unsigned char>(s[i])) !=
-            std::tolower(static_cast<unsigned char>(prefix[i])))
-            return false;
-    }
-    return true;
 }
 
 } // namespace
