@@ -22,6 +22,10 @@ SRC_URI = "git://github.com/legatoproject/tinydtls.git;protocol=https;branch=mas
 SRCREV = "9ae4f917d7687df71d521803446b8a4e9e41f59d"
 
 S = "${WORKDIR}/git"
+# tinydtls only supports an in-tree build (its Makefile.in has no VPATH
+# handling); build where configure generates the Makefile, not the default
+# separate ${WORKDIR}/build, else do_compile finds "no makefile".
+B = "${S}"
 
 inherit autotools
 
