@@ -204,8 +204,9 @@ The handler (a closure over `ds`, registered by `install_handlers`):
 1. Reads the current value via `ds->get({key})`.
 2. `timeout` absent or `0`: return the current value immediately
    (`changed:false`). `timeout` is clamped to `[0, 300]` seconds.
-3. Otherwise `ds->watch(key)`, block on `ds->recv_event(ev, timeout*1000)`,
-   then `ds->unwatch(key)`.
+3. Otherwise register a per-request `watch(key, cb, &handle)` and block on a
+   condition variable up to `timeout`; the cb (on the ds listener thread)
+   fills the event and signals. Then `unwatch(handle)`.
 4. Event fired: `changed:true` with the new `value` (and `prev` when the
    previous value was a string). Timeout expired: `changed:false` with the
    primed current value.
@@ -222,12 +223,18 @@ json resp; resp["key"] = key;
 
 if (timeout == 0) { resp["changed"] = false; resp["value"] = ...; }
 else {
-    ds->watch(key);
-    Client::Event ev;
-    auto ev_rs = ds->recv_event(ev, timeout * 1000);   // BLOCKS this thread
-    ds->unwatch(key);
-    if (ev_rs.ok) { resp["changed"] = true; resp["value"] = ev.value; /* +prev */ }
-    else          { resp["changed"] = false; resp["value"] = primed; }
+    auto st = std::make_shared<LpState>();          // {mutex, cv, fired, ev}
+    Client::WatchHandle wh = Client::kInvalidHandle;
+    ds->watch(key, [st](const Client::Event& e){     // fires on the listener thread
+        std::lock_guard lk(st->m);
+        if (!st->fired) { st->ev = e; st->fired = true; }
+        st->cv.notify_one();
+    }, &wh);
+    { std::unique_lock lk(st->m);
+      st->cv.wait_for(lk, seconds(timeout), [&]{ return st->fired; }); }
+    if (wh != Client::kInvalidHandle) ds->unwatch(wh);
+    if (st->fired) { resp["changed"] = true; resp["value"] = st->ev.value; /* +prev */ }
+    else           { resp["changed"] = false; resp["value"] = primed; }
 }
 h.body = resp.dump();
 ```
@@ -422,9 +429,11 @@ Why this is safe without ACE reference counting:
 - **Shutdown** stops the pool (joins workers) before tearing down the
   reactor, so no worker is left holding a session.
 
-Known limitation: concurrent long-polls share the Client's pull-style
-event queue; per-watch isolation (callback-style) is a follow-up. The
-reactor never blocks regardless.
+Concurrent long-polls are isolated: each long-poll handler uses a
+**per-request callback-style watch** (not the Client's shared pull queue),
+so one request's event can't be delivered to another (§2.4, D5). The
+callback's state is heap-owned (shared_ptr), so a notification racing the
+`unwatch` can't touch the handler's stack.
 
 ## 3. REST API
 
@@ -579,7 +588,7 @@ modules/http-server/                 # new top-level module
 | D2 | HttpParser is push-based (no pull/peek) | Matches reactor pattern — bytes arrive asynchronously, parser consumes what it can |
 | D3 | One shared `data_store::Client*`, injected via handler closures | `install_handlers()` binds it into each route; the router/session stay decoupled from the data store. The unix socket is used serially from the single reactor thread, so no pooling is needed in v1 |
 | D4 | JSON for both request and response bodies | Matches existing ds-cli/ds-server protocol; operators already know the shape |
-| D5 | Long-poll uses pull-style watch (not callback) | Simpler — handler blocks on `recv_event()`, wakes on change or timeout. No callback threading issues |
+| D5 | Long-poll uses a **per-request callback-style watch** | Each handler registers its own `watch(key, cb, &handle)` and blocks on a condition variable; the cb (on the ds listener thread) fills a heap-owned (shared_ptr) state and signals. Isolates concurrent long-polls (no shared pull queue) and is UAF-safe against a late notification racing `unwatch` |
 | D6 | Body is `Content-Length`-delimited **or** `Transfer-Encoding: chunked` | Both framings supported (chunked wins when both present, §2.1). A body-bearing method (POST/PUT/PATCH) with neither header → **`411 Length Required`**; other methods (GET/…) with no length simply have no body. Malformed request lines → `400` |
 | D7 | Keep-alive opt-in per request | Default `Connection: close` reduces resource leaks from forgotten clients |
 | D8 | TLS via OpenSSL memory BIOs, not `ACE_SSL_SOCK_*`/`SSL_set_fd` | Keeps the non-blocking reactor model — ciphertext is pumped between BIOs and the socket, so the handshake never blocks the reactor thread or needs a worker |

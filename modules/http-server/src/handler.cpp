@@ -7,6 +7,11 @@
 
 #include <ace/Log_Msg.h>
 
+#include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+
 namespace http_server {
 
 namespace {
@@ -171,8 +176,27 @@ void install_handlers(Router& router, data_store::Client* ds) {
                 return r;
             }
 
-            // Long poll: watch + wait
-            auto ws = ds->watch(key);
+            // Long poll: a per-request callback-style watch (not the shared
+            // pull queue), so concurrent long-polls on a worker pool each get
+            // their own event — no cross-talk. The state is heap-owned and
+            // captured by the callback (shared_ptr), so a notification that
+            // races unwatch can't touch this stack frame.
+            struct LpState {
+                std::mutex                 m;
+                std::condition_variable    cv;
+                bool                       fired = false;
+                data_store::Client::Event  ev;
+            };
+            auto st = std::make_shared<LpState>();
+            data_store::Client::WatchHandle wh =
+                data_store::Client::kInvalidHandle;
+            auto ws = ds->watch(key,
+                [st](const data_store::Client::Event& e) {
+                    std::lock_guard<std::mutex> lk(st->m);
+                    if (!st->fired) { st->ev = e; st->fired = true; }
+                    st->cv.notify_one();
+                },
+                &wh);
             if (!ws.ok) {
                 resp["changed"] = false;
                 resp["value"] = nullptr;
@@ -180,11 +204,17 @@ void install_handlers(Router& router, data_store::Client* ds) {
                 return r;
             }
 
-            data_store::Client::Event ev;
-            auto ev_rs = ds->recv_event(ev, timeout * 1000);
-            ds->unwatch(key);
+            bool got_event;
+            {
+                std::unique_lock<std::mutex> lk(st->m);
+                st->cv.wait_for(lk, std::chrono::seconds(timeout),
+                                [&] { return st->fired; });
+                got_event = st->fired;
+            }
+            if (wh != data_store::Client::kInvalidHandle) ds->unwatch(wh);
+            data_store::Client::Event ev = st->ev;
 
-            if (ev_rs.ok) {
+            if (got_event) {
                 resp["changed"] = true;
                 if (auto s = data_store::to_string(ev.value)) {
                     resp["value"] = *s;
