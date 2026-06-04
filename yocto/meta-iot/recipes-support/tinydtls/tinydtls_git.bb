@@ -5,16 +5,21 @@ constrained devices. The iot LwM2M stack links it statically for CoAPs \
 legatoproject fork — the same source pinned in apps/3rdparty/tinydtls/."
 HOMEPAGE = "https://github.com/legatoproject/tinydtls"
 LICENSE = "EPL-1.0 | EDL-1.0"
-LIC_FILES_CHKSUM = "file://COPYING;md5=815ca599c9df247a0c7f619bab123dad"
+# master-swi renamed COPYING -> LICENSE (same EPL-1.0/EDL-1.0 dual text).
+LIC_FILES_CHKSUM = "file://LICENSE;md5=ffb073dbb36e7ec5e091047332f302c5"
 SECTION = "libs"
 
-# Fetch from the same legatoproject fork that .gitmodules pins.
-# The SRCREV should match the submodule pin in the iot repo. When the
-# submodule advances, update this SRCREV.
-SRC_URI = "git://github.com/legatoproject/tinydtls.git;protocol=https;branch=master \
+# Fetch from the legatoproject fork. The original pin (3bdb972e, branch
+# master) was rebased away upstream — master is no longer the default and
+# that commit no longer exists. Track the current default branch
+# (master-swi) at a fixed SRCREV. The local patch is re-based onto it
+# (the handle_handshake NULL-guard is already upstream here, so dropped).
+SRC_URI = "git://github.com/legatoproject/tinydtls.git;protocol=https;branch=master-swi \
            file://0001-security-and-uthash-fixes.patch \
+           file://platform-inet.h \
+           file://platform-types.h \
           "
-SRCREV = "3bdb972e3f4f832bada96839c9d36501eb8e299b"
+SRCREV = "9ae4f917d7687df71d521803446b8a4e9e41f59d"
 
 S = "${WORKDIR}/git"
 
@@ -22,8 +27,14 @@ inherit autotools
 
 # tinydtls ships without a pre-built configure script. Generate it at
 # configure time (matches the autoconf && autoheader step in Dockerfile).
+# master-swi's session.h pulls <platform/inet.h> + <platform/types.h>,
+# platform shims the legato build supplies but the repo doesn't ship for
+# Linux — provide them here (same files the iot repo vendors).
 do_configure:prepend() {
     cd ${S}
+    install -d ${S}/platform
+    install -m 0644 ${WORKDIR}/platform-inet.h  ${S}/platform/inet.h
+    install -m 0644 ${WORKDIR}/platform-types.h ${S}/platform/types.h
     autoconf
     autoheader
 }

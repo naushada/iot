@@ -1,31 +1,24 @@
 From: iot-yocto-build
-Subject: [PATCH] tinydtls: security and uthash fixes
+Subject: [PATCH] tinydtls: security and uthash fixes (master-swi)
 
-Backport of the fixes carried in apps/patch/tinydtls.patch:
+Re-based onto the legatoproject master-swi branch. The handle_handshake
+NULL-guard hunk from apps/patch/tinydtls.patch is dropped here: master-swi
+already carries it (commit "Fix null dereference crash in handle_handshake").
+Remaining fixes:
 
-1. dtls.c — bounds-check session_id.size before memcmp in
-   check_server_hello(), add NULL-guard on peer pointer in
-   handle_handshake(), guard handshake pointer dereference in
-   handle_ccs().
-2. prng.h  — switch from rand() to /dev/urandom for cryptographic
-   random number generation.
-3. uthash.h — fix integer division bug in ideal_chain_maxlen that
-   caused expand_mult to be recomputed incorrectly on every insert.
+1. dtls.c   — bounds-check session_id.size before memcmp in
+   check_server_hello(); drop the eager peer->handshake_params deref in
+   handle_ccs() (peer is NULL-checked just below, then re-read).
+2. prng.h   — switch from rand() to /dev/urandom for cryptographic RNG.
+3. uthash.h — fix integer-division bug in ideal_chain_maxlen.
 
-Upstream-status: Inappropriate [legatoproject fork — fixes submitted
-to the vendor fork used by this project]
-
+Upstream-status: Inappropriate [legatoproject fork — vendor-specific]
 ---
- dtls.c   | 7 +++++--
- prng.h   | 9 +++++++--
- uthash.h | 4 +++-
- 3 files changed, 15 insertions(+), 5 deletions(-)
-
 diff --git a/dtls.c b/dtls.c
-index 2ed7473..b3da253 100644
+index defaff9..1d8c80d 100644
 --- a/dtls.c
 +++ b/dtls.c
-@@ -2685,7 +2685,9 @@ check_server_hello(dtls_context_t *ctx,
+@@ -2768,7 +2768,9 @@ check_server_hello(dtls_context_t *ctx,
    if (*data) {
      peer->session_id.size = *data;
      if (peer->resumption) {
@@ -36,37 +29,27 @@ index 2ed7473..b3da253 100644
          dtls_info("server is willing to resume the session\n");
          return 0; /* session resume, no need to init security parameters */
        }
-@@ -3661,7 +3663,8 @@ handle_handshake(dtls_context_t *ctx, dtls_peer_t *peer, session_t *session,
-   dtls_debug("received handshake packet of type: %s (%i)\n",
-              dtls_handshake_type_to_name(hs_header->msg_type), hs_header->msg_type);
-
--  if ((peer->state == DTLS_STATE_CONNECTED)
-+  if (peer
-+   && (peer->state == DTLS_STATE_CONNECTED)
-     && (hs_header->msg_type == DTLS_HT_CLIENT_HELLO)
-     && (peer->role == DTLS_CLIENT))
-    {
-@@ -3772,7 +3775,7 @@ handle_ccs(dtls_context_t *ctx, dtls_peer_t *peer,
-            uint8 *record_header, uint8 *data, size_t data_length)
+@@ -3857,7 +3859,7 @@ handle_ccs(dtls_context_t *ctx, dtls_peer_t *peer,
+ 	   uint8 *record_header, uint8 *data, size_t data_length)
  {
    int err;
 -  dtls_handshake_parameters_t *handshake = peer->handshake_params;
 +  dtls_handshake_parameters_t *handshake;
    (void)record_header;
-
+ 
    /* A CCS message is handled after a KeyExchange message was
 diff --git a/prng.h b/prng.h
-index 8a82173..db49cb3 100644
+index 8a82173..e25e8a8 100644
 --- a/prng.h
 +++ b/prng.h
 @@ -33,6 +33,7 @@
-
+ 
  #ifndef WITH_CONTIKI
  #include <stdlib.h>
 +#include <stdio.h>
-
+ 
  #ifdef __RTOS__
-
+ 
 @@ -74,14 +75,18 @@ static void dtls_prng_init(unsigned short seed)
   */
  static inline int
@@ -82,14 +65,14 @@ index 8a82173..db49cb3 100644
 +  fclose(urandom);
 +  return status;
  }
-
+ 
  static inline void
  dtls_prng_init(unsigned short seed) {
--       srand(seed);
-+  /* urandom initialized at system level */
+-	srand(seed);
++	/* urandom initialized at system level */
  }
  #endif /* __RTOS__ */
-
+ 
 diff --git a/uthash.h b/uthash.h
 index 07b29db..650bac5 100644
 --- a/uthash.h
