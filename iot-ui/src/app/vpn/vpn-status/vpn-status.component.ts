@@ -8,17 +8,22 @@ import { VpnStatus } from '../../../common/app-globals';
   template: `
     <div class="page">
       <h3>VPN Connection Status</h3>
-      <table class="table table-compact table-borderless" *ngIf="!loading">
+      <table class="table" *ngIf="!loading">
+        <colgroup>
+          <col style="width:25%;">
+          <col style="width:75%;">
+        </colgroup>
+        <thead>
+          <tr><th>Property</th><th>Value</th></tr>
+        </thead>
         <tbody>
-          <tr><td class="label-col">State</td><td><app-status-badge [label]="v.state||'unknown'" [state]="v.state||''"></app-status-badge></td></tr>
-          <tr><td class="label-col">Assigned IP</td><td>{{ v.ip || '—' }}</td></tr>
-          <tr><td class="label-col">Gateway</td><td>{{ v.gateway || '—' }}</td></tr>
-          <tr><td class="label-col">Netmask</td><td>{{ v.netmask || '—' }}</td></tr>
-          <tr><td class="label-col">DNS</td><td>{{ v.dns || '—' }}</td></tr>
-          <tr><td class="label-col">PID</td><td>{{ v.pid || '—' }}</td></tr>
-          <tr><td class="label-col">Exit Code</td><td>{{ v.exit_code != null ? v.exit_code : '—' }}</td></tr>
-          <tr><td class="label-col">Gate Reason</td><td>{{ v.gate_reason || '—' }}</td></tr>
-          <tr><td class="label-col">Bound Interface</td><td>{{ v.bound_iface || '—' }}</td></tr>
+          <tr *ngFor="let row of rows">
+            <td>{{ row.key }}</td>
+            <td>
+              <app-status-badge *ngIf="row.isBadge" [label]="row.value" [state]="v.state||''"></app-status-badge>
+              <span *ngIf="!row.isBadge">{{ row.value }}</span>
+            </td>
+          </tr>
         </tbody>
       </table>
       <p *ngIf="loading">Loading…</p>
@@ -34,6 +39,20 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
   loading = true;
   private sub = new Subscription();
   private active = true;
+
+  get rows(): { key: string; value: string; isBadge: boolean }[] {
+    return [
+      { key: 'State',           value: this.v.state || 'unknown', isBadge: true },
+      { key: 'Assigned IP',     value: this.v.ip || '—',          isBadge: false },
+      { key: 'Gateway',         value: this.v.gateway || '—',     isBadge: false },
+      { key: 'Netmask',         value: this.v.netmask || '—',     isBadge: false },
+      { key: 'DNS',             value: this.v.dns || '—',         isBadge: false },
+      { key: 'PID',             value: String(this.v.pid || '—'), isBadge: false },
+      { key: 'Exit Code',       value: this.v.exit_code != null ? String(this.v.exit_code) : '—', isBadge: false },
+      { key: 'Gate Reason',     value: this.v.gate_reason || '—', isBadge: false },
+      { key: 'Bound Interface', value: this.v.bound_iface || '—', isBadge: false },
+    ];
+  }
 
   constructor(private http: HttpsvcService) {}
 
