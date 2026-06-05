@@ -43,10 +43,5 @@ return {
     -- blocking long-poll can't stall other connections. CLI: http-workers=N.
     ["http.workers"]       = { type = "integer", default = 0, min = 0, max = 64 },
 
-    -- Enable session-based authentication for the REST API. When true
-    -- (default), all /api/v1/* routes except /api/v1/auth/* require a
-    -- valid session cookie. Set to false for open access (dev / trusted
-    -- LAN deployments). Hot-reloaded ~every 60s (L19/D1).
-    ["http.auth.enabled"]  = { type = "boolean", default = true },
   },
 }

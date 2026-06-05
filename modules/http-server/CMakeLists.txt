@@ -125,6 +125,6 @@ include(GNUInstallDirs)
 if(NOT DEFINED IOT_PACKAGING_INSTALL OR IOT_PACKAGING_INSTALL)
     install(TARGETS iot-httpd
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-    install(FILES schemas/http.lua
+    install(FILES schemas/http.lua schemas/auth.lua
             DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
 endif()

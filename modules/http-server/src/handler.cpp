@@ -256,28 +256,32 @@ void install_handlers(Router& router,
         });
 
     // ── POST /api/v1/auth/login ──────────────────────────────────
+    // Body: { "id": "admin", "password": "<plaintext>" }
+    // The server SHA-256-hashes the submitted password and compares
+    // against auth.users.admin.password_hash in the data store.
     router.add("POST", "/api/v1/auth/login",
         [ds, auth](const HttpParser::Request& req) -> HttpResponse {
             HttpResponse r;
             auto doc = parse_body(req.body);
-            std::string username = doc.value("username", "");
+            std::string id       = doc.value("id", "");
             std::string password = doc.value("password", "");
-            if (username.empty() || password.empty()) {
+            if (id.empty() || password.empty()) {
                 r.status = 400;
-                r.body = R"({"ok":false,"err":"username and password required"})";
+                r.body = R"({"ok":false,"err":"id and password required"})";
                 return r;
             }
             // v1: single admin user
-            if (username != "admin") {
+            if (id != "admin") {
                 r.status = 401;
                 r.body = R"({"ok":false,"err":"invalid credentials"})";
                 return r;
             }
-            std::string admin_pw = CredentialStore::kDefaultPassword;
+            // Load the stored SHA-256 hash, fall back to compiled-in default
+            std::string stored_hash = CredentialStore::kDefaultHash;
             if (ds) {
-                admin_pw = CredentialStore::load_admin_password(*ds);
+                stored_hash = CredentialStore::load_admin_password_hash(*ds);
             }
-            if (password != admin_pw) {
+            if (!CredentialStore::verify(password, stored_hash)) {
                 r.status = 401;
                 r.body = R"({"ok":false,"err":"invalid credentials"})";
                 return r;

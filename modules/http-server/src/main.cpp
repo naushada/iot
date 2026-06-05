@@ -339,13 +339,15 @@ int main(int argc, char** argv) {
             if (++auth_tick >= 30) {  // ~60s
                 auth_tick = 0;
                 auth_store.sweep_expired();
-                // Reload auth.enabled + admin password
+                // Reload auth.enabled
                 std::vector<data_store::Client::GetResult> got;
                 auto rs = ds.get({"http.auth.enabled"}, got);
                 if (rs.ok && !got.empty() && got[0].has_value) {
                     if (auto b = data_store::to_bool(got[0].value))
                         auth_store.set_enabled(*b);
                 }
+                // Password hash is reloaded on each login attempt
+                // (stateless — no cache to invalidate).
             }
             DsHttpCfg cur = read_ds_http_cfg(ds);
             bool tlsDirty = false, listenDirty = false;

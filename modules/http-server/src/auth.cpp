@@ -4,6 +4,7 @@
 #include "data_store/value.hpp"
 
 #include <openssl/rand.h>
+#include <openssl/sha.h>
 
 #include <ace/Log_Msg.h>
 
@@ -130,20 +131,43 @@ void SessionStore::sweep_expired() {
     }
 }
 
+// ── SHA-256 ─────────────────────────────────────────────────────────
+
+std::string sha256_hex(const std::string& input) {
+    unsigned char digest[SHA256_DIGEST_LENGTH];
+    SHA256(reinterpret_cast<const unsigned char*>(input.data()),
+           input.size(), digest);
+    // Encode as lowercase hex
+    constexpr char kHex[] = "0123456789abcdef";
+    std::string out;
+    out.reserve(SHA256_DIGEST_LENGTH * 2);
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+        out.push_back(kHex[digest[i] >> 4]);
+        out.push_back(kHex[digest[i] & 0xF]);
+    }
+    return out;
+}
+
 // ── CredentialStore ────────────────────────────────────────────────
 
-std::string CredentialStore::load_admin_password(data_store::Client& ds) {
+std::string CredentialStore::load_admin_password_hash(
+    data_store::Client& ds) {
     std::vector<data_store::Client::GetResult> got;
-    auto rs = ds.get({"auth.users.admin.password"}, got);
+    auto rs = ds.get({"auth.users.admin.password_hash"}, got);
     if (rs.ok && !got.empty() && got[0].has_value) {
         if (auto s = data_store::to_string(got[0].value)) {
             if (!s->empty()) return *s;
         }
     }
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [http:%t] %M %N:%l auth.users.admin.password "
+               ACE_TEXT("%D [http:%t] %M %N:%l auth.users.admin.password_hash "
                         "unset — using compiled-in default\n")));
-    return kDefaultPassword;
+    return kDefaultHash;
+}
+
+bool CredentialStore::verify(const std::string& submitted_plaintext,
+                              const std::string& stored_hash) {
+    return sha256_hex(submitted_plaintext) == stored_hash;
 }
 
 // ── Cookie helpers ─────────────────────────────────────────────────

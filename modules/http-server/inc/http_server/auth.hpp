@@ -4,18 +4,17 @@
 /// Session-based authentication for iot-httpd (L19/D1).
 ///
 /// Server-side session store with opaque token cookies. A SessionStore
-/// is shared across all handlers (owned by main). The AuthGuard helper
-/// wraps a Router::HandlerFn and returns 401 when the request carries
-/// no valid session cookie.
+/// is shared across all handlers (owned by main).
 ///
 /// Auth can be disabled at runtime by setting http.auth.enabled=false
 /// in the data store — every route becomes public. The default is
 /// enabled (auth required for all /api/v1/* routes except /api/v1/auth).
 ///
-/// Credentials are read from the data store at startup and reloaded
-/// every ~30s. The admin user is:
-///   auth.users.admin.password  — plain-text password (v1; bcrypt FUP)
-/// When unset, the compiled-in default is "admin".
+/// Credentials — SHA-256 (no plain text):
+///   Login body:   { "id": "admin", "password": "<plaintext>" }
+///   Stored key:   auth.users.admin.password_hash  (64-char hex digest)
+///   Comparison:   sha256(submitted_plaintext) == stored_hash
+///   Default hash: sha256("admin")
 ///
 /// Thread safety: SessionStore is protected by an internal mutex.
 /// Token generation uses OpenSSL RAND_bytes (already linked for TLS).
@@ -73,16 +72,28 @@ private:
 
 // ── Auth helpers ───────────────────────────────────────────────────
 
+/// Compute the SHA-256 digest of `input` and return it as 64 lowercase
+/// hex characters.  Uses OpenSSL (already linked for TLS).
+std::string sha256_hex(const std::string& input);
+
 /// Credential store backed by data-store keys.  Reloadable.
 class CredentialStore {
 public:
-    /// Load the admin password from the data store.
-    /// Key: auth.users.admin.password  — plain-text (v1)
-    /// Falls back to compiled-in default "admin" when the key is unset.
-    static std::string load_admin_password(data_store::Client& ds);
+    /// Load the admin password hash from the data store.
+    /// Key: auth.users.admin.password_hash  — SHA-256 hex digest
+    /// Falls back to the compiled-in default (sha256("admin")) when
+    /// the key is unset.
+    static std::string load_admin_password_hash(data_store::Client& ds);
 
-    /// Default admin password (used when the ds key is unset).
-    static constexpr const char* kDefaultPassword = "admin";
+    /// Verify a plain-text password against the stored SHA-256 hash.
+    /// Returns true when sha256(submitted) == stored_hash.
+    static bool verify(const std::string& submitted_plaintext,
+                       const std::string& stored_hash);
+
+    /// Default admin password hash: sha256("admin").
+    static constexpr const char* kDefaultHash =
+        "8c6976e5b5410415bde908bd4dee15df"
+        "b167a9c873fc4bb8a81f6f2ab448a918";
 };
 
 /// Extract the session token from a Cookie header.
