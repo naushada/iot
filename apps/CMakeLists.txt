@@ -8,6 +8,14 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 
 add_definitions(-DLWM2M_LITTLE_ENDIAN)
 
+# MongoDB — compile-time guard for db_adapter.cpp and conditional linking.
+# Set -DIOT_ENABLE_MONGO=OFF on the cmake command line (or via Yocto
+# PACKAGECONFIG[mongo]) to drop mongocxx/bsoncxx from the build.
+option(IOT_ENABLE_MONGO "Enable MongoDB registration mirror support" ON)
+if(IOT_ENABLE_MONGO)
+    add_definitions(-DIOT_ENABLE_MONGO)
+endif()
+
 # ACE_TAO install prefix — kept in sync with xpmile (see ../../xpmile/CMakeLists.txt).
 # Override on the command line with -DACE_ROOT=/some/other/prefix if needed.
 if(NOT DEFINED ACE_ROOT)

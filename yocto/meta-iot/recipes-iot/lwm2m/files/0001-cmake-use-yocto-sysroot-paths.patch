@@ -6,16 +6,16 @@ Make all five CMakeLists.txt files Yocto/OE sysroot-aware.
 Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 
 ---
- apps/CMakeLists.txt                    | 66
+ apps/CMakeLists.txt                    | 63
  modules/data-store/CMakeLists.txt                    | 14
  modules/net/router/CMakeLists.txt                    | 11
  modules/openvpn/client/CMakeLists.txt                    | 11
  modules/wan/wifi/client/CMakeLists.txt                    | 11
- 5 files changed, 89 insertions(+), 24 deletions(-)
+ 5 files changed, 86 insertions(+), 24 deletions(-)
 
 --- a/apps/CMakeLists.txt
 +++ b/apps/CMakeLists.txt
-@@ -10,8 +10,16 @@
+@@ -18,8 +18,16 @@
  
  # ACE_TAO install prefix — kept in sync with xpmile (see ../../xpmile/CMakeLists.txt).
  # Override on the command line with -DACE_ROOT=/some/other/prefix if needed.
@@ -33,7 +33,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  endif()
  
  # Lua — required for apps/src/lua_config.cpp which now backs the
-@@ -25,6 +33,7 @@
+@@ -33,6 +41,7 @@
               NAMES liblua5.3.a liblua.a
               PATHS /usr/lib/aarch64-linux-gnu
                     /usr/lib/x86_64-linux-gnu
@@ -41,7 +41,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
                     /usr/lib
                     /usr/local/lib
               NO_DEFAULT_PATH)
-@@ -38,11 +47,27 @@
+@@ -46,11 +55,24 @@
  # Include External cmake file
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
@@ -50,10 +50,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  include_directories(${ACE_ROOT}/include)
  include_directories(${LUA_INCLUDE_DIR})
  
-+# MongoDB - optional, guarded by IOT_ENABLE_MONGO.
-+option(IOT_ENABLE_MONGO "Enable MongoDB registration mirror support" ON)
 +if(IOT_ENABLE_MONGO)
-+    add_definitions(-DIOT_ENABLE_MONGO)
 +    find_path(MONGOCXX_INCLUDE_DIR mongocxx/pool.hpp
 +              HINTS ${CMAKE_SYSROOT}/usr/include/mongocxx/v_noabi
 +                    /usr/local/include/mongocxx/v_noabi)
@@ -71,7 +68,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  include_directories(inc)
  
  # Data-store client lib — sibling module under ../modules/data-store.
-@@ -82,25 +107,36 @@
+@@ -90,25 +112,36 @@
  
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
  
