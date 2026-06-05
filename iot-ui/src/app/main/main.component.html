@@ -6,28 +6,35 @@
       <span class="brand-text">IoT Manager</span>
     </div>
 
-    <ng-container *ngFor="let m of menus">
+    <ng-container *ngFor="let m of menus; let i = index; let last = last">
       <!-- Parent item -->
       <a class="nav-item"
          [class.active]="selectedMenu === m.id && !selectedSubNav"
          [class.expanded]="expandedMenu === m.id"
+         [class.has-children]="m.children.length"
          (click)="m.children.length ? toggleMenu(m.id) : onMenuSelect(m.id)">
-        <clr-icon [attr.shape]="m.icon"></clr-icon>
+        <clr-icon *ngIf="m.children.length"
+                  class="folder-icon"
+                  [attr.shape]="expandedMenu === m.id ? 'folder-open' : 'folder'">
+        </clr-icon>
+        <clr-icon *ngIf="!m.children.length" [attr.shape]="m.icon"></clr-icon>
         <span>{{ m.label }}</span>
         <clr-icon *ngIf="m.children.length"
-                  class="expand-icon"
+                  class="expand-chevron"
                   [attr.shape]="expandedMenu === m.id ? 'angle-down' : 'angle-right'">
         </clr-icon>
       </a>
 
-      <!-- Children -->
-      <ng-container *ngIf="m.children.length && expandedMenu === m.id">
-        <a class="nav-child" *ngFor="let c of m.children"
+      <!-- Children with tree lines -->
+      <div class="tree-children" *ngIf="m.children.length && expandedMenu === m.id">
+        <a class="nav-child" *ngFor="let c of m.children; let ci = index; let clast = last"
            [class.active]="selectedMenu === m.id && selectedSubNav === c.id"
+           [class.tree-last]="clast"
            (click)="onChildSelect(m.id, c.id)">
+          <clr-icon shape="file" class="file-icon"></clr-icon>
           {{ c.label }}
         </a>
-      </ng-container>
+      </div>
     </ng-container>
 
     <div class="sidebar-spacer"></div>
