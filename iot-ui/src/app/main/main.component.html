@@ -1,0 +1,79 @@
+<clr-main-container>
+  <!-- ── Header ─────────────────────────────────────────────────── -->
+  <clr-header>
+    <div class="branding">
+      <a class="nav-link nav-text" (click)="onMenuSelect('dashboard')"
+         style="cursor: pointer;">
+        <img src="assets/iot-logo.svg" width="28" height="28"
+             style="vertical-align: middle; margin-right: 6px;" />
+        <span class="title">IoT Manager</span>
+      </a>
+    </div>
+
+    <div class="header-nav" style="cursor: pointer;">
+      <a *ngFor="let m of menus"
+         class="nav-link nav-text"
+         [class.active]="selectedMenu === m.id"
+         (click)="onMenuSelect(m.id)">
+        {{ m.label }}
+      </a>
+    </div>
+
+    <div class="header-actions">
+      <clr-dropdown>
+        <button type="button" class="nav-icon" clrDropdownTrigger
+                aria-label="toggle user menu">
+          <clr-icon shape="user"></clr-icon>
+        </button>
+        <clr-dropdown-menu *clrIfOpen clrPosition="bottom-right">
+          <a clrDropdownItem style="cursor: pointer" (click)="onLogout()">
+            Sign out
+          </a>
+        </clr-dropdown-menu>
+      </clr-dropdown>
+    </div>
+  </clr-header>
+
+  <!-- ── Live subnav ────────────────────────────────────────────── -->
+  <nav class="live-subnav">
+    <div class="live-strip">
+      <div class="live-tag">
+        <span class="live-pulse"></span>
+        <span class="live-label">LIVE</span>
+      </div>
+
+      <div class="live-date-chip">
+        <clr-icon shape="calendar"></clr-icon>
+        <span>{{ today }}</span>
+      </div>
+
+      <app-status-badge [label]="'VPN ' + vpnState" [state]="vpnState">
+      </app-status-badge>
+      <app-status-badge [label]="'WiFi ' + wifiState" [state]="wifiState">
+      </app-status-badge>
+
+      <div class="stat-chip" title="Active WAN interface">
+        <clr-icon shape="world"></clr-icon>
+        <span class="stat-num">{{ wanIface }}</span>
+        <span class="stat-lbl">WAN</span>
+      </div>
+      <div class="stat-chip" title="Running services">
+        <clr-icon shape="cog"></clr-icon>
+        <span class="stat-num">{{ serviceCount }}</span>
+        <span class="stat-lbl">services</span>
+      </div>
+
+      <div class="live-spacer"></div>
+
+      <button class="live-refresh-btn" (click)="refreshStatus()"
+              title="Refresh now">
+        <clr-icon shape="sync"></clr-icon>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── Content area ───────────────────────────────────────────── -->
+  <div class="content-container">
+    <router-outlet></router-outlet>
+  </div>
+</clr-main-container>

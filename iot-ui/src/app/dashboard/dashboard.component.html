@@ -1,0 +1,95 @@
+<div class="dashboard">
+  <h3>Connection Status</h3>
+
+  <!-- Status cards row -->
+  <div class="clr-row">
+    <!-- VPN card -->
+    <div class="clr-col-lg-3 clr-col-md-6 clr-col-12">
+      <div class="card status-card" [ngClass]="vpnClass()">
+        <clr-icon shape="network-globe" size="36"></clr-icon>
+        <div class="card-value">{{ status?.vpn?.state || '—' | uppercase }}</div>
+        <div class="card-label">OpenVPN Client</div>
+        <div class="card-detail" *ngIf="status?.vpn?.ip">
+          {{ status?.vpn?.ip }}
+        </div>
+      </div>
+    </div>
+
+    <!-- WiFi card -->
+    <div class="clr-col-lg-3 clr-col-md-6 clr-col-12">
+      <div class="card status-card" [ngClass]="wifiClass()">
+        <clr-icon shape="wifi" size="36"></clr-icon>
+        <div class="card-value">{{ status?.wifi?.ssid || '—' }}</div>
+        <div class="card-label">WiFi — {{ status?.wifi?.state || 'unknown' }}</div>
+        <div class="card-detail" *ngIf="status?.wifi?.rssi != null">
+          {{ status?.wifi?.rssi }} dBm
+          <span class="signal-bars">
+            <span class="bar"
+                  *ngFor="let b of [1,2,3,4]"
+                  [class.active]="(status?.wifi?.rssi || -100) > (-80 + b*5)"
+                  [style.height.px]="4 + b * 3">
+            </span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- WAN card -->
+    <div class="clr-col-lg-3 clr-col-md-6 clr-col-12">
+      <div class="card status-card" [ngClass]="wanClass()">
+        <clr-icon shape="world" size="36"></clr-icon>
+        <div class="card-value">{{ status?.wan?.active_iface || 'none' }}</div>
+        <div class="card-label">Active WAN Interface</div>
+        <div class="card-detail" *ngIf="status?.wan?.tun_ip">
+          tun: {{ status?.wan?.tun_ip }}
+        </div>
+      </div>
+    </div>
+
+    <!-- LwM2M card -->
+    <div class="clr-col-lg-3 clr-col-md-6 clr-col-12">
+      <div class="card status-card" [ngClass]="cardClass(lwm2mState(), ['configured'])">
+        <clr-icon shape="devices" size="36"></clr-icon>
+        <div class="card-value">{{ status?.lwm2m?.server_uri || '—' }}</div>
+        <div class="card-label">LwM2M Server</div>
+        <div class="card-detail" *ngIf="status?.lwm2m?.endpoint">
+          EP: {{ status?.lwm2m?.endpoint }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Service overview table -->
+  <h3 style="margin-top: 32px;">Services</h3>
+  <table class="table" *ngIf="status?.services">
+    <thead>
+      <tr>
+        <th>Service</th>
+        <th>State</th>
+        <th>Enabled</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let k of serviceKeys()">
+        <td><code>{{ svcLabel(k) }}</code></td>
+        <td>
+          <app-status-badge
+            [label]="svcInfo(k).state || 'unknown'"
+            [state]="svcInfo(k).state || ''">
+          </app-status-badge>
+        </td>
+        <td>
+          <clr-icon [attr.shape]="svcInfo(k).enable ? 'check-circle' : 'times-circle'"
+                    [style.color]="svcInfo(k).enable ? '#2e7d32' : '#c62828'">
+          </clr-icon>
+        </td>
+        <td>
+          <span *ngIf="svcInfo(k).uptime_sec != null">
+            uptime {{ svcInfo(k).uptime_sec }}s
+          </span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>

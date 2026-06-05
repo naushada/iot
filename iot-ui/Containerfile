@@ -1,0 +1,15 @@
+# iot-ui dev/build container.
+# podman build -t iot-ui-dev . && podman run --rm -p 4200:4200 -v "$PWD:/app:Z" iot-ui-dev
+FROM node:18-slim
+
+WORKDIR /app
+
+# Install Angular CLI 14 globally
+RUN npm install -g @angular/cli@14
+
+EXPOSE 4200
+
+# Default: run the Angular dev server, binding to all interfaces so the
+# host can reach port 4200.  Live-reload works because the source is
+# bind-mounted.
+CMD ["ng", "serve", "--host", "0.0.0.0", "--poll", "2000"]
