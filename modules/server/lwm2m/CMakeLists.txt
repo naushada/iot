@@ -20,7 +20,8 @@ link_directories(${ACE_ROOT}/lib)
 # Static lib
 add_library(server_lwm2m STATIC
     src/endpoint_registry.cpp
-    src/bootstrap.cpp)
+    src/bootstrap.cpp
+    src/management.cpp)
 
 target_include_directories(server_lwm2m PUBLIC inc)
 target_link_libraries(server_lwm2m PUBLIC pthread server_openvpn)
@@ -51,4 +52,14 @@ if(BUILD_SERVER_LWM2M_TESTS)
     target_link_libraries(bootstrap-tests
         GTest::gtest_main GTest::gtest pthread)
     add_test(NAME bootstrap-tests COMMAND bootstrap-tests)
+
+    add_executable(mgmt-tests
+        test/management_test.cpp
+        src/management.cpp
+        src/endpoint_registry.cpp)
+    target_include_directories(mgmt-tests
+        PRIVATE ${LWM2M_SERVER_DIR}/inc)
+    target_link_libraries(mgmt-tests
+        GTest::gtest_main GTest::gtest pthread)
+    add_test(NAME mgmt-tests COMMAND mgmt-tests)
 endif()
