@@ -2,8 +2,8 @@
 
 #include "handler.hpp"
 
-#include "server/lwm2m/endpoint_registry.hpp"
-#include "server/lwm2m/bootstrap.hpp"
+#include "endpoint_registry.hpp"
+#include "bootstrap.hpp"
 
 #include <nlohmann/json.hpp>
 #include <string>

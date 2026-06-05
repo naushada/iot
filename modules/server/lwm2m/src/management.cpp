@@ -1,4 +1,4 @@
-#include "server/lwm2m/management.hpp"
+#include "management.hpp"
 
 namespace server {
 namespace lwm2m {

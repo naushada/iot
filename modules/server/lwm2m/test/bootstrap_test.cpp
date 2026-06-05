@@ -2,9 +2,9 @@
 
 #include <gtest/gtest.h>
 
-#include "server/lwm2m/bootstrap.hpp"
-#include "server/lwm2m/endpoint_registry.hpp"
-#include "server/openvpn/vpn_registry.hpp"
+#include "bootstrap.hpp"
+#include "endpoint_registry.hpp"
+#include "vpn_registry.hpp"
 
 using server::lwm2m::BootstrapProvisioner;
 using server::lwm2m::EndpointRegistry;

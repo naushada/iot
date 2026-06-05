@@ -1,4 +1,4 @@
-#include "server/openvpn/vpn_registry.hpp"
+#include "vpn_registry.hpp"
 
 #include <algorithm>
 #include <arpa/inet.h>

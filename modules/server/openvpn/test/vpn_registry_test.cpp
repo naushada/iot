@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "server/openvpn/vpn_registry.hpp"
+#include "vpn_registry.hpp"
 
 using server::openvpn::VpnRegistry;
 

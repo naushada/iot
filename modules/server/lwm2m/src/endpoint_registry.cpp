@@ -1,4 +1,4 @@
-#include "server/lwm2m/endpoint_registry.hpp"
+#include "endpoint_registry.hpp"
 
 namespace server {
 namespace lwm2m {

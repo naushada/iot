@@ -1,4 +1,4 @@
-#include "server/lwm2m/bootstrap.hpp"
+#include "bootstrap.hpp"
 
 namespace server {
 namespace lwm2m {

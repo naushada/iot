@@ -6,7 +6,7 @@
 
 #include <gtest/gtest.h>
 
-#include "server/lwm2m/endpoint_registry.hpp"
+#include "endpoint_registry.hpp"
 
 #include <string>
 

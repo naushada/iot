@@ -1,5 +1,5 @@
-#include "server/web/proxy.hpp"
-#include "server/lwm2m/endpoint_registry.hpp"
+#include "proxy.hpp"
+#include "endpoint_registry.hpp"
 
 namespace server {
 namespace web {

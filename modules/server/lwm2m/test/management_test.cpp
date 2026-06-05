@@ -2,8 +2,8 @@
 /// Tests registration/lookup/routing via ?ep= query parameter.
 
 #include <gtest/gtest.h>
-#include "server/lwm2m/management.hpp"
-#include "server/lwm2m/endpoint_registry.hpp"
+#include "management.hpp"
+#include "endpoint_registry.hpp"
 
 using server::lwm2m::EndpointRegistry;
 using server::lwm2m::ManagementRouter;

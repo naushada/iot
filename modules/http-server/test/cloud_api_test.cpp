@@ -10,9 +10,9 @@
 #include "parser.hpp"
 #include "router.hpp"
 
-#include "server/lwm2m/endpoint_registry.hpp"
-#include "server/lwm2m/bootstrap.hpp"
-#include "server/openvpn/vpn_registry.hpp"
+#include "endpoint_registry.hpp"
+#include "bootstrap.hpp"
+#include "vpn_registry.hpp"
 
 #include <nlohmann/json.hpp>
 

@@ -7,7 +7,7 @@
 /// the endpoint in the registry, and returns the target tunnel IP
 /// for forwarding the LwM2M operation.
 
-#include "server/lwm2m/endpoint_registry.hpp"
+#include "endpoint_registry.hpp"
 #include <optional>
 #include <string>
 

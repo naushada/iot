@@ -8,8 +8,8 @@
 /// Security Object (OID 0) + Server Object (OID 1) binary TLV
 /// payloads for the CoAP /bs handshake.
 
-#include "server/lwm2m/endpoint_registry.hpp"
-#include "server/openvpn/vpn_registry.hpp"
+#include "endpoint_registry.hpp"
+#include "vpn_registry.hpp"
 
 #include <cstdint>
 #include <optional>
