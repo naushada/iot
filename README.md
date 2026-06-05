@@ -32,10 +32,34 @@ One binary, `lwm2m`, plays either role:
 | L17b | Ephemeral disable — `ds-cli svc disable --until-boot`, in-memory volatile overlay | ✅ |
 | L17c | Per-key ACL — `write_acl`/`read_acl` in schema, Unix peer credential enforcement | ✅ |
 | L17d | Rate-limit + chaos coverage — set-rate throttling, random gate-flip harness | ✅ |
+| L18 | HTTP REST API server (`iot-httpd`) — AF_UNIX data-store bridge, worker pool, TLS/mTLS, hot-reload | ✅ |
+| L19 | Auth module — SHA-256 session cookies, role-based access control (Admin/Viewer), log ring buffer, keep-alive + idle timeout | ✅ |
+| L20 | **IoT Manager UI** — Angular 14 SPA with Clarity Design System, collapsible sidebar, long-poll real-time updates, dark/light theme | ✅ |
 
 All six binding decisions (D1–D6) are recorded in
 [`apps/docs/lwm2m-rdd.md`](apps/docs/lwm2m-rdd.md#11-decisions-log) and
 mirrored in [`apps/docs/lwm2m-design.md`](apps/docs/lwm2m-design.md#12-decisions).
+
+## IoT Manager UI
+
+A single-page management dashboard at `iot-ui/`.  Serve it with `--www-dir`
+in `iot-httpd`, or run the dev server with `./serve.sh` (podman required).
+
+| Section    | Purpose |
+|------------|---------|
+| Dashboard  | Live VPN/WiFi/WAN/LwM2M status cards + service overview |
+| VPN        | OpenVPN config form + real-time connection status |
+| WAN        | WiFi config, scan results, interface priority |
+| Routing    | DNAT target + port forwarding rules |
+| LwM2M      | Server URI, endpoint, binding, lifetime |
+| Services   | Enable/disable toggles, restart buttons |
+| Logs       | Scrollable live log viewer + log level control |
+
+**Quick start:**
+```sh
+cd iot-ui && ./serve.sh          # http://localhost:4200
+./serve.sh build                 # production build → dist/iot-ui/
+```
 
 ## Build
 
