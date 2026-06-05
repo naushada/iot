@@ -1,27 +1,25 @@
 From: iot-yocto-build
 Subject: [PATCH] cmake: use Yocto sysroot paths for cross-compilation
 
-Make all five CMakeLists.txt files Yocto/OE sysroot-aware so the
-lwm2m recipe can cross-compile without hardcoded host paths.
+Make all five CMakeLists.txt files Yocto/OE sysroot-aware.
 
 Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 
 ---
- apps/CMakeLists.txt                    | 69
+ apps/CMakeLists.txt                    | 72
  modules/data-store/CMakeLists.txt                    | 14
  modules/net/router/CMakeLists.txt                    | 11
  modules/openvpn/client/CMakeLists.txt                    | 11
  modules/wan/wifi/client/CMakeLists.txt                    | 11
- 5 files changed, 92 insertions(+), 24 deletions(-)
+ 5 files changed, 0 +++---
 
 --- a/apps/CMakeLists.txt
 +++ b/apps/CMakeLists.txt
-@@ -10,8 +10,17 @@
+@@ -10,8 +10,16 @@
  
  # ACE_TAO install prefix — kept in sync with xpmile (see ../../xpmile/CMakeLists.txt).
  # Override on the command line with -DACE_ROOT=/some/other/prefix if needed.
-+# When cross-compiling for Yocto, the recipe passes -DACE_ROOT=${STAGING_DIR_HOST}/usr
-+# so ACE headers and libs resolve against the sysroot.
++# When cross-compiling for Yocto, -DACE_ROOT is passed via EXTRA_OECMAKE.
  if(NOT DEFINED ACE_ROOT)
 -    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
 +    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
@@ -35,7 +33,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  endif()
  
  # Lua — required for apps/src/lua_config.cpp which now backs the
-@@ -25,6 +34,7 @@
+@@ -25,6 +33,7 @@
               NAMES liblua5.3.a liblua.a
               PATHS /usr/lib/aarch64-linux-gnu
                     /usr/lib/x86_64-linux-gnu
@@ -43,7 +41,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
                     /usr/lib
                     /usr/local/lib
               NO_DEFAULT_PATH)
-@@ -38,11 +48,24 @@
+@@ -38,11 +47,28 @@
  # Include External cmake file
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
@@ -57,20 +55,24 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 +# targets that don't need the registration mirror feature.
 +option(IOT_ENABLE_MONGO "Enable MongoDB registration mirror support" ON)
 +if(IOT_ENABLE_MONGO)
-+    if(NOT DEFINED MONGOCXX_INCLUDE_DIR)
-+        set(MONGOCXX_INCLUDE_DIR /usr/local/include/mongocxx/v_noabi)
++    find_path(MONGOCXX_INCLUDE_DIR mongocxx/pool.hpp
++              HINTS ${CMAKE_SYSROOT}/usr/include/mongocxx/v_noabi
++                    /usr/local/include/mongocxx/v_noabi)
++    find_path(BSONCXX_INCLUDE_DIR bsoncxx/json.hpp
++              HINTS ${CMAKE_SYSROOT}/usr/include/bsoncxx/v_noabi
++                    /usr/local/include/bsoncxx/v_noabi)
++    if(MONGOCXX_INCLUDE_DIR)
++        include_directories(${MONGOCXX_INCLUDE_DIR})
 +    endif()
-+    if(NOT DEFINED BSONCXX_INCLUDE_DIR)
-+        set(BSONCXX_INCLUDE_DIR /usr/local/include/bsoncxx/v_noabi)
++    if(BSONCXX_INCLUDE_DIR)
++        include_directories(${BSONCXX_INCLUDE_DIR})
 +    endif()
-+    include_directories(${MONGOCXX_INCLUDE_DIR})
-+    include_directories(${BSONCXX_INCLUDE_DIR})
 +endif()
 +
  include_directories(inc)
  
  # Data-store client lib — sibling module under ../modules/data-store.
-@@ -82,25 +105,41 @@
+@@ -82,25 +108,41 @@
  
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
  
@@ -116,7 +118,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 -                        crypto
 -                        ${LUA_LINK_LIBS})
 +set(LWM2M_CORE_LIBS ${TINYDTLS_LINK_LIB} datastore_client ACE z readline pthread ssl crypto ${LUA_LINK_LIBS})
-+if(IOT_ENABLE_MONGO)
++if(IOT_ENABLE_MONGO AND MONGOCXX_INCLUDE_DIR AND BSONCXX_INCLUDE_DIR)
 +    target_link_libraries(lwm2m ${LWM2M_CORE_LIBS} bsoncxx mongocxx)
 +else()
 +    target_link_libraries(lwm2m ${LWM2M_CORE_LIBS})
