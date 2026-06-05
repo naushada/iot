@@ -36,11 +36,19 @@ detect_runtime() {
 
 CR=$(detect_runtime)
 
-case "${1:-build}" in
+case "${1:-run}" in
+    pull)
+        log_section "Pulling $IMAGE"
+        $CR pull "$IMAGE"
+        log_info "Image pulled — run with: ./install.sh run"
+        ;;
     run)
         if ! $CR image exists "$IMAGE" 2>/dev/null; then
-            log_info "Image not found — building first..."
-            "$0" build
+            log_info "Image not found locally — pulling from Docker Hub..."
+            $CR pull "$IMAGE" 2>/dev/null || {
+                log_info "Pull failed — building locally..."
+                "$0" build
+            }
         fi
         HTTP_PORT="${HTTP_PORT:-8080}"
         log_section "Starting IoT Cloud on http://localhost:$HTTP_PORT"
@@ -63,6 +71,6 @@ case "${1:-build}" in
         echo "  Shell: ./install.sh shell"
         ;;
     *)
-        echo "Usage: $0 {build|run|shell}" >&2; exit 1
+        echo "Usage: $0 {pull|build|run|shell}" >&2; exit 1
         ;;
 esac
