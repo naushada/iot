@@ -20,16 +20,23 @@ export class MainComponent {
 
   status: StatusSnapshot | null = null;
 
-  // Top-level nav items
+  // Sidebar nav items with collapsible children
   menus = [
-    { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
-    { id: 'vpn',       label: 'VPN',       icon: 'network-globe' },
-    { id: 'wan',       label: 'WAN',       icon: 'world' },
-    { id: 'routing',   label: 'Routing',   icon: 'arrow-switch' },
-    { id: 'lwm2m',     label: 'LwM2M',     icon: 'devices' },
-    { id: 'services',  label: 'Services',  icon: 'cog' },
-    { id: 'logs',      label: 'Logs',      icon: 'file' },
+    { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', children: [] as {id:string,label:string}[] },
+    { id: 'vpn',       label: 'VPN',       icon: 'network-globe',
+      children: [{id:'config',label:'Configuration'},{id:'status',label:'Status'}] },
+    { id: 'wan',       label: 'WAN',       icon: 'world',
+      children: [{id:'wifi',label:'WiFi Config'},{id:'scan',label:'Scan Results'},{id:'priority',label:'Priority'}] },
+    { id: 'routing',   label: 'Routing',   icon: 'arrow-switch',
+      children: [{id:'ports',label:'Port Forward'},{id:'dnat',label:'DNAT Target'}] },
+    { id: 'lwm2m',     label: 'LwM2M',     icon: 'devices',
+      children: [{id:'server',label:'Server'},{id:'security',label:'Security'}] },
+    { id: 'services',  label: 'Services',  icon: 'cog',
+      children: [{id:'list',label:'All Services'}] },
+    { id: 'logs',      label: 'Logs',      icon: 'file', children: [] as {id:string,label:string}[] },
   ];
+
+  expandedMenu: string | null = null;  // which menu is expanded in sidebar
 
   constructor(
     private http: HttpsvcService,
@@ -40,6 +47,23 @@ export class MainComponent {
 
   ngOnInit(): void {
     this.refreshStatus();
+  }
+
+  toggleMenu(menuId: string): void {
+    if (this.expandedMenu === menuId) {
+      this.expandedMenu = null;
+    } else {
+      this.expandedMenu = menuId;
+    }
+    this.selectedMenu = menuId;
+    this.selectedSubNav = '';
+    this.pubsub.publish('menu', menuId);
+  }
+
+  onChildSelect(menuId: string, childId: string): void {
+    this.selectedMenu = menuId;
+    this.selectedSubNav = childId;
+    this.pubsub.publish('subnav', { menu: menuId, item: childId });
   }
 
   onMenuSelect(menuId: string): void {
