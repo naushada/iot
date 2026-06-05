@@ -76,6 +76,21 @@ TARGET="-c cleanall iot" MACHINE=raspberrypi3-64 ./build.sh
 After either command, run the normal `./build.sh` to rebuild from the
 cleaned state.
 
+**Timing:** Both `cleansstate` and `cleanall` only affect the iot recipe.
+The toolchain, kernel, and other 100+ packages remain cached.  Expect
+**~10-15 minutes** for the rebuild (104 source files).  Only the very
+first `./build.sh` ever takes hours.
+
+**When to use each:**
+
+| Scenario | Command |
+|----------|---------|
+| Patch file or recipe `.bb` changed | `cleansstate` |
+| Source code (CMakeLists.txt, `.cpp`) changed on `main` | `cleansstate` |
+| Cleansstate didn't pick up a new commit | `cleanall` |
+| Build artifacts corrupted, mysterious errors | `cleanall` |
+| Start over from scratch (hours!) | `podman volume rm iot-yocto-sstate iot-yocto-downloads` |
+
 ### Shareable cache image (skip the distro compile on a fresh machine)
 
 To get that incremental behaviour on a *different* machine / CI without
