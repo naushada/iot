@@ -6,12 +6,12 @@ Make all five CMakeLists.txt files Yocto/OE sysroot-aware.
 Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 
 ---
- apps/CMakeLists.txt                    | 63
+ apps/CMakeLists.txt                    | 45
  modules/data-store/CMakeLists.txt                    | 14
  modules/net/router/CMakeLists.txt                    | 11
  modules/openvpn/client/CMakeLists.txt                    | 11
  modules/wan/wifi/client/CMakeLists.txt                    | 11
- 5 files changed, 86 insertions(+), 24 deletions(-)
+ 5 files changed, 80 insertions(+), 12 deletions(-)
 
 --- a/apps/CMakeLists.txt
 +++ b/apps/CMakeLists.txt
@@ -68,7 +68,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  include_directories(inc)
  
  # Data-store client lib — sibling module under ../modules/data-store.
-@@ -90,25 +112,36 @@
+@@ -90,7 +112,24 @@
  
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
  
@@ -92,31 +92,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 +endif()
  link_directories(${ACE_ROOT}/lib)
  
- #all files from src directory (recursive — picks up src/cli/**/*.cpp too).
- file(GLOB_RECURSE SOURCES "src/*.cpp")
- 
- add_executable(lwm2m ${SOURCES})
--target_link_libraries(lwm2m
--                        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls/libtinydtls.a
--                        datastore_client
--                        ACE
--                        z
--                        readline
--                        pthread
--                        bsoncxx
--                        mongocxx
--                        ssl
--                        crypto
--                        ${LUA_LINK_LIBS})
-+set(LWM2M_CORE_LIBS ${TINYDTLS_LINK_LIB} datastore_client ACE z readline pthread ssl crypto ${LUA_LINK_LIBS})
-+if(IOT_ENABLE_MONGO AND MONGOCXX_INCLUDE_DIR AND BSONCXX_INCLUDE_DIR)
-+    target_link_libraries(lwm2m ${LWM2M_CORE_LIBS} bsoncxx mongocxx)
-+else()
-+    target_link_libraries(lwm2m ${LWM2M_CORE_LIBS})
-+endif()
- 
- option(BUILD_APPS_TESTS "Build apps-level gtest suite (lwm2m_test)" OFF)
- if(BUILD_APPS_TESTS)
+ # ACE library — use full path so the linker doesn't need -lACE symlinks.
 --- a/modules/data-store/CMakeLists.txt
 +++ b/modules/data-store/CMakeLists.txt
 @@ -6,7 +6,14 @@

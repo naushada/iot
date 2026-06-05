@@ -93,6 +93,11 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
 link_directories(${ACE_ROOT}/lib)
 
+# ACE library — use full path so the linker doesn't need -lACE symlinks.
+if(NOT DEFINED ACE_LIBRARY)
+    set(ACE_LIBRARY ${ACE_ROOT}/lib/libACE.so)
+endif()
+
 #all files from src directory (recursive — picks up src/cli/**/*.cpp too).
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
@@ -100,7 +105,7 @@ add_executable(lwm2m ${SOURCES})
 target_link_libraries(lwm2m
                         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls/libtinydtls.a
                         datastore_client
-                        ACE
+                        ${ACE_LIBRARY}
                         z
                         readline
                         pthread
