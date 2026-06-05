@@ -313,13 +313,52 @@ void install_handlers(Router& router,
         });
 
     // ── GET /api/v1/status ───────────────────────────────────────
+    // Supports ?timeout=N for long-poll: blocks until a watched key
+    // (vpn.state) changes or N seconds elapse, then returns the full
+    // status snapshot.  timeout=0 (default) returns immediately.
     router.add("GET", "/api/v1/status",
-        [ds](const HttpParser::Request& /*req*/) -> HttpResponse {
+        [ds](const HttpParser::Request& req) -> HttpResponse {
             HttpResponse r;
             if (!ds) {
                 r.status = 500;
                 r.body = R"({"ok":false,"err":"data store not connected"})";
                 return r;
+            }
+
+            // Parse timeout query param
+            int timeout = 0;
+            auto tit = req.query.find("timeout");
+            if (tit != req.query.end()) {
+                timeout = std::atoi(tit->second.c_str());
+                if (timeout < 0) timeout = 0;
+                if (timeout > 60) timeout = 60;  // cap at 1 min
+            }
+
+            // Long-poll path: watch vpn.state (most dynamic key) and
+            // return full status on change or timeout
+            if (timeout > 0) {
+                using LpState = struct {
+                    std::mutex                 m;
+                    std::condition_variable    cv;
+                    bool                       fired = false;
+                };
+                auto st = std::make_shared<LpState>();
+                data_store::Client::WatchHandle wh =
+                    data_store::Client::kInvalidHandle;
+                auto ws = ds->watch("vpn.state",
+                    [st](const data_store::Client::Event& /*e*/) {
+                        std::lock_guard<std::mutex> lk(st->m);
+                        st->fired = true;
+                        st->cv.notify_one();
+                    }, &wh);
+                if (ws.ok) {
+                    std::unique_lock<std::mutex> lk(st->m);
+                    st->cv.wait_for(lk, std::chrono::seconds(timeout),
+                                    [&] { return st->fired; });
+                    if (wh != data_store::Client::kInvalidHandle)
+                        ds->unwatch(wh);
+                }
+                // Fall through to build the full status snapshot
             }
             std::vector<data_store::Client::GetResult> got;
             auto rs = ds->get({
