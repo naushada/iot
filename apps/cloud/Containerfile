@@ -1,0 +1,112 @@
+# IoT Cloud Server — containerised build + runtime
+#
+# Builds all server modules (data-store, http-server, server/lwm2m,
+# server/openvpn, server/web) and the cloud UI into a deployable image.
+#
+# podman build -t iot-cloud .
+# podman run --rm -p 8080:8080 -p 5683:5683 -p 5684:5684 iot-cloud
+
+FROM ubuntu:22.04 AS builder
+
+# ── Build dependencies ──────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build pkg-config \
+    libssl-dev zlib1g-dev libreadline-dev \
+    liblua5.3-dev lua5.3 \
+    wget ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# ACE/TAO 7.0.0 — build from source (no distro package)
+RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_0/ACE+TAO-7.0.0.tar.gz \
+    -O /tmp/ace.tar.gz && \
+    cd /tmp && tar xzf ace.tar.gz && \
+    cd ACE_wrappers && \
+    echo '#include "ace/config-linux.h"' > ace/config.h && \
+    echo 'include $(ACE_ROOT)/include/makeinclude/platform_linux.GNU' > include/makeinclude/platform_macros.GNU && \
+    export ACE_ROOT=/tmp/ACE_wrappers && \
+    make -j$(nproc) -C ace && \
+    mkdir -p /usr/local/ACE_TAO-7.0.0/include /usr/local/ACE_TAO-7.0.0/lib && \
+    cp -r ace/*.h ace/*.i ace/*.inl ace/*.cpp /usr/local/ACE_TAO-7.0.0/include/ 2>/dev/null || true && \
+    cp -r ace/ /usr/local/ACE_TAO-7.0.0/include/ace && \
+    cp ace/libACE.so.* /usr/local/ACE_TAO-7.0.0/lib/ && \
+    ln -sf /usr/local/ACE_TAO-7.0.0/lib/libACE.so.7.0.0 /usr/local/ACE_TAO-7.0.0/lib/libACE.so && \
+    rm -rf /tmp/ACE_wrappers /tmp/ace.tar.gz
+
+# nlohmann/json (header-only)
+RUN wget -q https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip \
+    -O /tmp/json.zip && \
+    mkdir -p /usr/local/include/nlohmann && \
+    cd /usr/local/include/nlohmann && unzip -q /tmp/json.zip && \
+    rm /tmp/json.zip
+
+# tinydtls — build static lib
+RUN wget -q https://github.com/eclipse/tinydtls/archive/refs/tags/v0.9.0.tar.gz \
+    -O /tmp/td.tar.gz && cd /tmp && tar xzf td.tar.gz && \
+    cd tinydtls-* && \
+    autoreconf -i && ./configure --prefix=/usr/local && make -j$(nproc) && make install && \
+    rm -rf /tmp/tinydtls-* /tmp/td.tar.gz
+
+# Node.js 18 for cloud UI build
+RUN wget -q https://deb.nodesource.com/setup_18.x -O /tmp/node.sh && \
+    bash /tmp/node.sh && \
+    apt-get install -y nodejs && \
+    npm install -g @angular/cli@14 && \
+    rm /tmp/node.sh
+
+# ── Copy source ──────────────────────────────────────────────────
+WORKDIR /src
+COPY . .
+
+# ── Build cloud UI ──────────────────────────────────────────────
+WORKDIR /src/apps/cloud/ui
+RUN npm install && ng build --configuration production
+
+# ── Build C++ modules ───────────────────────────────────────────
+WORKDIR /src/build
+RUN cmake ../apps \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
+    -DLUA_INCLUDE_DIR=/usr/include/lua5.3 \
+    -DIOT_ENABLE_MONGO=OFF \
+    -DBUILD_APPS_TESTS=OFF \
+    -DBUILD_DATA_STORE_TESTS=OFF \
+    -DBUILD_HTTP_SERVER_TESTS=OFF \
+    -GNinja \
+    && ninja -j$(nproc)
+
+# ── Runtime image ───────────────────────────────────────────────
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl3 zlib1g libreadline8 liblua5.3-0 \
+    iptables openvpn \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/ACE_TAO-7.0.0/lib/libACE.so.7.0.0 /usr/local/lib/
+COPY --from=builder /usr/local/lib/libtinydtls.a /usr/local/lib/
+RUN ldconfig
+
+COPY --from=builder /src/build/lwm2m /usr/local/bin/
+COPY --from=builder /src/build/data-store/ds-server /usr/local/bin/
+COPY --from=builder /src/build/data-store/ds-cli /usr/local/bin/
+COPY --from=builder /src/build/iot-httpd /usr/local/bin/
+COPY --from=builder /src/build/openvpn-client /usr/local/bin/
+COPY --from=builder /src/build/net-router /usr/local/bin/
+COPY --from=builder /src/build/wifi-client /usr/local/bin/
+COPY --from=builder /src/apps/cloud/ui/dist/cloud-ui /usr/share/iot/cloud-www/
+
+# Schema files
+COPY modules/data-store/schemas/iot.lua /etc/iot/ds-schemas/
+COPY modules/data-store/schemas/services.lua /etc/iot/ds-schemas/
+COPY modules/http-server/schemas/http.lua /etc/iot/ds-schemas/
+COPY modules/http-server/schemas/auth.lua /etc/iot/ds-schemas/
+
+RUN mkdir -p /var/run/iot /etc/iot/ds-schemas
+
+EXPOSE 8080 5683 5684
+
+# Default: start ds-server, wait, then iot-httpd serving cloud UI
+CMD ds-server --socket=/var/run/iot/data_store.sock --schema-dir=/etc/iot/ds-schemas & \
+    sleep 2 && \
+    exec iot-httpd ds-socket=/var/run/iot/data_store.sock \
+        http-port=8080 www-dir=/usr/share/iot/cloud-www
