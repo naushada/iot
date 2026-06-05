@@ -17,17 +17,37 @@ export class DashboardComponent implements OnDestroy {
   constructor(private http: HttpsvcService, private pubsub: PubSubService) {}
 
   ngOnInit(): void {
-    // Initial load
-    this.http.getStatus().subscribe({
-      next: (s) => { this.status = s; this.loading = false; },
-      error: () => { this.loading = false; }
-    });
-    // Live updates from the main component's pubsub
+    this.startLongPoll();
+    // Also accept pubsub updates from main component
     this.subs.add(
       this.pubsub.on<StatusSnapshot>('status').subscribe(s => {
         this.status = s;
       })
     );
+  }
+
+  /// Long-poll loop: blocks until a state change or 30s timeout,
+  /// then immediately re-subscribes.  Keeps the dashboard live
+  /// within ~1 RTT of any state change.
+  private startLongPoll(): void {
+    const poll = (): void => {
+      this.http.getStatusLongPoll(30).subscribe({
+        next: (s) => {
+          this.status = s;
+          this.loading = false;
+          poll();  // re-subscribe immediately
+        },
+        error: () => {
+          // On error, fall back to a 10s poll and retry
+          this.http.getStatus().subscribe({
+            next: (s) => { this.status = s; this.loading = false; },
+            error: () => { this.loading = false; }
+          });
+          setTimeout(() => poll(), 10000);
+        }
+      });
+    };
+    poll();
   }
 
   ngOnDestroy(): void { this.subs.unsubscribe(); }

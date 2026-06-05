@@ -43,6 +43,14 @@ export class HttpsvcService {
       `${this.api}/api/v1/status`, { withCredentials: true });
   }
 
+  /// Long-poll status: blocks until a state change or timeout (max 60s).
+  /// Used for real-time dashboard + VPN status updates.
+  getStatusLongPoll(timeoutSec = 30): Observable<StatusSnapshot> {
+    const params = new HttpParams().set('timeout', timeoutSec.toString());
+    return this.http.get<StatusSnapshot>(
+      `${this.api}/api/v1/status`, { params, withCredentials: true });
+  }
+
   // ── Data store ────────────────────────────────────────────────────
 
   dbGet(keys: string[]): Observable<DbGetResponse> {

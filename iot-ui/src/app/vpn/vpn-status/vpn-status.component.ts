@@ -1,6 +1,5 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
-import { Subscription, interval } from 'rxjs';
-import { switchMap } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { VpnStatus } from '../../../common/app-globals';
 
@@ -63,24 +62,39 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
   v: VpnStatus = {};
   loading = true;
   private sub = new Subscription();
+  private active = true;
 
   constructor(private http: HttpsvcService) {}
 
   ngOnInit(): void {
-    this.sub.add(
-      interval(5000).pipe(
-        switchMap(() => this.http.getStatus())
-      ).subscribe({
-        next: (s) => { this.v = s.vpn || {}; this.loading = false; },
-        error: () => { this.loading = false; }
-      })
-    );
-    // Immediate first load
-    this.http.getStatus().subscribe({
-      next: (s) => { this.v = s.vpn || {}; this.loading = false; },
-      error: () => { this.loading = false; }
-    });
+    this.startLongPoll();
   }
 
-  ngOnDestroy(): void { this.sub.unsubscribe(); }
+  /// Long-poll loop: blocks until vpn.state changes or 30s timeout,
+  /// then re-subscribes immediately.  Falls back to 5s poll on error.
+  private startLongPoll(): void {
+    const poll = (): void => {
+      if (!this.active) return;
+      this.http.getStatusLongPoll(30).subscribe({
+        next: (s) => {
+          this.v = s.vpn || {};
+          this.loading = false;
+          if (this.active) poll();
+        },
+        error: () => {
+          this.loading = false;
+          if (this.active) {
+            // Fallback: immediate status + retry long-poll after 5s
+            this.http.getStatus().subscribe({
+              next: (s) => { this.v = s.vpn || {}; }
+            });
+            setTimeout(() => poll(), 5000);
+          }
+        }
+      });
+    };
+    poll();
+  }
+
+  ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
 }
