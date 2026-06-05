@@ -32,21 +32,28 @@
     </div>
 
     <h4 style="margin-top:24px;">Saved Networks</h4>
-    <table class="table table-compact">
-      <thead><tr><th>SSID</th><th>PSK</th><th>Priority</th><th>Key Mgmt</th><th *ngIf="isAdmin"></th></tr></thead>
-      <tbody>
-        <tr *ngFor="let n of networks; let i=index">
-          <td><input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="n.ssid" [name]="'ssid-'+i" placeholder="MyWiFi" /></td>
-          <td><input class="clr-input" [disabled]="!isAdmin" type="password" [(ngModel)]="n.psk" [name]="'psk-'+i" placeholder="passphrase" /></td>
-          <td><input class="clr-input" [disabled]="!isAdmin" type="number" [(ngModel)]="n.priority" [name]="'pri-'+i" style="width:80px;" /></td>
-          <td><select class="clr-select" [disabled]="!isAdmin" [(ngModel)]="n.key_mgmt" [name]="'km-'+i">
-            <option value="WPA2-PSK">WPA2-PSK</option><option value="WPA-PSK">WPA-PSK</option><option value="NONE">Open</option>
-          </select></td>
-          <td *ngIf="isAdmin"><button type="button" class="btn btn-sm btn-danger" (click)="removeNetwork(i)">Remove</button></td>
-        </tr>
-      </tbody>
-    </table>
-    <button type="button" class="btn btn-sm" *ngIf="isAdmin" (click)="addNetwork()" style="margin-top:8px;">+ Add Network</button>
+    <clr-datagrid>
+      <clr-dg-column>SSID</clr-dg-column>
+      <clr-dg-column>PSK</clr-dg-column>
+      <clr-dg-column>Priority</clr-dg-column>
+      <clr-dg-column>Key Mgmt</clr-dg-column>
+      <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
+
+      <clr-dg-row *clrDgItems="let n of networks; let i=index">
+        <clr-dg-cell><input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="n.ssid" [name]="'ssid-'+i" placeholder="MyWiFi" /></clr-dg-cell>
+        <clr-dg-cell><input class="clr-input" [disabled]="!isAdmin" type="password" [(ngModel)]="n.psk" [name]="'psk-'+i" placeholder="passphrase" /></clr-dg-cell>
+        <clr-dg-cell><input class="clr-input" [disabled]="!isAdmin" type="number" [(ngModel)]="n.priority" [name]="'pri-'+i" style="width:80px;" /></clr-dg-cell>
+        <clr-dg-cell><select class="clr-select" [disabled]="!isAdmin" [(ngModel)]="n.key_mgmt" [name]="'km-'+i">
+          <option value="WPA2-PSK">WPA2-PSK</option><option value="WPA-PSK">WPA-PSK</option><option value="NONE">Open</option>
+        </select></clr-dg-cell>
+        <clr-dg-cell *ngIf="isAdmin"><button type="button" class="btn btn-sm btn-danger" (click)="removeNetwork(i)">Remove</button></clr-dg-cell>
+      </clr-dg-row>
+
+      <clr-dg-footer>
+        {{ networks.length }} networks
+        <button type="button" class="btn btn-sm" *ngIf="isAdmin" (click)="addNetwork()" style="margin-left:12px;">+ Add Network</button>
+      </clr-dg-footer>
+    </clr-datagrid>
 
     <div style="margin-top:20px;" *ngIf="isAdmin">
       <button type="submit" class="btn btn-primary" [disabled]="saving">{{ saving ? 'Saving…' : 'Save' }}</button>
