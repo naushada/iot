@@ -1,0 +1,49 @@
+<div class="page">
+  <h3>LwM2M Endpoint Configuration</h3>
+
+  <form [formGroup]="serverForm" (ngSubmit)="save()" *ngIf="!loading" class="config-form">
+    <div class="clr-row">
+      <div class="clr-col-md-8 clr-col-12">
+        <label class="fl">Server URI</label>
+        <input class="clr-input" formControlName="server_uri"
+               placeholder="coaps://lwm2m.example.com:5684" />
+      </div>
+      <div class="clr-col-md-4 clr-col-12">
+        <label class="fl">Endpoint Name</label>
+        <input class="clr-input" formControlName="endpoint"
+               placeholder="urn:dev:client-1" />
+      </div>
+    </div>
+
+    <div class="clr-row" style="margin-top:16px;">
+      <div class="clr-col-md-3 clr-col-6">
+        <label class="fl">Binding Mode</label>
+        <select class="clr-select" formControlName="binding">
+          <option value="U">U — UDP</option>
+          <option value="S">S — SMS</option>
+          <option value="US">US — UDP+SMS</option>
+          <option value="UQ">UQ — UDP+Queue</option>
+        </select>
+      </div>
+      <div class="clr-col-md-3 clr-col-6">
+        <label class="fl">Lifetime (s)</label>
+        <input type="number" class="clr-input" formControlName="lifetime"
+               min="0" max="2592000" />
+      </div>
+      <div class="clr-col-md-3 clr-col-6">
+        <label class="fl">Observable</label>
+        <div style="margin-top:8px;">
+          <input type="checkbox" formControlName="observable" />
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:24px;">
+      <button type="submit" class="btn btn-primary" [disabled]="saving">
+        {{ saving ? 'Saving…' : 'Save Configuration' }}
+      </button>
+      <span *ngIf="msg" style="margin-left:12px;"
+            [style.color]="msg==='Saved.'?'#2e7d32':'#c62828'">{{ msg }}</span>
+    </div>
+  </form>
+</div>

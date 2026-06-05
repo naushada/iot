@@ -12,8 +12,11 @@ import { StatusSnapshot } from '../../common/app-globals';
 })
 export class MainComponent {
   selectedMenu = 'dashboard';
-  selectedSubNav = '';
+  selectedSubNav = '';      // submenu item label
+  selectedSubItem = '';     // event from submenu
   today = new Date().toLocaleDateString('en-US', {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
+  });
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
   });
 

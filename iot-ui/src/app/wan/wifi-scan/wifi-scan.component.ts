@@ -1,0 +1,105 @@
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subscription, interval } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
+import { HttpsvcService } from '../../../common/httpsvc.service';
+import { WifiStatus } from '../../../common/app-globals';
+
+interface ScanEntry { ssid: string; bssid: string; signal: number; flags: string; }
+
+@Component({
+  selector: 'app-wifi-scan',
+  template: `
+    <div class="page">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+        <h3 style="margin:0;">WiFi Scan Results</h3>
+        <button class="btn btn-primary btn-sm" (click)="scan()" [disabled]="scanning">
+          {{ scanning ? 'Scanning…' : 'Scan Now' }}
+        </button>
+        <span *ngIf="scanMsg" [style.color]="scanMsg.startsWith('Scan')?'#66bb6a':'#c62828'">{{ scanMsg }}</span>
+        <span style="margin-left:auto;font-size:12px;color:#757575;">
+          {{ status?.ssid ? 'Connected to ' + status.ssid : 'Disconnected' }}
+          <span *ngIf="status?.rssi != null"> &middot; {{ status.rssi }} dBm</span>
+        </span>
+      </div>
+
+      <table class="table table-compact" *ngIf="results.length > 0">
+        <thead><tr><th>SSID</th><th>BSSID</th><th>Signal</th><th>Flags</th></tr></thead>
+        <tbody>
+          <tr *ngFor="let r of results">
+            <td><strong>{{ r.ssid || '(hidden)' }}</strong></td>
+            <td><code>{{ r.bssid }}</code></td>
+            <td>
+              <span class="signal-bars">
+                <span class="bar" *ngFor="let b of [1,2,3,4]" [class.active]="r.signal > (-80+b*5)" [style.height.px]="4+b*3"></span>
+              </span>
+              {{ r.signal }} dBm
+            </td>
+            <td><span class="flags">{{ r.flags }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <p *ngIf="results.length===0 && !loading" style="color:#757575;">No scan results yet. Click "Scan Now" to trigger a scan.</p>
+      <p *ngIf="loading">Loading…</p>
+    </div>
+  `,
+  styles: [`
+    .page { padding: 24px; } h3 { font-size: 16px; font-weight: 600; color: #e0e0e0; }
+    .btn-primary { background: #2e7d32; border: none; color: #fff; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .btn-primary:disabled { opacity: 0.5; }
+    .signal-bars { display: inline-flex; align-items: flex-end; gap: 1px; height: 14px; margin-right: 6px; vertical-align: middle; }
+    .bar { width: 3px; background: #555; border-radius: 1px; }
+    .bar.active { background: #2e7d32; }
+    .flags { font-size: 11px; color: #9e9e9e; }
+  `]
+})
+export class WifiScanComponent implements OnInit, OnDestroy {
+  results: ScanEntry[] = [];
+  status: WifiStatus = {};
+  loading = true; scanning = false; scanMsg = '';
+  private sub = new Subscription();
+
+  constructor(private http: HttpsvcService) {}
+
+  ngOnInit(): void {
+    this.loadStatus();
+    this.sub.add(interval(10000).pipe(switchMap(() => this.http.getStatus())).subscribe({
+      next: (s) => { this.status = s.wifi || {}; this.tryParseScan(); }
+    }));
+  }
+
+  loadStatus(): void {
+    this.http.getStatus().subscribe({
+      next: (s) => { this.status = s.wifi || {}; this.tryParseScan(); this.loading = false; },
+      error: () => { this.loading = false; }
+    });
+    // Also fetch scan results directly
+    this.http.dbGet(['wifi.scan.results']).subscribe({
+      next: (r) => { if (r.ok && r.data) this.tryParse(r.data['wifi.scan.results'] as string); }
+    });
+  }
+
+  tryParseScan(): void {
+    this.http.dbGet(['wifi.scan.results']).subscribe({
+      next: (r) => { if (r.ok && r.data) this.tryParse(r.data['wifi.scan.results'] as string); }
+    });
+  }
+
+  tryParse(raw: string): void {
+    if (!raw) return;
+    try { this.results = JSON.parse(raw); } catch { this.results = []; }
+  }
+
+  scan(): void {
+    this.scanning = true; this.scanMsg = '';
+    this.http.triggerScan().subscribe({
+      next: (r) => {
+        this.scanning = false;
+        this.scanMsg = r.ok ? 'Scan triggered (request #'+r.scan_request+')' : 'Error: '+r.err;
+        if (r.ok) setTimeout(() => this.tryParseScan(), 3000);
+      },
+      error: () => { this.scanning = false; this.scanMsg = 'Scan request failed'; }
+    });
+  }
+
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
+}
