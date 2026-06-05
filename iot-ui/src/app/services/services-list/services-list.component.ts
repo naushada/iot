@@ -102,7 +102,7 @@ export class ServicesListComponent implements OnInit, OnDestroy {
       next: (r) => {
         svc.restarting = false;
         svc.msg = r.ok ? 'Restarted' : 'Error: ' + (r.err || 'unknown');
-        if (r.ok) setTimeout(() => { svc.msg = ''; this.load(); }, 3000);
+        if (r.ok) setTimeout(() => { svc.msg = ''; }, 3000);
       },
       error: () => { svc.restarting = false; svc.msg = 'Request failed'; }
     });
