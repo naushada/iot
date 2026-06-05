@@ -1,3 +1,24 @@
+// ── Disabled inputs (Viewer mode) ────────────────────────────────────
+
+input:disabled, select:disabled, textarea:disabled {
+  background: #f0f0f0 !important;
+  color: #888 !important;
+  cursor: not-allowed;
+  border-color: #e0e0e0 !important;
+}
+
+// ── Form grid (4 columns) ───────────────────────────────────────────
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0 20px;
+
+  @media (max-width: 1200px) { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 900px)  { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 600px)  { grid-template-columns: 1fr; }
+}
+
 // ── Global button styles ────────────────────────────────────────────
 
 .btn-primary {

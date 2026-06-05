@@ -1,73 +1,65 @@
 <div class="page">
   <h3>OpenVPN Client Configuration</h3>
 
-  <form [formGroup]="form" (ngSubmit)="save()" *ngIf="!loading" class="config-form">
-    <div class="clr-row">
-      <div class="clr-col-md-6 clr-col-12">
-        <label class="field-label">Remote Host</label>
-        <input type="text" class="clr-input" formControlName="remote_host"
-               placeholder="vpn.example.com" />
-      </div>
-      <div class="clr-col-md-3 clr-col-6">
-        <label class="field-label">Port</label>
-        <input type="number" class="clr-input" formControlName="remote_port"
-               min="1" max="65535" />
-      </div>
-      <div class="clr-col-md-3 clr-col-6">
-        <label class="field-label">Protocol</label>
-        <select class="clr-select" formControlName="remote_proto">
+  <form [formGroup]="form" (ngSubmit)="save()" *ngIf="!loading">
+    <div class="form-grid">
+      <clr-input-container>
+        <label>Remote Host</label>
+        <input clrInput [disabled]="!isAdmin" formControlName="remote_host" placeholder="vpn.example.com" required />
+        <clr-control-error>Required</clr-control-error>
+      </clr-input-container>
+      <clr-input-container>
+        <label>Port</label>
+        <input clrInput [disabled]="!isAdmin" type="number" formControlName="remote_port" min="1" max="65535" required />
+        <clr-control-error>1–65535</clr-control-error>
+      </clr-input-container>
+      <clr-select-container>
+        <label>Protocol</label>
+        <select clrSelect [disabled]="!isAdmin" formControlName="remote_proto">
           <option value="udp">UDP</option>
           <option value="tcp">TCP</option>
         </select>
-      </div>
-    </div>
-
-    <div class="clr-row" style="margin-top:16px;">
-      <div class="clr-col-12">
-        <label class="field-label">Client Certificate Path</label>
-        <input type="text" class="clr-input" formControlName="cert_path"
-               placeholder="/etc/iot/certs/client.crt" />
-      </div>
-    </div>
-    <div class="clr-row" style="margin-top:12px;">
-      <div class="clr-col-md-6 clr-col-12">
-        <label class="field-label">Private Key Path</label>
-        <input type="text" class="clr-input" formControlName="key_path"
-               placeholder="/etc/iot/certs/client.key" />
-      </div>
-      <div class="clr-col-md-6 clr-col-12">
-        <label class="field-label">CA Certificate Path</label>
-        <input type="text" class="clr-input" formControlName="ca_path"
-               placeholder="/etc/iot/certs/ca.crt" />
-      </div>
-    </div>
-
-    <div class="clr-row" style="margin-top:16px;">
-      <div class="clr-col-md-4 clr-col-12">
-        <label class="field-label">Cipher</label>
-        <select class="clr-select" formControlName="cipher">
+      </clr-select-container>
+      <clr-select-container>
+        <label>Cipher</label>
+        <select clrSelect [disabled]="!isAdmin" formControlName="cipher">
           <option value="AES-256-GCM">AES-256-GCM</option>
           <option value="AES-128-GCM">AES-128-GCM</option>
           <option value="CHACHA20-POLY1305">CHACHA20-POLY1305</option>
         </select>
-      </div>
-      <div class="clr-col-md-4 clr-col-6">
-        <label class="field-label">Device Type</label>
-        <select class="clr-select" formControlName="dev">
+      </clr-select-container>
+
+      <clr-input-container>
+        <label>Client Certificate Path</label>
+        <input clrInput [disabled]="!isAdmin" formControlName="cert_path" placeholder="/etc/iot/certs/client.crt" />
+      </clr-input-container>
+      <clr-input-container>
+        <label>Private Key Path</label>
+        <input clrInput [disabled]="!isAdmin" formControlName="key_path" placeholder="/etc/iot/certs/client.key" />
+      </clr-input-container>
+      <clr-input-container>
+        <label>CA Certificate Path</label>
+        <input clrInput [disabled]="!isAdmin" formControlName="ca_path" placeholder="/etc/iot/certs/ca.crt" />
+      </clr-input-container>
+      <clr-input-container>
+        <label>Management Port</label>
+        <input clrInput [disabled]="!isAdmin" type="number" formControlName="mgmt_port" min="1024" max="65535" />
+      </clr-input-container>
+
+      <clr-select-container>
+        <label>Device Type</label>
+        <select clrSelect [disabled]="!isAdmin" formControlName="dev">
           <option value="tun">TUN (L3)</option>
           <option value="tap">TAP (L2)</option>
         </select>
-      </div>
-      <div class="clr-col-md-4 clr-col-6">
-        <label class="field-label">Management Port</label>
-        <input type="number" class="clr-input" formControlName="mgmt_port"
-               min="1024" max="65535" />
-      </div>
+      </clr-select-container>
+      <!-- spacer for 4-column alignment -->
+      <div></div>
     </div>
 
     <div style="margin-top:24px;">
-      <button type="submit" class="btn btn-primary" [disabled]="saving">
-        {{ saving ? 'Saving…' : 'Save Configuration' }}
+      <button type="submit" class="btn btn-primary" [disabled]="saving || !isAdmin" *ngIf="isAdmin">
+        {{ saving ? 'Saving…' : 'Save' }}
       </button>
       <span *ngIf="msg" style="margin-left:12px; font-size:13px;"
             [style.color]="msg==='Saved.' ? '#2e7d32' : '#c62828'">{{ msg }}</span>
