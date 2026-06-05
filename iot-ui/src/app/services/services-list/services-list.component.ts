@@ -12,30 +12,32 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
   template: `
     <div class="page">
       <h3>Service Management</h3>
-      <table class="table table-compact">
-        <thead><tr><th>Service</th><th>State</th><th>Enabled</th><th></th><th>Actions</th></tr></thead>
-        <tbody>
-          <tr *ngFor="let s of services">
-            <td><code>{{ s.label }}</code></td>
-            <td><app-status-badge [label]="s.info.state||'unknown'" [state]="s.info.state||''"></app-status-badge></td>
-            <td>
-              <input type="checkbox" [checked]="s.info.enable" [disabled]="!isAdmin" (change)="toggleEnable(s)" />
-            </td>
-            <td>
-              <span *ngIf="s.info.uptime_sec != null" style="font-size:12px;color:#757575;">uptime {{ s.info.uptime_sec }}s</span>
-            </td>
-            <td>
-              <button class="btn btn-sm" [disabled]="s.restarting || s.key==='ds'"
-                      (click)="restart(s)">
-                {{ s.restarting ? '…' : 'Restart' }}
-              </button>
-              <span *ngIf="s.msg" style="margin-left:8px;font-size:11px;"
-                    [style.color]="s.msg.startsWith('Restarted')?'#66bb6a':'#c62828'">{{ s.msg }}</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="hint">Restart: disable → 2 s wait → enable. ds-server cannot self-restart (the API socket would close).</p>
+      <clr-datagrid>
+        <clr-dg-column>Service</clr-dg-column>
+        <clr-dg-column>State</clr-dg-column>
+        <clr-dg-column>Enabled</clr-dg-column>
+        <clr-dg-column>Uptime</clr-dg-column>
+        <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
+
+        <clr-dg-row *clrDgItems="let s of services">
+          <clr-dg-cell><code>{{ s.label }}</code></clr-dg-cell>
+          <clr-dg-cell><app-status-badge [label]="s.info.state||'unknown'" [state]="s.info.state||''"></app-status-badge></clr-dg-cell>
+          <clr-dg-cell>
+            <input type="checkbox" [checked]="s.info.enable" [disabled]="!isAdmin" (change)="toggleEnable(s)" />
+          </clr-dg-cell>
+          <clr-dg-cell>{{ s.info.uptime_sec != null ? s.info.uptime_sec + 's' : '—' }}</clr-dg-cell>
+          <clr-dg-cell *ngIf="isAdmin">
+            <button class="btn btn-sm" [disabled]="s.restarting || s.key==='ds'" (click)="restart(s)">
+              {{ s.restarting ? '…' : 'Restart' }}
+            </button>
+            <span *ngIf="s.msg" style="margin-left:8px;font-size:11px;"
+                  [style.color]="s.msg.startsWith('Restarted')?'#66bb6a':'#c62828'">{{ s.msg }}</span>
+          </clr-dg-cell>
+        </clr-dg-row>
+
+        <clr-dg-footer>{{ services.length }} services</clr-dg-footer>
+      </clr-datagrid>
+      <p class="hint">Restart: disable → 2 s wait → enable. ds-server cannot self-restart.</p>
     </div>
   `,
   styles: [`

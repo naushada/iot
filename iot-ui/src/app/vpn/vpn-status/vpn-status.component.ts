@@ -8,24 +8,20 @@ import { VpnStatus } from '../../../common/app-globals';
   template: `
     <div class="page">
       <h3>VPN Connection Status</h3>
-      <table class="table" *ngIf="!loading">
-        <colgroup>
-          <col style="width:25%;">
-          <col style="width:75%;">
-        </colgroup>
-        <thead>
-          <tr><th>Property</th><th>Value</th></tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let row of rows">
-            <td>{{ row.key }}</td>
-            <td>
-              <app-status-badge *ngIf="row.isBadge" [label]="row.value" [state]="v.state||''"></app-status-badge>
-              <span *ngIf="!row.isBadge">{{ row.value }}</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <clr-datagrid *ngIf="!loading">
+        <clr-dg-column>Property</clr-dg-column>
+        <clr-dg-column>Value</clr-dg-column>
+
+        <clr-dg-row *clrDgItems="let row of rows">
+          <clr-dg-cell>{{ row.key }}</clr-dg-cell>
+          <clr-dg-cell>
+            <app-status-badge *ngIf="row.isBadge" [label]="row.value" [state]="v.state||''"></app-status-badge>
+            <span *ngIf="!row.isBadge">{{ row.value }}</span>
+          </clr-dg-cell>
+        </clr-dg-row>
+
+        <clr-dg-footer>{{ rows.length }} properties</clr-dg-footer>
+      </clr-datagrid>
       <p *ngIf="loading">Loading…</p>
     </div>
   `,
