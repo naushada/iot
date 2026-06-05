@@ -51,11 +51,11 @@ import { VpnStatus } from '../../../common/app-globals';
   `,
   styles: [`
     .page { padding: 24px; }
-    h3 { font-size: 16px; font-weight: 600; color: #e0e0e0; margin: 0 0 20px 0; }
+    h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
     .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 16px; }
     .status-item { background: rgba(255,255,255,0.04); border-radius: 6px; padding: 14px; }
     .label { display: block; font-size: 11px; color: #9e9e9e; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .value { font-size: 15px; color: #e0e0e0; font-weight: 500; }
+    .value { font-size: 15px; color: #333; font-weight: 500; }
   `]
 })
 export class VpnStatusComponent implements OnInit, OnDestroy {

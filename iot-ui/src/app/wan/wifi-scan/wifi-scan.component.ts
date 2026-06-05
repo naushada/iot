@@ -43,9 +43,9 @@ interface ScanEntry { ssid: string; bssid: string; signal: number; flags: string
     </div>
   `,
   styles: [`
-    .page { padding: 24px; } h3 { font-size: 16px; font-weight: 600; color: #e0e0e0; }
-    .btn-primary { background: #2e7d32; border: none; color: #fff; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-    .btn-primary:disabled { opacity: 0.5; }
+    .page { padding: 24px; } h3 { font-size: 16px; font-weight: 600; color: #333; }
+    
+    
     .signal-bars { display: inline-flex; align-items: flex-end; gap: 1px; height: 14px; margin-right: 6px; vertical-align: middle; }
     .bar { width: 3px; background: #555; border-radius: 1px; }
     .bar.active { background: #2e7d32; }

@@ -24,8 +24,8 @@ import { environment } from '../../environments/environment';
   styles: [`
     .log-viewer { padding: 16px; display: flex; flex-direction: column; height: calc(100vh - 160px); }
     .log-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .title { font-size: 15px; font-weight: 600; color: #e0e0e0; }
-    .btn-sm { background: #1a5276; border: none; color: #e0e0e0; padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 11px; }
+    .title { font-size: 15px; font-weight: 600; color: #333; }
+    .btn-sm { background: #1a5276; border: none; color: #333; padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 11px; }
     .btn-sm:hover { opacity: 0.8; }
     .auto-refresh { font-size: 12px; color: #9e9e9e; display: flex; align-items: center; gap: 4px; cursor: pointer; margin-left: auto; }
     .log-textarea {

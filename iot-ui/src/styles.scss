@@ -1,3 +1,44 @@
+// ── Global button styles ────────────────────────────────────────────
+
+.btn-primary {
+  background: #2e7d32;
+  border: 1px solid #256b29;
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+
+  &:hover { background: #388e3c; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.btn-sm {
+  background: #e8e8e8;
+  border: 1px solid #d0d0d0;
+  color: #333;
+  padding: 4px 12px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover { background: #ddd; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.btn-danger {
+  background: #c62828;
+  border: 1px solid #b71c1c;
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover { background: #d32f2f; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
 // ── Status colours ──────────────────────────────────────────────────
 
 $iot-green:  #2e7d32;

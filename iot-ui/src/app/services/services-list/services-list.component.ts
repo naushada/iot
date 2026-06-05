@@ -38,8 +38,8 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
     </div>
   `,
   styles: [`
-    .page { padding: 24px; } h3 { font-size: 16px; font-weight: 600; color: #e0e0e0; margin: 0 0 20px 0; }
-    .btn-sm { background: #1a5276; border: none; color: #e0e0e0; padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+    .page { padding: 24px; } h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
+    
     .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
     .hint { font-size: 12px; color: #757575; margin-top: 16px; }
   `]
