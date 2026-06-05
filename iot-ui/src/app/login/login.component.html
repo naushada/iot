@@ -1,0 +1,46 @@
+<div class="login-wrapper">
+  <div class="login-card">
+    <!-- IoT logo -->
+    <div class="logo">
+      <img src="assets/iot-logo.svg" alt="IoT Manager" width="120" height="120" />
+    </div>
+    <h2 class="title">IoT Manager</h2>
+    <p class="subtitle">LwM2M Device Management</p>
+
+    <form (ngSubmit)="onLogin()" class="login-form">
+      <div class="clr-form-control">
+        <label for="login-id" class="clr-control-label">User ID</label>
+        <div class="clr-control-container">
+          <input type="text" id="login-id" class="clr-input"
+                 [(ngModel)]="id" name="id" required
+                 placeholder="admin" />
+        </div>
+      </div>
+
+      <div class="clr-form-control">
+        <label for="login-pw" class="clr-control-label">Password</label>
+        <div class="clr-control-container">
+          <input type="password" id="login-pw" class="clr-input"
+                 [(ngModel)]="password" name="password" required
+                 placeholder="Enter password" />
+        </div>
+      </div>
+
+      <div *ngIf="error" class="alert alert-danger" style="margin-top: 12px;">
+        <div class="alert-items">
+          <div class="alert-item static">
+            <div class="alert-icon-wrapper">
+              <clr-icon class="alert-icon" shape="exclamation-circle"></clr-icon>
+            </div>
+            <span class="alert-text">{{ error }}</span>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block"
+              [disabled]="loggingIn" style="margin-top: 20px; width: 100%;">
+        {{ loggingIn ? 'Signing in…' : 'Sign in' }}
+      </button>
+    </form>
+  </div>
+</div>
