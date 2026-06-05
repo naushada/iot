@@ -10,12 +10,26 @@ input:disabled, select:disabled, textarea:disabled {
 // ── Form table label column ──────────────────────────────────────────
 
 .label-col {
-  width: 160px;
+  width: 140px;
   font-size: 13px;
   font-weight: 500;
   color: #333;
   vertical-align: middle;
   white-space: nowrap;
+  text-align: left;
+  padding: 6px 12px 6px 0;
+}
+
+// ── Borderless table ─────────────────────────────────────────────────
+
+.table-borderless,
+.table-borderless td,
+.table-borderless th {
+  border: none !important;
+}
+
+.table-borderless td {
+  padding: 6px 12px 6px 0;
 }
 
 // ── Form grid (4 columns) ───────────────────────────────────────────
@@ -31,6 +45,16 @@ input:disabled, select:disabled, textarea:disabled {
 }
 
 // ── Global button styles ────────────────────────────────────────────
+
+button, .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1;
+}
+
+// ── Global button colour styles ─────────────────────────────────────
 
 .btn-primary {
   background: #2e7d32;

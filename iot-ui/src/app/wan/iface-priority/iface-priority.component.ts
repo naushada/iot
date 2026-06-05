@@ -9,47 +9,47 @@ import { SessionService } from '../../../common/session.service';
       <h3>Interface Priority</h3>
       <p class="desc">Comma-separated priority list — highest-priority OPER-UP interface becomes the active WAN path.</p>
 
-      <div class="clr-row" style="margin-bottom:20px;">
-        <div class="clr-col-md-6"><label class="fl">Priority List</label>
-          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="priority" placeholder="eth,wifi,cellular" />
-        </div>
-        <div class="clr-col-md-3"><label class="fl">Ethernet Iface</label>
-          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="ethName" placeholder="eth0" />
-        </div>
-        <div class="clr-col-md-3"><label class="fl">WiFi Iface</label>
-          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="wifiName" placeholder="wlan0" />
-        </div>
-      </div>
-
-      <div class="clr-row" style="margin-bottom:20px;">
-        <div class="clr-col-md-3"><label class="fl">Cellular Iface</label>
-          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="cellName" placeholder="wwan0" />
-        </div>
-        <div class="clr-col-md-3"><label class="fl">Poll Interval (s)</label>
-          <input type="number" class="clr-input" [disabled]="!isAdmin" [(ngModel)]="pollInterval" />
-        </div>
-        <div class="clr-col-md-6">
-          <label class="fl">Active Interface</label>
+      <div class="form-grid">
+        <clr-input-container>
+          <label>Priority List</label>
+          <input clrInput [disabled]="!isAdmin" [(ngModel)]="priority" placeholder="eth,wifi,cellular" />
+        </clr-input-container>
+        <clr-input-container>
+          <label>Ethernet Interface</label>
+          <input clrInput [disabled]="!isAdmin" [(ngModel)]="ethName" placeholder="eth0" />
+        </clr-input-container>
+        <clr-input-container>
+          <label>WiFi Interface</label>
+          <input clrInput [disabled]="!isAdmin" [(ngModel)]="wifiName" placeholder="wlan0" />
+        </clr-input-container>
+        <clr-input-container>
+          <label>Cellular Interface</label>
+          <input clrInput [disabled]="!isAdmin" [(ngModel)]="cellName" placeholder="wwan0" />
+        </clr-input-container>
+        <clr-input-container>
+          <label>Poll Interval (s)</label>
+          <input clrInput [disabled]="!isAdmin" type="number" [(ngModel)]="pollInterval" />
+        </clr-input-container>
+        <div>
+          <label class="clr-control-label">Active Interface</label>
           <span class="active-iface">{{ activeIface || 'none' }}</span>
         </div>
       </div>
 
-      <button class="btn btn-primary" *ngIf="isAdmin" (click)="save()" [disabled]="saving || !isAdmin">
-        {{ saving ? 'Saving…' : 'Save' }}
-      </button>
-      <span *ngIf="msg" style="margin-left:12px;"
-            [style.color]="msg==='Saved.'?'#2e7d32':'#c62828'">{{ msg }}</span>
+      <div style="margin-top:20px;">
+        <button class="btn btn-primary" *ngIf="isAdmin" (click)="save()" [disabled]="saving">
+          {{ saving ? 'Saving…' : 'Save' }}
+        </button>
+        <span *ngIf="msg" style="margin-left:12px;"
+              [style.color]="msg==='Saved.'?'#2e7d32':'#c62828'">{{ msg }}</span>
+      </div>
     </div>
   `,
   styles: [`
     .page { padding: 24px; }
     h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 8px 0; }
-    .desc { color: #9e9e9e; font-size: 13px; margin-bottom: 20px; }
-    .fl { display: block; font-size: 12px; color: #9e9e9e; margin-bottom: 4px; }
-
-    
-    
-    .active-iface { font-size: 16px; font-weight: 600; color: #66bb6a; display: block; margin-top: 18px; }
+    .desc { color: #888; font-size: 13px; margin-bottom: 20px; }
+    .active-iface { font-size: 16px; font-weight: 600; color: #2e7d32; display: block; margin-top: 2px; }
   `]
 })
 export class IfacePriorityComponent implements OnInit {
@@ -57,7 +57,7 @@ export class IfacePriorityComponent implements OnInit {
   cellName = 'wwan0'; pollInterval = 5; activeIface = '';
   saving = false; msg = '';
 
-    get isAdmin(): boolean { return this.session.isAdmin; }
+  get isAdmin(): boolean { return this.session.isAdmin; }
 
   constructor(private http: HttpsvcService, private session: SessionService) {}
 

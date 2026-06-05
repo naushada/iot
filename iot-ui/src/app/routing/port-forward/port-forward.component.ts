@@ -8,59 +8,52 @@ import { SessionService } from '../../../common/session.service';
     <div class="page">
       <h3>Port Forwarding &amp; DNAT</h3>
 
-      <div class="clr-row" style="margin-bottom:24px;">
-        <div class="clr-col-md-6">
-          <label class="fl">DNAT Target IP <span class="hint">(LwM2M client)</span></label>
-          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="targetIp" placeholder="192.168.1.100" />
-        </div>
-        <div class="clr-col-md-3">
-          <label class="fl">Target Port</label>
-          <input type="number" class="clr-input" [disabled]="!isAdmin" [(ngModel)]="targetPort" />
-        </div>
-        <div class="clr-col-md-3">
-          <label class="fl">&nbsp;</label>
-          <button class="btn btn-primary" style="width:100%;" *ngIf="isAdmin" (click)="saveDnat()" [disabled]="savingDnat">
+      <div class="form-grid" style="align-items:end;">
+        <clr-input-container>
+          <label>DNAT Target IP <span class="hint">(LwM2M client)</span></label>
+          <input clrInput [disabled]="!isAdmin" [(ngModel)]="targetIp" placeholder="192.168.1.100" />
+        </clr-input-container>
+        <clr-input-container>
+          <label>Target Port</label>
+          <input clrInput type="number" [disabled]="!isAdmin" [(ngModel)]="targetPort" />
+        </clr-input-container>
+        <div class="btn-cell" *ngIf="isAdmin">
+          <button class="btn btn-primary" (click)="saveDnat()" [disabled]="savingDnat">
             {{ savingDnat ? 'Saving…' : 'Save DNAT' }}
           </button>
         </div>
       </div>
 
-      <h4>Forwarded Ports</h4>
-      <div class="clr-row" style="margin-bottom:12px;">
-        <div class="clr-col-md-8">
-          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="forwardPorts"
-                 placeholder="80,443,5684" />
-          <span class="hint">Comma-separated port numbers. These are DNAT'd to the target IP above.</span>
-        </div>
-        <div class="clr-col-md-4">
-          <button class="btn btn-primary" style="width:100%;" *ngIf="isAdmin" (click)="savePorts()" [disabled]="savingPorts">
+      <div class="form-grid" style="margin-top:24px; align-items:end;">
+        <clr-input-container style="grid-column: span 2;">
+          <label>Forwarded Ports</label>
+          <input clrInput [disabled]="!isAdmin" [(ngModel)]="forwardPorts" placeholder="80,443,5684" />
+          <clr-control-helper>Comma-separated, DNAT'd to the target IP above</clr-control-helper>
+        </clr-input-container>
+        <div class="btn-cell" *ngIf="isAdmin">
+          <button class="btn btn-primary" (click)="savePorts()" [disabled]="savingPorts">
             {{ savingPorts ? 'Saving…' : 'Save Ports' }}
           </button>
         </div>
       </div>
 
-      <div style="margin-top:24px; padding:16px; background:rgba(255,255,255,0.03); border-radius:6px;">
-        <span class="fl" style="margin-bottom:8px;">Routing Status</span>
-        <div style="display:flex;gap:24px;">
-          <div><span class="lbl">State</span> <app-status-badge [label]="routeState||'unknown'" [state]="routeState||''"></app-status-badge></div>
-          <div><span class="lbl">Rules Applied</span> <span class="val">{{ rulesApplied }}</span></div>
-          <div><span class="lbl">Last Apply</span> <span class="val">{{ lastApply || '—' }}</span></div>
-        </div>
-      </div>
+      <table class="table table-compact table-borderless" style="margin-top:24px;">
+        <tbody>
+          <tr><td class="label-col">State</td><td><app-status-badge [label]="routeState||'unknown'" [state]="routeState||''"></app-status-badge></td></tr>
+          <tr><td class="label-col">Rules Applied</td><td>{{ rulesApplied }}</td></tr>
+          <tr><td class="label-col">Last Apply</td><td>{{ lastApply || '—' }}</td></tr>
+        </tbody>
+      </table>
 
       <span *ngIf="msg" style="display:block;margin-top:12px;"
             [style.color]="msg.startsWith('Saved')||msg.startsWith('DNAT')?'#2e7d32':'#c62828'">{{ msg }}</span>
     </div>
   `,
   styles: [`
-    .page { padding: 24px; } h3,h4 { color: #333; margin: 0 0 16px 0; } h4 { font-size: 14px; margin-top: 24px; }
-    .fl { display: block; font-size: 12px; color: #9e9e9e; margin-bottom: 4px; }
-    .hint { color: #757575; font-weight: normal; font-size: 11px; }
-
-    
-    
-    .lbl { font-size: 10px; color: #757575; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
-    .val { font-size: 14px; color: #333; font-weight: 500; }
+    .page { padding: 24px; } h3 { color: #333; margin: 0 0 20px 0; font-size: 16px; font-weight: 600; }
+    .hint { color: #888; font-weight: normal; font-size: 11px; }
+    .btn-cell { display: flex; align-items: flex-end; }
+    .btn-cell .btn-primary { white-space: nowrap; }
   `]
 })
 export class PortForwardComponent implements OnInit {
@@ -68,7 +61,7 @@ export class PortForwardComponent implements OnInit {
   savingDnat = false; savingPorts = false; msg = '';
   routeState = ''; rulesApplied = 0; lastApply = '';
 
-    get isAdmin(): boolean { return this.session.isAdmin; }
+  get isAdmin(): boolean { return this.session.isAdmin; }
 
   constructor(private http: HttpsvcService, private session: SessionService) {}
 

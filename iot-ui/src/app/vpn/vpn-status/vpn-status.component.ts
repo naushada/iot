@@ -8,7 +8,7 @@ import { VpnStatus } from '../../../common/app-globals';
   template: `
     <div class="page">
       <h3>VPN Connection Status</h3>
-      <table class="table table-compact" *ngIf="!loading">
+      <table class="table table-compact table-borderless" *ngIf="!loading">
         <tbody>
           <tr><td class="label-col">State</td><td><app-status-badge [label]="v.state||'unknown'" [state]="v.state||''"></app-status-badge></td></tr>
           <tr><td class="label-col">Assigned IP</td><td>{{ v.ip || '—' }}</td></tr>
