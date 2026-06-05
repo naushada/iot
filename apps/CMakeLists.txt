@@ -109,9 +109,16 @@ else()
     set(TINYDTLS_LINK_LIB ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls/libtinydtls.a)
 endif()
 
-# ACE library — use full path so the linker doesn't need -lACE symlinks.
+# ACE library — use find_library so we find whatever name Yocto installed
+# (libACE.so, libACE.so.7.0.0, etc.). Override with -DACE_LIBRARY=...
 if(NOT DEFINED ACE_LIBRARY)
-    set(ACE_LIBRARY ${ACE_ROOT}/lib/libACE.so)
+    find_library(ACE_LIBRARY ACE PATHS ${ACE_ROOT}/lib NO_DEFAULT_PATH)
+    if(NOT ACE_LIBRARY)
+        find_library(ACE_LIBRARY ACE)
+    endif()
+endif()
+if(NOT ACE_LIBRARY)
+    message(FATAL_ERROR "ACE library not found — set -DACE_LIBRARY=/path/to/libACE.so")
 endif()
 
 #all files from src directory (recursive — picks up src/cli/**/*.cpp too).
