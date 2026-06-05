@@ -109,18 +109,6 @@ else()
     set(TINYDTLS_LINK_LIB ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls/libtinydtls.a)
 endif()
 
-# ACE library — find_library first, then fall back to ACE_ROOT/lib.
-if(NOT DEFINED ACE_LIBRARY)
-    find_library(ACE_LIBRARY ACE PATHS ${ACE_ROOT}/lib NO_DEFAULT_PATH)
-    if(NOT ACE_LIBRARY)
-        find_library(ACE_LIBRARY ACE)
-    endif()
-    if(NOT ACE_LIBRARY)
-        # Last resort: guess from ACE_ROOT and hope the symlink exists
-        set(ACE_LIBRARY ${ACE_ROOT}/lib/libACE.so)
-    endif()
-endif()
-
 #all files from src directory (recursive — picks up src/cli/**/*.cpp too).
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
@@ -128,7 +116,7 @@ add_executable(lwm2m ${SOURCES})
 target_link_libraries(lwm2m
                         ${TINYDTLS_LINK_LIB}
                         datastore_client
-                        ${ACE_LIBRARY}
+                        ACE
                         z
                         readline
                         pthread

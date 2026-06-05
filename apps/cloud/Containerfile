@@ -1,45 +1,30 @@
 # ============================================================
-# Stage 1: Build C++ backend (all iot modules)
+# Stage 1: Build C++ backend (ds-server + iot-httpd only)
 # ============================================================
 FROM docker.io/library/ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Build deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config \
     libssl-dev zlib1g-dev libreadline-dev \
-    liblua5.3-dev lua5.3 wget ca-certificates \
+    liblua5.3-dev lua5.3 \
     && rm -rf /var/lib/apt/lists/*
 
-# ACE/TAO 7.0.0 from source (~60s)
-RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_0/ACE+TAO-7.0.0.tar.gz \
-    -O /tmp/ace.tar.gz && cd /tmp && tar xzf ace.tar.gz && cd ACE_wrappers && \
-    echo '#include "ace/config-linux.h"' > ace/config.h && \
-    echo 'include $(ACE_ROOT)/include/makeinclude/platform_linux.GNU' > include/makeinclude/platform_macros.GNU && \
-    export ACE_ROOT=/tmp/ACE_wrappers && make -j$(nproc) -C ace && \
-    mkdir -p /usr/local/ACE_TAO-7.0.0/include/ace /usr/local/ACE_TAO-7.0.0/lib && \
-    cp -r ace/ /usr/local/ACE_TAO-7.0.0/include/ && \
-    cp ace/libACE.so.* /usr/local/ACE_TAO-7.0.0/lib/ && \
-    ln -sf /usr/local/ACE_TAO-7.0.0/lib/libACE.so.7.0.0 /usr/local/ACE_TAO-7.0.0/lib/libACE.so && \
-    rm -rf /tmp/ACE_wrappers /tmp/ace.tar.gz
-
-# tinydtls — build from vendored source
-COPY apps/3rdparty/tinydtls /tmp/td
-RUN cd /tmp/td && make clean 2>/dev/null; ./configure --prefix=/usr/local && \
-    make -j$(nproc) && make install && rm -rf /tmp/td
-
-# Copy full source tree (xpmile pattern)
 COPY . /src/
 
+# Build only ds-server + iot-httpd (no ACE/DTLS/lwm2m needed for cloud)
 WORKDIR /src/build
-RUN cmake /src/apps \
+RUN cmake /src/modules/data-store \
     -DCMAKE_BUILD_TYPE=Release \
-    -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
+    -GNinja \
+    && ninja -j$(nproc)
+
+WORKDIR /src/build-http
+RUN cmake /src/modules/http-server \
+    -DCMAKE_BUILD_TYPE=Release \
     -DLUA_INCLUDE_DIR=/usr/include/lua5.3 \
-    -DIOT_ENABLE_MONGO=OFF \
-    -DBUILD_APPS_TESTS=OFF \
-    -DBUILD_DATA_STORE_TESTS=OFF \
+    -DHTTP_SKIP_DATA_STORE=ON \
     -DBUILD_HTTP_SERVER_TESTS=OFF \
     -GNinja \
     && ninja -j$(nproc)
@@ -67,14 +52,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iptables openvpn ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# ACE shared libs
-COPY --from=builder /usr/local/ACE_TAO-7.0.0/lib/libACE.so* /usr/local/lib/
-RUN ldconfig
-
 # Binaries
-COPY --from=builder /src/build/lwm2m /usr/local/bin/
-COPY --from=builder /src/build/data-store/ds-server /usr/local/bin/
-COPY --from=builder /src/build/iot-httpd /usr/local/bin/
+COPY --from=builder /src/build/ds-server /usr/local/bin/
+COPY --from=builder /src/build/ds-cli /usr/local/bin/
+COPY --from=builder /src/build-http/iot-httpd /usr/local/bin/
 
 # Cloud UI
 COPY --from=ui-builder /ui/dist/cloud-ui /usr/share/iot/cloud-www/

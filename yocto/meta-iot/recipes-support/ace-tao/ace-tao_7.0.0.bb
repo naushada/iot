@@ -87,6 +87,13 @@ do_install() {
     # Versioned shared libs + their .so / .so.MAJOR symlinks.
     cp -dR ${S}/lib/libACE.so*     ${D}${libdir}/
     cp -dR ${S}/lib/libACE_SSL.so* ${D}${libdir}/
+    # Ensure the .so symlink exists — some ACE builds don't create it
+    if [ ! -e ${D}${libdir}/libACE.so ]; then
+        ln -sf libACE.so.7.0.0 ${D}${libdir}/libACE.so
+    fi
+    if [ ! -e ${D}${libdir}/libACE_SSL.so ]; then
+        ln -sf libACE_SSL.so.7.0.0 ${D}${libdir}/libACE_SSL.so
+    fi
 
     # Public headers: the ace/ tree (*.h, *.inl, and the template *.cpp
     # files that headers #include), minus build artifacts. ACE_SSL headers
