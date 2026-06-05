@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { HttpsvcService } from '../../../common/httpsvc.service';
+import { SessionService } from '../../../common/session.service';
 import { WifiNetwork } from '../../../common/app-globals';
 
 @Component({
@@ -13,7 +14,9 @@ export class WifiConfigComponent implements OnInit {
   networks: WifiNetwork[] = [];
   loading = true; saving = false; msg = '';
 
-  constructor(private http: HttpsvcService, fb: FormBuilder) {
+    get isAdmin(): boolean { return this.session.isAdmin; }
+
+  constructor(private http: HttpsvcService, fb: FormBuilder, private session: SessionService) {
     this.form = fb.group({
       iface:            ['wlan0'],
       wpa_path:         ['/usr/sbin/wpa_supplicant'],

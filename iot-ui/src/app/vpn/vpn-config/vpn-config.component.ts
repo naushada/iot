@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { HttpsvcService } from '../../../common/httpsvc.service';
+import { SessionService } from '../../../common/session.service';
 
 @Component({
   selector: 'app-vpn-config',
@@ -10,10 +11,12 @@ import { HttpsvcService } from '../../../common/httpsvc.service';
 export class VpnConfigComponent implements OnInit {
   form: FormGroup;
   loading = true;
+  get isAdmin(): boolean { return this.session.isAdmin; }
   saving = false;
   msg = '';
 
-  constructor(private http: HttpsvcService, fb: FormBuilder) {
+  constructor(private http: HttpsvcService, fb: FormBuilder,
+    private session: SessionService) {
     this.form = fb.group({
       remote_host:  [''],
       remote_port:  [1194],

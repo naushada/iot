@@ -1,62 +1,42 @@
 <div class="page">
   <h3>LwM2M Endpoint Configuration</h3>
 
-  <form [formGroup]="serverForm" (ngSubmit)="save()" *ngIf="!loading" class="config-form">
-    <div class="clr-row">
-      <div class="clr-col-12">
-        <clr-input-container>
-          <label>Server URI</label>
-          <input clrInput formControlName="server_uri"
-                 placeholder="coaps://lwm2m.example.com:5684" />
-        </clr-input-container>
-      </div>
-    </div>
-
-    <div class="clr-row">
-      <div class="clr-col-md-6 clr-col-12">
-        <clr-input-container>
-          <label>Endpoint Name</label>
-          <input clrInput formControlName="endpoint"
-                 placeholder="urn:dev:client-1" />
-        </clr-input-container>
-      </div>
-      <div class="clr-col-md-3 clr-col-6">
-        <clr-select-container>
-          <label>Binding Mode</label>
-          <select clrSelect formControlName="binding">
+  <form [formGroup]="serverForm" (ngSubmit)="save()" *ngIf="!loading">
+    <table class="table table-compact">
+      <tbody>
+        <tr>
+          <td class="label-col">Server URI</td>
+          <td><input class="clr-input" [disabled]="!isAdmin" formControlName="server_uri" placeholder="coaps://lwm2m.example.com:5684" /></td>
+        </tr>
+        <tr>
+          <td class="label-col">Endpoint Name</td>
+          <td><input class="clr-input" [disabled]="!isAdmin" formControlName="endpoint" placeholder="urn:dev:client-1" /></td>
+        </tr>
+        <tr>
+          <td class="label-col">Binding Mode</td>
+          <td><select class="clr-select" [disabled]="!isAdmin" formControlName="binding" style="width:180px;">
             <option value="U">U — UDP</option>
             <option value="S">S — SMS</option>
             <option value="US">US — UDP+SMS</option>
             <option value="UQ">UQ — UDP+Queue</option>
-          </select>
-        </clr-select-container>
-      </div>
-      <div class="clr-col-md-3 clr-col-6">
-        <clr-input-container>
-          <label>Lifetime (s)</label>
-          <input clrInput type="number" formControlName="lifetime"
-                 min="0" max="2592000" />
-        </clr-input-container>
-      </div>
-    </div>
+          </select></td>
+        </tr>
+        <tr>
+          <td class="label-col">Lifetime (s)</td>
+          <td><input class="clr-input" [disabled]="!isAdmin" type="number" formControlName="lifetime" min="0" max="2592000" style="width:140px;" /></td>
+        </tr>
+        <tr>
+          <td class="label-col">Observable</td>
+          <td><input type="checkbox" clrCheckbox [disabled]="!isAdmin" formControlName="observable" /></td>
+        </tr>
+      </tbody>
+    </table>
 
-    <div class="clr-row" style="margin-top: 8px;">
-      <div class="clr-col-12">
-        <clr-checkbox-container>
-          <clr-checkbox-wrapper>
-            <input type="checkbox" clrCheckbox formControlName="observable" />
-            <label>Observable</label>
-          </clr-checkbox-wrapper>
-        </clr-checkbox-container>
-      </div>
-    </div>
-
-    <div style="margin-top: 24px;">
+    <div style="margin-top:20px;" *ngIf="isAdmin">
       <button type="submit" class="btn btn-primary" [disabled]="saving">
-        {{ saving ? 'Saving…' : 'Save Configuration' }}
+        {{ saving ? 'Saving…' : 'Save' }}
       </button>
-      <span *ngIf="msg" style="margin-left:12px;"
-            [style.color]="msg==='Saved.'?'#2e7d32':'#c62828'">{{ msg }}</span>
+      <span *ngIf="msg" style="margin-left:12px;" [style.color]="msg==='Saved.'?'#2e7d32':'#c62828'">{{ msg }}</span>
     </div>
   </form>
 </div>

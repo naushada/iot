@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription, interval } from 'rxjs';
 import { switchMap } from 'rxjs/operators';
 import { HttpsvcService } from '../../../common/httpsvc.service';
+import { SessionService } from '../../../common/session.service';
 import { StatusSnapshot, ServiceInfo } from '../../../common/app-globals';
 
 interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: boolean; msg: string; }
@@ -18,7 +19,7 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
             <td><code>{{ s.label }}</code></td>
             <td><app-status-badge [label]="s.info.state||'unknown'" [state]="s.info.state||''"></app-status-badge></td>
             <td>
-              <input type="checkbox" [checked]="s.info.enable" (change)="toggleEnable(s)" />
+              <input type="checkbox" [checked]="s.info.enable" [disabled]="!isAdmin" (change)="toggleEnable(s)" />
             </td>
             <td>
               <span *ngIf="s.info.uptime_sec != null" style="font-size:12px;color:#757575;">uptime {{ s.info.uptime_sec }}s</span>
@@ -55,7 +56,9 @@ export class ServicesListComponent implements OnInit, OnDestroy {
   ];
   private sub = new Subscription();
 
-  constructor(private http: HttpsvcService) {}
+    get isAdmin(): boolean { return this.session.isAdmin; }
+
+  constructor(private http: HttpsvcService, private session: SessionService) {}
 
   ngOnInit(): void {
     this.load();

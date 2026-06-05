@@ -70,9 +70,7 @@ PACKAGECONFIG ??= "mongo \
 "
 
 PACKAGECONFIG[mongo] = "\
-    -DIOT_ENABLE_MONGO=ON \
-      -DMONGOCXX_INCLUDE_DIR=${STAGING_INCDIR}/mongocxx/v_noabi \
-      -DBSONCXX_INCLUDE_DIR=${STAGING_INCDIR}/bsoncxx/v_noabi, \
+    -DIOT_ENABLE_MONGO=ON, \
     -DIOT_ENABLE_MONGO=OFF, \
     mongo-cxx-driver mongo-c-driver, \
 "
@@ -115,6 +113,8 @@ EXTRA_OECMAKE = "\
     -DLUA_INCLUDE_DIR=${STAGING_INCDIR} \
     -DTINYDTLS_LIBRARY=${STAGING_LIBDIR}/libtinydtls.a \
     -DTINYDTLS_INCLUDE_DIR=${STAGING_INCDIR}/tinydtls \
+    -DMONGOCXX_INCLUDE_DIR=${STAGING_INCDIR}/mongocxx/v_noabi \
+    -DBSONCXX_INCLUDE_DIR=${STAGING_INCDIR}/bsoncxx/v_noabi \
     -DCMAKE_INSTALL_PREFIX=/usr \
 "
 

@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { HttpsvcService } from '../../../common/httpsvc.service';
+import { SessionService } from '../../../common/session.service';
 
 @Component({
   selector: 'app-lwm2m-config',
@@ -11,7 +12,9 @@ export class Lwm2mConfigComponent implements OnInit {
   serverForm: FormGroup;
   loading = true; saving = false; msg = '';
 
-  constructor(private http: HttpsvcService, fb: FormBuilder) {
+    get isAdmin(): boolean { return this.session.isAdmin; }
+
+  constructor(private http: HttpsvcService, fb: FormBuilder, private session: SessionService) {
     this.serverForm = fb.group({
       server_uri: ['coaps://'],
       endpoint:   ['urn:dev:client-1'],

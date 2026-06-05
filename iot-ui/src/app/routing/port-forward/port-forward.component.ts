@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { HttpsvcService } from '../../../common/httpsvc.service';
+import { SessionService } from '../../../common/session.service';
 
 @Component({
   selector: 'app-port-forward',
@@ -10,15 +11,15 @@ import { HttpsvcService } from '../../../common/httpsvc.service';
       <div class="clr-row" style="margin-bottom:24px;">
         <div class="clr-col-md-6">
           <label class="fl">DNAT Target IP <span class="hint">(LwM2M client)</span></label>
-          <input class="clr-input" [(ngModel)]="targetIp" placeholder="192.168.1.100" />
+          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="targetIp" placeholder="192.168.1.100" />
         </div>
         <div class="clr-col-md-3">
           <label class="fl">Target Port</label>
-          <input type="number" class="clr-input" [(ngModel)]="targetPort" />
+          <input type="number" class="clr-input" [disabled]="!isAdmin" [(ngModel)]="targetPort" />
         </div>
         <div class="clr-col-md-3">
           <label class="fl">&nbsp;</label>
-          <button class="btn btn-primary" style="width:100%;" (click)="saveDnat()" [disabled]="savingDnat">
+          <button class="btn btn-primary" style="width:100%;" *ngIf="isAdmin" (click)="saveDnat()" [disabled]="savingDnat">
             {{ savingDnat ? 'Saving…' : 'Save DNAT' }}
           </button>
         </div>
@@ -27,12 +28,12 @@ import { HttpsvcService } from '../../../common/httpsvc.service';
       <h4>Forwarded Ports</h4>
       <div class="clr-row" style="margin-bottom:12px;">
         <div class="clr-col-md-8">
-          <input class="clr-input" [(ngModel)]="forwardPorts"
+          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="forwardPorts"
                  placeholder="80,443,5684" />
           <span class="hint">Comma-separated port numbers. These are DNAT'd to the target IP above.</span>
         </div>
         <div class="clr-col-md-4">
-          <button class="btn btn-primary" style="width:100%;" (click)="savePorts()" [disabled]="savingPorts">
+          <button class="btn btn-primary" style="width:100%;" *ngIf="isAdmin" (click)="savePorts()" [disabled]="savingPorts">
             {{ savingPorts ? 'Saving…' : 'Save Ports' }}
           </button>
         </div>
@@ -67,7 +68,9 @@ export class PortForwardComponent implements OnInit {
   savingDnat = false; savingPorts = false; msg = '';
   routeState = ''; rulesApplied = 0; lastApply = '';
 
-  constructor(private http: HttpsvcService) {}
+    get isAdmin(): boolean { return this.session.isAdmin; }
+
+  constructor(private http: HttpsvcService, private session: SessionService) {}
 
   ngOnInit(): void {
     this.http.dbGet(['net.lwm2m.target.ip', 'net.lwm2m.target.port', 'net.forward.ports',

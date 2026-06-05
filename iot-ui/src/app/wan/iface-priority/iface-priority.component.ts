@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { HttpsvcService } from '../../../common/httpsvc.service';
+import { SessionService } from '../../../common/session.service';
 
 @Component({
   selector: 'app-iface-priority',
@@ -10,22 +11,22 @@ import { HttpsvcService } from '../../../common/httpsvc.service';
 
       <div class="clr-row" style="margin-bottom:20px;">
         <div class="clr-col-md-6"><label class="fl">Priority List</label>
-          <input class="clr-input" [(ngModel)]="priority" placeholder="eth,wifi,cellular" />
+          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="priority" placeholder="eth,wifi,cellular" />
         </div>
         <div class="clr-col-md-3"><label class="fl">Ethernet Iface</label>
-          <input class="clr-input" [(ngModel)]="ethName" placeholder="eth0" />
+          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="ethName" placeholder="eth0" />
         </div>
         <div class="clr-col-md-3"><label class="fl">WiFi Iface</label>
-          <input class="clr-input" [(ngModel)]="wifiName" placeholder="wlan0" />
+          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="wifiName" placeholder="wlan0" />
         </div>
       </div>
 
       <div class="clr-row" style="margin-bottom:20px;">
         <div class="clr-col-md-3"><label class="fl">Cellular Iface</label>
-          <input class="clr-input" [(ngModel)]="cellName" placeholder="wwan0" />
+          <input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="cellName" placeholder="wwan0" />
         </div>
         <div class="clr-col-md-3"><label class="fl">Poll Interval (s)</label>
-          <input type="number" class="clr-input" [(ngModel)]="pollInterval" />
+          <input type="number" class="clr-input" [disabled]="!isAdmin" [(ngModel)]="pollInterval" />
         </div>
         <div class="clr-col-md-6">
           <label class="fl">Active Interface</label>
@@ -33,7 +34,7 @@ import { HttpsvcService } from '../../../common/httpsvc.service';
         </div>
       </div>
 
-      <button class="btn btn-primary" (click)="save()" [disabled]="saving">
+      <button class="btn btn-primary" *ngIf="isAdmin" (click)="save()" [disabled]="saving || !isAdmin">
         {{ saving ? 'Saving…' : 'Save' }}
       </button>
       <span *ngIf="msg" style="margin-left:12px;"
@@ -56,7 +57,9 @@ export class IfacePriorityComponent implements OnInit {
   cellName = 'wwan0'; pollInterval = 5; activeIface = '';
   saving = false; msg = '';
 
-  constructor(private http: HttpsvcService) {}
+    get isAdmin(): boolean { return this.session.isAdmin; }
+
+  constructor(private http: HttpsvcService, private session: SessionService) {}
 
   ngOnInit(): void {
     this.http.dbGet(['net.iface.priority', 'net.iface.eth.name', 'net.iface.wifi.name',
