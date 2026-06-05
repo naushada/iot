@@ -22,30 +22,32 @@ interface ScanEntry { ssid: string; bssid: string; signal: number; flags: string
         </span>
       </div>
 
-      <table class="table table-compact" *ngIf="results.length > 0">
-        <thead><tr><th>SSID</th><th>BSSID</th><th>Signal</th><th>Flags</th></tr></thead>
-        <tbody>
-          <tr *ngFor="let r of results">
-            <td><strong>{{ r.ssid || '(hidden)' }}</strong></td>
-            <td><code>{{ r.bssid }}</code></td>
-            <td>
-              <span class="signal-bars">
-                <span class="bar" *ngFor="let b of [1,2,3,4]" [class.active]="r.signal > (-80+b*5)" [style.height.px]="4+b*3"></span>
-              </span>
-              {{ r.signal }} dBm
-            </td>
-            <td><span class="flags">{{ r.flags }}</span></td>
-          </tr>
-        </tbody>
-      </table>
-      <p *ngIf="results.length===0 && !loading" style="color:#757575;">No scan results yet. Click "Scan Now" to trigger a scan.</p>
+      <clr-datagrid *ngIf="results.length > 0">
+        <clr-dg-column>SSID</clr-dg-column>
+        <clr-dg-column>BSSID</clr-dg-column>
+        <clr-dg-column>Signal</clr-dg-column>
+        <clr-dg-column>Flags</clr-dg-column>
+
+        <clr-dg-row *clrDgItems="let r of results">
+          <clr-dg-cell><strong>{{ r.ssid || '(hidden)' }}</strong></clr-dg-cell>
+          <clr-dg-cell><code>{{ r.bssid }}</code></clr-dg-cell>
+          <clr-dg-cell>
+            <span class="signal-bars">
+              <span class="bar" *ngFor="let b of [1,2,3,4]" [class.active]="r.signal > (-80+b*5)" [style.height.px]="4+b*3"></span>
+            </span>
+            {{ r.signal }} dBm
+          </clr-dg-cell>
+          <clr-dg-cell><span class="flags">{{ r.flags }}</span></clr-dg-cell>
+        </clr-dg-row>
+
+        <clr-dg-footer>{{ results.length }} networks found</clr-dg-footer>
+      </clr-datagrid>
+      <p *ngIf="results.length===0 && !loading" style="color:#757575;">No scan results yet — click "Scan Now" to trigger a scan.</p>
       <p *ngIf="loading">Loading…</p>
     </div>
   `,
   styles: [`
     .page { padding: 24px; } h3 { font-size: 16px; font-weight: 600; color: #333; }
-    
-    
     .signal-bars { display: inline-flex; align-items: flex-end; gap: 1px; height: 14px; margin-right: 6px; vertical-align: middle; }
     .bar { width: 3px; background: #555; border-radius: 1px; }
     .bar.active { background: #2e7d32; }
