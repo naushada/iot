@@ -60,32 +60,52 @@ return {
   namespace = "wifi",
   keys = {
     -- ───────── Read keys (operator → daemon) ─────────
-    ["wifi.iface"]              = { type = "string",  default = "wlan0" },
-    ["wifi.ctrl.dir"]           = { type = "string",
+    ["wifi.iface"]              = {
+        access  = "Admin", type = "string",  default = "wlan0" },
+    ["wifi.ctrl.dir"]           = {
+        access  = "Admin", type = "string",
                                     default = "/run/wpa_supplicant" },
-    ["wifi.wpa.path"]           = { type = "string",
+    ["wifi.wpa.path"]           = {
+        access  = "Admin", type = "string",
                                     default = "/usr/sbin/wpa_supplicant" },
-    ["wifi.networks"]           = { type = "string",  default = "[]" },
-    ["wifi.scan.interval.sec"]  = { type = "integer", default = 60,
+    ["wifi.networks"]           = {
+        access  = "Admin", type = "string",  default = "[]" },
+    ["wifi.scan.interval.sec"]  = {
+        access  = "Admin", type = "integer", default = 60,
                                     min = 0, max = 86400 },
-    ["wifi.scan.max.results"]   = { type = "integer", default = 20,
+    ["wifi.scan.max.results"]   = {
+        access  = "Admin", type = "integer", default = 20,
                                     min = 1, max = 200 },
-    ["wifi.scan.request"]       = { type = "integer", default = 0,
+    ["wifi.scan.request"]       = {
+        access  = "Admin", type = "integer", default = 0,
                                     min = 0 },
-    ["wifi.dhcp.client"]        = { type = "string",  default = "auto" },
-    ["wifi.dhcp.path"]          = { type = "string",  default = "" },
+    ["wifi.dhcp.client"]        = {
+        access  = "Admin", type = "string",  default = "auto" },
+    ["wifi.dhcp.path"]          = {
+        access  = "Admin", type = "string",  default = "" },
 
     -- ───────── Write keys (daemon → operator) ─────────
-    ["wifi.assoc.state"]        = { type = "string" },
-    ["wifi.assoc.ssid"]         = { type = "string" },
-    ["wifi.assoc.bssid"]        = { type = "string" },
-    ["wifi.signal.rssi"]        = { type = "integer" },
-    ["wifi.scan.results"]       = { type = "string" },
-    ["wifi.scan.last.unix"]     = { type = "integer", min = 0 },
-    ["wifi.dhcp.state"]         = { type = "string" },
-    ["wifi.dhcp.ip"]            = { type = "string" },
-    ["wifi.pid.wpa"]            = { type = "integer", min = 0 },
-    ["wifi.pid.dhcp"]           = { type = "integer", min = 0 },
-    ["wifi.last.error"]         = { type = "string" },
+    ["wifi.assoc.state"]        = {
+        access  = "Viewer", type = "string" },
+    ["wifi.assoc.ssid"]         = {
+        access  = "Viewer", type = "string" },
+    ["wifi.assoc.bssid"]        = {
+        access  = "Viewer", type = "string" },
+    ["wifi.signal.rssi"]        = {
+        access  = "Viewer", type = "integer" },
+    ["wifi.scan.results"]       = {
+        access  = "Viewer", type = "string" },
+    ["wifi.scan.last.unix"]     = {
+        access  = "Viewer", type = "integer", min = 0 },
+    ["wifi.dhcp.state"]         = {
+        access  = "Viewer", type = "string" },
+    ["wifi.dhcp.ip"]            = {
+        access  = "Viewer", type = "string" },
+    ["wifi.pid.wpa"]            = {
+        access  = "Viewer", type = "integer", min = 0 },
+    ["wifi.pid.dhcp"]           = {
+        access  = "Viewer", type = "integer", min = 0 },
+    ["wifi.last.error"]         = {
+        access  = "Viewer", type = "string" },
   },
 }

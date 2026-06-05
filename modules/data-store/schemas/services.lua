@@ -27,35 +27,47 @@ return {
   namespace = "services",
   keys = {
     -- ds-server: state surface only
-    ["services.ds.state"]                  = { type = "string",  default = "running" },
-    ["services.ds.uptime.sec"]             = { type = "integer", default = 0, min = 0 },
+    ["services.ds.state"]                  = {
+        access  = "Viewer", type = "string",  default = "running" },
+    ["services.ds.uptime.sec"]             = {
+        access  = "Viewer", type = "integer", default = 0, min = 0 },
 
     -- net-router (leaf: no dependencies)
-    ["services.net.router.enable"]         = { type = "boolean", default = true,
+    ["services.net.router.enable"]         = {
+        access  = "Admin", type = "boolean", default = true,
                                                depends_on = {},
                                                write_acl = {"uid:0"} },
-    ["services.net.router.state"]          = { type = "string",  default = "running" },
+    ["services.net.router.state"]          = {
+        access  = "Viewer", type = "string",  default = "running" },
 
     -- openvpn-client (depends on net.router for forwarding)
-    ["services.openvpn.client.enable"]     = { type = "boolean", default = true,
+    ["services.openvpn.client.enable"]     = {
+        access  = "Admin", type = "boolean", default = true,
                                                depends_on = {"net.router"},
                                                write_acl = {"uid:0"} },
-    ["services.openvpn.client.state"]      = { type = "string",  default = "running" },
+    ["services.openvpn.client.state"]      = {
+        access  = "Viewer", type = "string",  default = "running" },
 
     -- lwm2m-client / lwm2m-server
-    ["services.lwm2m.client.enable"]       = { type = "boolean", default = true,
+    ["services.lwm2m.client.enable"]       = {
+        access  = "Admin", type = "boolean", default = true,
                                                depends_on = {"net.router"},
                                                write_acl = {"uid:0"} },
-    ["services.lwm2m.client.state"]        = { type = "string",  default = "running" },
-    ["services.lwm2m.server.enable"]       = { type = "boolean", default = true,
+    ["services.lwm2m.client.state"]        = {
+        access  = "Viewer", type = "string",  default = "running" },
+    ["services.lwm2m.server.enable"]       = {
+        access  = "Admin", type = "boolean", default = true,
                                                depends_on = {"net.router"},
                                                write_acl = {"uid:0"} },
-    ["services.lwm2m.server.state"]        = { type = "string",  default = "running" },
+    ["services.lwm2m.server.state"]        = {
+        access  = "Viewer", type = "string",  default = "running" },
 
     -- wifi-client
-    ["services.wifi.client.enable"]        = { type = "boolean", default = true,
+    ["services.wifi.client.enable"]        = {
+        access  = "Admin", type = "boolean", default = true,
                                                depends_on = {"net.router"},
                                                write_acl = {"uid:0"} },
-    ["services.wifi.client.state"]         = { type = "string",  default = "running" },
+    ["services.wifi.client.state"]         = {
+        access  = "Viewer", type = "string",  default = "running" },
   },
 }

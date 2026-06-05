@@ -31,7 +31,7 @@ export class LoginComponent {
       next: (r) => {
         this.loggingIn = false;
         if (r.ok) {
-          this.session.setFromLogin();
+          this.session.setFromLogin(r.access);
           this.router.navigate(['/main']);
         } else {
           this.error = r.err || 'Login failed';

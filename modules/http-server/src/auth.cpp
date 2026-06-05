@@ -87,19 +87,22 @@ std::string SessionStore::make_token() {
 }
 
 std::string SessionStore::create_session(const std::string& username,
-                                          const std::string& role) {
+                                          const std::string& role,
+                                          const std::string& access) {
     std::string token = make_token();
     Session s;
     s.username   = username;
     s.role       = role;
+    s.access     = access;
     s.expires_at = std::chrono::steady_clock::now() + std::chrono::hours(8);
 
     std::lock_guard<std::mutex> lk(m_mutex);
     m_sessions[token] = s;
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [http:%t] %M %N:%l session created for %C "
-                        "(role=%C, %zu active)\n"),
-               username.c_str(), role.c_str(), m_sessions.size()));
+                        "(role=%C, access=%C, %zu active)\n"),
+               username.c_str(), role.c_str(), access.c_str(),
+               m_sessions.size()));
     return token;
 }
 
@@ -168,6 +171,27 @@ std::string CredentialStore::load_admin_password_hash(
 bool CredentialStore::verify(const std::string& submitted_plaintext,
                               const std::string& stored_hash) {
     return sha256_hex(submitted_plaintext) == stored_hash;
+}
+
+std::string CredentialStore::load_user_access(data_store::Client& ds,
+                                               const std::string& username) {
+    std::string key = "auth.users." + username + ".access";
+    std::vector<data_store::Client::GetResult> got;
+    auto rs = ds.get({key}, got);
+    if (rs.ok && !got.empty() && got[0].has_value) {
+        if (auto s = data_store::to_string(got[0].value)) {
+            if (*s == "Viewer") return "Viewer";
+        }
+    }
+    return "Admin";  // default: full access
+}
+
+// ── Access control ─────────────────────────────────────────────────
+
+bool can_write(const std::string& access_level, const std::string& /*key*/) {
+    // "Admin" can write anything; "Viewer" is read-only.
+    // Future: per-key granularity via schema lookup.
+    return access_level == "Admin";
 }
 
 // ── Cookie helpers ─────────────────────────────────────────────────

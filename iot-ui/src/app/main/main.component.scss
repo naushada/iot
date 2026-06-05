@@ -190,6 +190,13 @@
   color: #666;
 }
 
+.access-badge {
+  font-size: 10px; font-weight: 600; padding: 2px 8px;
+  border-radius: 10px; background: #2e7d32; color: #fff;
+  letter-spacing: 0.5px; text-transform: uppercase;
+  &.viewer { background: #f57c00; }
+}
+
 .live-spacer { flex: 1; }
 
 .refresh-btn {

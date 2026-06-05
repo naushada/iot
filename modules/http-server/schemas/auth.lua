@@ -25,6 +25,13 @@ return {
       default = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
     },
 
+    -- Admin user access level. "Admin" = full read/write.
+    -- "Viewer" = read-only (cannot modify any configuration).
+    ["auth.users.admin.access"] = {
+      type    = "string",
+      default = "Admin",
+    },
+
     -- Enable / disable session-auth for the REST API.  When true
     -- (default), all /api/v1/* routes except /api/v1/auth/* require a
     -- valid session cookie.  Hot-reloaded ~every 60s.

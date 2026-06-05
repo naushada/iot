@@ -18,26 +18,32 @@ return {
   namespace = "iot",
   keys = {
     ["iot.lifetime"]   = {
+        access  = "Admin",
       type    = "integer",
       default = 86400,
       min     = 0,
       max     = 2592000,     -- 30 days; LwM2M Registration lifetime cap
     },
     ["iot.endpoint"]   = {
+        access  = "Admin",
       type    = "string",
       default = "urn:dev:client-1",
     },
     ["iot.server.uri"] = {
+        access  = "Admin",
       type    = "string",
     },
     ["iot.binding"]    = {
+        access  = "Admin",
       type    = "string",
       default = "U",
     },
     ["iot.identity"]   = {
+        access  = "Admin",
       type    = "opaque",
     },
     ["iot.observable"] = {
+        access  = "Admin",
       type    = "boolean",
       default = true,
     },
@@ -47,6 +53,7 @@ return {
     --   DEBUG, INFO, WARNING, ERROR
     -- Default: INFO (production-safe; no debug noise).
     ["log.level"] = {
+        access  = "Admin",
       type    = "string",
       default = "INFO",
     },
@@ -55,6 +62,7 @@ return {
     -- in the UI as a scrollable textarea via GET /api/v1/log.
     -- Capped at ~200 lines / ~16 KB.
     ["log.text"] = {
+        access  = "Viewer",
       type    = "string",
       default = "",
     },

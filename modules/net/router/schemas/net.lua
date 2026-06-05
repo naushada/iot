@@ -35,25 +35,41 @@ return {
   namespace = "net",
   keys = {
     -- ───────── Read keys (operator → daemon) ─────────
-    ["net.tun.dev"]               = { type = "string",  default = "tun0" },
-    ["net.lwm2m.target.ip"]       = { type = "string"  },
-    ["net.lwm2m.target.port"]     = { type = "integer", default = 5684,
+    ["net.tun.dev"]               = {
+        access  = "Admin", type = "string",  default = "tun0" },
+    ["net.lwm2m.target.ip"]       = {
+        access  = "Admin", type = "string"  },
+    ["net.lwm2m.target.port"]     = {
+        access  = "Admin", type = "integer", default = 5684,
                                       min = 1, max = 65535 },
-    ["net.iface.priority"]        = { type = "string",  default = "eth,wifi,cellular" },
-    ["net.iface.eth.name"]        = { type = "string",  default = "eth0" },
-    ["net.iface.wifi.name"]       = { type = "string",  default = "wlan0" },
-    ["net.iface.cellular.name"]   = { type = "string",  default = "wwan0" },
-    ["net.forward.ports"]         = { type = "string",  default = "80,443,5684" },
-    ["net.custom.rules"]          = { type = "string",  default = "[]" },
-    ["net.poll.interval.sec"]     = { type = "integer", default = 5,
+    ["net.iface.priority"]        = {
+        access  = "Admin", type = "string",  default = "eth,wifi,cellular" },
+    ["net.iface.eth.name"]        = {
+        access  = "Admin", type = "string",  default = "eth0" },
+    ["net.iface.wifi.name"]       = {
+        access  = "Admin", type = "string",  default = "wlan0" },
+    ["net.iface.cellular.name"]   = {
+        access  = "Admin", type = "string",  default = "wwan0" },
+    ["net.forward.ports"]         = {
+        access  = "Admin", type = "string",  default = "80,443,5684" },
+    ["net.custom.rules"]          = {
+        access  = "Admin", type = "string",  default = "[]" },
+    ["net.poll.interval.sec"]     = {
+        access  = "Admin", type = "integer", default = 5,
                                       min = 1, max = 600 },
 
     -- ───────── Write keys (daemon → operator) ─────────
-    ["net.state"]                 = { type = "string" },
-    ["net.tun.ip"]                = { type = "string" },
-    ["net.tun.gateway"]           = { type = "string" },
-    ["net.iface.active"]          = { type = "string" },
-    ["net.rules.applied.count"]   = { type = "integer", min = 0 },
-    ["net.last.apply.unix"]       = { type = "integer", min = 0 },
+    ["net.state"]                 = {
+        access  = "Viewer", type = "string" },
+    ["net.tun.ip"]                = {
+        access  = "Viewer", type = "string" },
+    ["net.tun.gateway"]           = {
+        access  = "Viewer", type = "string" },
+    ["net.iface.active"]          = {
+        access  = "Viewer", type = "string" },
+    ["net.rules.applied.count"]   = {
+        access  = "Viewer", type = "integer", min = 0 },
+    ["net.last.apply.unix"]       = {
+        access  = "Viewer", type = "integer", min = 0 },
   },
 }

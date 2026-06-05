@@ -14,34 +14,41 @@ return {
   keys = {
     -- Listening address. "0.0.0.0" binds all interfaces;
     -- "127.0.0.1" restricts to localhost.
-    ["http.listen.ip"]     = { type = "string",  default = "0.0.0.0" },
+    ["http.listen.ip"]     = {
+        access  = "Admin", type = "string",  default = "0.0.0.0" },
 
     -- Listening port. 1–65535. Default 8080 avoids privileged <1024.
-    ["http.listen.port"]   = { type = "integer", default = 8080,
+    ["http.listen.port"]   = {
+        access  = "Admin", type = "integer", default = 8080,
                                min = 1, max = 65535 },
 
     -- Scheme. "http" = plain HTTP/1.1; "https" = native TLS termination
     -- (requires http.tls.cert + http.tls.key below). A reverse proxy in
     -- front can still terminate TLS instead — leave this "http" if so.
-    ["http.listen.scheme"] = { type = "string",  default = "http" },
+    ["http.listen.scheme"] = {
+        access  = "Admin", type = "string",  default = "http" },
 
     -- TLS server certificate chain (PEM, leaf first). Required when
     -- scheme = "https". CLI override: http-cert=<path>.
-    ["http.tls.cert"]      = { type = "string",  default = "" },
+    ["http.tls.cert"]      = {
+        access  = "Admin", type = "string",  default = "" },
 
     -- TLS private key (PEM) matching http.tls.cert. Required when
     -- scheme = "https". CLI override: http-key=<path>. Keep mode 0600.
-    ["http.tls.key"]       = { type = "string",  default = "" },
+    ["http.tls.key"]       = {
+        access  = "Admin", type = "string",  default = "" },
 
     -- Optional CA bundle (PEM). When set, mutual-TLS is enforced: clients
     -- must present a certificate that verifies against this CA. Empty =
     -- server-only TLS. CLI override: http-ca=<path>.
-    ["http.tls.ca"]        = { type = "string",  default = "" },
+    ["http.tls.ca"]        = {
+        access  = "Admin", type = "string",  default = "" },
 
     -- Handler thread-pool size. 0 = run handlers inline on the reactor
     -- thread (default). >0 off-loads handlers to N worker threads so a
     -- blocking long-poll can't stall other connections. CLI: http-workers=N.
-    ["http.workers"]       = { type = "integer", default = 0, min = 0, max = 64 },
+    ["http.workers"]       = {
+        access  = "Admin", type = "integer", default = 0, min = 0, max = 64 },
 
   },
 }
