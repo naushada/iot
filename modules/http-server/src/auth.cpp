@@ -1,4 +1,4 @@
-#include "http_server/auth.hpp"
+#include "auth.hpp"
 
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"

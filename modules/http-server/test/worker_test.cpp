@@ -1,7 +1,7 @@
 /// WorkerPool tests — verify jobs run, run concurrently, and that
 /// threads==0 falls back to inline. Pure C++17, no ACE.
 
-#include "http_server/worker.hpp"
+#include "worker.hpp"
 
 #include <gtest/gtest.h>
 

@@ -6,6 +6,7 @@
 #include "tls.hpp"
 #include "worker.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -58,6 +59,12 @@ private:
     // the reactor, which reads it in handle_exception.
     std::string m_response;
     bool        m_keep_alive = false;
+
+    // Idle timeout tracking.  Keep-alive connections that haven't sent a
+    // request in kIdleTimeoutSec seconds are closed.  Reset on each request.
+    static constexpr long kIdleTimeoutSec = 30;
+    std::chrono::steady_clock::time_point m_last_active =
+        std::chrono::steady_clock::now();
 
     // Push response bytes to the peer: straight through on plain HTTP, or
     // encrypted via the TLS engine (then drained to the socket) on https.

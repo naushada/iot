@@ -2,7 +2,7 @@
 /// TlsConn server over in-memory ciphertext shuttling. No ACE, no sockets:
 /// pure OpenSSL, so this runs anywhere libssl is present.
 
-#include "http_server/tls.hpp"
+#include "tls.hpp"
 
 #include <gtest/gtest.h>
 

@@ -5,8 +5,8 @@
 
 #include <string>
 
-#include "http_server/parser.hpp"
-#include "http_server/router.hpp"
+#include "parser.hpp"
+#include "router.hpp"
 
 using http_server::HttpParser;
 using http_server::HttpResponse;
