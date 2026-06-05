@@ -3,6 +3,8 @@
 
 #include "db_adapter.hpp"
 
+#ifdef IOT_ENABLE_MONGO
+
 DbClient::DbClient()
 {
     mInstance = nullptr;
@@ -928,5 +930,7 @@ std::uint32_t DbClient::from_json_object_to_map(const std::string json_obj, cons
 
 
 
+
+#endif // IOT_ENABLE_MONGO
 
 #endif /* __db_adapter_cpp__ */
