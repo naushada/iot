@@ -18,8 +18,10 @@ struct HttpResponse {
     /// Content-* headers in to_string().
     std::map<std::string, std::string> headers;
 
-    /// Serialise to a full HTTP/1.1 response string.
-    std::string to_string() const;
+    /// Serialise to a full HTTP/1.1 response string.  When
+    /// `keep_alive` is true the Connection header is "keep-alive";
+    /// otherwise it is "close" (the default).
+    std::string to_string(bool keep_alive = false) const;
 };
 
 class Router {

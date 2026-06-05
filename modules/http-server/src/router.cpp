@@ -4,7 +4,7 @@
 
 namespace http_server {
 
-std::string HttpResponse::to_string() const {
+std::string HttpResponse::to_string(bool keep_alive) const {
     const char* reason = "OK";
     switch (status) {
         case 200: reason = "OK"; break;
@@ -23,7 +23,7 @@ std::string HttpResponse::to_string() const {
     for (const auto& h : headers) {
         ss << h.first << ": " << h.second << "\r\n";
     }
-    ss << "Connection: close\r\n"
+    ss << "Connection: " << (keep_alive ? "keep-alive" : "close") << "\r\n"
        << "\r\n"
        << body;
     return ss.str();

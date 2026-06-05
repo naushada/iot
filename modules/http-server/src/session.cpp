@@ -22,6 +22,15 @@ HttpSession::HttpSession(const Router& router, const TlsContext* tls,
 }
 
 int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
+    // Idle timeout for keep-alive connections: close if no request arrives
+    // within kIdleTimeoutSec of the last response.  First-request connections
+    // that haven't completed a response yet get the full timeout.
+    auto now = std::chrono::steady_clock::now();
+    if (m_keep_alive &&
+        now - m_last_active > std::chrono::seconds(kIdleTimeoutSec)) {
+        return -1;  // close idle keep-alive connection
+    }
+
     char buf[4096];
     ACE_Time_Value tv(0, 100 * 1000);  // 100ms timeout for keep-alive
     ssize_t n = peer().recv(buf, sizeof(buf), &tv);
@@ -98,7 +107,7 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
             HttpResponse unauth;
             unauth.status = 401;
             unauth.body   = R"({"ok":false,"err":"authentication required"})";
-            m_response = unauth.to_string();
+            m_response = unauth.to_string(false);
             return finish_response();
         }
     }
@@ -110,7 +119,8 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
         // the reactor, which sends from handle_exception() on this thread.
         if (reactor()) reactor()->suspend_handler(this);
         m_pool->submit([this, req = std::move(req)]() mutable {
-            m_response = m_router.route(req).to_string();
+            auto route_resp = m_router.route(req);
+            m_response = route_resp.to_string(m_keep_alive);
             if (reactor()) {
                 reactor()->notify(this, ACE_Event_Handler::EXCEPT_MASK);
             }
@@ -119,7 +129,7 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
     }
 
     // Inline (no pool): route + send on the reactor thread, as before.
-    m_response = m_router.route(req).to_string();
+    m_response = m_router.route(req).to_string(m_keep_alive);
     return finish_response();
 }
 
@@ -136,6 +146,7 @@ int HttpSession::handle_exception(ACE_HANDLE /*fd*/) {
 int HttpSession::finish_response() {
     send_bytes(m_response.data(), m_response.size());
     m_response.clear();
+    m_last_active = std::chrono::steady_clock::now();
     return m_keep_alive ? 0 : -1;
 }
 
