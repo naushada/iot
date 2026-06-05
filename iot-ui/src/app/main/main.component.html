@@ -13,11 +13,7 @@
          [class.expanded]="expandedMenu === m.id"
          [class.has-children]="m.children.length"
          (click)="m.children.length ? toggleMenu(m.id) : onMenuSelect(m.id)">
-        <clr-icon *ngIf="m.children.length"
-                  class="folder-icon"
-                  [attr.shape]="expandedMenu === m.id ? 'folder-open' : 'folder'">
-        </clr-icon>
-        <clr-icon *ngIf="!m.children.length" [attr.shape]="m.icon"></clr-icon>
+        <img [src]="m.svg" class="nav-icon" alt="" />
         <span>{{ m.label }}</span>
         <clr-icon *ngIf="m.children.length"
                   class="expand-chevron"
@@ -25,13 +21,13 @@
         </clr-icon>
       </a>
 
-      <!-- Children with tree lines -->
+      <!-- Children -->
       <div class="tree-children" *ngIf="m.children.length && expandedMenu === m.id">
-        <a class="nav-child" *ngFor="let c of m.children; let ci = index; let clast = last"
+        <a class="nav-child" *ngFor="let c of m.children; let clast = last"
            [class.active]="selectedMenu === m.id && selectedSubNav === c.id"
            [class.tree-last]="clast"
            (click)="onChildSelect(m.id, c.id)">
-          <clr-icon shape="file" class="file-icon"></clr-icon>
+          <span class="child-dot"></span>
           {{ c.label }}
         </a>
       </div>

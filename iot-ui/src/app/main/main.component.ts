@@ -22,18 +22,18 @@ export class MainComponent {
 
   // Sidebar nav items with collapsible children
   menus = [
-    { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', children: [] as {id:string,label:string}[] },
-    { id: 'vpn',       label: 'VPN',       icon: 'network-globe',
+    { id: 'dashboard', label: 'Dashboard', svg: 'assets/icons/dashboard.svg', children: [] as {id:string,label:string}[] },
+    { id: 'vpn',       label: 'VPN',       svg: 'assets/icons/vpn.svg',
       children: [{id:'config',label:'Configuration'},{id:'status',label:'Status'}] },
-    { id: 'wan',       label: 'WAN',       icon: 'world',
+    { id: 'wan',       label: 'WAN',       svg: 'assets/icons/wan.svg',
       children: [{id:'wifi',label:'WiFi Config'},{id:'scan',label:'Scan Results'},{id:'priority',label:'Priority'}] },
-    { id: 'routing',   label: 'Routing',   icon: 'arrow-switch',
+    { id: 'routing',   label: 'Routing',   svg: 'assets/icons/routing.svg',
       children: [{id:'ports',label:'Port Forward'},{id:'dnat',label:'DNAT Target'}] },
-    { id: 'lwm2m',     label: 'LwM2M',     icon: 'devices',
+    { id: 'lwm2m',     label: 'LwM2M',     svg: 'assets/icons/lwm2m.svg',
       children: [{id:'server',label:'Server'},{id:'security',label:'Security'}] },
-    { id: 'services',  label: 'Services',  icon: 'cog',
+    { id: 'services',  label: 'Services',  svg: 'assets/icons/services.svg',
       children: [{id:'list',label:'All Services'}] },
-    { id: 'logs',      label: 'Logs',      icon: 'file', children: [] as {id:string,label:string}[] },
+    { id: 'logs',      label: 'Logs',      svg: 'assets/icons/logs.svg', children: [] as {id:string,label:string}[] },
   ];
 
   expandedMenu: string | null = null;  // which menu is expanded in sidebar
