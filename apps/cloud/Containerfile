@@ -8,26 +8,40 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config \
     libssl-dev zlib1g-dev libreadline-dev \
-    liblua5.3-dev lua5.3 \
+    liblua5.3-dev lua5.3 wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# ACE/TAO 7.0.0 (~60s build — needed by ds-server)
+RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_0/ACE+TAO-7.0.0.tar.gz \
+    -O /tmp/ace.tar.gz && cd /tmp && tar xzf ace.tar.gz && cd ACE_wrappers && \
+    echo '#include "ace/config-linux.h"' > ace/config.h && \
+    echo 'include $(ACE_ROOT)/include/makeinclude/platform_linux.GNU' > include/makeinclude/platform_macros.GNU && \
+    export ACE_ROOT=/tmp/ACE_wrappers && make -j$(nproc) -C ace && \
+    mkdir -p /usr/local/ACE_TAO-7.0.0/include /usr/local/ACE_TAO-7.0.0/lib && \
+    cp -r ace/ /usr/local/ACE_TAO-7.0.0/include/ && \
+    cp ace/libACE.so.* /usr/local/ACE_TAO-7.0.0/lib/ && \
+    ln -sf libACE.so.7.0.0 /usr/local/ACE_TAO-7.0.0/lib/libACE.so && \
+    echo /usr/local/ACE_TAO-7.0.0/lib >> /etc/ld.so.conf.d/ace.conf && ldconfig && \
+    rm -rf /tmp/ACE_wrappers /tmp/ace.tar.gz
 
 COPY . /src/
 
-# Build only ds-server + iot-httpd (no ACE/DTLS/lwm2m needed for cloud)
-WORKDIR /src/build
-RUN cmake /src/modules/data-store \
+# Build data-store + http-server as subdirectories under a common cmake
+RUN mkdir -p /tmp/build && cd /tmp/build && \
+    echo 'cmake_minimum_required(VERSION 3.16)' > CMakeLists.txt && \
+    echo 'project(cloud CXX)' >> CMakeLists.txt && \
+    echo 'set(CMAKE_CXX_STANDARD 20)' >> CMakeLists.txt && \
+    echo 'set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)' >> CMakeLists.txt && \
+    echo 'set(LUA_INCLUDE_DIR /usr/include/lua5.3)' >> CMakeLists.txt && \
+    echo 'add_subdirectory(/src/modules/data-store data-store)' >> CMakeLists.txt && \
+    echo 'add_subdirectory(/src/modules/http-server http-server)' >> CMakeLists.txt && \
+    cmake /tmp/build \
     -DCMAKE_BUILD_TYPE=Release \
-    -GNinja \
-    && ninja -j$(nproc)
-
-WORKDIR /src/build-http
-RUN cmake /src/modules/http-server \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
     -DLUA_INCLUDE_DIR=/usr/include/lua5.3 \
-    -DHTTP_SKIP_DATA_STORE=ON \
     -DBUILD_HTTP_SERVER_TESTS=OFF \
     -GNinja \
-    && ninja -j$(nproc)
+    && ninja -j$(nproc) ds-server ds-cli iot-httpd
 
 # ============================================================
 # Stage 2: Build Angular cloud UI
@@ -52,10 +66,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iptables openvpn ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# ACE shared libs
+COPY --from=builder /usr/local/ACE_TAO-7.0.0/lib/libACE.so* /usr/local/lib/
+RUN ldconfig
+
 # Binaries
-COPY --from=builder /src/build/ds-server /usr/local/bin/
-COPY --from=builder /src/build/ds-cli /usr/local/bin/
-COPY --from=builder /src/build-http/iot-httpd /usr/local/bin/
+COPY --from=builder /tmp/build-ds/ds-server /usr/local/bin/
+COPY --from=builder /tmp/build-ds/ds-cli /usr/local/bin/
+COPY --from=builder /tmp/build-http/iot-httpd /usr/local/bin/
 
 # Cloud UI
 COPY --from=ui-builder /ui/dist/cloud-ui /usr/share/iot/cloud-www/

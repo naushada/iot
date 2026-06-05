@@ -10,14 +10,19 @@ namespace {
 
 // MIME type for common static extensions
 const char* mime_type(const std::string& path) {
-    if (path.ends_with(".html")) return "text/html";
-    if (path.ends_with(".js"))   return "application/javascript";
-    if (path.ends_with(".css"))  return "text/css";
-    if (path.ends_with(".svg"))  return "image/svg+xml";
-    if (path.ends_with(".png"))  return "image/png";
-    if (path.ends_with(".ico"))  return "image/x-icon";
-    if (path.ends_with(".json")) return "application/json";
-    if (path.ends_with(".woff2")) return "font/woff2";
+    auto ends_with = [&](const char* ext) {
+        std::string_view sv{ext};
+        auto pos = path.rfind(sv);
+        return pos != std::string::npos && pos + sv.size() == path.size();
+    };
+    if (ends_with(".html")) return "text/html";
+    if (ends_with(".js"))   return "application/javascript";
+    if (ends_with(".css"))  return "text/css";
+    if (ends_with(".svg"))  return "image/svg+xml";
+    if (ends_with(".png"))  return "image/png";
+    if (ends_with(".ico"))  return "image/x-icon";
+    if (ends_with(".json")) return "application/json";
+    if (ends_with(".woff2")) return "font/woff2";
     return "application/octet-stream";
 }
 
