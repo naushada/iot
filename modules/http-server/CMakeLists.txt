@@ -27,6 +27,8 @@ set(NLOHMANN_JSON_INCLUDE
 include_directories(
     ${HTTP_MODULE_DIR}/inc
     ${HTTP_MODULE_DIR}/../data-store/inc
+    ${HTTP_MODULE_DIR}/../server/lwm2m/inc
+    ${HTTP_MODULE_DIR}/../server/openvpn/inc
     ${NLOHMANN_JSON_INCLUDE}
     ${ACE_ROOT}/include
 )
@@ -39,6 +41,7 @@ add_library(http_server_lib STATIC
     src/router.cpp
     src/session.cpp
     src/handler.cpp
+    src/handler_cloud.cpp
     src/auth.cpp
     src/tls.cpp
     src/worker.cpp)

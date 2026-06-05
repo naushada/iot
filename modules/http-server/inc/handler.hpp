@@ -5,6 +5,10 @@
 
 namespace data_store { class Client; }
 namespace http_server { class SessionStore; }
+namespace server { namespace lwm2m {
+    class EndpointRegistry;
+    class BootstrapProvisioner;
+} }
 
 namespace http_server {
 
@@ -15,6 +19,12 @@ namespace http_server {
 void install_handlers(Router& router,
                       data_store::Client* ds,
                       SessionStore* auth);
+
+/// Install /api/v1/cloud/* handlers (L21/D7).  Pointers must outlive
+/// the router.  Call after install_handlers().
+void install_cloud_handlers(Router& router,
+                            server::lwm2m::EndpointRegistry* ep_reg,
+                            server::lwm2m::BootstrapProvisioner* provisioner);
 
 } // namespace http_server
 
