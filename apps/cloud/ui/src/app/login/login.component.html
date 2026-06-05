@@ -1,0 +1,23 @@
+<div class="login-wrapper">
+  <div class="login-card">
+    <div class="logo"><img src="assets/iot-logo.svg" alt="IoT Cloud" width="100" height="100" /></div>
+    <h2 class="title">IoT Cloud</h2>
+    <p class="subtitle">Multi-Tenant Gateway Management</p>
+    <form (ngSubmit)="onLogin()" class="login-form">
+      <clr-input-container>
+        <label class="clr-sr-only">User ID</label>
+        <input clrInput type="text" name="id" placeholder="User ID" [(ngModel)]="id" required />
+      </clr-input-container>
+      <clr-password-container>
+        <label class="clr-sr-only">Password</label>
+        <input clrPassword type="password" name="password" placeholder="Password" [(ngModel)]="password" required />
+      </clr-password-container>
+      <div *ngIf="error" class="alert alert-danger" style="margin-top:12px;">
+        <div class="alert-items"><div class="alert-item static"><span class="alert-text">{{error}}</span></div></div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" [disabled]="loggingIn" style="margin-top:20px;width:100%;">
+        {{ loggingIn ? 'Signing in…' : 'Sign in' }}
+      </button>
+    </form>
+  </div>
+</div>

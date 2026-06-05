@@ -85,8 +85,8 @@ void install_cloud_handlers(Router& router,
             return r;
         });
 
-    // ── POST /api/v1/cloud/provision ─────────────────────────────
-    router.add("POST", "/api/v1/cloud/provision",
+    // ── POST /api/v1/cloud/endpoints (provision) ─────────────────
+    router.add("POST", "/api/v1/cloud/endpoints",
         [provisioner](const HttpParser::Request& req) -> HttpResponse {
             HttpResponse r;
             if (!provisioner) {
@@ -116,8 +116,8 @@ void install_cloud_handlers(Router& router,
             return r;
         });
 
-    // ── POST /api/v1/cloud/deprovision ───────────────────────────
-    router.add("POST", "/api/v1/cloud/deprovision",
+    // ── DELETE /api/v1/cloud/endpoints (deprovision) ────────────
+    router.add("DELETE", "/api/v1/cloud/endpoints",
         [provisioner](const HttpParser::Request& req) -> HttpResponse {
             HttpResponse r;
             if (!provisioner) {
@@ -125,13 +125,13 @@ void install_cloud_handlers(Router& router,
                 r.body = R"({"ok":false,"err":"provisioner not available"})";
                 return r;
             }
-            auto doc = parse_body(req.body);
-            std::string ep = doc.value("endpoint", "");
-            if (ep.empty()) {
+            auto it = req.query.find("ep");
+            if (it == req.query.end()) {
                 r.status = 400;
-                r.body = R"({"ok":false,"err":"missing 'endpoint' field"})";
+                r.body = R"({"ok":false,"err":"missing 'ep' query param"})";
                 return r;
             }
+            std::string ep = it->second;
             bool ok = provisioner->deprovision(ep);
             json resp;
             resp["ok"]       = ok;

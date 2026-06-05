@@ -1,0 +1,28 @@
+<div class="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-brand" (click)="onMenuSelect('dashboard')">
+      <img src="assets/iot-logo.svg" width="36" height="36" alt="IoT" />
+      <span class="brand-text">IoT Cloud</span>
+    </div>
+    <a class="nav-item" *ngFor="let m of menus" [class.active]="selectedMenu===m.id" (click)="onMenuSelect(m.id)">
+      <img [src]="m.svg" class="nav-icon" alt="" /><span>{{m.label}}</span>
+    </a>
+    <div class="sidebar-spacer"></div>
+    <a class="nav-item" (click)="theme.toggle()" title="Toggle theme">
+      <clr-icon [attr.shape]="theme.dark ? 'sun' : 'moon'"></clr-icon><span>{{theme.dark ? 'Light' : 'Dark'}}</span>
+    </a>
+    <a class="nav-item nav-logout" (click)="onLogout()"><clr-icon shape="logout"></clr-icon><span>Sign out</span></a>
+  </nav>
+  <div class="main-area">
+    <div class="live-strip">
+      <span class="live-tag"><span class="live-pulse"></span><span class="live-label">CLOUD</span></span>
+      <div class="live-spacer"></div>
+    </div>
+    <div class="content">
+      <app-dashboard *ngIf="selectedMenu==='dashboard'"></app-dashboard>
+      <app-endpoint-list *ngIf="selectedMenu==='endpoints'"></app-endpoint-list>
+      <app-provision *ngIf="selectedMenu==='provision'"></app-provision>
+      <app-log-viewer *ngIf="selectedMenu==='logs'"></app-log-viewer>
+    </div>
+  </div>
+</div>

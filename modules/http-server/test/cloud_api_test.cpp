@@ -65,7 +65,7 @@ TEST_F(CloudApiTest, ListEndpointsEmpty) {
 // ── 2. Provision a device ──────────────────────────────────────────
 
 TEST_F(CloudApiTest, ProvisionDevice) {
-    auto r = post("/api/v1/cloud/provision",
+    auto r = post("/api/v1/cloud/endpoints",
                   R"({"endpoint":"urn:dev:gateway-1"})");
     EXPECT_EQ(r.status, 200);
     auto j = json::parse(r.body);
@@ -78,8 +78,8 @@ TEST_F(CloudApiTest, ProvisionDevice) {
 // ── 3. Provision duplicate fails ───────────────────────────────────
 
 TEST_F(CloudApiTest, ProvisionDuplicateReturns400) {
-    post("/api/v1/cloud/provision", R"({"endpoint":"urn:dev:dup"})");
-    auto r = post("/api/v1/cloud/provision", R"({"endpoint":"urn:dev:dup"})");
+    post("/api/v1/cloud/endpoints", R"({"endpoint":"urn:dev:dup"})");
+    auto r = post("/api/v1/cloud/endpoints", R"({"endpoint":"urn:dev:dup"})");
     EXPECT_EQ(r.status, 400);
     auto j = json::parse(r.body);
     EXPECT_FALSE(j["ok"].get<bool>());
@@ -88,15 +88,15 @@ TEST_F(CloudApiTest, ProvisionDuplicateReturns400) {
 // ── 4. Provision without endpoint returns 400 ──────────────────────
 
 TEST_F(CloudApiTest, ProvisionMissingEndpointReturns400) {
-    auto r = post("/api/v1/cloud/provision", R"({"foo":"bar"})");
+    auto r = post("/api/v1/cloud/endpoints", R"({"foo":"bar"})");
     EXPECT_EQ(r.status, 400);
 }
 
 // ── 5. List endpoints after provision ──────────────────────────────
 
 TEST_F(CloudApiTest, ListEndpointsAfterProvision) {
-    post("/api/v1/cloud/provision", R"({"endpoint":"urn:dev:a"})");
-    post("/api/v1/cloud/provision", R"({"endpoint":"urn:dev:b"})");
+    post("/api/v1/cloud/endpoints", R"({"endpoint":"urn:dev:a"})");
+    post("/api/v1/cloud/endpoints", R"({"endpoint":"urn:dev:b"})");
 
     auto r = get("/api/v1/cloud/endpoints");
     EXPECT_EQ(r.status, 200);
@@ -108,7 +108,7 @@ TEST_F(CloudApiTest, ListEndpointsAfterProvision) {
 // ── 6. Get single endpoint detail ──────────────────────────────────
 
 TEST_F(CloudApiTest, GetEndpointDetail) {
-    post("/api/v1/cloud/provision", R"({"endpoint":"urn:dev:detail"})");
+    post("/api/v1/cloud/endpoints", R"({"endpoint":"urn:dev:detail"})");
     // Use mock query via path?ep=... since Router does exact path matching
     HttpParser::Request req;
     req.method = "GET";
@@ -136,8 +136,8 @@ TEST_F(CloudApiTest, GetNonExistentEndpointReturns404) {
 // ── 8. De-provision an endpoint ────────────────────────────────────
 
 TEST_F(CloudApiTest, DeprovisionEndpoint) {
-    post("/api/v1/cloud/provision", R"({"endpoint":"urn:dev:to-remove"})");
-    auto r = post("/api/v1/cloud/deprovision",
+    post("/api/v1/cloud/endpoints", R"({"endpoint":"urn:dev:to-remove"})");
+    auto r = post("/api/v1/cloud/endpoints",
                   R"({"endpoint":"urn:dev:to-remove"})");
     EXPECT_EQ(r.status, 200);
     EXPECT_TRUE(json::parse(r.body)["ok"].get<bool>());
