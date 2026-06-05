@@ -27,6 +27,7 @@
 #include <atomic>
 #include <csignal>
 #include <cstdlib>
+#include <ctime>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -40,6 +41,53 @@
 namespace {
 
 std::atomic<bool> g_stop{false};
+
+// ── Log ring buffer ────────────────────────────────────────────────
+// Captures ACE log output into a fixed-size deque so the UI can tail
+// logs via GET /api/v1/log → log.text in the data store.
+
+#include <deque>
+#include <mutex>
+
+std::mutex g_log_mutex;
+std::deque<std::string> g_log_buf;
+constexpr std::size_t kMaxLogLines = 200;
+
+// ACE_Log_Msg callback — intercepts every ACE_DEBUG / ACE_ERROR etc.
+// Runs on whatever thread called the ACE macro (reactor, worker, main).
+void log_callback(ACE_Log_Record& rec) {
+    // Format: "HH:MM:SS level daemon: message"
+    std::time_t t = static_cast<std::time_t>(rec.time_stamp().sec());
+    struct std::tm tm_buf;
+    ::localtime_r(&t, &tm_buf);
+    char ts[16];
+    std::strftime(ts, sizeof(ts), "%H:%M:%S", &tm_buf);
+
+    const char* lvl = "?";
+    switch (rec.type()) {
+        case LM_DEBUG:   lvl = "DEBUG"; break;
+        case LM_INFO:    lvl = "INFO";  break;
+        case LM_NOTICE:  lvl = "NOTE";  break;
+        case LM_WARNING: lvl = "WARN";  break;
+        case LM_ERROR:   lvl = "ERROR"; break;
+        case LM_CRITICAL:lvl = "CRIT";  break;
+    }
+
+    std::lock_guard<std::mutex> lk(g_log_mutex);
+    g_log_buf.push_back(
+        std::string(ts) + " " + lvl + " httpd: " +
+        rec.msg_data() + "\n");
+    while (g_log_buf.size() > kMaxLogLines) g_log_buf.pop_front();
+}
+
+void flush_log_to_ds(data_store::Client& ds) {
+    std::string text;
+    {
+        std::lock_guard<std::mutex> lk(g_log_mutex);
+        for (const auto& line : g_log_buf) text += line;
+    }
+    ds.set("log.text", data_store::Value{text}, 200);  // best-effort
+}
 
 void on_signal(int /*sig*/) {
     g_stop.store(true);
@@ -241,6 +289,9 @@ int main(int argc, char** argv) {
     ::signal(SIGTERM, on_signal);
     ::signal(SIGPIPE, SIG_IGN);
 
+    // Intercept ACE log output → ring buffer → flushed to ds log.text
+    ACE_Log_Msg::instance()->msg_callback(&log_callback);
+
     // ── Hot-reload (FUP-L18-2) ────────────────────────────────
     // Poll the hot-reloadable http.* keys; when an operator changes one via
     // ds-cli at runtime, apply it without a restart. ds values are
@@ -348,6 +399,27 @@ int main(int argc, char** argv) {
                 }
                 // Password hash is reloaded on each login attempt
                 // (stateless — no cache to invalidate).
+
+                // Reload log level
+                {
+                    std::vector<data_store::Client::GetResult> lg;
+                    auto ls = ds.get({"log.level"}, lg);
+                    if (ls.ok && !lg.empty() && lg[0].has_value) {
+                        if (auto lv = data_store::to_string(lg[0].value)) {
+                            unsigned long mask = LM_INFO;  // default
+                            std::string upper = *lv;
+                            for (auto& c : upper) c = static_cast<char>(std::toupper(c));
+                            if (upper == "DEBUG")    mask = LM_DEBUG;
+                            else if (upper == "INFO")    mask = LM_INFO;
+                            else if (upper == "WARNING") mask = LM_WARNING;
+                            else if (upper == "ERROR")   mask = LM_ERROR | LM_CRITICAL;
+                            ACE_Log_Msg::instance()->priority_mask(
+                                static_cast<int>(mask), ACE_Log_Msg::PROCESS);
+                        }
+                    }
+                }
+                // Flush ring-buffer logs to data store so the UI can tail them
+                flush_log_to_ds(ds);
             }
             DsHttpCfg cur = read_ds_http_cfg(ds);
             bool tlsDirty = false, listenDirty = false;

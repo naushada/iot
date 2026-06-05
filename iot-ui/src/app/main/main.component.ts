@@ -30,6 +30,7 @@ export class MainComponent {
     { id: 'routing',   label: 'Routing',   icon: 'arrow-switch' },
     { id: 'lwm2m',     label: 'LwM2M',     icon: 'devices' },
     { id: 'services',  label: 'Services',  icon: 'cog' },
+    { id: 'logs',      label: 'Logs',      icon: 'file' },
   ];
 
   constructor(

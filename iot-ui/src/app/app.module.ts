@@ -29,6 +29,8 @@ import { Lwm2mConfigComponent } from './lwm2m/lwm2m-config/lwm2m-config.componen
 
 import { ServicesSubmenuComponent } from './services/services-submenu/services-submenu.component';
 import { ServicesListComponent } from './services/services-list/services-list.component';
+import { LogLevelComponent } from './log-level/log-level.component';
+import { LogViewerComponent } from './log-level/log-viewer.component';
 
 import { SsoAuthInterceptor } from '../common/sso-auth.interceptor';
 import { SessionService, initSession } from '../common/session.service';
@@ -45,6 +47,7 @@ import { SessionService, initSession } from '../common/session.service';
     RoutingSubmenuComponent, PortForwardComponent,
     Lwm2mSubmenuComponent, Lwm2mConfigComponent,
     ServicesSubmenuComponent, ServicesListComponent,
+    LogLevelComponent, LogViewerComponent,
   ],
   imports: [
     BrowserModule,

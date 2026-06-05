@@ -518,6 +518,25 @@ void install_handlers(Router& router,
             return r;
         });
 
+    // ── GET /api/v1/log ──────────────────────────────────────────
+    // Returns log.text as plain text for the UI's scrollable log viewer.
+    router.add("GET", "/api/v1/log",
+        [ds](const HttpParser::Request& /*req*/) -> HttpResponse {
+            HttpResponse r;
+            r.content_type = "text/plain";
+            if (!ds) {
+                r.status = 500;
+                r.body = "data store not connected";
+                return r;
+            }
+            std::vector<data_store::Client::GetResult> got;
+            auto rs = ds->get({"log.text"}, got);
+            if (rs.ok && !got.empty() && got[0].has_value) {
+                if (auto s = data_store::to_string(got[0].value)) r.body = *s;
+            }
+            return r;
+        });
+
     // ── Wrap existing + new handlers with auth (when enabled) ─────
     // When auth is enabled, all /api/v1/* routes except /api/v1/auth/*
     // require a valid session.  The lambda below wraps a HandlerFn so
