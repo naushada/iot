@@ -1,60 +1,42 @@
-# IoT Cloud Server — containerised build + runtime
-#
-# Builds all server modules (data-store, http-server, server/lwm2m,
-# server/openvpn, server/web) and the cloud UI into a deployable image.
-#
-# podman build -t iot-cloud .
-# podman run --rm -p 8080:8080 -p 5683:5683 -p 5684:5684 iot-cloud
+# ============================================================
+# Stage 1: Build C++ backend (all iot modules)
+# ============================================================
+FROM docker.io/library/ubuntu:22.04 AS builder
 
-FROM ubuntu:22.04 AS builder
+ENV DEBIAN_FRONTEND=noninteractive
 
-# ── Build dependencies ──────────────────────────────────────────
+# Build deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config \
     libssl-dev zlib1g-dev libreadline-dev \
-    liblua5.3-dev lua5.3 autoconf automake libtool \
-    wget ca-certificates \
+    liblua5.3-dev lua5.3 \
     && rm -rf /var/lib/apt/lists/*
 
-# ACE/TAO 7.0.0 — build from source (no distro package)
+# ACE/TAO 7.0.0 from source (~60s)
 RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_0/ACE+TAO-7.0.0.tar.gz \
-    -O /tmp/ace.tar.gz && \
-    cd /tmp && tar xzf ace.tar.gz && \
-    cd ACE_wrappers && \
+    -O /tmp/ace.tar.gz && cd /tmp && tar xzf ace.tar.gz && cd ACE_wrappers && \
     echo '#include "ace/config-linux.h"' > ace/config.h && \
     echo 'include $(ACE_ROOT)/include/makeinclude/platform_linux.GNU' > include/makeinclude/platform_macros.GNU && \
-    export ACE_ROOT=/tmp/ACE_wrappers && \
-    make -j$(nproc) -C ace && \
-    mkdir -p /usr/local/ACE_TAO-7.0.0/include /usr/local/ACE_TAO-7.0.0/lib && \
-    cp -r ace/*.h ace/*.i ace/*.inl ace/*.cpp /usr/local/ACE_TAO-7.0.0/include/ 2>/dev/null || true && \
-    cp -r ace/ /usr/local/ACE_TAO-7.0.0/include/ace && \
+    export ACE_ROOT=/tmp/ACE_wrappers && make -j$(nproc) -C ace && \
+    mkdir -p /usr/local/ACE_TAO-7.0.0/include/ace /usr/local/ACE_TAO-7.0.0/lib && \
+    cp -r ace/*.h ace/*.i ace/*.inl /usr/local/ACE_TAO-7.0.0/include/ace/ 2>/dev/null || true && \
     cp ace/libACE.so.* /usr/local/ACE_TAO-7.0.0/lib/ && \
     ln -sf /usr/local/ACE_TAO-7.0.0/lib/libACE.so.7.0.0 /usr/local/ACE_TAO-7.0.0/lib/libACE.so && \
     rm -rf /tmp/ACE_wrappers /tmp/ace.tar.gz
 
-# nlohmann/json — vendored in apps/3rdparty/json/single_include/
-
-# tinydtls — rebuild from vendored source (has configure already)
+# tinydtls — build from vendored source
 COPY apps/3rdparty/tinydtls /tmp/td
-RUN cd /tmp/td && make clean 2>/dev/null; ./configure --prefix=/usr/local \
-    && make -j$(nproc) && make install && rm -rf /tmp/td
+RUN cd /tmp/td && make clean 2>/dev/null; ./configure --prefix=/usr/local && \
+    make -j$(nproc) && make install && rm -rf /tmp/td
 
-# Node.js 18 for cloud UI build
-RUN wget -q https://deb.nodesource.com/setup_18.x -O /tmp/node.sh && \
-    bash /tmp/node.sh && \
-    apt-get install -y nodejs && \
-    npm install -g @angular/cli@14 && \
-    rm /tmp/node.sh
+# Copy source (CMakeLists first for layer caching)
+COPY CMakeLists.txt apps/CMakeLists.txt ./
+COPY apps/CMakeLists.txt apps/
+COPY apps/inc/ apps/inc/
+COPY apps/src/ apps/src/
+COPY apps/config/ apps/config/
+COPY modules/ modules/
 
-# ── Copy source ──────────────────────────────────────────────────
-WORKDIR /src
-COPY . .
-
-# ── Build cloud UI ──────────────────────────────────────────────
-WORKDIR /src/apps/cloud/ui
-RUN npm install && ng build --configuration production
-
-# ── Build C++ modules ───────────────────────────────────────────
 WORKDIR /src/build
 RUN cmake ../apps \
     -DCMAKE_BUILD_TYPE=Release \
@@ -67,28 +49,42 @@ RUN cmake ../apps \
     -GNinja \
     && ninja -j$(nproc)
 
-# ── Runtime image ───────────────────────────────────────────────
-FROM ubuntu:22.04
+# ============================================================
+# Stage 2: Build Angular cloud UI
+# ============================================================
+FROM docker.io/library/node:18-alpine AS ui-builder
+ENV NG_BUILD_MAX_WORKERS=1
+
+WORKDIR /ui
+COPY apps/cloud/ui/package.json apps/cloud/ui/package-lock.json ./
+RUN npm ci 2>/dev/null || npm install --no-audit --no-fund
+
+COPY apps/cloud/ui/ ./
+RUN npx ng build --configuration production --progress=false
+
+# ============================================================
+# Stage 3: Minimal runtime
+# ============================================================
+FROM docker.io/library/ubuntu:22.04 AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 zlib1g libreadline8 liblua5.3-0 \
-    iptables openvpn \
+    iptables openvpn ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/ACE_TAO-7.0.0/lib/libACE.so.7.0.0 /usr/local/lib/
-COPY --from=builder /usr/local/lib/libtinydtls.a /usr/local/lib/
+# ACE shared libs
+COPY --from=builder /usr/local/ACE_TAO-7.0.0/lib/libACE.so* /usr/local/lib/
 RUN ldconfig
 
+# Binaries
 COPY --from=builder /src/build/lwm2m /usr/local/bin/
 COPY --from=builder /src/build/data-store/ds-server /usr/local/bin/
-COPY --from=builder /src/build/data-store/ds-cli /usr/local/bin/
 COPY --from=builder /src/build/iot-httpd /usr/local/bin/
-COPY --from=builder /src/build/openvpn-client /usr/local/bin/
-COPY --from=builder /src/build/net-router /usr/local/bin/
-COPY --from=builder /src/build/wifi-client /usr/local/bin/
-COPY --from=builder /src/apps/cloud/ui/dist/cloud-ui /usr/share/iot/cloud-www/
 
-# Schema files
+# Cloud UI
+COPY --from=ui-builder /ui/dist/cloud-ui /usr/share/iot/cloud-www/
+
+# Schemas
 COPY modules/data-store/schemas/iot.lua /etc/iot/ds-schemas/
 COPY modules/data-store/schemas/services.lua /etc/iot/ds-schemas/
 COPY modules/http-server/schemas/http.lua /etc/iot/ds-schemas/
@@ -98,7 +94,6 @@ RUN mkdir -p /var/run/iot /etc/iot/ds-schemas
 
 EXPOSE 8080 5683 5684
 
-# Default: start ds-server, wait, then iot-httpd serving cloud UI
 CMD ds-server --socket=/var/run/iot/data_store.sock --schema-dir=/etc/iot/ds-schemas & \
     sleep 2 && \
     exec iot-httpd ds-socket=/var/run/iot/data_store.sock \
