@@ -203,6 +203,48 @@ Browser                       Cloud Server                Device
   │←── device-1 UI ─────────────┤                          │
 ```
 
+### 5.4 REST-to-CoAP Proxy (`/api/v1/db/{get,set}?ep=<id>`)
+
+The cloud's `iot-httpd` reuses the same `/api/v1/db/{get,set}` API surface
+as the device.  When a request carries `?ep=<id>`, the handler routes it
+through the LwM2M Management Router instead of the local data store.  When
+`ep` is absent, the request falls through to the local `ds-server`.
+
+```
+GET /api/v1/db/get?ep=urn:dev:gateway-42&key=/3/0/6
+
+   iot-httpd handler
+        │
+   ep present? ──No──→ ds-server (local cloud.* keys)
+        │
+       Yes
+        │
+        ▼
+   EndpointRegistry::lookup_by_ep("urn:dev:gateway-42")
+        │  → tun_ip = 10.9.0.12
+        ▼
+   ManagementRouter::route("GET /3/0/6 → 10.9.0.12")
+        │
+        ▼
+   LwM2M DM Server
+        │  coaps://10.9.0.12:5684/3/0/6
+        ▼
+   Device (behind NAT, via VPN tunnel)
+```
+
+The key design point: the REST API is identical whether you're querying a
+device or the cloud store.  The `?ep=` query parameter is the switch:
+
+| Request | Target |
+|---------|--------|
+| `GET /api/v1/db/get?key=iot.endpoint` | Local ds-server — cloud metadata |
+| `GET /api/v1/db/get?ep=urn:dev:g42&key=/3/0/6` | Device via CoAP tunnel |
+| `POST /api/v1/db/set?ep=urn:dev:g42` with pairs | Device via CoAP tunnel |
+| `GET /api/v1/db/get?ep=urn:dev:g42&key=/3/0/6&timeout=30` | Device long-poll via CoAP Observe |
+
+The cloud UI calls the same `/api/v1/db/get?ep=<id>` endpoints that the
+device-level `iot-ui` calls locally — no new API surface needed.
+
 ## 6. Cloud UI (`apps/cloud/ui`)
 
 Separate Angular 14 SPA using the same Clarity stack as `iot-ui/`.
