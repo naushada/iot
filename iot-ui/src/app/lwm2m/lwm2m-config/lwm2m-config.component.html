@@ -1,48 +1,38 @@
 <div class="page">
   <h3>LwM2M Endpoint Configuration</h3>
 
-  <form clrForm [formGroup]="serverForm" (ngSubmit)="save()" *ngIf="!loading">
-    <div class="clr-form-control clr-row">
-      <label class="clr-control-label clr-col-12 clr-col-md-2">Server URI</label>
-      <div class="clr-control-container clr-col-md-8 clr-col-12">
-        <input clrInput [disabled]="!isAdmin" class="clr-input" formControlName="server_uri" placeholder="coaps://lwm2m.example.com:5684" />
-      </div>
-    </div>
+  <form [formGroup]="serverForm" (ngSubmit)="save()" *ngIf="!loading">
+    <table class="table table-compact">
+      <tbody>
+        <tr>
+          <td class="label-col">Server URI</td>
+          <td><input class="clr-input" [disabled]="!isAdmin" formControlName="server_uri" placeholder="coaps://lwm2m.example.com:5684" /></td>
+        </tr>
+        <tr>
+          <td class="label-col">Endpoint Name</td>
+          <td><input class="clr-input" [disabled]="!isAdmin" formControlName="endpoint" placeholder="urn:dev:client-1" /></td>
+        </tr>
+        <tr>
+          <td class="label-col">Binding Mode</td>
+          <td><select class="clr-select" [disabled]="!isAdmin" formControlName="binding" style="width:180px;">
+            <option value="U">U — UDP</option>
+            <option value="S">S — SMS</option>
+            <option value="US">US — UDP+SMS</option>
+            <option value="UQ">UQ — UDP+Queue</option>
+          </select></td>
+        </tr>
+        <tr>
+          <td class="label-col">Lifetime (s)</td>
+          <td><input class="clr-input" [disabled]="!isAdmin" type="number" formControlName="lifetime" min="0" max="2592000" style="width:140px;" /></td>
+        </tr>
+        <tr>
+          <td class="label-col">Observable</td>
+          <td><input type="checkbox" clrCheckbox [disabled]="!isAdmin" formControlName="observable" /></td>
+        </tr>
+      </tbody>
+    </table>
 
-    <div class="clr-form-control clr-row">
-      <label class="clr-control-label clr-col-12 clr-col-md-2">Endpoint Name</label>
-      <div class="clr-control-container clr-col-md-5 clr-col-12">
-        <input clrInput [disabled]="!isAdmin" class="clr-input" formControlName="endpoint" placeholder="urn:dev:client-1" />
-      </div>
-    </div>
-
-    <div class="clr-form-control clr-row">
-      <label class="clr-control-label clr-col-12 clr-col-md-2">Binding Mode</label>
-      <div class="clr-control-container clr-col-md-3 clr-col-12">
-        <select clrSelect [disabled]="!isAdmin" class="clr-select" formControlName="binding">
-          <option value="U">U — UDP</option>
-          <option value="S">S — SMS</option>
-          <option value="US">US — UDP+SMS</option>
-          <option value="UQ">UQ — UDP+Queue</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="clr-form-control clr-row">
-      <label class="clr-control-label clr-col-12 clr-col-md-2">Lifetime (s)</label>
-      <div class="clr-control-container clr-col-md-3 clr-col-12">
-        <input clrInput [disabled]="!isAdmin" class="clr-input" type="number" formControlName="lifetime" min="0" max="2592000" />
-      </div>
-    </div>
-
-    <div class="clr-form-control clr-row">
-      <label class="clr-control-label clr-col-12 clr-col-md-2">Observable</label>
-      <div class="clr-control-container clr-col-md-2 clr-col-12">
-        <input type="checkbox" clrCheckbox [disabled]="!isAdmin" formControlName="observable" />
-      </div>
-    </div>
-
-    <div style="margin-top:24px;" *ngIf="isAdmin">
+    <div style="margin-top:20px;" *ngIf="isAdmin">
       <button type="submit" class="btn btn-primary" [disabled]="saving">
         {{ saving ? 'Saving…' : 'Save' }}
       </button>

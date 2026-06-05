@@ -7,6 +7,17 @@ input:disabled, select:disabled, textarea:disabled {
   border-color: #e0e0e0 !important;
 }
 
+// ── Form table label column ──────────────────────────────────────────
+
+.label-col {
+  width: 160px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
 // ── Form grid (4 columns) ───────────────────────────────────────────
 
 .form-grid {
