@@ -1,6 +1,5 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
-import { Subscription, interval } from 'rxjs';
-import { switchMap } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { WifiStatus } from '../../../common/app-globals';
 
@@ -62,11 +61,29 @@ export class WifiScanComponent implements OnInit, OnDestroy {
 
   constructor(private http: HttpsvcService) {}
 
+  private active = true;
+
   ngOnInit(): void {
-    this.loadStatus();
-    this.sub.add(interval(10000).pipe(switchMap(() => this.http.getStatus())).subscribe({
-      next: (s) => { this.status = s.wifi || {}; this.tryParseScan(); }
-    }));
+    this.startLongPoll();
+  }
+
+  private startLongPoll(): void {
+    const poll = (): void => {
+      if (!this.active) return;
+      this.http.getStatusLongPoll(30).subscribe({
+        next: (s) => {
+          this.status = s.wifi || {};
+          this.tryParseScan();
+          this.loading = false;
+          if (this.active) poll();
+        },
+        error: () => {
+          this.loading = false;
+          if (this.active) setTimeout(() => poll(), 5000);
+        }
+      });
+    };
+    poll();
   }
 
   loadStatus(): void {
@@ -103,5 +120,5 @@ export class WifiScanComponent implements OnInit, OnDestroy {
     });
   }
 
-  ngOnDestroy(): void { this.sub.unsubscribe(); }
+  ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
 }

@@ -1,6 +1,5 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
-import { Subscription, interval } from 'rxjs';
-import { switchMap } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
 import { StatusSnapshot, ServiceInfo } from '../../../common/app-globals';
@@ -62,15 +61,21 @@ export class ServicesListComponent implements OnInit, OnDestroy {
 
   constructor(private http: HttpsvcService, private session: SessionService) {}
 
+  private active = true;
+
   ngOnInit(): void {
-    this.load();
-    this.sub.add(interval(8000).pipe(switchMap(() => this.http.getStatus())).subscribe({
-      next: (s) => this.applyStatus(s)
-    }));
+    this.startLongPoll();
   }
 
-  load(): void {
-    this.http.getStatus().subscribe({ next: (s) => this.applyStatus(s) });
+  private startLongPoll(): void {
+    const poll = (): void => {
+      if (!this.active) return;
+      this.http.getStatusLongPoll(30).subscribe({
+        next: (s) => { this.applyStatus(s); if (this.active) poll(); },
+        error: () => { if (this.active) setTimeout(() => poll(), 5000); }
+      });
+    };
+    poll();
   }
 
   applyStatus(s: StatusSnapshot): void {
@@ -114,5 +119,5 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     return m[k] || '';
   }
 
-  ngOnDestroy(): void { this.sub.unsubscribe(); }
+  ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
 }
