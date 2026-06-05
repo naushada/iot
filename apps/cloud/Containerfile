@@ -34,12 +34,7 @@ RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_
 
 # nlohmann/json — vendored in apps/3rdparty/json/single_include/
 
-# tinydtls — build static lib
-RUN wget -q https://github.com/eclipse/tinydtls/archive/refs/tags/v0.9.2.tar.gz \
-    -O /tmp/td.tar.gz && cd /tmp && tar xzf td.tar.gz && \
-    cd tinydtls-* && \
-    autoreconf -i && ./configure --prefix=/usr/local && make -j$(nproc) && make install && \
-    rm -rf /tmp/tinydtls-* /tmp/td.tar.gz
+# tinydtls — pre-built .a is vendored in apps/3rdparty/tinydtls/
 
 # Node.js 18 for cloud UI build
 RUN wget -q https://deb.nodesource.com/setup_18.x -O /tmp/node.sh && \
