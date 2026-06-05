@@ -251,8 +251,17 @@ int main(int argc, char** argv) {
         }
     }
 
+    // ── Static file serving (SPA) ─────────────────────────────
+    std::string wwwDir = arg_value(argc, argv, "www-dir");
+    if (wwwDir.empty()) {
+        // Default: look for iot-ui/dist/iot-ui relative to the
+        // http-server binary, or next to the repo root.
+        wwwDir = "/usr/share/iot/www";
+    }
+
     // ── Router + handlers ─────────────────────────────────────
     http_server::Router router;
+    if (!wwwDir.empty()) router.set_static_dir(wwwDir);
     http_server::install_handlers(router, &ds, &auth_store);
 
     // ── Handler thread pool (FUP-L18-1) ───────────────────────

@@ -127,4 +127,17 @@ if(NOT DEFINED IOT_PACKAGING_INSTALL OR IOT_PACKAGING_INSTALL)
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(FILES schemas/http.lua schemas/auth.lua
             DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
+
+    # ── SPA static files (iot-ui Angular build output) ─────────
+    set(IOT_WWW_DIR "${CMAKE_INSTALL_DATAROOTDIR}/iot/www"
+        CACHE PATH "Install path for the SPA static files")
+    set(UI_DIST "${HTTP_MODULE_DIR}/../../iot-ui/dist/iot-ui")
+    if(EXISTS "${UI_DIST}/index.html")
+        install(DIRECTORY "${UI_DIST}/"
+                DESTINATION "${IOT_WWW_DIR}"
+                FILES_MATCHING PATTERN "*")
+        message(STATUS "iot-ui SPA found — installing to ${IOT_WWW_DIR}")
+    else()
+        message(STATUS "iot-ui SPA not built at ${UI_DIST} — skipping install")
+    endif()
 endif()
