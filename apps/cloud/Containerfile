@@ -9,7 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config \
     libssl-dev zlib1g-dev libreadline-dev \
-    liblua5.3-dev lua5.3 \
+    liblua5.3-dev lua5.3 wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # ACE/TAO 7.0.0 from source (~60s)
@@ -19,7 +19,7 @@ RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_
     echo 'include $(ACE_ROOT)/include/makeinclude/platform_linux.GNU' > include/makeinclude/platform_macros.GNU && \
     export ACE_ROOT=/tmp/ACE_wrappers && make -j$(nproc) -C ace && \
     mkdir -p /usr/local/ACE_TAO-7.0.0/include/ace /usr/local/ACE_TAO-7.0.0/lib && \
-    cp -r ace/*.h ace/*.i ace/*.inl /usr/local/ACE_TAO-7.0.0/include/ace/ 2>/dev/null || true && \
+    cp -r ace/ /usr/local/ACE_TAO-7.0.0/include/ && \
     cp ace/libACE.so.* /usr/local/ACE_TAO-7.0.0/lib/ && \
     ln -sf /usr/local/ACE_TAO-7.0.0/lib/libACE.so.7.0.0 /usr/local/ACE_TAO-7.0.0/lib/libACE.so && \
     rm -rf /tmp/ACE_wrappers /tmp/ace.tar.gz
@@ -29,16 +29,11 @@ COPY apps/3rdparty/tinydtls /tmp/td
 RUN cd /tmp/td && make clean 2>/dev/null; ./configure --prefix=/usr/local && \
     make -j$(nproc) && make install && rm -rf /tmp/td
 
-# Copy source (CMakeLists first for layer caching)
-COPY CMakeLists.txt apps/CMakeLists.txt ./
-COPY apps/CMakeLists.txt apps/
-COPY apps/inc/ apps/inc/
-COPY apps/src/ apps/src/
-COPY apps/config/ apps/config/
-COPY modules/ modules/
+# Copy full source tree (xpmile pattern)
+COPY . /src/
 
 WORKDIR /src/build
-RUN cmake ../apps \
+RUN cmake /src/apps \
     -DCMAKE_BUILD_TYPE=Release \
     -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
     -DLUA_INCLUDE_DIR=/usr/include/lua5.3 \
