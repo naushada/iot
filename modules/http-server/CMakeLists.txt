@@ -39,6 +39,7 @@ add_library(http_server_lib STATIC
     src/router.cpp
     src/session.cpp
     src/handler.cpp
+    src/auth.cpp
     src/tls.cpp
     src/worker.cpp)
 

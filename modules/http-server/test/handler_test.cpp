@@ -112,7 +112,7 @@ public:
         auto cs = m_client.connect(m_sock);
         if (!cs.ok) return;
 
-        install_handlers(m_router, &m_client);
+        install_handlers(m_router, &m_client, nullptr);
         m_ok = true;
     }
 
