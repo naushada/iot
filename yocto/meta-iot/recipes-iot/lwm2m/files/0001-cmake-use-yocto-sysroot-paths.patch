@@ -6,12 +6,12 @@ Make all five CMakeLists.txt files Yocto/OE sysroot-aware.
 Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 
 ---
- apps/CMakeLists.txt                    | 45
+ apps/CMakeLists.txt                    | 32
  modules/data-store/CMakeLists.txt                    | 14
  modules/net/router/CMakeLists.txt                    | 11
  modules/openvpn/client/CMakeLists.txt                    | 11
  modules/wan/wifi/client/CMakeLists.txt                    | 11
- 5 files changed, 80 insertions(+), 12 deletions(-)
+ 5 files changed, 67 insertions(+), 12 deletions(-)
 
 --- a/apps/CMakeLists.txt
 +++ b/apps/CMakeLists.txt
@@ -19,7 +19,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  
  # ACE_TAO install prefix — kept in sync with xpmile (see ../../xpmile/CMakeLists.txt).
  # Override on the command line with -DACE_ROOT=/some/other/prefix if needed.
-+# When cross-compiling for Yocto, -DACE_ROOT is passed via EXTRA_OECMAKE.
++# When cross-compiling for Yocto, -DACE_ROOT passed via EXTRA_OECMAKE.
  if(NOT DEFINED ACE_ROOT)
 -    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
 +    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
@@ -68,31 +68,20 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  include_directories(inc)
  
  # Data-store client lib — sibling module under ../modules/data-store.
-@@ -90,7 +112,24 @@
- 
+@@ -91,9 +113,13 @@
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
  
-+# tinydtls - cross-compile: sysroot library + headers
  link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
 +if(DEFINED TINYDTLS_INCLUDE_DIR)
 +    include_directories(BEFORE ${TINYDTLS_INCLUDE_DIR})
 +endif()
-+if(NOT DEFINED TINYDTLS_LIBRARY)
-+    find_library(TINYDTLS_LIBRARY tinydtls
-+                 PATHS ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls
-+                 NO_DEFAULT_PATH)
-+    if(NOT TINYDTLS_LIBRARY)
-+        find_library(TINYDTLS_LIBRARY tinydtls)
-+    endif()
-+endif()
-+if(TINYDTLS_LIBRARY)
-+    set(TINYDTLS_LINK_LIB ${TINYDTLS_LIBRARY})
-+else()
-+    set(TINYDTLS_LINK_LIB ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls/libtinydtls.a)
-+endif()
  link_directories(${ACE_ROOT}/lib)
  
- # ACE library — use full path so the linker doesn't need -lACE symlinks.
+ # tinydtls — prefer sysroot when cross-compiling (Yocto sets
++# -DTINYDTLS_LIBRARY=... and -DTINYDTLS_INCLUDE_DIR=...) (Yocto sets
+ # -DTINYDTLS_LIBRARY=...), fall back to vendored submodule.
+ if(NOT DEFINED TINYDTLS_LIBRARY)
+     find_library(TINYDTLS_LIBRARY tinydtls
 --- a/modules/data-store/CMakeLists.txt
 +++ b/modules/data-store/CMakeLists.txt
 @@ -6,7 +6,14 @@
