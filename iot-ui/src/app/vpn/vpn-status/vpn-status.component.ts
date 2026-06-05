@@ -8,54 +8,25 @@ import { VpnStatus } from '../../../common/app-globals';
   template: `
     <div class="page">
       <h3>VPN Connection Status</h3>
-      <div class="status-grid" *ngIf="!loading">
-        <div class="status-item">
-          <span class="label">State</span>
-          <app-status-badge [label]="v.state || 'unknown'" [state]="v.state || ''"></app-status-badge>
-        </div>
-        <div class="status-item">
-          <span class="label">Assigned IP</span>
-          <span class="value">{{ v.ip || '—' }}</span>
-        </div>
-        <div class="status-item">
-          <span class="label">Gateway</span>
-          <span class="value">{{ v.gateway || '—' }}</span>
-        </div>
-        <div class="status-item">
-          <span class="label">Netmask</span>
-          <span class="value">{{ v.netmask || '—' }}</span>
-        </div>
-        <div class="status-item">
-          <span class="label">DNS</span>
-          <span class="value">{{ v.dns || '—' }}</span>
-        </div>
-        <div class="status-item">
-          <span class="label">PID</span>
-          <span class="value">{{ v.pid || '—' }}</span>
-        </div>
-        <div class="status-item">
-          <span class="label">Exit Code</span>
-          <span class="value">{{ v.exit_code != null ? v.exit_code : '—' }}</span>
-        </div>
-        <div class="status-item">
-          <span class="label">Gate Reason</span>
-          <span class="value">{{ v.gate_reason || '—' }}</span>
-        </div>
-        <div class="status-item">
-          <span class="label">Bound Interface</span>
-          <span class="value">{{ v.bound_iface || '—' }}</span>
-        </div>
-      </div>
+      <table class="table table-compact" *ngIf="!loading">
+        <tbody>
+          <tr><td class="label-col">State</td><td><app-status-badge [label]="v.state||'unknown'" [state]="v.state||''"></app-status-badge></td></tr>
+          <tr><td class="label-col">Assigned IP</td><td>{{ v.ip || '—' }}</td></tr>
+          <tr><td class="label-col">Gateway</td><td>{{ v.gateway || '—' }}</td></tr>
+          <tr><td class="label-col">Netmask</td><td>{{ v.netmask || '—' }}</td></tr>
+          <tr><td class="label-col">DNS</td><td>{{ v.dns || '—' }}</td></tr>
+          <tr><td class="label-col">PID</td><td>{{ v.pid || '—' }}</td></tr>
+          <tr><td class="label-col">Exit Code</td><td>{{ v.exit_code != null ? v.exit_code : '—' }}</td></tr>
+          <tr><td class="label-col">Gate Reason</td><td>{{ v.gate_reason || '—' }}</td></tr>
+          <tr><td class="label-col">Bound Interface</td><td>{{ v.bound_iface || '—' }}</td></tr>
+        </tbody>
+      </table>
       <p *ngIf="loading">Loading…</p>
     </div>
   `,
   styles: [`
     .page { padding: 24px; }
     h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
-    .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 16px; }
-    .status-item { background: rgba(255,255,255,0.04); border-radius: 6px; padding: 14px; }
-    .label { display: block; font-size: 11px; color: #9e9e9e; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .value { font-size: 15px; color: #333; font-weight: 500; }
   `]
 })
 export class VpnStatusComponent implements OnInit, OnDestroy {
