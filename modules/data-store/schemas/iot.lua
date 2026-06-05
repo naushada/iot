@@ -41,5 +41,22 @@ return {
       type    = "boolean",
       default = true,
     },
+    -- Log level for all iot daemons.  Each daemon reads this key
+    -- and adjusts its ACE_Log_Msg priority mask at startup and on
+    -- change (hot-reload).  Valid values (case-insensitive):
+    --   DEBUG, INFO, WARNING, ERROR
+    -- Default: INFO (production-safe; no debug noise).
+    ["log.level"] = {
+      type    = "string",
+      default = "INFO",
+    },
+    -- Recent log output from all iot daemons (plain text, newline-
+    -- separated).  Each daemon appends timestamped lines.  Displayed
+    -- in the UI as a scrollable textarea via GET /api/v1/log.
+    -- Capped at ~200 lines / ~16 KB.
+    ["log.text"] = {
+      type    = "string",
+      default = "",
+    },
   },
 }
