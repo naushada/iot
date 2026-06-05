@@ -2,29 +2,23 @@
   <div class="login-card">
     <!-- IoT logo -->
     <div class="logo">
-      <img src="assets/iot-logo.svg" alt="IoT Manager" width="120" height="120" />
+      <img src="assets/iot-logo.svg" alt="IoT Manager" width="100" height="100" />
     </div>
     <h2 class="title">IoT Manager</h2>
     <p class="subtitle">LwM2M Device Management</p>
 
     <form (ngSubmit)="onLogin()" class="login-form">
-      <div class="clr-form-control">
-        <label for="login-id" class="clr-control-label">User ID</label>
-        <div class="clr-control-container">
-          <input type="text" id="login-id" class="clr-input"
-                 [(ngModel)]="id" name="id" required
-                 placeholder="admin" />
-        </div>
-      </div>
+      <clr-input-container>
+        <label class="clr-sr-only">User ID</label>
+        <input clrInput type="text" name="id" placeholder="User ID"
+               [(ngModel)]="id" required />
+      </clr-input-container>
 
-      <div class="clr-form-control">
-        <label for="login-pw" class="clr-control-label">Password</label>
-        <div class="clr-control-container">
-          <input type="password" id="login-pw" class="clr-input"
-                 [(ngModel)]="password" name="password" required
-                 placeholder="Enter password" />
-        </div>
-      </div>
+      <clr-password-container>
+        <label class="clr-sr-only">Password</label>
+        <input clrPassword type="password" name="password" placeholder="Password"
+               [(ngModel)]="password" required />
+      </clr-password-container>
 
       <div *ngIf="error" class="alert alert-danger" style="margin-top: 12px;">
         <div class="alert-items">

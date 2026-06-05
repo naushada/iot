@@ -55,8 +55,7 @@ import { HttpsvcService } from '../../../common/httpsvc.service';
     .page { padding: 24px; } h3,h4 { color: #333; margin: 0 0 16px 0; } h4 { font-size: 14px; margin-top: 24px; }
     .fl { display: block; font-size: 12px; color: #9e9e9e; margin-bottom: 4px; }
     .hint { color: #757575; font-weight: normal; font-size: 11px; }
-    .clr-input { width: 100%; background: #fff; border: 1px solid #ccc; color: #333; padding: 6px 10px; border-radius: 4px; font-size: 13px; }
-    .clr-input:focus { outline: none; border-color: #2e7d32; }
+
     .btn-primary { background: #2e7d32; border: none; color: #fff; padding: 8px 20px; border-radius: 4px; cursor: pointer; }
     .btn-primary:disabled { opacity: 0.5; }
     .lbl { font-size: 10px; color: #757575; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }

@@ -45,8 +45,7 @@ import { HttpsvcService } from '../../../common/httpsvc.service';
     h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 8px 0; }
     .desc { color: #9e9e9e; font-size: 13px; margin-bottom: 20px; }
     .fl { display: block; font-size: 12px; color: #9e9e9e; margin-bottom: 4px; }
-    .clr-input { width: 100%; background: #fff; border: 1px solid #ccc; color: #333; padding: 6px 10px; border-radius: 4px; font-size: 13px; }
-    .clr-input:focus { outline: none; border-color: #2e7d32; }
+
     .btn-primary { background: #2e7d32; border: none; color: #fff; padding: 8px 20px; border-radius: 4px; cursor: pointer; }
     .btn-primary:disabled { opacity: 0.5; }
     .active-iface { font-size: 16px; font-weight: 600; color: #66bb6a; display: block; margin-top: 18px; }

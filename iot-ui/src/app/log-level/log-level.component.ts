@@ -16,8 +16,7 @@ import { HttpsvcService } from '../../common/httpsvc.service';
   styles: [`
     .log-level { display: flex; align-items: center; gap: 10px; padding: 6px 1rem; }
     label { font-size: 12px; color: #9e9e9e; }
-    .clr-select { background: #fff; border: 1px solid #ccc; color: #333;
-      padding: 4px 8px; border-radius: 3px; font-size: 12px; cursor: pointer; }
+    
     .clr-select:focus { outline: none; border-color: #2e7d32; }
   `]
 })
