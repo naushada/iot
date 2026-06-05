@@ -2,7 +2,7 @@ import { Component, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../common/httpsvc.service';
 import { PubSubService } from '../../common/pubsubsvc.service';
-import { StatusSnapshot, ServicesStatus, VpnStatus, WifiStatus, WanStatus } from '../../common/app-globals';
+import { StatusSnapshot, ServiceInfo, ServicesStatus, VpnStatus, WifiStatus, WanStatus } from '../../common/app-globals';
 
 @Component({
   selector: 'app-dashboard',
@@ -83,8 +83,8 @@ export class DashboardComponent implements OnDestroy {
     return key.replace(/_/g, '.');
   }
 
-  svcInfo(key: string) {
-    const svcs = this.status?.services as Record<string, { enable?: boolean; state?: string }> | undefined;
+  svcInfo(key: string): ServiceInfo {
+    const svcs = this.status?.services as Record<string, ServiceInfo> | undefined;
     return svcs?.[key] || {};
   }
 }

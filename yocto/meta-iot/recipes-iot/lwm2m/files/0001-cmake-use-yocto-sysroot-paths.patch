@@ -4,89 +4,134 @@ Subject: [PATCH] cmake: use Yocto sysroot paths for cross-compilation
 Make all five CMakeLists.txt files Yocto/OE sysroot-aware so the
 lwm2m recipe can cross-compile without hardcoded host paths.
 
-Changes (apps/CMakeLists.txt):
-- ACE_ROOT:   find_path() in STAGING_DIR_HOST instead of hardcoded
-              /usr/local/ACE_TAO-7.0.0, overridable via -DACE_ROOT.
-- Lua:        search in sysroot lib dirs for the static archive.
-- MongoDB:    guarded by option(IOT_ENABLE_MONGO). When ON, include
-              dirs come from MONGOCXX_INCLUDE_DIR/BSONCXX_INCLUDE_DIR
-              cache vars (set by the recipe's EXTRA_OECMAKE).
-- tinydtls:   find_library(TINYDTLS_LIBRARY) in sysroot, with the
-              vendored submodule path as fallback.
-- Link:       bsoncxx/mongocxx conditional on IOT_ENABLE_MONGO.
-- Install:    systemd units respect CMAKE_INSTALL_PREFIX.
-
-Changes (modules/*/CMakeLists.txt):
-- ACE_ROOT:   same find_path() pattern as apps/CMakeLists.txt.
-- Lua (data-store only): same sysroot-aware static-lib search.
-- Install:    schema files use CMAKE_INSTALL_SYSCONFDIR (not
-              FULL_SYSCONFDIR) so they land in sysroot.
-
 Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 
-
 ---
- apps/CMakeLists.txt                     | 70 +++++++++++++++++++++++++++--------
- modules/data-store/CMakeLists.txt       | 35 ++++++++++++------
- modules/net/router/CMakeLists.txt       | 22 +++++++++---
- modules/openvpn/client/CMakeLists.txt   | 22 +++++++++---
- modules/wan/wifi/client/CMakeLists.txt  | 22 +++++++++---
- 5 files changed, 58 insertions(+), 15 deletions(-)
+ apps/CMakeLists.txt                    | 54 +++---
+ modules/data-store/CMakeLists.txt                    | 5 +++---
+ modules/net/router/CMakeLists.txt                    | 12 +++---
+ modules/openvpn/client/CMakeLists.txt                    | 2 +++---
+ modules/wan/wifi/client/CMakeLists.txt                    | 2 +++---
+ 5 files changed, 55 insertions(+), 20 deletions(-)
 
---- a/apps/CMakeLists.txt	2026-06-05 07:20:27
-+++ b/apps/CMakeLists.txt	2026-06-05 07:24:09
-@@ -8,10 +8,18 @@
+--- a/apps/CMakeLists.txt
++++ b/apps/CMakeLists.txt
+@@ -25,6 +25,7 @@
+              NAMES liblua5.3.a liblua.a
+              PATHS /usr/lib/aarch64-linux-gnu
+                    /usr/lib/x86_64-linux-gnu
++                   ${CMAKE_SYSROOT}/usr/lib
+                    /usr/lib
+                    /usr/local/lib
+              NO_DEFAULT_PATH)
+@@ -38,11 +39,24 @@
+ # Include External cmake file
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
+-include_directories(/usr/local/include/mongocxx/v_noabi)
+-include_directories(/usr/local/include/bsoncxx/v_noabi)
+ include_directories(${ACE_ROOT}/include)
+ include_directories(${LUA_INCLUDE_DIR})
  
- add_definitions(-DLWM2M_LITTLE_ENDIAN)
- 
--# ACE_TAO install prefix — kept in sync with xpmile (see ../../xpmile/CMakeLists.txt).
--# Override on the command line with -DACE_ROOT=/some/other/prefix if needed.
-+# ACE_TAO install prefix — kept in sync with xpmile (see ../../xpmile/CMakeLists.txt)..
-+# When cross-compiling for Yocto, the recipe passes -DACE_ROOT=${STAGING_DIR_HOST}/usr
-+# so ACE headers and libs resolve against the sysroot.
- if(NOT DEFINED ACE_ROOT)
--    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
-+    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
-+              HINTS ${CMAKE_SYSROOT}/usr/include
-+                    /usr/local/ACE_TAO-7.0.0/include)
-+    if(ACE_INCLUDE_DIR)
-+        get_filename_component(ACE_ROOT ${ACE_INCLUDE_DIR} DIRECTORY)
-+    else()
-+        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
++# MongoDB â optional, guarded by IOT_ENABLE_MONGO. The Yocto recipe
++# sets -DIOT_ENABLE_MONGO=OFF via PACKAGECONFIG[mongo] for embedded
++# targets that don't need the registration mirror feature.
++option(IOT_ENABLE_MONGO "Enable MongoDB registration mirror support" ON)
++if(IOT_ENABLE_MONGO)
++    if(NOT DEFINED MONGOCXX_INCLUDE_DIR)
++        set(MONGOCXX_INCLUDE_DIR /usr/local/include/mongocxx/v_noabi)
 +    endif()
- endif()
- 
- # Lua — required for apps/src/lua_config.cpp which now backs the
---- a/modules/data-store/CMakeLists.txt	2026-06-05 07:20:27
-+++ b/modules/data-store/CMakeLists.txt	2026-06-05 07:24:09
-@@ -4,9 +4,18 @@
- set(CMAKE_CXX_STANDARD 17)
- set(CMAKE_CXX_STANDARD_REQUIRED ON)
- 
--# ACE_TAO install prefix — same as apps/CMakeLists.txt.
-+# ACE_TAO install prefix — same as apps/CMakeLists.txt..
-+# When cross-compiling for Yocto, the recipe passes -DACE_ROOT=${STAGING_DIR_HOST}/usr
-+# so ACE headers and libs resolve against the sysroot.
- if(NOT DEFINED ACE_ROOT)
--    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
-+    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
-+              HINTS ${CMAKE_SYSROOT}/usr/include
-+                    /usr/local/ACE_TAO-7.0.0/include)
-+    if(ACE_INCLUDE_DIR)
-+        get_filename_component(ACE_ROOT ${ACE_INCLUDE_DIR} DIRECTORY)
-+    else()
-+        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
++    if(NOT DEFINED BSONCXX_INCLUDE_DIR)
++        set(BSONCXX_INCLUDE_DIR /usr/local/include/bsoncxx/v_noabi)
 +    endif()
- endif()
++    include_directories(${MONGOCXX_INCLUDE_DIR})
++    include_directories(${BSONCXX_INCLUDE_DIR})
++endif()
++
+ include_directories(inc)
  
- set(DS_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
---- a/modules/net/router/CMakeLists.txt	2026-06-05 07:20:27
-+++ b/modules/net/router/CMakeLists.txt	2026-06-05 07:24:34
+ # Data-store client lib — sibling module under ../modules/data-store.
+@@ -82,25 +96,37 @@
+ 
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
+ 
++# tinydtls â when cross-compiling, prefer the sysroot-provided
++# libtinydtls.a (installed by the tinydtls recipe). Fall back to
++# the vendored submodule build for native/standalone builds.
++# When TINYDTLS_LIBRARY is pre-set from the command line (e.g. Yocto
++# EXTRA_OECMAKE), skip the search and use the given path directly.
+ link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
++if(NOT DEFINED TINYDTLS_LIBRARY)
++    find_library(TINYDTLS_LIBRARY tinydtls
++                 PATHS ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls
++                 NO_DEFAULT_PATH)
++    if(NOT TINYDTLS_LIBRARY)
++        find_library(TINYDTLS_LIBRARY tinydtls)
++    endif()
++endif()
++if(TINYDTLS_LIBRARY)
++    set(TINYDTLS_LINK_LIB ${TINYDTLS_LIBRARY})
++else()
++    set(TINYDTLS_LINK_LIB ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls/libtinydtls.a)
++endif()
+ link_directories(${ACE_ROOT}/lib)
+ 
+ #all files from src directory (recursive — picks up src/cli/**/*.cpp too).
+ file(GLOB_RECURSE SOURCES "src/*.cpp")
+ 
+ add_executable(lwm2m ${SOURCES})
+-target_link_libraries(lwm2m
+-                        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls/libtinydtls.a
+-                        datastore_client
+-                        ACE
+-                        z
+-                        readline
+-                        pthread
+-                        bsoncxx
+-                        mongocxx
+-                        ssl
+-                        crypto
+-                        ${LUA_LINK_LIBS})
++set(LWM2M_CORE_LIBS ${TINYDTLS_LINK_LIB} datastore_client ACE z readline pthread ssl crypto ${LUA_LINK_LIBS})
++if(IOT_ENABLE_MONGO)
++    target_link_libraries(lwm2m ${LWM2M_CORE_LIBS} bsoncxx mongocxx)
++else()
++    target_link_libraries(lwm2m ${LWM2M_CORE_LIBS})
++endif()
+ 
+ option(BUILD_APPS_TESTS "Build apps-level gtest suite (lwm2m_test)" OFF)
+ if(BUILD_APPS_TESTS)
+--- a/modules/data-store/CMakeLists.txt
++++ b/modules/data-store/CMakeLists.txt
+@@ -23,6 +23,7 @@
+              NAMES liblua5.3.a liblua.a
+              PATHS /usr/lib/aarch64-linux-gnu
+                    /usr/lib/x86_64-linux-gnu
++                   ${CMAKE_SYSROOT}/usr/lib
+                    /usr/lib /usr/local/lib
+              NO_DEFAULT_PATH)
+ if(LUA_STATIC_LIB)
+@@ -146,11 +147,11 @@
+ # the relative SYSCONFDIR would land at /usr/etc which ds-server won't
+ # scan.
+ install(FILES schemas/iot.lua
+-        DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
++        DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/iot/ds-schemas)
+ 
+ # services.* schema (L16/D1) — central control plane for every iot
+ # daemon's enable/state pair. Lives in data-store (not per-daemon)
+ # because the set of services is small + the shape is uniform; one
+ # enumerable source is what `ds-cli svc list` wants.
+ install(FILES schemas/services.lua
+-        DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
++        DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/iot/ds-schemas)
+--- a/modules/net/router/CMakeLists.txt
++++ b/modules/net/router/CMakeLists.txt
 @@ -4,8 +4,16 @@
  set(CMAKE_CXX_STANDARD 17)
  set(CMAKE_CXX_STANDARD_REQUIRED ON)
  
-+# ACE_TAO install prefix — same idiom as the data-store + apps cmake.
++# When cross-compiling for Yocto, -DACE_ROOT is passed via EXTRA_OECMAKE.
  if(NOT DEFINED ACE_ROOT)
 -    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
 +    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
@@ -100,49 +145,31 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  endif()
  
  set(NET_ROUTER_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
---- a/modules/openvpn/client/CMakeLists.txt	2026-06-05 07:20:27
-+++ b/modules/openvpn/client/CMakeLists.txt	2026-06-05 07:24:09
-@@ -4,9 +4,18 @@
- set(CMAKE_CXX_STANDARD 17)
- set(CMAKE_CXX_STANDARD_REQUIRED ON)
- 
--# ACE_TAO install prefix — same idiom as the data-store + apps cmake.
-+# ACE_TAO install prefix — same idiom as the data-store + apps cmake..
-+# When cross-compiling for Yocto, the recipe passes -DACE_ROOT=${STAGING_DIR_HOST}/usr
-+# so ACE headers and libs resolve against the sysroot.
- if(NOT DEFINED ACE_ROOT)
--    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
-+    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
-+              HINTS ${CMAKE_SYSROOT}/usr/include
-+                    /usr/local/ACE_TAO-7.0.0/include)
-+    if(ACE_INCLUDE_DIR)
-+        get_filename_component(ACE_ROOT ${ACE_INCLUDE_DIR} DIRECTORY)
-+    else()
-+        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
-+    endif()
+@@ -55,7 +63,7 @@
+     install(TARGETS net-router
+             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+     install(FILES schemas/net.lua
+-            DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
++            DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/iot/ds-schemas)
  endif()
  
- set(OVPN_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
---- a/modules/wan/wifi/client/CMakeLists.txt	2026-06-05 07:20:27
-+++ b/modules/wan/wifi/client/CMakeLists.txt	2026-06-05 07:24:09
-@@ -4,9 +4,18 @@
- set(CMAKE_CXX_STANDARD 17)
- set(CMAKE_CXX_STANDARD_REQUIRED ON)
- 
--# ACE_TAO install prefix — same idiom as data-store + openvpn-client cmake.
-+# ACE_TAO install prefix — same idiom as data-store + openvpn-client cmake..
-+# When cross-compiling for Yocto, the recipe passes -DACE_ROOT=${STAGING_DIR_HOST}/usr
-+# so ACE headers and libs resolve against the sysroot.
- if(NOT DEFINED ACE_ROOT)
--    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
-+    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
-+              HINTS ${CMAKE_SYSROOT}/usr/include
-+                    /usr/local/ACE_TAO-7.0.0/include)
-+    if(ACE_INCLUDE_DIR)
-+        get_filename_component(ACE_ROOT ${ACE_INCLUDE_DIR} DIRECTORY)
-+    else()
-+        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
-+    endif()
+ # ───────────────────────── Tests ───────────────────────────
+--- a/modules/openvpn/client/CMakeLists.txt
++++ b/modules/openvpn/client/CMakeLists.txt
+@@ -84,5 +84,5 @@
+     # Ship the canonical vpn.* schema alongside iot.lua so ds-server
+     # auto-loads it from its default /etc/iot/ds-schemas/ dir.
+     install(FILES schemas/vpn.lua
+-            DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
++            DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/iot/ds-schemas)
  endif()
- 
- set(WIFI_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+--- a/modules/wan/wifi/client/CMakeLists.txt
++++ b/modules/wan/wifi/client/CMakeLists.txt
+@@ -84,6 +84,6 @@
+     # actual schema file; the install rule is here for symmetry from D1.
+     if(EXISTS ${WIFI_MODULE_DIR}/schemas/wifi.lua)
+         install(FILES schemas/wifi.lua
+-                DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
++                DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/iot/ds-schemas)
+     endif()
+ endif()

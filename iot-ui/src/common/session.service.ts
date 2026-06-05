@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { firstValueFrom, Observable, of } from 'rxjs';
-import { catchError, tap } from 'rxjs/operators';
+import { catchError, map, tap } from 'rxjs/operators';
 import { HttpsvcService } from './httpsvc.service';
 import { SessionInfo } from './app-globals';
 
@@ -29,10 +29,12 @@ export class SessionService {
   /// Try to get a session from the backend.  A 401 (no session cookie)
   /// resolves to null — not an error — so the guard can redirect to login.
   loadSession(): Observable<SessionInfo | null> {
-    // We don't have GET /api/v1/auth/session yet, so we probe by
-    // calling /api/v1/status which returns 401 when unauthenticated.
+    // Probe /api/v1/status — returns 401 when unauthenticated.
     return this.http.getStatus().pipe(
-      tap(() => { this.session = { role: 'admin' }; }),
+      map(() => {
+        this.session = { role: 'admin' };
+        return this.session;
+      }),
       catchError(() => { this.session = null; return of(null); })
     );
   }

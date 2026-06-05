@@ -46,12 +46,12 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
 })
 export class ServicesListComponent implements OnInit, OnDestroy {
   services: SvcRow[] = [
-    { key: 'ds',              label: 'services.ds',             info: {} },
-    { key: 'net_router',      label: 'services.net.router',     info: {} },
-    { key: 'openvpn_client',  label: 'services.openvpn.client', info: {} },
-    { key: 'lwm2m_client',    label: 'services.lwm2m.client',   info: {} },
-    { key: 'lwm2m_server',    label: 'services.lwm2m.server',   info: {} },
-    { key: 'wifi_client',     label: 'services.wifi.client',    info: {} },
+    { key: 'ds', label: 'services.ds', info: {}, restarting: false, msg: '' },
+    { key: 'net_router',      label: 'services.net.router',     info: {}, restarting: false, msg: '' },
+    { key: 'openvpn_client',  label: 'services.openvpn.client', info: {}, restarting: false, msg: '' },
+    { key: 'lwm2m_client',    label: 'services.lwm2m.client',   info: {}, restarting: false, msg: '' },
+    { key: 'lwm2m_server',    label: 'services.lwm2m.server',   info: {}, restarting: false, msg: '' },
+    { key: 'wifi_client',     label: 'services.wifi.client',    info: {}, restarting: false, msg: '' },
   ];
   private sub = new Subscription();
 

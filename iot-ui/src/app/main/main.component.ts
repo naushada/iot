@@ -17,8 +17,6 @@ export class MainComponent {
   today = new Date().toLocaleDateString('en-US', {
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
   });
-    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
-  });
 
   status: StatusSnapshot | null = null;
 

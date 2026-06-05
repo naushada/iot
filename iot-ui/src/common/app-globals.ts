@@ -51,6 +51,7 @@ export interface ServiceInfo {
   enable?: boolean;
   state?: string;
   uptime_sec?: number;
+  [key: string]: unknown;
 }
 
 export interface ServicesStatus {
