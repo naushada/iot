@@ -9,6 +9,7 @@ std::string HttpResponse::to_string() const {
     switch (status) {
         case 200: reason = "OK"; break;
         case 400: reason = "Bad Request"; break;
+        case 401: reason = "Unauthorized"; break;
         case 404: reason = "Not Found"; break;
         case 405: reason = "Method Not Allowed"; break;
         case 411: reason = "Length Required"; break;
@@ -18,8 +19,11 @@ std::string HttpResponse::to_string() const {
     std::ostringstream ss;
     ss << "HTTP/1.1 " << status << " " << reason << "\r\n"
        << "Content-Type: " << content_type << "\r\n"
-       << "Content-Length: " << body.size() << "\r\n"
-       << "Connection: close\r\n"
+       << "Content-Length: " << body.size() << "\r\n";
+    for (const auto& h : headers) {
+        ss << h.first << ": " << h.second << "\r\n";
+    }
+    ss << "Connection: close\r\n"
        << "\r\n"
        << body;
     return ss.str();

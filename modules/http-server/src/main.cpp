@@ -14,6 +14,7 @@
 /// required; a CA bundle switches on mutual-TLS). Otherwise it speaks
 /// plain HTTP/1.1, as before.
 
+#include "http_server/auth.hpp"
 #include "http_server/handler.hpp"
 #include "http_server/router.hpp"
 #include "http_server/session.hpp"
@@ -189,9 +190,22 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // ── Auth ──────────────────────────────────────────────────
+    http_server::SessionStore auth_store;
+
+    // Load auth enable flag + admin password from data store.
+    {
+        std::vector<data_store::Client::GetResult> got;
+        auto rs = ds.get({"http.auth.enabled"}, got);
+        if (rs.ok && !got.empty() && got[0].has_value) {
+            if (auto b = data_store::to_bool(got[0].value))
+                auth_store.set_enabled(*b);
+        }
+    }
+
     // ── Router + handlers ─────────────────────────────────────
     http_server::Router router;
-    http_server::install_handlers(router, &ds);
+    http_server::install_handlers(router, &ds, &auth_store);
 
     // ── Handler thread pool (FUP-L18-1) ───────────────────────
     // 0 workers → handlers run inline on the reactor thread (default).
@@ -298,7 +312,8 @@ int main(int argc, char** argv) {
         ACE_Time_Value accept_tv(0, 0);  // non-blocking
         if (sock_acceptor.accept(stream, &peer, &accept_tv) != -1) {
             auto* session =
-                new http_server::HttpSession(router, tlsPtr, &pool);
+                new http_server::HttpSession(router, tlsPtr, &pool,
+                                             &auth_store);
             session->set_handle(stream.get_handle());
             stream.set_handle(ACE_INVALID_HANDLE);
             if (ACE_Reactor::instance()->register_handler(
@@ -317,8 +332,23 @@ int main(int argc, char** argv) {
         }
 
         // ~Every 2s, check for operator config changes via the data store.
+        // Also sweep expired sessions and reload auth config every ~60s.
         if (++reload_tick >= kReloadEvery) {
             reload_tick = 0;
+            static int auth_tick = 0;
+            if (++auth_tick >= 30) {  // ~60s
+                auth_tick = 0;
+                auth_store.sweep_expired();
+                // Reload auth.enabled
+                std::vector<data_store::Client::GetResult> got;
+                auto rs = ds.get({"http.auth.enabled"}, got);
+                if (rs.ok && !got.empty() && got[0].has_value) {
+                    if (auto b = data_store::to_bool(got[0].value))
+                        auth_store.set_enabled(*b);
+                }
+                // Password hash is reloaded on each login attempt
+                // (stateless — no cache to invalidate).
+            }
             DsHttpCfg cur = read_ds_http_cfg(ds);
             bool tlsDirty = false, listenDirty = false;
             // Update the effective values for keys the operator changed.

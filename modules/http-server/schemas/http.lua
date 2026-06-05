@@ -42,5 +42,6 @@ return {
     -- thread (default). >0 off-loads handlers to N worker threads so a
     -- blocking long-poll can't stall other connections. CLI: http-workers=N.
     ["http.workers"]       = { type = "integer", default = 0, min = 0, max = 64 },
+
   },
 }

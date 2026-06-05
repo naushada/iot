@@ -102,7 +102,10 @@ target_link_libraries(lwm2m
                         crypto
                         ${LUA_LINK_LIBS})
 
-add_subdirectory(test)
+option(BUILD_APPS_TESTS "Build apps-level gtest suite (lwm2m_test)" OFF)
+if(BUILD_APPS_TESTS)
+    add_subdirectory(test)
+endif()
 
 include(GNUInstallDirs)
 

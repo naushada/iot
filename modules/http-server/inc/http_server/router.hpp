@@ -14,6 +14,9 @@ struct HttpResponse {
     int         status = 200;
     std::string content_type = "application/json";
     std::string body;
+    /// Extra response headers (e.g. Set-Cookie). Emitted after
+    /// Content-* headers in to_string().
+    std::map<std::string, std::string> headers;
 
     /// Serialise to a full HTTP/1.1 response string.
     std::string to_string() const;

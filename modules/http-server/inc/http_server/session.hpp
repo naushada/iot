@@ -16,6 +16,8 @@
 
 namespace http_server {
 
+class SessionStore;  // fwd from auth.hpp
+
 class HttpSession
     : public ACE_Svc_Handler<ACE_SOCK_Stream, ACE_MT_SYNCH> {
 public:
@@ -23,10 +25,12 @@ public:
     /// context must outlive every session (owned by main). nullptr → plain
     /// HTTP. `pool` non-null with workers → run handlers off the reactor
     /// thread (FUP-L18-1); null / 0 workers → run inline (the original
-    /// behaviour). Both must outlive every session.
+    /// behaviour). `auth` non-null → enforce session-auth on protected
+    /// routes (L19/D1). All must outlive every session.
     explicit HttpSession(const Router& router,
                          const TlsContext* tls = nullptr,
-                         WorkerPool* pool = nullptr);
+                         WorkerPool* pool = nullptr,
+                         SessionStore* auth = nullptr);
 
     int handle_input(ACE_HANDLE fd) override;
     // Off-loaded handler finished on a worker thread and notify()'d the
@@ -44,6 +48,9 @@ private:
 
     // Handler thread pool (null / 0 workers → inline). Not owned.
     WorkerPool* m_pool = nullptr;
+
+    // Session auth store (null → no auth check). Not owned.
+    SessionStore* m_auth = nullptr;
 
     // Per-request state for the async path. Only one request is in flight
     // per connection (the handler is suspended while a worker runs), so a

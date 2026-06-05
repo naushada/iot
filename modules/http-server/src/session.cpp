@@ -1,3 +1,4 @@
+#include "http_server/auth.hpp"
 #include "http_server/session.hpp"
 
 #include <ace/Log_Msg.h>
@@ -11,8 +12,8 @@
 namespace http_server {
 
 HttpSession::HttpSession(const Router& router, const TlsContext* tls,
-                         WorkerPool* pool)
-    : m_router(router), m_pool(pool) {
+                         WorkerPool* pool, SessionStore* auth)
+    : m_router(router), m_pool(pool), m_auth(auth) {
     if (tls && *tls) {
         m_tls = std::make_unique<TlsConn>(*tls);
     }
@@ -86,6 +87,21 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
     auto it = req.headers.find("connection");
     m_keep_alive = (it != req.headers.end() && it->second == "keep-alive");
     m_parser.reset();
+
+    // ── Auth check (L19/D1) ───────────────────────────────────────────
+    // When auth is enabled, protect all /api/v1/* routes except /api/v1/auth/*.
+    // 401 responses are short-lived and sent inline even when a worker pool is
+    // configured — no point off-loading them.
+    if (m_auth && m_auth->enabled() && !is_public_route(req.path)) {
+        std::string token = extract_session_cookie(req.headers);
+        if (token.empty() || !m_auth->validate(token)) {
+            HttpResponse unauth;
+            unauth.status = 401;
+            unauth.body   = R"({"ok":false,"err":"authentication required"})";
+            m_response = unauth.to_string();
+            return finish_response();
+        }
+    }
 
     if (m_pool && m_pool->size() > 0) {
         // Off-load the handler to a worker thread. Suspend reads so no other

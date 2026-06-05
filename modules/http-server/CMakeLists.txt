@@ -39,6 +39,7 @@ add_library(http_server_lib STATIC
     src/router.cpp
     src/session.cpp
     src/handler.cpp
+    src/auth.cpp
     src/tls.cpp
     src/worker.cpp)
 
@@ -124,6 +125,6 @@ include(GNUInstallDirs)
 if(NOT DEFINED IOT_PACKAGING_INSTALL OR IOT_PACKAGING_INSTALL)
     install(TARGETS iot-httpd
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-    install(FILES schemas/http.lua
+    install(FILES schemas/http.lua schemas/auth.lua
             DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
 endif()
