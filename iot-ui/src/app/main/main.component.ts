@@ -38,6 +38,8 @@ export class MainComponent {
 
   expandedMenu: string | null = null;  // which menu is expanded in sidebar
 
+  get isAdmin(): boolean { return this.session.isAdmin; }
+
   constructor(
     private http: HttpsvcService,
     private session: SessionService,

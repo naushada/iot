@@ -96,12 +96,21 @@ void install_handlers(Router& router,
 
     // ─── POST /api/v1/db/set ─────────────────────────────────
     router.add("POST", "/api/v1/db/set",
-        [ds](const HttpParser::Request& req) -> HttpResponse {
+        [ds, auth](const HttpParser::Request& req) -> HttpResponse {
             HttpResponse r;
             if (!ds) {
                 r.status = 500;
                 r.body = R"({"ok":false,"err":"data store not connected"})";
                 return r;
+            }
+            // ── Access control ─────────────────────────────────
+            std::string access_level = "Admin";  // default: full access
+            if (auth && auth->enabled()) {
+                std::string token = extract_session_cookie(req.headers);
+                if (!token.empty()) {
+                    const auto* session = auth->validate(token);
+                    if (session) access_level = session->access;
+                }
             }
             try {
                 auto doc = json::parse(req.body);
@@ -128,6 +137,12 @@ void install_handlers(Router& router,
                         val = v.dump();
                     }
                     pairs.emplace_back(key, val);
+                }
+                // Enforce access control: Viewer cannot modify any key
+                if (!can_write(access_level, "")) {
+                    r.status = 403;
+                    r.body = R"({"ok":false,"err":"forbidden: read-only access"})";
+                    return r;
                 }
                 auto rs = ds->set(pairs);
                 if (!rs.ok) {
@@ -286,11 +301,15 @@ void install_handlers(Router& router,
                 r.body = R"({"ok":false,"err":"invalid credentials"})";
                 return r;
             }
+            // Load user's access level
+            std::string access = "Admin";
+            if (ds) access = CredentialStore::load_user_access(*ds, id);
             std::string token;
-            if (auth) token = auth->create_session(username);
+            if (auth) token = auth->create_session(id, "admin", access);
             json resp;
-            resp["ok"]   = true;
-            resp["role"] = "admin";
+            resp["ok"]     = true;
+            resp["role"]   = "admin";
+            resp["access"] = access;
             r.body = resp.dump();
             if (!token.empty()) {
                 r.headers["Set-Cookie"] = make_set_cookie(token);

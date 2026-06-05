@@ -37,7 +37,8 @@ class SessionStore {
 public:
     struct Session {
         std::string username;
-        std::string role;          // "admin" (v1 — single role)
+        std::string role;          // "admin"
+        std::string access;        // "Admin" or "Viewer"
         std::chrono::steady_clock::time_point expires_at;
     };
 
@@ -46,7 +47,8 @@ public:
     /// Create a session for `username`, return the opaque token.
     /// The caller sets the token as a Set-Cookie header.
     std::string create_session(const std::string& username,
-                               const std::string& role = "admin");
+                               const std::string& role = "admin",
+                               const std::string& access = "Admin");
 
     /// Validate a token. Returns nullptr when expired or invalid.
     const Session* validate(const std::string& token);
@@ -90,11 +92,21 @@ public:
     static bool verify(const std::string& submitted_plaintext,
                        const std::string& stored_hash);
 
+    /// Load the user's access level from the data store.
+    /// Key: auth.users.<username>.access — "Admin" or "Viewer"
+    /// Falls back to "Admin" when unset.
+    static std::string load_user_access(data_store::Client& ds,
+                                         const std::string& username);
+
     /// Default admin password hash: sha256("admin").
     static constexpr const char* kDefaultHash =
         "8c6976e5b5410415bde908bd4dee15df"
         "b167a9c873fc4bb8a81f6f2ab448a918";
 };
+
+/// Check whether `access_level` permits modifying `key`.
+/// "Admin" can modify anything; "Viewer" is read-only.
+bool can_write(const std::string& access_level, const std::string& key);
 
 /// Extract the session token from a Cookie header.
 /// Returns empty string when no session cookie is present.

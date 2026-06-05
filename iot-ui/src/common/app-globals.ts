@@ -73,11 +73,13 @@ export interface LoginRequest {
 export interface LoginResponse {
   ok: boolean;
   role?: string;
+  access?: string;   // "Admin" | "Viewer"
   err?: string;
 }
 
 export interface SessionInfo {
   role: string;
+  access: string;    // "Admin" | "Viewer"
 }
 
 // ── Db types ────────────────────────────────────────────────────────

@@ -38,29 +38,47 @@ return {
   namespace = "vpn",
   keys = {
     -- ───────── Read keys (operator → daemon) ─────────
-    ["vpn.remote.host"]  = { type = "string"  },
-    ["vpn.remote.port"]  = { type = "integer", default = 1194,
+    ["vpn.remote.host"]  = {
+        access  = "Admin", type = "string"  },
+    ["vpn.remote.port"]  = {
+        access  = "Admin", type = "integer", default = 1194,
                              min = 1, max = 65535 },
-    ["vpn.remote.proto"] = { type = "string",  default = "udp" },
+    ["vpn.remote.proto"] = {
+        access  = "Admin", type = "string",  default = "udp" },
 
-    ["vpn.cert.path"]    = { type = "string"  },
-    ["vpn.key.path"]     = { type = "string"  },
-    ["vpn.ca.path"]      = { type = "string"  },
+    ["vpn.cert.path"]    = {
+        access  = "Admin", type = "string"  },
+    ["vpn.key.path"]     = {
+        access  = "Admin", type = "string"  },
+    ["vpn.ca.path"]      = {
+        access  = "Admin", type = "string"  },
 
-    ["vpn.cipher"]       = { type = "string",  default = "AES-256-GCM" },
-    ["vpn.dev"]          = { type = "string",  default = "tun" },
-    ["vpn.mgmt.port"]    = { type = "integer", default = 7505,
+    ["vpn.cipher"]       = {
+        access  = "Admin", type = "string",  default = "AES-256-GCM" },
+    ["vpn.dev"]          = {
+        access  = "Admin", type = "string",  default = "tun" },
+    ["vpn.mgmt.port"]    = {
+        access  = "Admin", type = "integer", default = 7505,
                              min = 1024, max = 65535 },
 
     -- ───────── Write keys (daemon → operator) ─────────
-    ["vpn.state"]            = { type = "string" },
-    ["vpn.assigned.ip"]      = { type = "string" },
-    ["vpn.assigned.gateway"] = { type = "string" },
-    ["vpn.assigned.netmask"] = { type = "string" },
-    ["vpn.assigned.dns"]     = { type = "string" },
-    ["vpn.pid"]              = { type = "integer", min = 0 },
-    ["vpn.exit_code"]        = { type = "integer" },
-    ["vpn.gate.reason"]      = { type = "string" },
-    ["vpn.bound.iface"]      = { type = "string" },
+    ["vpn.state"]            = {
+        access  = "Viewer", type = "string" },
+    ["vpn.assigned.ip"]      = {
+        access  = "Viewer", type = "string" },
+    ["vpn.assigned.gateway"] = {
+        access  = "Viewer", type = "string" },
+    ["vpn.assigned.netmask"] = {
+        access  = "Viewer", type = "string" },
+    ["vpn.assigned.dns"]     = {
+        access  = "Viewer", type = "string" },
+    ["vpn.pid"]              = {
+        access  = "Viewer", type = "integer", min = 0 },
+    ["vpn.exit_code"]        = {
+        access  = "Viewer", type = "integer" },
+    ["vpn.gate.reason"]      = {
+        access  = "Viewer", type = "string" },
+    ["vpn.bound.iface"]      = {
+        access  = "Viewer", type = "string" },
   },
 }

@@ -1,12 +1,10 @@
 import { Injectable } from '@angular/core';
 import { firstValueFrom, Observable, of } from 'rxjs';
-import { catchError, map, tap } from 'rxjs/operators';
+import { catchError, map } from 'rxjs/operators';
 import { HttpsvcService } from './httpsvc.service';
 import { SessionInfo } from './app-globals';
 
 /// Holds the current auth session for the SPA.
-/// Adapted from xpmile SessionService — same pattern: load once at
-/// APP_INITIALIZER, cache, guard reads the cache.
 @Injectable({ providedIn: 'root' })
 export class SessionService {
 
@@ -14,40 +12,30 @@ export class SessionService {
 
   constructor(private http: HttpsvcService) {}
 
-  get isAuthenticated(): boolean {
-    return this.session !== null;
-  }
+  get isAuthenticated(): boolean { return this.session !== null; }
+  get role(): string | undefined { return this.session?.role; }
+  get access(): string { return this.session?.access || 'Viewer'; }
+  get isAdmin(): boolean { return this.access === 'Admin'; }
 
-  get role(): string | undefined {
-    return this.session?.role;
-  }
+  clear(): void { this.session = null; }
 
-  clear(): void {
-    this.session = null;
-  }
-
-  /// Try to get a session from the backend.  A 401 (no session cookie)
-  /// resolves to null — not an error — so the guard can redirect to login.
+  /// Probe /api/v1/status — 401 when unauthenticated.
   loadSession(): Observable<SessionInfo | null> {
-    // Probe /api/v1/status — returns 401 when unauthenticated.
     return this.http.getStatus().pipe(
       map(() => {
-        this.session = { role: 'admin' };
+        this.session = { role: 'admin', access: 'Admin' };
         return this.session;
       }),
       catchError(() => { this.session = null; return of(null); })
     );
   }
 
-  /// Called after a successful login — cache the session so the guard
-  /// doesn't need another round trip.
-  setFromLogin(): void {
-    this.session = { role: 'admin' };
+  /// Cache session after login with the access level from the server.
+  setFromLogin(access?: string): void {
+    this.session = { role: 'admin', access: access || 'Viewer' };
   }
 }
 
-/// APP_INITIALIZER factory — loads the session once before the app
-/// bootstraps, so a reload of an authenticated page isn't bounced to /login.
 export function initSession(session: SessionService): () => Promise<unknown> {
   return () => firstValueFrom(session.loadSession());
 }
