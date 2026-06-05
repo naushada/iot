@@ -31,6 +31,7 @@ import { ServicesSubmenuComponent } from './services/services-submenu/services-s
 import { ServicesListComponent } from './services/services-list/services-list.component';
 import { LogLevelComponent } from './log-level/log-level.component';
 import { LogViewerComponent } from './log-level/log-viewer.component';
+import { ToastComponent } from './common/toast/toast.component';
 
 import { SsoAuthInterceptor } from '../common/sso-auth.interceptor';
 import { SessionService, initSession } from '../common/session.service';
@@ -47,7 +48,7 @@ import { SessionService, initSession } from '../common/session.service';
     RoutingSubmenuComponent, PortForwardComponent,
     Lwm2mSubmenuComponent, Lwm2mConfigComponent,
     ServicesSubmenuComponent, ServicesListComponent,
-    LogLevelComponent, LogViewerComponent,
+    LogLevelComponent, LogViewerComponent, ToastComponent,
   ],
   imports: [
     BrowserModule,

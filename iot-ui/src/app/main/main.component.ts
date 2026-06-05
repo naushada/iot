@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { HttpsvcService } from '../../common/httpsvc.service';
 import { SessionService } from '../../common/session.service';
 import { PubSubService } from '../../common/pubsubsvc.service';
+import { ThemeService } from '../../common/theme.service';
 import { StatusSnapshot } from '../../common/app-globals';
 
 @Component({
@@ -44,8 +45,11 @@ export class MainComponent {
     private http: HttpsvcService,
     private session: SessionService,
     private router: Router,
-    private pubsub: PubSubService
-  ) {}
+    private pubsub: PubSubService,
+    public theme: ThemeService
+  ) {
+    this.theme.init();
+  }
 
   ngOnInit(): void {
     this.refreshStatus();

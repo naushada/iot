@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
+import { ToastService } from '../../../common/toast.service';
 
 @Component({
   selector: 'app-vpn-config',
@@ -16,7 +17,7 @@ export class VpnConfigComponent implements OnInit {
   msg = '';
 
   constructor(private http: HttpsvcService, fb: FormBuilder,
-    private session: SessionService) {
+    private session: SessionService, private toast: ToastService) {
     this.form = fb.group({
       remote_host:  [''],
       remote_port:  [1194],
@@ -73,9 +74,9 @@ export class VpnConfigComponent implements OnInit {
     ]).subscribe({
       next: (r) => {
         this.saving = false;
-        this.msg = r.ok ? 'Saved.' : ('Error: ' + (r.err || 'unknown'));
+        if(r.ok) this.toast.success('VPN config saved'); else this.toast.error(r.err||'Save failed');
       },
-      error: (e) => { this.saving = false; this.msg = 'Save failed.'; }
+      error: (e) => { this.saving = false; this.toast.error('Save failed'); }
     });
   }
 }

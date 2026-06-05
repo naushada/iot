@@ -35,6 +35,11 @@
 
     <div class="sidebar-spacer"></div>
 
+    <a class="nav-item" (click)="theme.toggle()" title="Toggle theme">
+      <clr-icon [attr.shape]="theme.dark ? 'sun' : 'moon'"></clr-icon>
+      <span>{{ theme.dark ? 'Light' : 'Dark' }}</span>
+    </a>
+
     <a class="nav-item nav-logout" (click)="onLogout()">
       <clr-icon shape="logout"></clr-icon>
       <span>Sign out</span>

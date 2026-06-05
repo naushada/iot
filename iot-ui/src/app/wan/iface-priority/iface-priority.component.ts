@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
+import { ToastService } from '../../../common/toast.service';
 
 @Component({
   selector: 'app-iface-priority',
@@ -59,7 +60,7 @@ export class IfacePriorityComponent implements OnInit {
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, private session: SessionService) {}
+  constructor(private http: HttpsvcService, private session: SessionService, private toast: ToastService) {}
 
   ngOnInit(): void {
     this.http.dbGet(['net.iface.priority', 'net.iface.eth.name', 'net.iface.wifi.name',
@@ -87,8 +88,8 @@ export class IfacePriorityComponent implements OnInit {
       { key: 'net.iface.cellular.name', value: this.cellName },
       { key: 'net.poll.interval.sec', value: this.pollInterval },
     ]).subscribe({
-      next: (r) => { this.saving = false; this.msg = r.ok ? 'Saved.' : 'Error: ' + r.err; },
-      error: () => { this.saving = false; this.msg = 'Save failed.'; }
+      next: (r) => { this.saving = false; if(r.ok) this.toast.success('Interface priority saved'); else this.toast.error(r.err||'Save failed'); },
+      error: () => { this.saving = false; this.toast.error('Save failed'); }
     });
   }
 }

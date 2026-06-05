@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
+import { ToastService } from '../../../common/toast.service';
 
 @Component({
   selector: 'app-lwm2m-config',
@@ -14,7 +15,7 @@ export class Lwm2mConfigComponent implements OnInit {
 
     get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, fb: FormBuilder, private session: SessionService) {
+  constructor(private http: HttpsvcService, fb: FormBuilder, private session: SessionService, private toast: ToastService) {
     this.serverForm = fb.group({
       server_uri: ['coaps://'],
       endpoint:   ['urn:dev:client-1'],
@@ -56,8 +57,8 @@ export class Lwm2mConfigComponent implements OnInit {
       { key: 'iot.lifetime',   value: v.lifetime },
       { key: 'iot.observable', value: v.observable },
     ]).subscribe({
-      next: (r) => { this.saving = false; this.msg = r.ok ? 'Saved.' : 'Error: ' + r.err; },
-      error: () => { this.saving = false; this.msg = 'Save failed.'; }
+      next: (r) => { this.saving = false; if(r.ok) this.toast.success('LwM2M config saved'); else this.toast.error(r.err||'Save failed'); },
+      error: () => { this.saving = false; this.toast.error('Save failed'); }
     });
   }
 }

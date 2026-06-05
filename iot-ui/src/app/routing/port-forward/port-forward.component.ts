@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
+import { ToastService } from '../../../common/toast.service';
 
 @Component({
   selector: 'app-port-forward',
@@ -63,7 +64,7 @@ export class PortForwardComponent implements OnInit {
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, private session: SessionService) {}
+  constructor(private http: HttpsvcService, private session: SessionService, private toast: ToastService) {}
 
   ngOnInit(): void {
     this.http.dbGet(['net.lwm2m.target.ip', 'net.lwm2m.target.port', 'net.forward.ports',
@@ -89,8 +90,8 @@ export class PortForwardComponent implements OnInit {
       { key: 'net.lwm2m.target.ip',   value: this.targetIp },
       { key: 'net.lwm2m.target.port', value: this.targetPort },
     ]).subscribe({
-      next: (r) => { this.savingDnat = false; this.msg = r.ok ? 'DNAT saved.' : 'Error: '+r.err; },
-      error: () => { this.savingDnat = false; this.msg = 'DNAT save failed.'; }
+      next: (r) => { this.savingDnat = false; if(r.ok) this.toast.success('DNAT saved'); else this.toast.error(r.err||'DNAT save failed'); },
+      error: () => { this.savingDnat = false; this.toast.error('DNAT save failed'); }
     });
   }
 
@@ -99,8 +100,8 @@ export class PortForwardComponent implements OnInit {
     this.http.dbSet([
       { key: 'net.forward.ports', value: this.forwardPorts },
     ]).subscribe({
-      next: (r) => { this.savingPorts = false; this.msg = r.ok ? 'Saved ports.' : 'Error: '+r.err; },
-      error: () => { this.savingPorts = false; this.msg = 'Port save failed.'; }
+      next: (r) => { this.savingPorts = false; if(r.ok) this.toast.success('Ports saved'); else this.toast.error(r.err||'Port save failed'); },
+      error: () => { this.savingPorts = false; this.toast.error('Port save failed'); }
     });
   }
 }
