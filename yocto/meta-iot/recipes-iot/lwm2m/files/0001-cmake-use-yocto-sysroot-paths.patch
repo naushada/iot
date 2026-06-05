@@ -7,16 +7,35 @@ lwm2m recipe can cross-compile without hardcoded host paths.
 Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 
 ---
- apps/CMakeLists.txt                    | 54 +++---
- modules/data-store/CMakeLists.txt                    | 5 +++---
- modules/net/router/CMakeLists.txt                    | 12 +++---
- modules/openvpn/client/CMakeLists.txt                    | 2 +++---
- modules/wan/wifi/client/CMakeLists.txt                    | 2 +++---
- 5 files changed, 55 insertions(+), 20 deletions(-)
+ apps/CMakeLists.txt                    | 69
+ modules/data-store/CMakeLists.txt                    | 14
+ modules/net/router/CMakeLists.txt                    | 11
+ modules/openvpn/client/CMakeLists.txt                    | 11
+ modules/wan/wifi/client/CMakeLists.txt                    | 11
+ 5 files changed, 92 insertions(+), 24 deletions(-)
 
 --- a/apps/CMakeLists.txt
 +++ b/apps/CMakeLists.txt
-@@ -25,6 +25,7 @@
+@@ -10,8 +10,17 @@
+ 
+ # ACE_TAO install prefix — kept in sync with xpmile (see ../../xpmile/CMakeLists.txt).
+ # Override on the command line with -DACE_ROOT=/some/other/prefix if needed.
++# When cross-compiling for Yocto, the recipe passes -DACE_ROOT=${STAGING_DIR_HOST}/usr
++# so ACE headers and libs resolve against the sysroot.
+ if(NOT DEFINED ACE_ROOT)
+-    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
++    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
++              HINTS ${CMAKE_SYSROOT}/usr/include
++                    /usr/local/ACE_TAO-7.0.0/include)
++    if(ACE_INCLUDE_DIR)
++        get_filename_component(ACE_ROOT ${ACE_INCLUDE_DIR} DIRECTORY)
++    else()
++        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
++    endif()
+ endif()
+ 
+ # Lua — required for apps/src/lua_config.cpp which now backs the
+@@ -25,6 +34,7 @@
               NAMES liblua5.3.a liblua.a
               PATHS /usr/lib/aarch64-linux-gnu
                     /usr/lib/x86_64-linux-gnu
@@ -24,21 +43,16 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
                     /usr/lib
                     /usr/local/lib
               NO_DEFAULT_PATH)
-@@ -38,11 +39,24 @@
+@@ -38,11 +48,24 @@
  # Include External cmake file
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
-+# When cross-compiling for Yocto, prefer sysroot tinydtls headers
-+# (which include generated dtls_config.h) over vendored ones.
-+if(DEFINED TINYDTLS_INCLUDE_DIR)
-+    include_directories(BEFORE ${TINYDTLS_INCLUDE_DIR})
-+endif()
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
 -include_directories(/usr/local/include/mongocxx/v_noabi)
 -include_directories(/usr/local/include/bsoncxx/v_noabi)
  include_directories(${ACE_ROOT}/include)
  include_directories(${LUA_INCLUDE_DIR})
  
-+# MongoDB â optional, guarded by IOT_ENABLE_MONGO. The Yocto recipe
++# MongoDB -- optional, guarded by IOT_ENABLE_MONGO. The Yocto recipe
 +# sets -DIOT_ENABLE_MONGO=OFF via PACKAGECONFIG[mongo] for embedded
 +# targets that don't need the registration mirror feature.
 +option(IOT_ENABLE_MONGO "Enable MongoDB registration mirror support" ON)
@@ -56,16 +70,20 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  include_directories(inc)
  
  # Data-store client lib — sibling module under ../modules/data-store.
-@@ -82,25 +96,37 @@
+@@ -82,25 +105,41 @@
  
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
  
-+# tinydtls â when cross-compiling, prefer the sysroot-provided
++# tinydtls -- when cross-compiling, prefer the sysroot-provided
 +# libtinydtls.a (installed by the tinydtls recipe). Fall back to
 +# the vendored submodule build for native/standalone builds.
-+# When TINYDTLS_LIBRARY is pre-set from the command line (e.g. Yocto
-+# EXTRA_OECMAKE), skip the search and use the given path directly.
++# When TINYDTLS_LIBRARY is pre-set (Yocto EXTRA_OECMAKE), skip
++# find_library. When TINYDTLS_INCLUDE_DIR is set, prefer sysroot
++# headers (which include generated dtls_config.h).
  link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
++if(DEFINED TINYDTLS_INCLUDE_DIR)
++    include_directories(BEFORE ${TINYDTLS_INCLUDE_DIR})
++endif()
 +if(NOT DEFINED TINYDTLS_LIBRARY)
 +    find_library(TINYDTLS_LIBRARY tinydtls
 +                 PATHS ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls
@@ -108,7 +126,23 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  if(BUILD_APPS_TESTS)
 --- a/modules/data-store/CMakeLists.txt
 +++ b/modules/data-store/CMakeLists.txt
-@@ -23,6 +23,7 @@
+@@ -6,7 +6,14 @@
+ 
+ # ACE_TAO install prefix — same as apps/CMakeLists.txt.
+ if(NOT DEFINED ACE_ROOT)
+-    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
++    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
++              HINTS ${CMAKE_SYSROOT}/usr/include
++                    /usr/local/ACE_TAO-7.0.0/include)
++    if(ACE_INCLUDE_DIR)
++        get_filename_component(ACE_ROOT ${ACE_INCLUDE_DIR} DIRECTORY)
++    else()
++        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
++    endif()
+ endif()
+ 
+ set(DS_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+@@ -23,6 +30,7 @@
               NAMES liblua5.3.a liblua.a
               PATHS /usr/lib/aarch64-linux-gnu
                     /usr/lib/x86_64-linux-gnu
@@ -116,7 +150,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
                     /usr/lib /usr/local/lib
               NO_DEFAULT_PATH)
  if(LUA_STATIC_LIB)
-@@ -146,11 +147,11 @@
+@@ -146,11 +154,11 @@
  # the relative SYSCONFDIR would land at /usr/etc which ds-server won't
  # scan.
  install(FILES schemas/iot.lua
@@ -132,11 +166,9 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 +        DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/iot/ds-schemas)
 --- a/modules/net/router/CMakeLists.txt
 +++ b/modules/net/router/CMakeLists.txt
-@@ -4,8 +4,16 @@
- set(CMAKE_CXX_STANDARD 17)
+@@ -5,7 +5,14 @@
  set(CMAKE_CXX_STANDARD_REQUIRED ON)
  
-+# When cross-compiling for Yocto, -DACE_ROOT is passed via EXTRA_OECMAKE.
  if(NOT DEFINED ACE_ROOT)
 -    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
 +    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
@@ -150,7 +182,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  endif()
  
  set(NET_ROUTER_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-@@ -55,7 +63,7 @@
+@@ -55,7 +62,7 @@
      install(TARGETS net-router
              RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
      install(FILES schemas/net.lua
@@ -161,7 +193,23 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  # ───────────────────────── Tests ───────────────────────────
 --- a/modules/openvpn/client/CMakeLists.txt
 +++ b/modules/openvpn/client/CMakeLists.txt
-@@ -84,5 +84,5 @@
+@@ -6,7 +6,14 @@
+ 
+ # ACE_TAO install prefix — same idiom as the data-store + apps cmake.
+ if(NOT DEFINED ACE_ROOT)
+-    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
++    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
++              HINTS ${CMAKE_SYSROOT}/usr/include
++                    /usr/local/ACE_TAO-7.0.0/include)
++    if(ACE_INCLUDE_DIR)
++        get_filename_component(ACE_ROOT ${ACE_INCLUDE_DIR} DIRECTORY)
++    else()
++        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
++    endif()
+ endif()
+ 
+ set(OVPN_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+@@ -84,5 +91,5 @@
      # Ship the canonical vpn.* schema alongside iot.lua so ds-server
      # auto-loads it from its default /etc/iot/ds-schemas/ dir.
      install(FILES schemas/vpn.lua
@@ -170,7 +218,23 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  endif()
 --- a/modules/wan/wifi/client/CMakeLists.txt
 +++ b/modules/wan/wifi/client/CMakeLists.txt
-@@ -84,6 +84,6 @@
+@@ -6,7 +6,14 @@
+ 
+ # ACE_TAO install prefix — same idiom as data-store + openvpn-client cmake.
+ if(NOT DEFINED ACE_ROOT)
+-    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
++    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
++              HINTS ${CMAKE_SYSROOT}/usr/include
++                    /usr/local/ACE_TAO-7.0.0/include)
++    if(ACE_INCLUDE_DIR)
++        get_filename_component(ACE_ROOT ${ACE_INCLUDE_DIR} DIRECTORY)
++    else()
++        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
++    endif()
+ endif()
+ 
+ set(WIFI_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+@@ -84,6 +91,6 @@
      # actual schema file; the install rule is here for symmetry from D1.
      if(EXISTS ${WIFI_MODULE_DIR}/schemas/wifi.lua)
          install(FILES schemas/wifi.lua
