@@ -6,12 +6,12 @@ Make all five CMakeLists.txt files Yocto/OE sysroot-aware.
 Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 
 ---
- apps/CMakeLists.txt                    | 72
+ apps/CMakeLists.txt                    | 66
  modules/data-store/CMakeLists.txt                    | 14
  modules/net/router/CMakeLists.txt                    | 11
  modules/openvpn/client/CMakeLists.txt                    | 11
  modules/wan/wifi/client/CMakeLists.txt                    | 11
- 5 files changed, 0 +++---
+ 5 files changed, 89 insertions(+), 24 deletions(-)
 
 --- a/apps/CMakeLists.txt
 +++ b/apps/CMakeLists.txt
@@ -41,7 +41,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
                     /usr/lib
                     /usr/local/lib
               NO_DEFAULT_PATH)
-@@ -38,11 +47,28 @@
+@@ -38,11 +47,27 @@
  # Include External cmake file
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
@@ -50,11 +50,10 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  include_directories(${ACE_ROOT}/include)
  include_directories(${LUA_INCLUDE_DIR})
  
-+# MongoDB -- optional, guarded by IOT_ENABLE_MONGO. The Yocto recipe
-+# sets -DIOT_ENABLE_MONGO=OFF via PACKAGECONFIG[mongo] for embedded
-+# targets that don't need the registration mirror feature.
++# MongoDB - optional, guarded by IOT_ENABLE_MONGO.
 +option(IOT_ENABLE_MONGO "Enable MongoDB registration mirror support" ON)
 +if(IOT_ENABLE_MONGO)
++    add_definitions(-DIOT_ENABLE_MONGO)
 +    find_path(MONGOCXX_INCLUDE_DIR mongocxx/pool.hpp
 +              HINTS ${CMAKE_SYSROOT}/usr/include/mongocxx/v_noabi
 +                    /usr/local/include/mongocxx/v_noabi)
@@ -72,16 +71,11 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
  include_directories(inc)
  
  # Data-store client lib — sibling module under ../modules/data-store.
-@@ -82,25 +108,41 @@
+@@ -82,25 +107,36 @@
  
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
  
-+# tinydtls -- when cross-compiling, prefer the sysroot-provided
-+# libtinydtls.a (installed by the tinydtls recipe). Fall back to
-+# the vendored submodule build for native/standalone builds.
-+# When TINYDTLS_LIBRARY is pre-set (Yocto EXTRA_OECMAKE), skip
-+# find_library. When TINYDTLS_INCLUDE_DIR is set, prefer sysroot
-+# headers (which include generated dtls_config.h).
++# tinydtls - cross-compile: sysroot library + headers
  link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
 +if(DEFINED TINYDTLS_INCLUDE_DIR)
 +    include_directories(BEFORE ${TINYDTLS_INCLUDE_DIR})

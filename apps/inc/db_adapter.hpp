@@ -10,6 +10,7 @@
 #include <mutex>
 #include <chrono>
 
+#ifdef IOT_ENABLE_MONGO
 #include <mongocxx/pool.hpp>
 #include <mongocxx/client.hpp>
 #include <mongocxx/stdx.hpp>
@@ -18,6 +19,7 @@
 #include <mongocxx/cursor.hpp>
 #include <mongocxx/options/find.hpp>
 #include <mongocxx/bulk_write.hpp>
+#endif
 
 #include <mongocxx/gridfs/uploader.hpp>
 #include <mongocxx/gridfs/downloader.hpp>

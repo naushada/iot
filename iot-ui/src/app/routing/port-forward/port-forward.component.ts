@@ -1,42 +1,50 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
+import { PubSubService } from '../../../common/pubsubsvc.service';
 import { ToastService } from '../../../common/toast.service';
 
 @Component({
   selector: 'app-port-forward',
   template: `
     <div class="page">
-      <h3>Port Forwarding &amp; DNAT</h3>
-
-      <div class="form-grid" style="align-items:end;">
-        <clr-input-container>
-          <label>DNAT Target IP <span class="hint">(LwM2M client)</span></label>
-          <input clrInput [disabled]="!isAdmin" [(ngModel)]="targetIp" placeholder="192.168.1.100" />
-        </clr-input-container>
-        <clr-input-container>
-          <label>Target Port</label>
-          <input clrInput type="number" [disabled]="!isAdmin" [(ngModel)]="targetPort" />
-        </clr-input-container>
-        <div class="btn-cell" *ngIf="isAdmin">
-          <button class="btn btn-primary" (click)="saveDnat()" [disabled]="savingDnat">
-            {{ savingDnat ? 'Saving…' : 'Save DNAT' }}
-          </button>
+      <!-- DNAT Target view -->
+      <ng-container *ngIf="view === 'dnat'">
+        <h3>DNAT Target</h3>
+        <div class="form-grid" style="align-items:end;">
+          <clr-input-container>
+            <label>Target IP <span class="hint">(LwM2M client)</span></label>
+            <input clrInput [disabled]="!isAdmin" [(ngModel)]="targetIp" placeholder="192.168.1.100" />
+          </clr-input-container>
+          <clr-input-container>
+            <label>Target Port</label>
+            <input clrInput type="number" [disabled]="!isAdmin" [(ngModel)]="targetPort" />
+          </clr-input-container>
+          <div class="btn-cell" *ngIf="isAdmin">
+            <button class="btn btn-primary" (click)="saveDnat()" [disabled]="savingDnat">
+              {{ savingDnat ? 'Saving…' : 'Save DNAT' }}
+            </button>
+          </div>
         </div>
-      </div>
+      </ng-container>
 
-      <div class="form-grid" style="margin-top:24px; align-items:end;">
-        <clr-input-container style="grid-column: span 2;">
-          <label>Forwarded Ports</label>
-          <input clrInput [disabled]="!isAdmin" [(ngModel)]="forwardPorts" placeholder="80,443,5684" />
-          <clr-control-helper>Comma-separated, DNAT'd to the target IP above</clr-control-helper>
-        </clr-input-container>
-        <div class="btn-cell" *ngIf="isAdmin">
-          <button class="btn btn-primary" (click)="savePorts()" [disabled]="savingPorts">
-            {{ savingPorts ? 'Saving…' : 'Save Ports' }}
-          </button>
+      <!-- Port Forward view -->
+      <ng-container *ngIf="view === 'ports'">
+        <h3>Forwarded Ports</h3>
+        <div class="form-grid" style="align-items:end;">
+          <clr-input-container style="grid-column: span 2;">
+            <label>Port List</label>
+            <input clrInput [disabled]="!isAdmin" [(ngModel)]="forwardPorts" placeholder="80,443,5684" />
+            <clr-control-helper>Comma-separated, DNAT'd to {{ targetIp || 'target IP' }}:{{ targetPort }}</clr-control-helper>
+          </clr-input-container>
+          <div class="btn-cell" *ngIf="isAdmin">
+            <button class="btn btn-primary" (click)="savePorts()" [disabled]="savingPorts">
+              {{ savingPorts ? 'Saving…' : 'Save Ports' }}
+            </button>
+          </div>
         </div>
-      </div>
+      </ng-container>
 
       <table class="table table-compact table-borderless" style="margin-top:24px;">
         <tbody>
@@ -45,9 +53,6 @@ import { ToastService } from '../../../common/toast.service';
           <tr><td class="label-col">Last Apply</td><td>{{ lastApply || '—' }}</td></tr>
         </tbody>
       </table>
-
-      <span *ngIf="msg" style="display:block;margin-top:12px;"
-            [style.color]="msg.startsWith('Saved')||msg.startsWith('DNAT')?'#2e7d32':'#c62828'">{{ msg }}</span>
     </div>
   `,
   styles: [`
@@ -57,14 +62,17 @@ import { ToastService } from '../../../common/toast.service';
     .btn-cell .btn-primary { white-space: nowrap; }
   `]
 })
-export class PortForwardComponent implements OnInit {
+export class PortForwardComponent implements OnInit, OnDestroy {
+  view = 'ports';  // 'ports' | 'dnat'
   targetIp = ''; targetPort = 5684; forwardPorts = '80,443,5684';
-  savingDnat = false; savingPorts = false; msg = '';
+  savingDnat = false; savingPorts = false;
   routeState = ''; rulesApplied = 0; lastApply = '';
+  private sub = new Subscription();
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, private session: SessionService, private toast: ToastService) {}
+  constructor(private http: HttpsvcService, private session: SessionService,
+              private toast: ToastService, private pubsub: PubSubService) {}
 
   ngOnInit(): void {
     this.http.dbGet(['net.lwm2m.target.ip', 'net.lwm2m.target.port', 'net.forward.ports',
