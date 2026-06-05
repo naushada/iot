@@ -34,7 +34,10 @@ RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_
 
 # nlohmann/json — vendored in apps/3rdparty/json/single_include/
 
-# tinydtls — pre-built .a is vendored in apps/3rdparty/tinydtls/
+# tinydtls — rebuild from vendored source (has configure already)
+COPY apps/3rdparty/tinydtls /tmp/td
+RUN cd /tmp/td && make clean 2>/dev/null; ./configure --prefix=/usr/local \
+    && make -j$(nproc) && make install && rm -rf /tmp/td
 
 # Node.js 18 for cloud UI build
 RUN wget -q https://deb.nodesource.com/setup_18.x -O /tmp/node.sh && \
