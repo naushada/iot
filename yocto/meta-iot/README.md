@@ -52,8 +52,29 @@ CACHE_IMAGE=docker.io/<you>/iot-yocto-builder:cache IOT_USE_CACHE=1 ./build.sh
 
 **5. Flash + deploy** to the Pi — see *Deploy to a Raspberry Pi 3B* below.
 
-Reset for a fully clean rebuild: `podman volume rm iot-yocto-sstate
-iot-yocto-downloads`.
+Reset for a **fully clean rebuild** (nuclear — wipes everything):
+```sh
+podman volume rm iot-yocto-sstate iot-yocto-downloads
+```
+
+### Per-recipe clean rebuilds
+
+When only the iot recipe (or its source at `SRCREV`) changes, you can
+clean just that recipe without nuking the entire build.  Both commands
+use the containerised build — pass bitbake targets through `TARGET`:
+
+```sh
+# Re-fetch + re-patch + re-configure iot (keeps downloads, wipes sstate for iot).
+# Use when: the recipe .bb, a patch file, or the upstream git source changed.
+TARGET="-c cleansstate iot" MACHINE=raspberrypi3-64 ./build.sh
+
+# Nuclear clean — also deletes the fetched git tree under WORKDIR.
+# Use when: cleansstate doesn't pick up a new commit (rare with SRCREV=AUTOREV).
+TARGET="-c cleanall iot" MACHINE=raspberrypi3-64 ./build.sh
+```
+
+After either command, run the normal `./build.sh` to rebuild from the
+cleaned state.
 
 ### Shareable cache image (skip the distro compile on a fresh machine)
 
