@@ -68,3 +68,4 @@ apps/test/build/
 
 # Yocto build output
 yocto/build/
+build/
