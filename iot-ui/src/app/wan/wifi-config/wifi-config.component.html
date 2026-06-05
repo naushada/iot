@@ -1,41 +1,63 @@
 <div class="page">
   <h3>WiFi Configuration</h3>
-  <form [formGroup]="form" (ngSubmit)="save()" *ngIf="!loading" class="config-form">
-    <div class="clr-row">
-      <div class="clr-col-md-4"><label class="fl">Interface</label><input class="clr-input" formControlName="iface" /></div>
-      <div class="clr-col-md-4"><label class="fl">wpa_supplicant Path</label><input class="clr-input" formControlName="wpa_path" /></div>
-      <div class="clr-col-md-4"><label class="fl">Control Dir</label><input class="clr-input" formControlName="ctrl_dir" /></div>
-    </div>
-    <div class="clr-row" style="margin-top:12px;">
-      <div class="clr-col-md-3"><label class="fl">Scan Interval (s)</label><input type="number" class="clr-input" formControlName="scan_interval" /></div>
-      <div class="clr-col-md-3"><label class="fl">Max Scan Results</label><input type="number" class="clr-input" formControlName="scan_max_results" /></div>
-      <div class="clr-col-md-3"><label class="fl">DHCP Client</label>
-        <select class="clr-select" formControlName="dhcp_client">
-          <option value="auto">auto</option><option value="udhcpc">udhcpc</option><option value="dhclient">dhclient</option>
+
+  <form [formGroup]="form" (ngSubmit)="save()" *ngIf="!loading">
+    <div class="form-grid">
+      <clr-input-container>
+        <label>Interface</label>
+        <input clrInput [disabled]="!isAdmin" formControlName="iface" placeholder="wlan0" />
+      </clr-input-container>
+      <clr-input-container>
+        <label>wpa_supplicant Path</label>
+        <input clrInput [disabled]="!isAdmin" formControlName="wpa_path" placeholder="/usr/sbin/wpa_supplicant" />
+      </clr-input-container>
+      <clr-input-container>
+        <label>Control Directory</label>
+        <input clrInput [disabled]="!isAdmin" formControlName="ctrl_dir" placeholder="/run/wpa_supplicant" />
+      </clr-input-container>
+      <clr-select-container>
+        <label>DHCP Client</label>
+        <select clrSelect [disabled]="!isAdmin" formControlName="dhcp_client">
+          <option value="auto">auto</option>
+          <option value="udhcpc">udhcpc</option>
+          <option value="dhclient">dhclient</option>
         </select>
-      </div>
+      </clr-select-container>
+
+      <clr-input-container>
+        <label>Scan Interval (s)</label>
+        <input clrInput [disabled]="!isAdmin" type="number" formControlName="scan_interval" />
+      </clr-input-container>
+      <clr-input-container>
+        <label>Max Scan Results</label>
+        <input clrInput [disabled]="!isAdmin" type="number" formControlName="scan_max_results" />
+      </clr-input-container>
+      <div></div>
+      <div></div>
     </div>
 
-    <h4 style="margin-top:24px;">Saved Networks</h4>
+    <h4 style="margin-top:32px;">Saved Networks</h4>
     <table class="table table-compact">
-      <thead><tr><th>SSID</th><th>PSK</th><th>Priority</th><th>Key Mgmt</th><th></th></tr></thead>
+      <thead><tr><th>SSID</th><th>PSK</th><th>Priority</th><th>Key Mgmt</th><th *ngIf="isAdmin"></th></tr></thead>
       <tbody>
         <tr *ngFor="let n of networks; let i=index">
-          <td><input class="clr-input" [(ngModel)]="n.ssid" name="ssid-{{i}}" placeholder="MyWiFi" /></td>
-          <td><input class="clr-input" type="password" [(ngModel)]="n.psk" name="psk-{{i}}" placeholder="passphrase" /></td>
-          <td><input class="clr-input" type="number" [(ngModel)]="n.priority" name="pri-{{i}}" style="width:70px;" /></td>
+          <td><input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="n.ssid" [name]="'ssid-'+i" placeholder="MyWiFi" /></td>
+          <td><input class="clr-input" [disabled]="!isAdmin" type="password" [(ngModel)]="n.psk" [name]="'psk-'+i" placeholder="passphrase" /></td>
+          <td><input class="clr-input" [disabled]="!isAdmin" type="number" [(ngModel)]="n.priority" [name]="'pri-'+i" style="width:80px;" /></td>
           <td>
-            <select class="clr-select" [(ngModel)]="n.key_mgmt" name="km-{{i}}">
-              <option value="WPA2-PSK">WPA2-PSK</option><option value="WPA-PSK">WPA-PSK</option><option value="NONE">Open</option>
+            <select class="clr-select" [disabled]="!isAdmin" [(ngModel)]="n.key_mgmt" [name]="'km-'+i">
+              <option value="WPA2-PSK">WPA2-PSK</option>
+              <option value="WPA-PSK">WPA-PSK</option>
+              <option value="NONE">Open</option>
             </select>
           </td>
-          <td><button type="button" class="btn btn-sm btn-danger" (click)="removeNetwork(i)">×</button></td>
+          <td *ngIf="isAdmin"><button type="button" class="btn btn-sm btn-danger" (click)="removeNetwork(i)">Remove</button></td>
         </tr>
       </tbody>
     </table>
-    <button type="button" class="btn btn-sm" (click)="addNetwork()" style="margin-top:8px;">+ Add Network</button>
+    <button type="button" class="btn btn-sm" *ngIf="isAdmin" (click)="addNetwork()" style="margin-top:8px;">+ Add Network</button>
 
-    <div style="margin-top:24px;">
+    <div style="margin-top:24px;" *ngIf="isAdmin">
       <button type="submit" class="btn btn-primary" [disabled]="saving">{{ saving ? 'Saving…' : 'Save' }}</button>
       <span *ngIf="msg" style="margin-left:12px;" [style.color]="msg==='Saved.'?'#2e7d32':'#c62828'">{{ msg }}</span>
     </div>
