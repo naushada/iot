@@ -14,12 +14,12 @@
 /// required; a CA bundle switches on mutual-TLS). Otherwise it speaks
 /// plain HTTP/1.1, as before.
 
-#include "http_server/auth.hpp"
-#include "http_server/handler.hpp"
-#include "http_server/router.hpp"
-#include "http_server/session.hpp"
-#include "http_server/tls.hpp"
-#include "http_server/worker.hpp"
+#include "auth.hpp"
+#include "handler.hpp"
+#include "router.hpp"
+#include "session.hpp"
+#include "tls.hpp"
+#include "worker.hpp"
 
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"

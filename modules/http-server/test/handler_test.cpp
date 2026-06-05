@@ -23,9 +23,9 @@
 
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"
-#include "http_server/handler.hpp"
-#include "http_server/parser.hpp"
-#include "http_server/router.hpp"
+#include "handler.hpp"
+#include "parser.hpp"
+#include "router.hpp"
 
 using http_server::HttpParser;
 using http_server::HttpResponse;

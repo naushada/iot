@@ -1,5 +1,5 @@
-#include "http_server/auth.hpp"
-#include "http_server/session.hpp"
+#include "auth.hpp"
+#include "session.hpp"
 
 #include <ace/Log_Msg.h>
 #include <ace/Reactor.h>

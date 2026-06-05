@@ -1,5 +1,5 @@
-#include "http_server/auth.hpp"
-#include "http_server/handler.hpp"
+#include "auth.hpp"
+#include "handler.hpp"
 
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"

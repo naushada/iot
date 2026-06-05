@@ -9,7 +9,7 @@
 #include <cstring>
 #include <string>
 
-#include "http_server/parser.hpp"
+#include "parser.hpp"
 
 using http_server::HttpParser;
 
