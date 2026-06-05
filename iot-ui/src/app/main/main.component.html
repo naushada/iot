@@ -1,132 +1,100 @@
-<clr-main-container>
-  <!-- ── Header ─────────────────────────────────────────────────── -->
-  <clr-header>
-    <div class="branding">
-      <a class="nav-link nav-text" (click)="onMenuSelect('dashboard')"
-         style="cursor: pointer;">
-        <img src="assets/iot-logo.svg" width="28" height="28"
-             style="vertical-align: middle; margin-right: 6px;" />
-        <span class="title">IoT Manager</span>
-      </a>
+<div class="app-shell">
+  <!-- ── Sidebar ────────────────────────────────────────────────── -->
+  <nav class="sidebar">
+    <div class="sidebar-brand" (click)="onMenuSelect('dashboard')">
+      <img src="assets/iot-logo.svg" width="36" height="36" alt="IoT" />
+      <span class="brand-text">IoT Manager</span>
     </div>
 
-    <div class="header-nav" style="cursor: pointer;">
-      <a *ngFor="let m of menus"
-         class="nav-link nav-text"
-         [class.active]="selectedMenu === m.id"
-         (click)="onMenuSelect(m.id)">
-        {{ m.label }}
-      </a>
-    </div>
+    <a class="nav-item" *ngFor="let m of menus"
+       [class.active]="selectedMenu === m.id"
+       (click)="onMenuSelect(m.id)">
+      <clr-icon [attr.shape]="m.icon"></clr-icon>
+      <span>{{ m.label }}</span>
+    </a>
 
-    <div class="header-actions">
-      <clr-dropdown>
-        <button type="button" class="nav-icon" clrDropdownTrigger
-                aria-label="toggle user menu">
-          <clr-icon shape="user"></clr-icon>
-        </button>
-        <clr-dropdown-menu *clrIfOpen clrPosition="bottom-right">
-          <a clrDropdownItem style="cursor: pointer" (click)="onLogout()">
-            Sign out
-          </a>
-        </clr-dropdown-menu>
-      </clr-dropdown>
-    </div>
-  </clr-header>
+    <div class="sidebar-spacer"></div>
 
-  <!-- ── Live subnav ────────────────────────────────────────────── -->
-  <nav class="live-subnav">
+    <a class="nav-item nav-logout" (click)="onLogout()">
+      <clr-icon shape="logout"></clr-icon>
+      <span>Sign out</span>
+    </a>
+  </nav>
+
+  <!-- ── Main area ──────────────────────────────────────────────── -->
+  <div class="main-area">
+    <!-- Live strip -->
     <div class="live-strip">
       <div class="live-tag">
         <span class="live-pulse"></span>
         <span class="live-label">LIVE</span>
       </div>
+      <span class="live-date">{{ today }}</span>
 
-      <div class="live-date-chip">
-        <clr-icon shape="calendar"></clr-icon>
-        <span>{{ today }}</span>
-      </div>
+      <app-status-badge [label]="'VPN ' + vpnState" [state]="vpnState"></app-status-badge>
+      <app-status-badge [label]="'WiFi ' + wifiState" [state]="wifiState"></app-status-badge>
 
-      <app-status-badge [label]="'VPN ' + vpnState" [state]="vpnState">
-      </app-status-badge>
-      <app-status-badge [label]="'WiFi ' + wifiState" [state]="wifiState">
-      </app-status-badge>
-
-      <div class="stat-chip" title="Active WAN interface">
-        <clr-icon shape="world"></clr-icon>
-        <span class="stat-num">{{ wanIface }}</span>
-        <span class="stat-lbl">WAN</span>
-      </div>
-      <div class="stat-chip" title="Running services">
-        <clr-icon shape="cog"></clr-icon>
-        <span class="stat-num">{{ serviceCount }}</span>
-        <span class="stat-lbl">services</span>
-      </div>
+      <span class="live-stat"><clr-icon shape="world"></clr-icon> {{ wanIface }}</span>
+      <span class="live-stat"><clr-icon shape="cog"></clr-icon> {{ serviceCount }} services</span>
 
       <div class="live-spacer"></div>
 
       <app-log-level></app-log-level>
-
-      <button class="live-refresh-btn" (click)="refreshStatus()"
-              title="Refresh now">
+      <button class="refresh-btn" (click)="refreshStatus()" title="Refresh">
         <clr-icon shape="sync"></clr-icon>
       </button>
     </div>
-  </nav>
 
-  <!-- ── Content area ───────────────────────────────────────────── -->
-  <div class="content-container">
-    <!-- Dashboard (default) -->
-    <ng-container *ngIf="selectedMenu==='dashboard'">
-      <app-dashboard></app-dashboard>
-    </ng-container>
+    <!-- Content -->
+    <div class="content">
+      <!-- Dashboard -->
+      <app-dashboard *ngIf="selectedMenu==='dashboard'"></app-dashboard>
 
-    <!-- VPN -->
-    <ng-container *ngIf="selectedMenu==='vpn'">
-      <app-vpn-submenu (nav)="onSubNavSelect($event)"></app-vpn-submenu>
-      <div class="content-area">
-        <app-vpn-config  *ngIf="!selectedSubNav || selectedSubNav==='config'"></app-vpn-config>
-        <app-vpn-status  *ngIf="selectedSubNav==='status'"></app-vpn-status>
-      </div>
-    </ng-container>
+      <!-- VPN -->
+      <ng-container *ngIf="selectedMenu==='vpn'">
+        <app-vpn-submenu (nav)="onSubNavSelect($event)"></app-vpn-submenu>
+        <div class="content-area">
+          <app-vpn-config *ngIf="!selectedSubNav || selectedSubNav==='config'"></app-vpn-config>
+          <app-vpn-status *ngIf="selectedSubNav==='status'"></app-vpn-status>
+        </div>
+      </ng-container>
 
-    <!-- WAN -->
-    <ng-container *ngIf="selectedMenu==='wan'">
-      <app-wan-submenu (nav)="onSubNavSelect($event)"></app-wan-submenu>
-      <div class="content-area">
-        <app-wifi-config      *ngIf="!selectedSubNav || selectedSubNav==='wifi'"></app-wifi-config>
-        <app-wifi-scan        *ngIf="selectedSubNav==='scan'"></app-wifi-scan>
-        <app-iface-priority   *ngIf="selectedSubNav==='priority'"></app-iface-priority>
-      </div>
-    </ng-container>
+      <!-- WAN -->
+      <ng-container *ngIf="selectedMenu==='wan'">
+        <app-wan-submenu (nav)="onSubNavSelect($event)"></app-wan-submenu>
+        <div class="content-area">
+          <app-wifi-config    *ngIf="!selectedSubNav || selectedSubNav==='wifi'"></app-wifi-config>
+          <app-wifi-scan      *ngIf="selectedSubNav==='scan'"></app-wifi-scan>
+          <app-iface-priority *ngIf="selectedSubNav==='priority'"></app-iface-priority>
+        </div>
+      </ng-container>
 
-    <!-- Routing -->
-    <ng-container *ngIf="selectedMenu==='routing'">
-      <app-routing-submenu (nav)="onSubNavSelect($event)"></app-routing-submenu>
-      <div class="content-area">
-        <app-port-forward *ngIf="!selectedSubNav || selectedSubNav==='ports' || selectedSubNav==='dnat'"></app-port-forward>
-      </div>
-    </ng-container>
+      <!-- Routing -->
+      <ng-container *ngIf="selectedMenu==='routing'">
+        <app-routing-submenu (nav)="onSubNavSelect($event)"></app-routing-submenu>
+        <div class="content-area">
+          <app-port-forward *ngIf="!selectedSubNav || selectedSubNav==='ports' || selectedSubNav==='dnat'"></app-port-forward>
+        </div>
+      </ng-container>
 
-    <!-- LwM2M -->
-    <ng-container *ngIf="selectedMenu==='lwm2m'">
-      <app-lwm2m-submenu (nav)="onSubNavSelect($event)"></app-lwm2m-submenu>
-      <div class="content-area">
-        <app-lwm2m-config *ngIf="!selectedSubNav || selectedSubNav==='server' || selectedSubNav==='security'"></app-lwm2m-config>
-      </div>
-    </ng-container>
+      <!-- LwM2M -->
+      <ng-container *ngIf="selectedMenu==='lwm2m'">
+        <app-lwm2m-submenu (nav)="onSubNavSelect($event)"></app-lwm2m-submenu>
+        <div class="content-area">
+          <app-lwm2m-config *ngIf="!selectedSubNav || selectedSubNav==='server' || selectedSubNav==='security'"></app-lwm2m-config>
+        </div>
+      </ng-container>
 
-    <!-- Services -->
-    <ng-container *ngIf="selectedMenu==='services'">
-      <app-services-submenu (nav)="onSubNavSelect($event)"></app-services-submenu>
-      <div class="content-area">
-        <app-services-list *ngIf="!selectedSubNav || selectedSubNav==='list'"></app-services-list>
-      </div>
-    </ng-container>
+      <!-- Services -->
+      <ng-container *ngIf="selectedMenu==='services'">
+        <app-services-submenu (nav)="onSubNavSelect($event)"></app-services-submenu>
+        <div class="content-area">
+          <app-services-list *ngIf="!selectedSubNav || selectedSubNav==='list'"></app-services-list>
+        </div>
+      </ng-container>
 
-    <!-- Logs -->
-    <ng-container *ngIf="selectedMenu==='logs'">
-      <app-log-viewer></app-log-viewer>
-    </ng-container>
+      <!-- Logs -->
+      <app-log-viewer *ngIf="selectedMenu==='logs'"></app-log-viewer>
+    </div>
   </div>
-</clr-main-container>
+</div>

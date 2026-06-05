@@ -27,6 +27,11 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 @@ -38,11 +39,24 @@
  # Include External cmake file
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
++# When cross-compiling for Yocto, prefer sysroot tinydtls headers
++# (which include generated dtls_config.h) over vendored ones.
++if(DEFINED TINYDTLS_INCLUDE_DIR)
++    include_directories(BEFORE ${TINYDTLS_INCLUDE_DIR})
++endif()
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
 -include_directories(/usr/local/include/mongocxx/v_noabi)
 -include_directories(/usr/local/include/bsoncxx/v_noabi)
