@@ -45,33 +45,42 @@ RUN mkdir -p /tmp/bhttp && cd /tmp/bhttp && \
     -GNinja && ninja -j$(nproc)
 
 # ============================================================
-# Stage 2: Angular cloud UI
+# Stage 2: Build Angular cloud UI (xpmile pattern)
 # ============================================================
 FROM docker.io/library/node:18-alpine AS ui-builder
 ENV NG_BUILD_MAX_WORKERS=1
+ENV NODE_OPTIONS=--max_old_space_size=1024
+
 WORKDIR /ui
 COPY apps/cloud/ui/package.json apps/cloud/ui/package-lock.json ./
 RUN npm ci 2>/dev/null || npm install --no-audit --no-fund
+
 COPY apps/cloud/ui/ ./
-RUN npx ng build --configuration production --progress=false
+RUN npx ng build --configuration production --base-href / --progress=false
 
 # ============================================================
-# Stage 3: Runtime
+# Stage 3: Minimal runtime (xpmile pattern)
 # ============================================================
 FROM docker.io/library/ubuntu:22.04 AS runtime
+
 RUN apt-get -o Acquire::Check-Date=false update && \
     apt-get install -y --no-install-recommends \
     libssl3 zlib1g libreadline8 liblua5.3-0 iptables openvpn ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# ACE shared libraries
 COPY --from=builder /usr/local/ACE_TAO-7.0.0/lib/libACE.so* /usr/local/lib/
 RUN ldconfig
 
+# Binaries
 COPY --from=builder /tmp/bds/ds-server /usr/local/bin/
 COPY --from=builder /tmp/bds/ds-cli /usr/local/bin/
 COPY --from=builder /tmp/bhttp/iot-httpd /usr/local/bin/
+
+# Static assets
 COPY --from=ui-builder /ui/dist/cloud-ui /usr/share/iot/cloud-www/
 
+# Schemas
 COPY modules/data-store/schemas/iot.lua /etc/iot/ds-schemas/
 COPY modules/data-store/schemas/services.lua /etc/iot/ds-schemas/
 COPY modules/http-server/schemas/http.lua /etc/iot/ds-schemas/
@@ -79,7 +88,8 @@ COPY modules/http-server/schemas/auth.lua /etc/iot/ds-schemas/
 
 RUN mkdir -p /var/run/iot /etc/iot/ds-schemas
 
-EXPOSE 8080
+EXPOSE 8080 5683 5684
+
 CMD ds-server --socket=/var/run/iot/data_store.sock --schema-dir=/etc/iot/ds-schemas & \
     sleep 2 && \
     exec iot-httpd ds-socket=/var/run/iot/data_store.sock \
