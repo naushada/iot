@@ -112,7 +112,9 @@ int main(int argc, char** argv) {
            data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
 
     // Self-report running state to ds for Services page.
+    // openvpn-server is managed internally by iot-cloudd — report its state too.
     ds.set("services.cloud.iot.cloudd.state", data_store::Value{std::string("running")});
+    ds.set("services.cloud.openvpn.server.state", data_store::Value{std::string("running")});
 
     std::cout << "cloudd: started, ds=" << ds_path
               << " vpn-subnet=" << vpn_subnet
@@ -167,6 +169,7 @@ int main(int argc, char** argv) {
     }
 
     ds.set("services.cloud.iot.cloudd.state", data_store::Value{std::string("exited")});
+    ds.set("services.cloud.openvpn.server.state", data_store::Value{std::string("exited")});
     std::cout << "cloudd: stopped\n";
     return 0;
 }
