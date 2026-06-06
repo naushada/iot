@@ -206,20 +206,27 @@ int main(int argc, char** argv) {
     // Called at startup, on watch events, and on periodic timeout ticks.
     auto apply_log_level = [&ds]() {
         std::vector<data_store::Client::GetResult> lg;
-        auto ls = ds.get({"log.level"}, lg);
-        if (ls.ok && !lg.empty() && lg[0].has_value) {
-            if (auto lv = data_store::to_string(lg[0].value)) {
-                unsigned long mask = LM_INFO;
-                std::string upper = *lv;
-                for (auto& c : upper) c = static_cast<char>(std::toupper(c));
-                if (upper == "DEBUG")       mask = LM_DEBUG;
-                else if (upper == "INFO")   mask = LM_INFO;
-                else if (upper == "WARNING") mask = LM_WARNING;
-                else if (upper == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
-                ACE_Log_Msg::instance()->priority_mask(
-                    static_cast<int>(mask), ACE_Log_Msg::PROCESS);
+        auto ls = ds.get({"log.level.cloudd", "log.level"}, lg);
+        std::string lvl_str;
+        if (ls.ok) {
+            for (const auto& g : lg) {
+                if (g.has_value) {
+                    if (auto s = data_store::to_string(g.value)) {
+                        if (!s->empty()) { lvl_str = *s; break; }
+                    }
+                }
             }
         }
+        unsigned long mask = LM_INFO;
+        if (!lvl_str.empty()) {
+            for (auto& c : lvl_str) c = static_cast<char>(std::toupper(c));
+            if (lvl_str == "DEBUG")       mask = LM_DEBUG;
+            else if (lvl_str == "INFO")   mask = LM_INFO;
+            else if (lvl_str == "WARNING") mask = LM_WARNING;
+            else if (lvl_str == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
+        }
+        ACE_Log_Msg::instance()->priority_mask(
+            static_cast<int>(mask), ACE_Log_Msg::PROCESS);
     };
     apply_log_level();
 

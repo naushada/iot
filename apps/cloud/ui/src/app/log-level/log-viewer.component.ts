@@ -16,12 +16,26 @@ import { environment } from '../../environments/environment';
       <h4>Log Level</h4>
       <div class="form-grid">
         <clr-select-container>
-          <label>Level</label>
+          <label>All Daemons</label>
           <select clrSelect [disabled]="!isAdmin"
-                  [ngModel]="logLevel" (ngModelChange)="setLevel($event)">
+                  [ngModel]="logLevel" (ngModelChange)="setLevel('log.level', $event)">
             <option *ngFor="let l of levels" [value]="l">{{ l }}</option>
           </select>
-          <clr-control-helper>Affects all daemons — hot-reloaded immediately</clr-control-helper>
+          <clr-control-helper>Global default — used when per-daemon is unset</clr-control-helper>
+        </clr-select-container>
+        <clr-select-container>
+          <label>iot-cloudd</label>
+          <select clrSelect [disabled]="!isAdmin"
+                  [ngModel]="logLevelCloudd" (ngModelChange)="setLevel('log.level.cloudd', $event)">
+            <option *ngFor="let l of daemonLevels" [value]="l">{{ l }}</option>
+          </select>
+        </clr-select-container>
+        <clr-select-container>
+          <label>iot-httpd</label>
+          <select clrSelect [disabled]="!isAdmin"
+                  [ngModel]="logLevelHttpd" (ngModelChange)="setLevel('log.level.httpd', $event)">
+            <option *ngFor="let l of daemonLevels" [value]="l">{{ l }}</option>
+          </select>
         </clr-select-container>
       </div>
 
@@ -64,7 +78,10 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   logText = '';
   autoRefresh = true;
   logLevel = 'INFO';
+  logLevelCloudd = '';
+  logLevelHttpd = '';
   levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR'];
+  daemonLevels: string[] = ['', 'DEBUG', 'INFO', 'WARNING', 'ERROR'];
   private active = true;
   private sub = new Subscription();
   private api = environment.apiUrl;
@@ -79,12 +96,17 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    // Load current log level
-    this.httpSvc.dbGet(['log.level']).subscribe({
+    // Load current log levels (global + per-daemon)
+    this.httpSvc.dbGet(['log.level', 'log.level.cloudd', 'log.level.httpd']).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
-          const v = ((r.data as Record<string, unknown>)['log.level'] as string || 'INFO').toUpperCase();
-          if (this.levels.includes(v)) this.logLevel = v;
+          const d = r.data as Record<string, unknown>;
+          const g = (d['log.level'] as string || 'INFO').toUpperCase();
+          if (this.levels.includes(g)) this.logLevel = g;
+          const c = (d['log.level.cloudd'] as string || '').toUpperCase();
+          if (this.daemonLevels.includes(c)) this.logLevelCloudd = c;
+          const h = (d['log.level.httpd'] as string || '').toUpperCase();
+          if (this.daemonLevels.includes(h)) this.logLevelHttpd = h;
         }
       }
     });
@@ -99,13 +121,21 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   private pollIdx = 0;
   private pollLog(): void {
     if (!this.active) return;
-    const keys = ['log.text', 'log.cloudd.text'];
+    // Watch log text keys + per-daemon log level keys
+    const keys = ['log.text', 'log.cloudd.text',
+                  'log.level', 'log.level.cloudd', 'log.level.httpd'];
     const key = keys[this.pollIdx % keys.length];
     this.pollIdx++;
 
     this.httpSvc.dbGetLongPoll(key, 30).subscribe({
-      next: () => {
-        if (this.autoRefresh) this.fetchAndShow();
+      next: (res) => {
+        if (this.autoRefresh) {
+          // If a log level key changed, reload the level trackers
+          if (res.changed && res.key && res.key.startsWith('log.level')) {
+            this.reloadLevels();
+          }
+          this.fetchAndShow();
+        }
         this.pollLog();
       },
       error: () => {
@@ -120,10 +150,15 @@ export class LogViewerComponent implements OnInit, OnDestroy {
     });
   }
 
-  setLevel(level: string): void {
-    this.httpSvc.dbSet([{ key: 'log.level', value: level }]).subscribe({
+  setLevel(key: string, level: string): void {
+    this.httpSvc.dbSet([{ key, value: level }]).subscribe({
       next: (r) => {
-        if (r.ok) { this.logLevel = level; this.toast.success('Log level set to ' + level); }
+        if (r.ok) {
+          if (key === 'log.level') this.logLevel = level;
+          else if (key === 'log.level.cloudd') this.logLevelCloudd = level;
+          else if (key === 'log.level.httpd') this.logLevelHttpd = level;
+          this.toast.success(key + ' set to ' + (level || 'inherited'));
+        }
         else this.toast.error(r.err || 'Failed to set log level');
       },
       error: () => this.toast.error('Failed to set log level')
@@ -141,6 +176,22 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   private fetchLog() {
     return this.http.get(`${this.api}/api/v1/log`, {
       responseType: 'text', withCredentials: true
+    });
+  }
+
+  private reloadLevels(): void {
+    this.httpSvc.dbGet(['log.level', 'log.level.cloudd', 'log.level.httpd']).subscribe({
+      next: (r) => {
+        if (r.ok && r.data) {
+          const d = r.data as Record<string, unknown>;
+          const g = (d['log.level'] as string || 'INFO').toUpperCase();
+          if (this.levels.includes(g)) this.logLevel = g;
+          const c = (d['log.level.cloudd'] as string || '').toUpperCase();
+          if (this.daemonLevels.includes(c)) this.logLevelCloudd = c;
+          const h = (d['log.level.httpd'] as string || '').toUpperCase();
+          if (this.daemonLevels.includes(h)) this.logLevelHttpd = h;
+        }
+      }
     });
   }
 

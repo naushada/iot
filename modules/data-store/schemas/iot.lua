@@ -52,10 +52,22 @@ return {
     -- change (hot-reload).  Valid values (case-insensitive):
     --   DEBUG, INFO, WARNING, ERROR
     -- Default: INFO (production-safe; no debug noise).
+    -- Global log level — fallback when per-daemon key is unset.
     ["log.level"] = {
         access  = "Admin",
       type    = "string",
       default = "INFO",
+    },
+    -- Per-daemon overrides (take precedence over log.level).
+    ["log.level.cloudd"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
+    ["log.level.httpd"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
     },
     -- Recent log output (plain text, newline-separated). Each daemon
     -- writes to its own key so they don't clobber each other. The cloud
