@@ -33,7 +33,7 @@ protected:
     Router router;
 
     void SetUp() override {
-        http_server::install_cloud_handlers(router, &ep_reg, &provisioner, nullptr);
+        http_server::install_cloud_handlers(router, &ep_reg, &provisioner);
     }
 
     HttpResponse get(const std::string& path) {
@@ -142,37 +142,6 @@ TEST_F(CloudApiTest, DeprovisionEndpoint) {
     EXPECT_EQ(r.status, 200);
     EXPECT_TRUE(json::parse(r.body)["ok"].get<bool>());
     EXPECT_EQ(ep_reg.count(), 0U);
-}
-
-// ── Push endpoint tests ─────────────────────────────────────────
-
-TEST_F(CloudApiTest, PushMissingEpReturns400) {
-    auto r = post("/api/v1/cloud/push", R"({"/3/0/6":42})");
-    EXPECT_EQ(r.status, 400);
-}
-
-TEST_F(CloudApiTest, PushUnknownEpReturns404) {
-    auto r = post("/api/v1/cloud/push?ep=urn:dev:unknown", R"({"/3/0/6":42})");
-    EXPECT_EQ(r.status, 404);
-}
-
-TEST_F(CloudApiTest, PushEmptyPayload) {
-    post("/api/v1/cloud/provision", R"({"endpoint":"urn:dev:push-1"})");
-    auto r = post("/api/v1/cloud/push?ep=urn:dev:push-1", "{}");
-    EXPECT_EQ(r.status, 200);
-    auto j = json::parse(r.body);
-    EXPECT_TRUE(j["ok"].get<bool>());
-    EXPECT_EQ(j["count"], 0);
-}
-
-TEST_F(CloudApiTest, PushDataPoints) {
-    post("/api/v1/cloud/provision", R"({"endpoint":"urn:dev:push-2"})");
-    auto r = post("/api/v1/cloud/push?ep=urn:dev:push-2",
-                  R"({"/3/0/6":42,"/3/0/7":100,"/4/0/2":"up"})");
-    EXPECT_EQ(r.status, 200);
-    auto j = json::parse(r.body);
-    EXPECT_TRUE(j["ok"].get<bool>());
-    EXPECT_EQ(j["count"], 3);
 }
 
 } // namespace
