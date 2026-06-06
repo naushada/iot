@@ -10,6 +10,9 @@ endif()
 
 set(CLOUD_SERVER_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Find data-store library (built earlier in Containerfile at /tmp/bds)
+link_directories(/tmp/bds)
+
 # nlohmann::json — vendored
 set(NLOHMANN_JSON_INCLUDE
     ${CLOUD_SERVER_DIR}/../../3rdparty/json/single_include)
@@ -19,23 +22,17 @@ include_directories(
     ${CLOUD_SERVER_DIR}/../../../modules/server/lwm2m/inc
     ${CLOUD_SERVER_DIR}/../../../modules/server/openvpn/inc
     ${NLOHMANN_JSON_INCLUDE}
+    ${ACE_ROOT}/include
 )
 
 add_executable(iot-cloudd
     src/main.cpp
     ../../../modules/server/lwm2m/src/endpoint_registry.cpp
     ../../../modules/server/lwm2m/src/bootstrap.cpp
-    ../../../modules/server/openvpn/src/vpn_registry.cpp
-    ../../../modules/data-store/src/client/client.cpp
-    ../../../modules/data-store/src/client/service_gate.cpp
-    ../../../modules/data-store/src/client/dep_watch.cpp
-    ../../../modules/data-store/src/proto/proto.cpp)
-
-target_include_directories(iot-cloudd PRIVATE
-    ${CLOUD_SERVER_DIR}/../../../modules/data-store/src)
+    ../../../modules/server/openvpn/src/vpn_registry.cpp)
 
 target_link_libraries(iot-cloudd
-    ACE pthread)
+    datastore_client ACE pthread)
 
 # ── Install ──────────────────────────────────────────────────────
 include(GNUInstallDirs)
