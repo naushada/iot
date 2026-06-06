@@ -1,0 +1,86 @@
+# docker-compose.yml — IoT Cloud services
+#
+# Spawns ds-server (IPC backbone), iot-cloudd (LwM2M/VPN/provision),
+# and iot-httpd (REST API + cloud UI).  All daemons communicate
+# through ds-server via the Unix socket shared on the iot-run volume.
+#
+# Usage:
+#   docker compose up -d              # start all services
+#   docker compose logs -f iot-httpd  # tail httpd logs
+#   docker compose down               # stop and remove
+#
+#   HTTP_PORT=8443 docker compose up -d  # custom HTTP port
+
+version: "3.8"
+
+services:
+  # ── Data Store (IPC backbone) ──────────────────────────────────
+  ds-server:
+    image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}
+    container_name: iot-ds-server
+    command: >
+      ds-server
+      --socket=/var/run/iot/data_store.sock
+      --schema-dir=/etc/iot/ds-schemas
+      --persist-dir=/var/lib/iot
+    volumes:
+      - iot-run:/var/run/iot
+      - iot-etc:/etc/iot
+      - iot-lib:/var/lib/iot
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ds-cli", "--socket=/var/run/iot/data_store.sock", "get", "iot.version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ── Cloud Daemon (LwM2M BS/DM, VPN registry, provision) ────────
+  iot-cloudd:
+    image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}
+    container_name: iot-cloudd
+    command: >
+      iot-cloudd
+      ds-socket=/var/run/iot/data_store.sock
+      vpn-subnet=${VPN_SUBNET:-10.9.0.0/24}
+      proxy-start=${PROXY_START:-5001}
+      proxy-end=${PROXY_END:-6000}
+      sync-interval=5
+    volumes:
+      - iot-run:/var/run/iot
+      - iot-etc:/etc/iot
+      - iot-vpn:/etc/iot/vpn
+      - iot-ca-key:/run/secrets/iot-ca-key:ro
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      ds-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── HTTP Server (REST API + cloud UI + device UI proxy) ────────
+  iot-httpd:
+    image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}
+    container_name: iot-httpd
+    command: >
+      iot-httpd
+      ds-socket=/var/run/iot/data_store.sock
+      http-port=${HTTP_PORT:-8080}
+      www-dir=/usr/share/iot/cloud-www
+      http-workers=${HTTP_WORKERS:-4}
+    ports:
+      - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
+    volumes:
+      - iot-run:/var/run/iot
+    depends_on:
+      ds-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+# ── Shared volumes ──────────────────────────────────────────────
+volumes:
+  iot-run:    # Unix socket (ds-server ↔ all daemons)
+  iot-etc:    # Schemas, config
+  iot-lib:    # Persist directory
+  iot-vpn:    # VPN PKI (server certs)
+  iot-ca-key: # CA private key (secret — auto-generated on first run)

@@ -94,10 +94,32 @@ HttpResponse Router::route(const HttpParser::Request& req) const {
     if (!m_static_dir.empty() && req.method == "GET") {
         std::string file_path = m_static_dir + req.path;
 
-        // SPA fallback: paths without a file extension serve index.html
+        // SPA fallback: paths without a file extension → serve the
+        // nearest index.html (walking up from the requested path).
+        // e.g. /webui/dashboard → /webui/index.html
         bool has_ext = req.path.find('.', req.path.rfind('/') + 1) != std::string::npos;
         if (!has_ext || !file_exists(file_path)) {
-            file_path = m_static_dir + "/index.html";
+            std::string dir = req.path;
+            bool found = false;
+            while (true) {
+                std::string candidate = m_static_dir + dir;
+                if (!candidate.empty() && candidate.back() != '/')
+                    candidate += '/';
+                candidate += "index.html";
+                if (file_exists(candidate)) {
+                    file_path = candidate;
+                    found = true;
+                    break;
+                }
+                // Walk up one directory level
+                auto pos = dir.rfind('/');
+                if (pos == std::string::npos) break;
+                dir = dir.substr(0, pos > 0 ? pos : 1);  // "" → "/"
+                if (dir.empty()) dir = "/";
+            }
+            if (!found) {
+                file_path = m_static_dir + "/index.html";
+            }
         }
 
         if (file_exists(file_path)) {

@@ -594,6 +594,144 @@ void install_handlers(Router& router,
             return r;
         });
 
+    // ── GET /api/v1/cloud/endpoints ─────────────────────────────────
+    // L21/D7 — ds-backed: reads cloud.endpoints JSON from ds-server
+    // (written by iot-cloudd) so the cloud UI can list provisioned
+    // devices without a direct registry pointer.
+    router.add("GET", "/api/v1/cloud/endpoints",
+        [ds](const HttpParser::Request& /*req*/) -> HttpResponse {
+            HttpResponse r;
+            if (!ds) {
+                r.status = 500;
+                r.body = R"({"ok":false,"err":"data store not connected"})";
+                return r;
+            }
+            std::vector<data_store::Client::GetResult> got;
+            auto rs = ds->get({"cloud.endpoints"}, got);
+            json resp;
+            resp["ok"] = true;
+            json arr = json::array();
+            if (rs.ok && !got.empty() && got[0].has_value) {
+                if (auto s = data_store::to_string(got[0].value)) {
+                    try {
+                        auto parsed = json::parse(*s);
+                        if (parsed.is_array()) arr = parsed;
+                    } catch (const std::exception&) { /* return [] */ }
+                }
+            }
+            resp["count"]     = arr.size();
+            resp["endpoints"] = arr;
+            r.body = resp.dump();
+            return r;
+        });
+
+    // ── GET /api/v1/cloud/endpoint?ep=<ep> ─────────────────────────
+    router.add("GET", "/api/v1/cloud/endpoint",
+        [ds](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            if (!ds) {
+                r.status = 500;
+                r.body = R"({"ok":false,"err":"data store not connected"})";
+                return r;
+            }
+            auto it = req.query.find("ep");
+            if (it == req.query.end()) {
+                r.status = 400;
+                r.body = R"({"ok":false,"err":"missing 'ep' query param"})";
+                return r;
+            }
+            std::string target = it->second;
+            std::vector<data_store::Client::GetResult> got;
+            auto rs = ds->get({"cloud.endpoints"}, got);
+            if (rs.ok && !got.empty() && got[0].has_value) {
+                if (auto s = data_store::to_string(got[0].value)) {
+                    try {
+                        auto arr = json::parse(*s);
+                        if (arr.is_array()) {
+                            for (const auto& item : arr) {
+                                if (item.value("endpoint", "") == target) {
+                                    json resp;
+                                    resp["ok"]         = true;
+                                    resp["endpoint"]   = item.value("endpoint", "");
+                                    resp["tun_ip"]     = item.value("tun_ip", "");
+                                    resp["proxy_port"] = item.value("proxy_port", 0);
+                                    resp["registered"] = item.value("registered", false);
+                                    resp["state"]      = item.value("state", "unknown");
+                                    r.body = resp.dump();
+                                    return r;
+                                }
+                            }
+                        }
+                    } catch (const std::exception&) {}
+                }
+            }
+            r.status = 404;
+            r.body = R"({"ok":false,"err":"endpoint not found"})";
+            return r;
+        });
+
+    // ── POST /api/v1/cloud/endpoints (provision) ───────────────────
+    // Writes cloud.provision.request = endpoint name. iot-cloudd
+    // watches this key and provisions the device on change.
+    router.add("POST", "/api/v1/cloud/endpoints",
+        [ds](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            if (!ds) {
+                r.status = 500;
+                r.body = R"({"ok":false,"err":"data store not connected"})";
+                return r;
+            }
+            auto doc = parse_body(req.body);
+            std::string ep = doc.value("endpoint", "");
+            if (ep.empty()) {
+                r.status = 400;
+                r.body = R"({"ok":false,"err":"missing 'endpoint' field"})";
+                return r;
+            }
+            // Bump-counter pattern: write the endpoint name so iot-cloudd
+            // picks it up on its next watch cycle.
+            auto sr = ds->set("cloud.provision.request",
+                              data_store::Value{ep});
+            json resp;
+            resp["ok"]       = sr.ok;
+            resp["endpoint"] = ep;
+            if (!sr.ok) {
+                resp["err"] = sr.err;
+                r.status = 500;
+            }
+            r.body = resp.dump();
+            return r;
+        });
+
+    // ── DELETE /api/v1/cloud/endpoints?ep=<ep> (deprovision) ─────
+    router.add("DELETE", "/api/v1/cloud/endpoints",
+        [ds](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            if (!ds) {
+                r.status = 500;
+                r.body = R"({"ok":false,"err":"data store not connected"})";
+                return r;
+            }
+            auto it = req.query.find("ep");
+            if (it == req.query.end()) {
+                r.status = 400;
+                r.body = R"({"ok":false,"err":"missing 'ep' query param"})";
+                return r;
+            }
+            std::string ep = it->second;
+            auto sr = ds->set("cloud.deprovision.request",
+                              data_store::Value{ep});
+            json resp;
+            resp["ok"]       = sr.ok;
+            resp["endpoint"] = ep;
+            if (!sr.ok) {
+                resp["err"] = sr.err;
+                r.status = 500;
+            }
+            r.body = resp.dump();
+            return r;
+        });
+
     // ── Wrap existing + new handlers with auth (when enabled) ─────
     // When auth is enabled, all /api/v1/* routes except /api/v1/auth/*
     // require a valid session.  The lambda below wraps a HandlerFn so

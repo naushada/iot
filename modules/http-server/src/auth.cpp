@@ -216,7 +216,12 @@ std::string make_set_cookie(const std::string& token, int max_age_sec) {
 // ── Auth guard ─────────────────────────────────────────────────────
 
 bool is_public_route(const std::string& path) {
-    return path == "/api/v1/auth/login" || path == "/api/v1/auth/logout";
+    // Auth endpoints are always public
+    if (path == "/api/v1/auth/login" || path == "/api/v1/auth/logout") return true;
+    // Non-API paths (static files /webui/*, /index.html, etc.) are public.
+    // Only /api/v1/* routes require authentication.
+    if (path.rfind("/api/", 0) != 0) return true;
+    return false;
 }
 
 Router::HandlerFn with_auth(Router::HandlerFn next,
