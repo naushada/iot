@@ -1,17 +1,17 @@
 # ============================================================
-# Stage 1: Build C++ backend (ds-server + iot-httpd only)
+# Stage 1: Build C++ modules
 # ============================================================
 FROM docker.io/library/ubuntu:22.04 AS builder
-
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::Check-Date=false update && \
+    apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config \
     libssl-dev zlib1g-dev libreadline-dev \
     liblua5.3-dev lua5.3 wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# ACE/TAO 7.0.0 (~60s build — needed by ds-server)
+# ACE/TAO 7.0.0 (~60s)
 RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_0/ACE+TAO-7.0.0.tar.gz \
     -O /tmp/ace.tar.gz && cd /tmp && tar xzf ace.tar.gz && cd ACE_wrappers && \
     echo '#include "ace/config-linux.h"' > ace/config.h && \
@@ -21,64 +21,57 @@ RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_
     cp -r ace/ /usr/local/ACE_TAO-7.0.0/include/ && \
     cp ace/libACE.so.* /usr/local/ACE_TAO-7.0.0/lib/ && \
     ln -sf libACE.so.7.0.0 /usr/local/ACE_TAO-7.0.0/lib/libACE.so && \
-    echo /usr/local/ACE_TAO-7.0.0/lib >> /etc/ld.so.conf.d/ace.conf && ldconfig && \
+    ldconfig && echo /usr/local/ACE_TAO-7.0.0/lib > /etc/ld.so.conf.d/ace.conf && \
     rm -rf /tmp/ACE_wrappers /tmp/ace.tar.gz
 
-COPY . /src/
+COPY modules/ /src/modules/
+COPY apps/3rdparty/ /src/apps/3rdparty/
 
-# Build data-store + http-server as subdirectories under a common cmake
-RUN mkdir -p /tmp/build && cd /tmp/build && \
-    echo 'cmake_minimum_required(VERSION 3.16)' > CMakeLists.txt && \
-    echo 'project(cloud CXX)' >> CMakeLists.txt && \
-    echo 'set(CMAKE_CXX_STANDARD 20)' >> CMakeLists.txt && \
-    echo 'set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)' >> CMakeLists.txt && \
-    echo 'set(LUA_INCLUDE_DIR /usr/include/lua5.3)' >> CMakeLists.txt && \
-    echo 'add_subdirectory(/src/modules/data-store data-store)' >> CMakeLists.txt && \
-    echo 'add_subdirectory(/src/modules/http-server http-server)' >> CMakeLists.txt && \
-    cmake /tmp/build \
+# Build data-store (needs ACE + Lua)
+RUN mkdir -p /tmp/bds && cd /tmp/bds && \
+    cmake /src/modules/data-store \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
+    -DLUA_INCLUDE_DIR=/usr/include/lua5.3 \
+    -GNinja && ninja -j$(nproc)
+
+# Build http-server (needs data-store client + ACE + OpenSSL)
+RUN mkdir -p /tmp/bhttp && cd /tmp/bhttp && \
+    cmake /src/modules/http-server \
     -DCMAKE_BUILD_TYPE=Release \
     -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
     -DLUA_INCLUDE_DIR=/usr/include/lua5.3 \
     -DBUILD_HTTP_SERVER_TESTS=OFF \
-    -GNinja \
-    && ninja -j$(nproc) ds-server ds-cli iot-httpd
+    -GNinja && ninja -j$(nproc)
 
 # ============================================================
-# Stage 2: Build Angular cloud UI
+# Stage 2: Angular cloud UI
 # ============================================================
 FROM docker.io/library/node:18-alpine AS ui-builder
 ENV NG_BUILD_MAX_WORKERS=1
-
 WORKDIR /ui
 COPY apps/cloud/ui/package.json apps/cloud/ui/package-lock.json ./
 RUN npm ci 2>/dev/null || npm install --no-audit --no-fund
-
 COPY apps/cloud/ui/ ./
 RUN npx ng build --configuration production --progress=false
 
 # ============================================================
-# Stage 3: Minimal runtime
+# Stage 3: Runtime
 # ============================================================
 FROM docker.io/library/ubuntu:22.04 AS runtime
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 zlib1g libreadline8 liblua5.3-0 \
-    iptables openvpn ca-certificates \
+RUN apt-get -o Acquire::Check-Date=false update && \
+    apt-get install -y --no-install-recommends \
+    libssl3 zlib1g libreadline8 liblua5.3-0 iptables openvpn ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# ACE shared libs
 COPY --from=builder /usr/local/ACE_TAO-7.0.0/lib/libACE.so* /usr/local/lib/
 RUN ldconfig
 
-# Binaries
-COPY --from=builder /tmp/build-ds/ds-server /usr/local/bin/
-COPY --from=builder /tmp/build-ds/ds-cli /usr/local/bin/
-COPY --from=builder /tmp/build-http/iot-httpd /usr/local/bin/
-
-# Cloud UI
+COPY --from=builder /tmp/bds/ds-server /usr/local/bin/
+COPY --from=builder /tmp/bds/ds-cli /usr/local/bin/
+COPY --from=builder /tmp/bhttp/iot-httpd /usr/local/bin/
 COPY --from=ui-builder /ui/dist/cloud-ui /usr/share/iot/cloud-www/
 
-# Schemas
 COPY modules/data-store/schemas/iot.lua /etc/iot/ds-schemas/
 COPY modules/data-store/schemas/services.lua /etc/iot/ds-schemas/
 COPY modules/http-server/schemas/http.lua /etc/iot/ds-schemas/
@@ -86,8 +79,7 @@ COPY modules/http-server/schemas/auth.lua /etc/iot/ds-schemas/
 
 RUN mkdir -p /var/run/iot /etc/iot/ds-schemas
 
-EXPOSE 8080 5683 5684
-
+EXPOSE 8080
 CMD ds-server --socket=/var/run/iot/data_store.sock --schema-dir=/etc/iot/ds-schemas & \
     sleep 2 && \
     exec iot-httpd ds-socket=/var/run/iot/data_store.sock \
