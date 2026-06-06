@@ -90,9 +90,12 @@ case "${1:-start}" in
         ;;
 
     logs)
-        # Use podman/docker logs directly (compose logs has compat issues)
-        $CR logs iot-ds-server iot-cloudd iot-httpd iot-lwm2m-bs iot-lwm2m-dm 2>/dev/null || \
-        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" logs
+        # Pull merged logs from the HTTP API (bypasses Docker/compose entirely).
+        # Falls back to podman logs if httpd isn't reachable yet.
+        if command -v curl &>/dev/null; then
+            curl -sN "http://localhost:${HTTP_PORT}/api/v1/log" 2>/dev/null && exit 0
+        fi
+        $CR logs iot-ds-server iot-cloudd iot-httpd iot-lwm2m-bs iot-lwm2m-dm 2>/dev/null
         ;;
 
     ps|status)
