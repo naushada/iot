@@ -89,5 +89,13 @@ return {
                                                write_acl = {"uid:0"} },
     ["services.cloud.openvpn.server.state"]  = {
         access  = "Viewer", type = "string",  default = "running" },
+
+    -- LwM2M CoAP server containers (lwm2m-bs / lwm2m-dm).
+    -- These run the device lwm2m binary in role=server mode and are
+    -- docker-compose managed (no enable toggle — always-on like ds).
+    ["services.cloud.lwm2m.bs.state"]       = {
+        access  = "Viewer", type = "string",  default = "running" },
+    ["services.cloud.lwm2m.dm.state"]       = {
+        access  = "Viewer", type = "string",  default = "running" },
   },
 }

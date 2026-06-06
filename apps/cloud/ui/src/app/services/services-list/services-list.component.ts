@@ -6,6 +6,7 @@ import { ToastService } from '../../../common/toast.service';
 interface SvcRow {
   key: string; label: string; desc: string; enable_key: string;
   state: string; enabled: boolean; restarting: boolean;
+  state_key?: string;   // explicit state key for services without .enable counterpart
 }
 
 @Component({
@@ -30,16 +31,16 @@ interface SvcRow {
           <p class="svc-desc">{{ s.desc }}</p>
 
           <div class="svc-actions">
-            <clr-checkbox-wrapper *ngIf="s.key !== 'ds'">
+            <clr-checkbox-wrapper *ngIf="s.key !== 'ds' && s.key !== 'lwm2m.bs' && s.key !== 'lwm2m.dm'">
               <input type="checkbox" clrCheckbox
                 [checked]="s.enabled"
                 [disabled]="!isAdmin"
                 (change)="toggleEnable(s)" />
               <label>Enabled</label>
             </clr-checkbox-wrapper>
-            <span *ngIf="s.key === 'ds'" class="hint">always on</span>
+            <span *ngIf="s.key === 'ds' || s.key === 'lwm2m.bs' || s.key === 'lwm2m.dm'" class="hint">always on</span>
 
-            <button *ngIf="s.key !== 'ds' && isAdmin"
+            <button *ngIf="s.key !== 'ds' && s.key !== 'lwm2m.bs' && s.key !== 'lwm2m.dm' && isAdmin"
               class="btn btn-sm" [disabled]="s.restarting"
               (click)="restart(s)">
               {{ s.restarting ? '…' : 'Restart' }}
@@ -69,6 +70,14 @@ interface SvcRow {
     .svc-desc { font-size: 12px; color: #757575; margin: 0 0 12px 0; }
     .svc-actions { display: flex; align-items: center; gap: 12px; }
     .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    body.dark-theme {
+      .svc-card { background: #1a1a2e; border-color: #2a2a4a; }
+      .svc-name { color: #e0e0e0; }
+      .svc-desc { color: #9e9e9e; }
+      .info-card { background: rgba(46,125,50,0.08); border-color: rgba(46,125,50,0.25); color: #bdbdbd; }
+      .info-card code { background: rgba(46,125,50,0.15); color: #a5d6a7; }
+    }
   `]
 })
 export class ServicesListComponent implements OnInit, OnDestroy {
@@ -77,6 +86,8 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     { key: 'iot.cloudd',     label: 'iot-cloudd',        desc: 'Cloud daemon — LwM2M BS/DM, VPN registry, endpoint provisioning.',        enable_key: 'services.cloud.iot.cloudd.enable',       state: '', enabled: true,  restarting: false },
     { key: 'iot.httpd',      label: 'iot-httpd',         desc: 'REST API + Cloud UI server. Serves /webui/ + /api/v1/* endpoints.',       enable_key: 'services.cloud.iot.httpd.enable',        state: '', enabled: true,  restarting: false },
     { key: 'openvpn.server', label: 'openvpn-server',    desc: 'OpenVPN server — manages per-device tunnels on 10.9.0.0/24 subnet.',       enable_key: 'services.cloud.openvpn.server.enable',   state: '', enabled: true,  restarting: false },
+    { key: 'lwm2m.bs',       label: 'lwm2m-bs',          desc: 'LwM2M Bootstrap Server — CoAPs endpoint on port 5684.',                   enable_key: '', state: '', enabled: true, restarting: false, state_key: 'services.cloud.lwm2m.bs.state' },
+    { key: 'lwm2m.dm',       label: 'lwm2m-dm',          desc: 'LwM2M Device Management — CoAPs endpoint on port 5683.',                  enable_key: '', state: '', enabled: true, restarting: false, state_key: 'services.cloud.lwm2m.dm.state' },
   ];
   private active = true;
 
@@ -95,7 +106,11 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     const keys = ['services.ds.state'];
     for (const s of this.services) {
       if (s.key === 'ds') continue;
-      keys.push(s.enable_key, s.enable_key.replace('.enable', '.state'));
+      if (s.state_key) {
+        keys.push(s.state_key);
+      } else if (s.enable_key) {
+        keys.push(s.enable_key, s.enable_key.replace('.enable', '.state'));
+      }
     }
     this.http.dbGet(keys).subscribe({
       next: (r) => {
@@ -105,10 +120,13 @@ export class ServicesListComponent implements OnInit, OnDestroy {
           if (typeof dsState === 'string') this.services[0].state = dsState;
           for (const s of this.services) {
             if (s.key === 'ds') continue;
-            const sv = d[s.enable_key.replace('.enable', '.state')];
-            const ev = d[s.enable_key];
+            const stateKey = s.state_key || s.enable_key.replace('.enable', '.state');
+            const sv = d[stateKey];
             if (typeof sv === 'string') s.state = sv;
-            if (typeof ev === 'boolean') s.enabled = ev;
+            if (s.enable_key) {
+              const ev = d[s.enable_key];
+              if (typeof ev === 'boolean') s.enabled = ev;
+            }
           }
         }
         if (this.active) setTimeout(() => this.poll(), 5000);

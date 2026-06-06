@@ -3,16 +3,15 @@ import { Component, Output, EventEmitter } from '@angular/core';
 @Component({
   selector: 'app-services-submenu',
   template: `
-    <nav class="subnav">
-      <a class="subnav-item" [class.active]="active==='list'" (click)="s('list')">All Services</a>
-    </nav>
+    <div class="subnav-bar">
+      <a class="subnav-tab" [class.active]="active==='list'"
+         (click)="s('list')">
+        <clr-icon shape="applications"></clr-icon>
+        <span>All Services</span>
+      </a>
+    </div>
   `,
-  styles: [`
-    .subnav { display:flex; background:#16213e; padding:0 1rem; border-bottom:1px solid #1a5276; }
-    .subnav-item { padding:10px 16px; color:#bdbdbd; cursor:pointer; font-size:13px; border-bottom:2px solid transparent; }
-    .subnav-item:hover { color:#e0e0e0; }
-    .subnav-item.active { color:#66bb6a; border-bottom-color:#2e7d32; }
-  `]
+  // styles provided by global .subnav-bar / .subnav-tab in styles.scss
 })
 export class ServicesSubmenuComponent {
   active = 'list';
