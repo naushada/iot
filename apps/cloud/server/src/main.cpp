@@ -80,6 +80,9 @@ int main(int argc, char** argv) {
             sync_interval = std::stoi(a.substr(14));
     }
 
+    // Register ACE log callback now that ACE is initialised
+    g_log.start();
+
     // ── Connect to ds-server ──────────────────────────────────────
     data_store::Client ds;
     auto cs = ds.connect(ds_path);

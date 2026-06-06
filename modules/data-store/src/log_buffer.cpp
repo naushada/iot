@@ -60,7 +60,13 @@ LogBuffer::LogBuffer(const std::string& daemon, const std::string& ds_key)
     : m_impl(std::make_unique<Impl>()) {
     m_impl->daemon = daemon;
     m_impl->key    = ds_key;
-    ACE_Log_Msg::instance()->msg_callback(&m_impl->cb);
+    // NOTE: start() must be called from main() to register the
+    // ACE callback — doing it in the constructor would run during
+    // static initialisation, before ACE is ready.
+}
+
+void LogBuffer::start() {
+    if (m_impl) ACE_Log_Msg::instance()->msg_callback(&m_impl->cb);
 }
 
 LogBuffer::~LogBuffer() {

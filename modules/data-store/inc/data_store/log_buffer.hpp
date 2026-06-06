@@ -18,8 +18,11 @@
 ///   #include "data_store/log_buffer.hpp"
 ///   data_store::LogBuffer g_log("cloudd", "log.cloudd.text");
 ///   …
-///   // In the main loop / periodic timer:
-///   g_log.flush(ds);
+///   int main() {
+///       g_log.start();  // register ACE callback after ACE is ready
+///       …
+///       g_log.flush(ds);
+///   }
 
 #include <memory>
 #include <string>
@@ -35,6 +38,10 @@ public:
     /// @param ds_key  Data-store key written by flush() (may be changed
     ///                later with set_key())
     LogBuffer(const std::string& daemon, const std::string& ds_key);
+
+    /// Register the ACE log callback.  Must be called from main()
+    /// after ACE is initialised — NOT during static initialisation.
+    void start();
 
     /// Unregister the callback. Flush one last time before destroying.
     ~LogBuffer();

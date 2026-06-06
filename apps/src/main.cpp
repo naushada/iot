@@ -618,6 +618,8 @@ int main(std::int32_t argc, char *argv[]) {
     // / `iot.lifetime` / `iot.server.uri` override the CLI/file
     // defaults. Empty `ds-sock=` ⇒ default socket path; ds-server not
     // running just means we fall through to compiled-in defaults.
+    g_log.start();  // register ACE callback now that ACE is initialised
+
     iot::DsConfig ds(argValueMap["ds-sock"]);
     if (auto v = ds.endpoint(); v.has_value() && argValueMap["ep"].empty()) {
         endpoint = std::move(*v);

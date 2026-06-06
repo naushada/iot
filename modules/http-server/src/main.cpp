@@ -128,6 +128,9 @@ int main(int argc, char** argv) {
     int httpWorkers = 0;
 
     // ── Connect to ds-server ──────────────────────────────────
+    // Register ACE log callback now that ACE is initialised
+    g_log.start();
+
     data_store::Client ds;
     auto cs = ds.connect(dsPath);
     if (!cs.ok) {
