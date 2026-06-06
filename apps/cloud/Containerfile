@@ -85,6 +85,7 @@ COPY modules/data-store/schemas/iot.lua /etc/iot/ds-schemas/
 COPY modules/data-store/schemas/services.lua /etc/iot/ds-schemas/
 COPY modules/http-server/schemas/http.lua /etc/iot/ds-schemas/
 COPY modules/http-server/schemas/auth.lua /etc/iot/ds-schemas/
+COPY modules/server/lwm2m/schemas/cloud.lua /etc/iot/ds-schemas/
 
 RUN mkdir -p /var/run/iot /etc/iot/ds-schemas
 
