@@ -685,12 +685,7 @@ int main(std::int32_t argc, char *argv[]) {
             const std::string sk = std::string("services.cloud.lwm2m.")
                                    + lwm2m_instance + ".state";
             auto rs = cli->set(sk, data_store::Value{std::string("running")});
-            if (rs.ok) {
-                g_log.append("lwm2m: state self-reported " + sk +
-                             "=running\n");
-            } else {
-                g_log.append("lwm2m: FAILED set " + sk + "=running: " +
-                             rs.err + "\n");
+            if (!rs.ok) {
                 ACE_ERROR((LM_ERROR,
                            ACE_TEXT("%D [iot:%t] %M %N:%l set %C=running"
                                     " failed: %C\n"),

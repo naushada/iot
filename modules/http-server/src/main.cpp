@@ -253,9 +253,6 @@ int main(int argc, char** argv) {
                httpScheme.c_str(), httpIp.c_str(), httpPort, dsPath.c_str(),
                (tlsPtr && tlsCtx.mtls()) ? " (mTLS)" : "", httpWorkers));
 
-    g_log.append("httpd: listening on " + httpScheme + "://" + httpIp +
-                 ":" + std::to_string(httpPort) + " ds=" + dsPath + "\n");
-
     // Self-report running state to ds so the Services page shows live status.
     {
         auto rs = ds.set("services.cloud.iot.httpd.state",
