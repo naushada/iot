@@ -58,6 +58,50 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── LwM2M Bootstrap Server (port 5684) ──────────────────────────
+  lwm2m-bs:
+    image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}
+    container_name: iot-lwm2m-bs
+    command: >
+      lwm2m
+      role=server
+      local=coaps://0.0.0.0:5684
+      identity=${LWM2M_PSK_ID:-97554878B284CE3B727D8DD06E87659A}
+      secret=${LWM2M_PSK_KEY:-3894beedaa7fe0eae6597dc350a59525}
+    ports:
+      - "5684:5684/udp"
+    volumes:
+      - iot-etc:/etc/iot
+      - iot-run:/var/run/iot
+    depends_on:
+      ds-server:
+        condition: service_healthy
+      iot-cloudd:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── LwM2M Device Management Server (port 5683) ──────────────────
+  lwm2m-dm:
+    image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}
+    container_name: iot-lwm2m-dm
+    command: >
+      lwm2m
+      role=server
+      local=coaps://0.0.0.0:5683
+      identity=${LWM2M_PSK_ID:-97554878B284CE3B727D8DD06E87659A}
+      secret=${LWM2M_PSK_KEY:-3894beedaa7fe0eae6597dc350a59525}
+    ports:
+      - "5683:5683/udp"
+    volumes:
+      - iot-etc:/etc/iot
+      - iot-run:/var/run/iot
+    depends_on:
+      ds-server:
+        condition: service_healthy
+      iot-cloudd:
+        condition: service_started
+    restart: unless-stopped
+
   # ── HTTP Server (REST API + cloud UI + device UI proxy) ────────
   iot-httpd:
     image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}

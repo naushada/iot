@@ -44,7 +44,7 @@ RUN mkdir -p /etc/iot/vpn /etc/iot/vpn/ca && cd /tmp && \
     echo "VPN PKI generated — CA valid 10 years, server valid 10 years"
 
 COPY modules/ /src/modules/
-COPY apps/3rdparty/ /src/apps/3rdparty/
+COPY apps/ /src/apps/
 COPY apps/cloud/server/ /src/apps/cloud/server/
 
 # Build data-store (needs ACE + Lua)
@@ -71,6 +71,19 @@ RUN mkdir -p /tmp/bcloud && cd /tmp/bcloud && \
     -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
     -DDATASTORE_LIB=/tmp/bds/libdatastore_client.a \
     && make -j2
+
+# Build LwM2M binary (reused in server role for BS + DM).
+# The device CMakeLists.txt unconditionally links mongocxx/bsoncxx even
+# with IOT_ENABLE_MONGO=OFF.  Patch the link line to skip them on the
+# cloud (Mongo is a device-side registration mirror — not needed here).
+RUN sed -i 's/\${BSONCXX_LINK_LIB}//g; s/\${MONGOCXX_LINK_LIB}//g' /src/apps/CMakeLists.txt
+RUN mkdir -p /tmp/blwm2m && cd /tmp/blwm2m && \
+    cmake /src/apps \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
+    -DLUA_INCLUDE_DIR=/usr/include/lua5.3 \
+    -DIOT_ENABLE_MONGO=OFF \
+    -GNinja && ninja -j$(nproc)
 
 # ============================================================
 # Stage 2: Build Angular cloud UI (xpmile pattern)
@@ -105,17 +118,24 @@ COPY --from=builder /tmp/bds/ds-server /usr/local/bin/
 COPY --from=builder /tmp/bds/ds-cli /usr/local/bin/
 COPY --from=builder /tmp/bcloud/iot-cloudd /usr/local/bin/
 COPY --from=builder /tmp/bhttp/iot-httpd /usr/local/bin/
+COPY --from=builder /tmp/blwm2m/lwm2m /usr/local/bin/
 
 # Static assets — both cloud UI (webui/) and device UI (webui/) served
 # by iot-httpd depending on www-dir.
 COPY --from=ui-builder /ui/dist/cloud-ui /usr/share/iot/cloud-www/webui/
 
-# Schemas
+# Schemas (device + cloud — same ds-server loads both)
 COPY modules/data-store/schemas/iot.lua /etc/iot/ds-schemas/
 COPY modules/data-store/schemas/services.lua /etc/iot/ds-schemas/
 COPY modules/http-server/schemas/http.lua /etc/iot/ds-schemas/
 COPY modules/http-server/schemas/auth.lua /etc/iot/ds-schemas/
 COPY modules/server/lwm2m/schemas/cloud.lua /etc/iot/ds-schemas/
+COPY modules/net/router/schemas/net.lua /etc/iot/ds-schemas/
+COPY modules/openvpn/client/schemas/vpn.lua /etc/iot/ds-schemas/
+COPY modules/wan/wifi/client/schemas/wifi.lua /etc/iot/ds-schemas/
+
+# Device configs (LwM2M objects — reused by lwm2m binary in server role)
+COPY apps/config/ /etc/iot/config/
 
 RUN mkdir -p /var/run/iot /var/lib/iot
 
