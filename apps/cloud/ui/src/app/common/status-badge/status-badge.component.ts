@@ -50,10 +50,10 @@ export class StatusBadgeComponent {
   get stateClass(): string {
     const s = this.state.toLowerCase();
     if (s === 'running' || s === 'connected' || s === 'bound') return 'running';
-    if (s === 'exited' || s === 'disconnected' || s === 'error' || s === 'conflict' || s === 'stopped') return 'exited';
+    if (s === 'exited' || s === 'disconnected' || s === 'error' || s === 'conflict') return 'exited';
     if (s === 'starting' || s === 'connecting' || s === 'wait' ||
         s === 'associating' || s === 'requesting' || s === 'monitoring') return 'starting';
-    if (s === 'disabled' || s === 'idle') return 'disabled';
+    if (s === 'disabled' || s === 'idle' || s === 'stopped') return 'disabled';
     return '';
   }
 }
