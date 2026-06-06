@@ -81,6 +81,9 @@ public:
     /// Call at startup and on watch events for hot-reload.
     void apply_level(Client& ds);
 
+    /// Number of lines currently buffered (for tests).
+    std::size_t line_count() const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

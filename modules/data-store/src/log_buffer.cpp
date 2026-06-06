@@ -109,6 +109,11 @@ void LogBuffer::set_level_key(const std::string& key) {
     m_impl->level_key = key;
 }
 
+std::size_t LogBuffer::line_count() const {
+    std::lock_guard<std::mutex> lk(m_impl->mtx);
+    return m_impl->buf.size();
+}
+
 void LogBuffer::apply_level(Client& ds) {
     std::vector<Client::GetResult> lg;
     auto ls = ds.get({m_impl->level_key, "log.level"}, lg);

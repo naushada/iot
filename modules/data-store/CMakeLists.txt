@@ -106,6 +106,8 @@ if(BUILD_DATA_STORE_TESTS)
         test/schema_test.cpp
         test/service_gate_test.cpp
         test/dep_watch_test.cpp
+        test/log_buffer_test.cpp
+        src/log_buffer.cpp
         src/server/server.cpp
         src/server/session.cpp
         src/server/data_store.cpp
