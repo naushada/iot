@@ -55,31 +55,32 @@ std::deque<std::string> g_log_buf;
 constexpr std::size_t kMaxLogLines = 200;
 
 // ACE_Log_Msg callback — intercepts every ACE_DEBUG / ACE_ERROR etc.
-// Runs on whatever thread called the ACE macro (reactor, worker, main).
-void log_callback(ACE_Log_Record& rec) {
-    // Format: "HH:MM:SS level daemon: message"
-    std::time_t t = static_cast<std::time_t>(rec.time_stamp().sec());
-    struct std::tm tm_buf;
-    ::localtime_r(&t, &tm_buf);
-    char ts[16];
-    std::strftime(ts, sizeof(ts), "%H:%M:%S", &tm_buf);
+class LogCallback : public ACE_Log_Msg_Callback {
+public:
+    void log(ACE_Log_Record& rec) override {
+        std::time_t t = static_cast<std::time_t>(rec.time_stamp().sec());
+        struct std::tm tm_buf;
+        ::localtime_r(&t, &tm_buf);
+        char ts[16];
+        std::strftime(ts, sizeof(ts), "%H:%M:%S", &tm_buf);
 
-    const char* lvl = "?";
-    switch (rec.type()) {
-        case LM_DEBUG:   lvl = "DEBUG"; break;
-        case LM_INFO:    lvl = "INFO";  break;
-        case LM_NOTICE:  lvl = "NOTE";  break;
-        case LM_WARNING: lvl = "WARN";  break;
-        case LM_ERROR:   lvl = "ERROR"; break;
-        case LM_CRITICAL:lvl = "CRIT";  break;
+        const char* lvl = "?";
+        switch (rec.type()) {
+            case LM_DEBUG:   lvl = "DEBUG"; break;
+            case LM_INFO:    lvl = "INFO";  break;
+            case LM_NOTICE:  lvl = "NOTE";  break;
+            case LM_WARNING: lvl = "WARN";  break;
+            case LM_ERROR:   lvl = "ERROR"; break;
+            case LM_CRITICAL:lvl = "CRIT";  break;
+        }
+
+        std::lock_guard<std::mutex> lk(g_log_mutex);
+        g_log_buf.push_back(
+            std::string(ts) + " " + lvl + " httpd: " +
+            rec.msg_data() + "\n");
+        while (g_log_buf.size() > kMaxLogLines) g_log_buf.pop_front();
     }
-
-    std::lock_guard<std::mutex> lk(g_log_mutex);
-    g_log_buf.push_back(
-        std::string(ts) + " " + lvl + " httpd: " +
-        rec.msg_data() + "\n");
-    while (g_log_buf.size() > kMaxLogLines) g_log_buf.pop_front();
-}
+};
 
 void flush_log_to_ds(data_store::Client& ds) {
     std::string text;
@@ -300,7 +301,8 @@ int main(int argc, char** argv) {
     ::signal(SIGPIPE, SIG_IGN);
 
     // Intercept ACE log output → ring buffer → flushed to ds log.text
-    ACE_Log_Msg::instance()->msg_callback(&log_callback);
+    static LogCallback log_cb;
+    ACE_Log_Msg::instance()->msg_callback(&log_cb);
 
     // ── Hot-reload (FUP-L18-2) ────────────────────────────────
     // Poll the hot-reloadable http.* keys; when an operator changes one via
