@@ -110,6 +110,24 @@
         <input clrInput [disabled]="!isAdmin" type="number"
                formControlName="sec_ssid" min="0" max="65535" />
       </clr-input-container>
+
+      <!-- ── Server Object (OID 1) ───────────────────────────── -->
+      <clr-input-container>
+        <label>Lifetime — OID 1 RID 1 <span class="hint">(seconds)</span></label>
+        <input clrInput [disabled]="!isAdmin" type="number"
+               formControlName="srv_lifetime" min="0" max="2592000" />
+        <clr-control-helper>Registration lifetime (default 86400 = 24h)</clr-control-helper>
+      </clr-input-container>
+
+      <clr-select-container>
+        <label>Binding — OID 1 RID 7</label>
+        <select clrSelect [disabled]="!isAdmin" formControlName="srv_binding">
+          <option value="U">U — UDP</option>
+          <option value="S">S — SMS</option>
+          <option value="US">US — UDP+SMS</option>
+          <option value="UQ">UQ — UDP+Queue</option>
+        </select>
+      </clr-select-container>
     </div>
 
     <div style="margin-top:16px;">

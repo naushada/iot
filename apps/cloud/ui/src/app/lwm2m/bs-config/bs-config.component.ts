@@ -53,6 +53,8 @@ export class BsConfigComponent implements OnInit {
       sec_identity: ['iot-client'],
       sec_key:      [''],
       sec_ssid:     [0],
+      srv_lifetime: [86400],
+      srv_binding:  ['U'],
     });
   }
 
@@ -100,7 +102,7 @@ export class BsConfigComponent implements OnInit {
     });
   }
 
-  /// Copy server-config into the provision form's Security Object fields.
+  /// Copy server-config into the provision form.
   fillFromServer(): void {
     const v = this.bsForm.value;
     this.provForm.patchValue({
@@ -127,7 +129,8 @@ export class BsConfigComponent implements OnInit {
       return;
     }
 
-    // Build the per-endpoint Security Object config entry (dots in keys)
+    // Build the per-endpoint config entry (dots in keys).
+    // Security Object (OID 0) + Server Object (OID 1).
     const entry: Record<string, unknown> = {
       'sec.uri':      v.sec_uri,
       'sec.bs':       v.sec_bs,
@@ -135,6 +138,8 @@ export class BsConfigComponent implements OnInit {
       'sec.identity': v.sec_identity,
       'sec.key':      v.sec_key,
       'sec.ssid':     v.sec_ssid,
+      'srv.lifetime': v.srv_lifetime,
+      'srv.binding':  v.srv_binding,
     };
 
     // Read existing configs, add/update this endpoint, write back
