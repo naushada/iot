@@ -21,10 +21,16 @@ ds-server ──→ iot-cloudd ──→ iot-httpd (REST API + Cloud UI)
 All daemons communicate exclusively through ds-server — no HTTP between
 daemons. Same pattern as the device-side stack.
 
+**Daemon self-state:** iot-httpd and iot-cloudd write
+`services.cloud.iot.httpd.state` / `services.cloud.iot.cloudd.state`
+to ds at startup ("running") and shutdown ("exited"). The Services page
+polls these keys every 5s.
+
 ## Directory layout
 
 ```
 apps/cloud/
+├── CLAUDE.md           # this file
 ├── Dockerfile          # multi-stage build (Ubuntu builder + Node UI + slim runtime)
 ├── docker-compose.yml  # 3-service orchestration
 ├── run.sh              # podman/docker compose wrapper
@@ -34,14 +40,66 @@ apps/cloud/
     └── src/app/
         ├── dashboard/       # Online device count, tunnel status, telemetry
         ├── endpoint-list/   # Device table with Launch UI buttons
+        ├── http-config/     # HTTP server config (reuses http.* schema)
         ├── vpn/             # OpenVPN server config + status
         ├── wan/             # WAN interface / WiFi
         ├── routing/         # Port forward / DNAT rules
         ├── lwm2m/
         │   ├── lwm2m-config/  # DM (Device Management) config
-        │   └── bs-config/     # BS (Bootstrap Config) + Provision
-        ├── services/        # Service management (cloud daemons)
+        │   ├── lwm2m-submenu/ # Shared subnav-bar (DM | Bootstrap Config)
+        │   └── bs-config/     # BS (Bootstrap Config) + Provision Device
+        ├── services/        # Service management (cloud daemon cards)
         └── log-level/       # Log viewer + log-level selector
+```
+
+## Cloud UI Nav
+
+```
+Dashboard  Endpoints  VPN  HTTP  WAN  Routing  LwM2M              Services  Logs
+                                                      ├─ Device Management
+                                                      └─ Bootstrap Config
+```
+
+| Page | Writes to |
+|------|-----------|
+| Dashboard | reads /api/v1/status (long-poll) |
+| Endpoints | reads /api/v1/cloud/endpoints, delete deprovisions |
+| VPN | cloud.vpn.* |
+| HTTP | http.* (reused from device) + http.auth.enabled |
+| WAN | vpn.* / wifi.* / net.* (copied from device UI) |
+| Routing | net.* (port forward / DNAT) |
+| LwM2M → Device Management | cloud.dm.* |
+| LwM2M → Bootstrap Config | cloud.bs.* + provision → cloud.provision.* |
+| Services | services.cloud.* (polled every 5s) |
+| Logs | log.level + GET /api/v1/log |
+
+## API patterns
+
+All config pages use the same REST surface.  The UI always calls the
+same-origin iot-httpd (no CORS):
+
+| Operation | Method | Path | Payload |
+|-----------|--------|------|---------|
+| Read keys | POST | /api/v1/db/get | `{keys: ["a.b", ...]}` |
+| Write keys | POST | /api/v1/db/set | `{pairs: [{key, value}, ...]}` |
+| Long-poll | GET | /api/v1/db/get?key=k&timeout=N | query params |
+| Login | POST | /api/v1/auth/login | `{id, password}` |
+| Logout | POST | /api/v1/auth/logout | — |
+| Status | GET | /api/v1/status?timeout=N | — |
+| Cloud endpoints | GET | /api/v1/cloud/endpoints | — (ds-backed) |
+| Log text | GET | /api/v1/log | — (text/plain) |
+
+All `/api/v1/*` routes except `/api/v1/auth/*` require a session cookie.
+
+## Naming convention
+
+All ds keys use **dots only** — no hyphens, no underscores:
+```
+cloud.bs.psk.id          ✓
+cloud.bs.psk_id          ✗ (underscore)
+cloud.bs.psk-id          ✗ (hyphen)
+services.cloud.iot.cloudd.enable   ✓
+services.cloud.iot-cloudd.enable   ✗ (hyphen)
 ```
 
 ## Building
@@ -84,6 +142,19 @@ ds-cli set http.auth.enabled false
 ```
 
 ## Key data store paths
+
+### HTTP Server (http.*) — reused from device schema
+```
+http.listen.ip           → Bind address (default "0.0.0.0")
+http.listen.port         → Listen port (default 8080)
+http.listen.scheme       → "http" | "https"
+http.tls.cert            → TLS cert PEM path (required for https)
+http.tls.key             → TLS key PEM path (required for https)
+http.tls.ca              → CA bundle PEM path (optional — enables mTLS)
+http.workers             → Handler thread pool (0 = inline, default)
+http.auth.enabled        → Auth gate (true = enabled, from auth.lua)
+```
+Hot-reloaded: all except `http.workers`.
 
 ### Bootstrap Server (cloud.bs.*)
 ```
@@ -156,6 +227,7 @@ services.cloud.iot.cloudd.enable|state      → iot-cloudd enable/state
 services.cloud.iot.httpd.enable|state       → iot-httpd enable/state
 services.cloud.openvpn.server.enable|state  → openvpn-server enable/state
 ```
+All service keys use dots only. Daemons self-report state at startup/shutdown.
 
 ## Related modules
 
@@ -166,3 +238,18 @@ services.cloud.openvpn.server.enable|state  → openvpn-server enable/state
 | `modules/server/lwm2m` | LwM2M BS/DM server libs |
 | `modules/server/openvpn` | VPN registry lib |
 | `modules/server/web` | Device UI reverse proxy |
+
+## Schemas
+
+All schemas are under `modules/*/schemas/` and copied to `/etc/iot/ds-schemas/`:
+
+| Schema | Scope |
+|--------|-------|
+| `iot.lua` | Device-side keys (log.level, log.text, iot.*) |
+| `cloud.lua` | Cloud keys (cloud.bs.*, cloud.dm.*, cloud.vpn.*, cloud.provision.*) |
+| `http.lua` | HTTP server config (reused cloud + device) |
+| `auth.lua` | Auth config (http.auth.enabled) |
+| `services.lua` | Service enable/state (services.* + services.cloud.*) |
+| `vpn.lua` | VPN client keys (device-side) |
+| `wifi.lua` | WiFi client keys (device-side) |
+| `net.lua` | Net/router keys (device-side, reused for cloud DNAT) |
