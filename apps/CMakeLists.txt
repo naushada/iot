@@ -101,18 +101,6 @@ else()
     set(ACE_LINK_LIB ACE)
 endif()
 
-# MongoDB — static libs when cross-compiling, -l flags otherwise
-if(DEFINED BSONCXX_LIBRARY)
-    set(BSONCXX_LINK_LIB ${BSONCXX_LIBRARY})
-else()
-    set(BSONCXX_LINK_LIB bsoncxx)
-endif()
-if(DEFINED MONGOCXX_LIBRARY)
-    set(MONGOCXX_LINK_LIB ${MONGOCXX_LIBRARY})
-else()
-    set(MONGOCXX_LINK_LIB mongocxx)
-endif()
-
 # tinydtls — prefer sysroot when cross-compiling (Yocto sets
 # -DTINYDTLS_LIBRARY=...), fall back to vendored submodule.
 if(NOT DEFINED TINYDTLS_LIBRARY)
@@ -140,8 +128,8 @@ target_link_libraries(lwm2m
                         z
                         readline
                         pthread
-                        ${BSONCXX_LINK_LIB}
-                        ${MONGOCXX_LINK_LIB}
+                        bsoncxx
+                        mongocxx
                         ssl
                         crypto
                         ${LUA_LINK_LIBS})
