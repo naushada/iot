@@ -26,6 +26,7 @@ RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_
 
 COPY modules/ /src/modules/
 COPY apps/3rdparty/ /src/apps/3rdparty/
+COPY apps/cloud/server/ /src/apps/cloud/server/
 
 # Build data-store (needs ACE + Lua)
 RUN mkdir -p /tmp/bds && cd /tmp/bds && \
@@ -42,6 +43,13 @@ RUN mkdir -p /tmp/bhttp && cd /tmp/bhttp && \
     -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
     -DLUA_INCLUDE_DIR=/usr/include/lua5.3 \
     -DBUILD_HTTP_SERVER_TESTS=OFF \
+    -GNinja && ninja -j$(nproc)
+
+# Build cloud server daemon (iot-cloudd)
+RUN mkdir -p /tmp/bcloud && cd /tmp/bcloud && \
+    cmake /src/apps/cloud/server \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
     -GNinja && ninja -j$(nproc)
 
 # ============================================================
@@ -75,6 +83,7 @@ RUN ldconfig
 # Binaries
 COPY --from=builder /tmp/bds/ds-server /usr/local/bin/
 COPY --from=builder /tmp/bds/ds-cli /usr/local/bin/
+COPY --from=builder /tmp/bcloud/iot-cloudd /usr/local/bin/
 COPY --from=builder /tmp/bhttp/iot-httpd /usr/local/bin/
 
 # Static assets
