@@ -639,8 +639,9 @@ int main(std::int32_t argc, char *argv[]) {
         // Cloud server mode — self-report running state immediately
         // after the ds connection is established.
         if (!lwm2m_instance.empty()) {
-            cli->set("services.cloud.lwm2m." + lwm2m_instance + ".state",
-                     data_store::Value{std::string("running")});
+            const std::string sk = std::string("services.cloud.lwm2m.")
+                                   + lwm2m_instance + ".state";
+            cli->set(sk, data_store::Value{std::string("running")});
             ACE_DEBUG((LM_INFO,
                        ACE_TEXT("%D [iot:%t] %M %N:%l cloud lwm2m-%C "
                                 "self-reported running\n"),
@@ -872,8 +873,9 @@ int main(std::int32_t argc, char *argv[]) {
     // Cloud LwM2M server mode — self-report exited at shutdown.
     if (!lwm2m_instance.empty()) {
         if (auto* cli = ds.client()) {
-            cli->set("services.cloud.lwm2m." + lwm2m_instance + ".state",
-                     data_store::Value{std::string("exited")});
+            const std::string sk = std::string("services.cloud.lwm2m.")
+                                   + lwm2m_instance + ".state";
+            cli->set(sk, data_store::Value{std::string("exited")});
             ACE_DEBUG((LM_INFO,
                        ACE_TEXT("%D [iot:%t] %M %N:%l cloud lwm2m-%C "
                                 "self-reported exited\n"),
