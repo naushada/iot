@@ -10,35 +10,35 @@ import { ToastService } from '../../../common/toast.service';
   styleUrls: ['./lwm2m-config.component.scss']
 })
 export class Lwm2mConfigComponent implements OnInit {
-  serverForm: FormGroup;
-  loading = true; saving = false; msg = '';
+  dmForm: FormGroup;
+  loading = true; saving = false;
 
-    get isAdmin(): boolean { return this.session.isAdmin; }
+  get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, fb: FormBuilder, private session: SessionService, private toast: ToastService) {
-    this.serverForm = fb.group({
-      server_uri: ['coaps://'],
-      endpoint:   ['urn:dev:client-1'],
-      binding:    ['U'],
-      lifetime:   [86400],
-      observable: [true],
+  constructor(
+    private http: HttpsvcService,
+    fb: FormBuilder,
+    private session: SessionService,
+    private toast: ToastService
+  ) {
+    this.dmForm = fb.group({
+      dm_uri:   ['coaps://0.0.0.0:5683'],
+      lifetime: [86400],
+      binding:  ['U'],
     });
   }
 
   ngOnInit(): void {
     this.http.dbGet([
-      'iot.server.uri', 'iot.endpoint', 'iot.binding',
-      'iot.lifetime', 'iot.observable'
+      'cloud.dm.uri', 'cloud.dm.lifetime', 'cloud.dm.binding'
     ]).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
           const d = r.data as Record<string, unknown>;
-          this.serverForm.patchValue({
-            server_uri: d['iot.server.uri'] || 'coaps://',
-            endpoint:   d['iot.endpoint']   || 'urn:dev:client-1',
-            binding:    d['iot.binding']    || 'U',
-            lifetime:   d['iot.lifetime']   || 86400,
-            observable: d['iot.observable'] ?? true,
+          this.dmForm.patchValue({
+            dm_uri:   d['cloud.dm.uri']      || 'coaps://0.0.0.0:5683',
+            lifetime: d['cloud.dm.lifetime'] || 86400,
+            binding:  d['cloud.dm.binding']  || 'U',
           });
         }
         this.loading = false;
@@ -48,16 +48,18 @@ export class Lwm2mConfigComponent implements OnInit {
   }
 
   save(): void {
-    this.saving = true; this.msg = '';
-    const v = this.serverForm.value;
+    this.saving = true;
+    const v = this.dmForm.value;
     this.http.dbSet([
-      { key: 'iot.server.uri', value: v.server_uri },
-      { key: 'iot.endpoint',   value: v.endpoint },
-      { key: 'iot.binding',    value: v.binding },
-      { key: 'iot.lifetime',   value: v.lifetime },
-      { key: 'iot.observable', value: v.observable },
+      { key: 'cloud.dm.uri',      value: v.dm_uri },
+      { key: 'cloud.dm.lifetime', value: v.lifetime },
+      { key: 'cloud.dm.binding',  value: v.binding },
     ]).subscribe({
-      next: (r) => { this.saving = false; if(r.ok) this.toast.success('LwM2M config saved'); else this.toast.error(r.err||'Save failed'); },
+      next: (r) => {
+        this.saving = false;
+        if (r.ok) this.toast.success('DM config saved');
+        else this.toast.error(r.err || 'Save failed');
+      },
       error: () => { this.saving = false; this.toast.error('Save failed'); }
     });
   }

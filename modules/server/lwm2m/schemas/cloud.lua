@@ -27,6 +27,61 @@ return {
       default = "[]",
     },
 
+    -- Bootstrap Server (L21/D3).  iot-cloudd reads these keys to
+    -- configure the CoAP /bs endpoint and to build the Security +
+    -- Server object TLV payloads that are pushed to devices during
+    -- bootstrap.
+    ["cloud.bs.uri"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "coaps://0.0.0.0:5684",
+    },
+    -- Security mode for bootstrapping devices.  "PSK" (default) uses a
+    -- pre-shared key; "None" skips DTLS handshake (dev only).
+    ["cloud.bs.security.mode"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "PSK",
+    },
+    -- PSK identity written into the device Security Object at bootstrap.
+    ["cloud.bs.psk.id"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "iot-client",
+    },
+    -- PSK secret (opaque — hex or raw).  Written into the device
+    -- Security Object RID 5 at bootstrap.
+    ["cloud.bs.psk.key"] = {
+        access  = "Admin",
+      type    = "opaque",
+      default = "",
+    },
+    -- Device Management server URI.  Written into the device Server
+    -- Object (OID 1, RID 0) at bootstrap so the device knows where to
+    -- register after bootstrapping.
+    ["cloud.dm.uri"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "coaps://0.0.0.0:5683",
+    },
+    -- Default registration lifetime pushed to devices at bootstrap
+    -- (Server Object OID 1, RID 1).  Devices may request a different
+    -- value; the DM server can accept or negotiate.
+    ["cloud.dm.lifetime"] = {
+        access  = "Admin",
+      type    = "integer",
+      default = 86400,
+      min     = 0,
+      max     = 2592000,
+    },
+    -- Default binding mode pushed to devices at bootstrap
+    -- (Server Object OID 1, RID 7).  "U" = UDP (standard).
+    ["cloud.dm.binding"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "U",
+    },
+
     -- VPN subnet for tunnel IP allocation.
     ["cloud.vpn.subnet"] = {
       type    = "string",

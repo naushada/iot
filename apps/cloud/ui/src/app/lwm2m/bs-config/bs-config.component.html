@@ -1,0 +1,55 @@
+<div class="page">
+  <h3>Bootstrap Server Configuration</h3>
+
+  <form [formGroup]="bsForm" (ngSubmit)="save()" *ngIf="!loading">
+    <div class="form-grid">
+      <clr-input-container>
+        <label>BS URI <span class="hint">(LwM2M Bootstrap endpoint)</span></label>
+        <input clrInput [disabled]="!isAdmin" formControlName="bs_uri"
+               placeholder="coaps://0.0.0.0:5684" />
+      </clr-input-container>
+
+      <clr-select-container>
+        <label>Security Mode</label>
+        <select clrSelect [disabled]="!isAdmin" formControlName="security_mode">
+          <option value="PSK">PSK — Pre-Shared Key</option>
+          <option value="None">None — No DTLS (dev only)</option>
+        </select>
+      </clr-select-container>
+
+      <ng-container *ngIf="bsForm.value.security_mode === 'PSK'">
+        <clr-input-container>
+          <label>PSK Identity</label>
+          <input clrInput [disabled]="!isAdmin" formControlName="psk_id"
+                 placeholder="iot-client" />
+        </clr-input-container>
+
+        <clr-input-container>
+          <label>PSK Key <span class="hint">(hex or raw secret)</span></label>
+          <input clrInput [disabled]="!isAdmin" formControlName="psk_key"
+                 placeholder="0102030405060708090a0b0c0d0e0f10" />
+          <clr-control-helper>Device Security Object RID 5 — keep secret</clr-control-helper>
+        </clr-input-container>
+      </ng-container>
+
+      <clr-input-container>
+        <label>DM URI <span class="hint">(pushed to device at bootstrap)</span></label>
+        <input clrInput [disabled]="!isAdmin" formControlName="dm_uri"
+               placeholder="coaps://cloud.example.com:5683" />
+        <clr-control-helper>Device registers here after bootstrapping</clr-control-helper>
+      </clr-input-container>
+    </div>
+
+    <div class="info-card" style="margin-top:24px;">
+      <p><strong>Bootstrap flow:</strong> Device sends <code>POST /bs?ep=&lt;endpoint&gt;</code>.
+      Cloud assigns tunnel IP + proxy port, pushes Security Object (OID 0)
+      and Server Object (OID 1) with the DM URI above.</p>
+    </div>
+
+    <div style="margin-top:24px;" *ngIf="isAdmin">
+      <button type="submit" class="btn btn-primary" [disabled]="saving">
+        {{ saving ? 'Saving…' : 'Save' }}
+      </button>
+    </div>
+  </form>
+</div>

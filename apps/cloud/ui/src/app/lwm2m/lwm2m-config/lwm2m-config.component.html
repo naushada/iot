@@ -1,43 +1,45 @@
 <div class="page">
-  <h3>LwM2M Endpoint Configuration</h3>
+  <h3>Device Management Configuration</h3>
 
-  <form [formGroup]="serverForm" (ngSubmit)="save()" *ngIf="!loading">
+  <form [formGroup]="dmForm" (ngSubmit)="save()" *ngIf="!loading">
     <div class="form-grid">
       <clr-input-container>
-        <label>Server URI</label>
-        <input clrInput [disabled]="!isAdmin" formControlName="server_uri" placeholder="coaps://lwm2m.example.com:5684" />
+        <label>DM URI <span class="hint">(LwM2M Device Management endpoint)</span></label>
+        <input clrInput [disabled]="!isAdmin" formControlName="dm_uri"
+               placeholder="coaps://cloud.example.com:5683" />
+        <clr-control-helper>Devices register here after bootstrapping</clr-control-helper>
       </clr-input-container>
+
       <clr-input-container>
-        <label>Endpoint Name</label>
-        <input clrInput [disabled]="!isAdmin" formControlName="endpoint" placeholder="urn:dev:client-1" />
+        <label>Default Lifetime (s)</label>
+        <input clrInput [disabled]="!isAdmin" type="number" formControlName="lifetime"
+               min="0" max="2592000" />
+        <clr-control-helper>Registration lifetime pushed to devices at bootstrap</clr-control-helper>
       </clr-input-container>
+
       <clr-select-container>
-        <label>Binding Mode</label>
+        <label>Default Binding Mode</label>
         <select clrSelect [disabled]="!isAdmin" formControlName="binding">
           <option value="U">U — UDP</option>
           <option value="S">S — SMS</option>
           <option value="US">US — UDP+SMS</option>
           <option value="UQ">UQ — UDP+Queue</option>
         </select>
+        <clr-control-helper>Pushed in Server Object (OID 1) at bootstrap</clr-control-helper>
       </clr-select-container>
-      <clr-input-container>
-        <label>Lifetime (s)</label>
-        <input clrInput [disabled]="!isAdmin" type="number" formControlName="lifetime" min="0" max="2592000" />
-      </clr-input-container>
     </div>
 
-    <clr-checkbox-container style="margin-top:16px;">
-      <clr-checkbox-wrapper>
-        <input type="checkbox" clrCheckbox [disabled]="!isAdmin" formControlName="observable" />
-        <label>Observable</label>
-      </clr-checkbox-wrapper>
-    </clr-checkbox-container>
+    <div class="info-card" style="margin-top:24px;">
+      <p><strong>Device flow after bootstrap:</strong> Device sends <code>Register</code> to the DM URI above.
+      Cloud DM server accepts the registration and the device appears as "online"
+      in the endpoint list.  <code>Read</code> / <code>Write</code> / <code>Observe</code>
+      operations route through the DM server over the VPN tunnel.</p>
+    </div>
 
     <div style="margin-top:24px;" *ngIf="isAdmin">
       <button type="submit" class="btn btn-primary" [disabled]="saving">
         {{ saving ? 'Saving…' : 'Save' }}
       </button>
-      <span *ngIf="msg" style="margin-left:12px;" [style.color]="msg==='Saved.'?'#2e7d32':'#c62828'">{{ msg }}</span>
     </div>
   </form>
 </div>

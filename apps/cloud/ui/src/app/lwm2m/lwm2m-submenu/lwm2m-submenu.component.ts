@@ -4,8 +4,8 @@ import { Component, Output, EventEmitter } from '@angular/core';
   selector: 'app-lwm2m-submenu',
   template: `
     <nav class="subnav">
-      <a class="subnav-item" [class.active]="active==='server'" (click)="s('server')">Server</a>
-      <a class="subnav-item" [class.active]="active==='security'" (click)="s('security')">Security</a>
+      <a class="subnav-item" [class.active]="active==='dm'" (click)="s('dm')">DM</a>
+      <a class="subnav-item" [class.active]="active==='bs'" (click)="s('bs')">BS</a>
     </nav>
   `,
   styles: [`
@@ -16,7 +16,7 @@ import { Component, Output, EventEmitter } from '@angular/core';
   `]
 })
 export class Lwm2mSubmenuComponent {
-  active = 'server';
+  active = 'dm';
   @Output() nav = new EventEmitter<string>();
   s(item: string): void { this.active = item; this.nav.emit(item); }
 }

@@ -28,6 +28,7 @@ import { RoutingSubmenuComponent } from './routing/routing-submenu/routing-subme
 import { PortForwardComponent } from './routing/port-forward/port-forward.component';
 import { Lwm2mSubmenuComponent } from './lwm2m/lwm2m-submenu/lwm2m-submenu.component';
 import { Lwm2mConfigComponent } from './lwm2m/lwm2m-config/lwm2m-config.component';
+import { BsConfigComponent } from './lwm2m/bs-config/bs-config.component';
 import { ServicesSubmenuComponent } from './services/services-submenu/services-submenu.component';
 import { ServicesListComponent } from './services/services-list/services-list.component';
 
@@ -42,7 +43,7 @@ import { SessionService, initSession } from '../common/session.service';
     VpnSubmenuComponent, VpnConfigComponent, VpnStatusComponent,
     WanSubmenuComponent, WifiConfigComponent, WifiScanComponent, IfacePriorityComponent,
     RoutingSubmenuComponent, PortForwardComponent,
-    Lwm2mSubmenuComponent, Lwm2mConfigComponent,
+    Lwm2mSubmenuComponent, Lwm2mConfigComponent, BsConfigComponent,
     ServicesSubmenuComponent, ServicesListComponent,
   ],
   imports: [

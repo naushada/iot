@@ -50,11 +50,12 @@
         </div>
       </ng-container>
 
-      <!-- LwM2M (from iot-ui) -->
+      <!-- LwM2M — DM (Device Management) + BS (Bootstrap Server) -->
       <ng-container *ngIf="selectedMenu==='lwm2m'">
         <app-lwm2m-submenu (nav)="onSubNavSelect($event)"></app-lwm2m-submenu>
         <div class="content-area">
-          <app-lwm2m-config *ngIf="!selectedSubNav || selectedSubNav==='server' || selectedSubNav==='security'"></app-lwm2m-config>
+          <app-lwm2m-config *ngIf="!selectedSubNav || selectedSubNav==='dm'"></app-lwm2m-config>
+          <app-bs-config     *ngIf="selectedSubNav==='bs'"></app-bs-config>
         </div>
       </ng-container>
 
