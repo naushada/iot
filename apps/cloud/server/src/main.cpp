@@ -22,6 +22,7 @@
 
 #include <atomic>
 #include <csignal>
+#include <iostream>
 #include <thread>
 
 #include <nlohmann/json.hpp>
@@ -59,17 +60,17 @@ int main(int argc, char** argv) {
     int sync_interval    = 10;  // seconds
 
     for (int i = 1; i < argc; ++i) {
-        std::string_view a{argv[i]};
-        if (a.starts_with("ds-socket="))
+        std::string a{argv[i]};
+        if (a.rfind("ds-socket=", 0) == 0)
             ds_path = a.substr(10);
-        else if (a.starts_with("vpn-subnet="))
+        else if (a.rfind("vpn-subnet=", 0) == 0)
             vpn_subnet = a.substr(11);
-        else if (a.starts_with("proxy-start="))
-            proxy_port_start = std::stoi(std::string(a.substr(13)));
-        else if (a.starts_with("proxy-end="))
-            proxy_port_end = std::stoi(std::string(a.substr(11)));
-        else if (a.starts_with("sync-interval="))
-            sync_interval = std::stoi(std::string(a.substr(14)));
+        else if (a.rfind("proxy-start=", 0) == 0)
+            proxy_port_start = std::stoi(a.substr(13));
+        else if (a.rfind("proxy-end=", 0) == 0)
+            proxy_port_end = std::stoi(a.substr(11));
+        else if (a.rfind("sync-interval=", 0) == 0)
+            sync_interval = std::stoi(a.substr(14));
     }
 
     // ── Connect to ds-server ──────────────────────────────────────
