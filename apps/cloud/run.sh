@@ -9,6 +9,7 @@
 #   ./run.sh stop               # stop all services
 #   ./run.sh logs [service]     # tail logs (default: all services)
 #   ./run.sh build              # rebuild the image
+#   ./run.sh nocache            # rebuild without cache
 #   ./run.sh ps                 # list running services
 #
 #   HTTP_PORT=8443 ./run.sh     # custom HTTP port
@@ -54,8 +55,11 @@ export VPN_SUBNET PROXY_START PROXY_END
 case "${1:-start}" in
     build)
         log_section "Building $IMAGE"
-        # --no-cache ensures schema/config changes are picked up even when
-        # the COPY checksum doesn't bust the layer (common with Lua files).
+        $CR build -t "$IMAGE" -f "$SCRIPT_DIR/Dockerfile" \
+            "$SCRIPT_DIR/../../"
+        ;;
+    nocache|build-nocache)
+        log_section "Building $IMAGE (no cache)"
         $CR build --no-cache -t "$IMAGE" -f "$SCRIPT_DIR/Dockerfile" \
             "$SCRIPT_DIR/../../"
         ;;
