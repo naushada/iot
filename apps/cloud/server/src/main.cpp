@@ -111,6 +111,9 @@ int main(int argc, char** argv) {
     ds.set("cloud.vpn.port.next",
            data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
 
+    // Self-report running state to ds for Services page.
+    ds.set("services.cloud.iot.cloudd.state", data_store::Value{std::string("running")});
+
     std::cout << "cloudd: started, ds=" << ds_path
               << " vpn-subnet=" << vpn_subnet
               << " proxy=" << proxy_port_start << "-" << proxy_port_end
@@ -163,6 +166,7 @@ int main(int argc, char** argv) {
         }
     }
 
+    ds.set("services.cloud.iot.cloudd.state", data_store::Value{std::string("exited")});
     std::cout << "cloudd: stopped\n";
     return 0;
 }

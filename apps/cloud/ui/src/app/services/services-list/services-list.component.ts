@@ -4,9 +4,8 @@ import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
 
 interface SvcRow {
-  key: string; label: string; enable_key: string;
-  state: string; enabled: boolean; uptime: string;
-  restarting: boolean;
+  key: string; label: string; desc: string; enable_key: string;
+  state: string; enabled: boolean; restarting: boolean;
 }
 
 @Component({
@@ -14,50 +13,70 @@ interface SvcRow {
   template: `
     <div class="page">
       <h3>Service Management</h3>
-      <clr-datagrid>
-        <clr-dg-column>Service</clr-dg-column>
-        <clr-dg-column>State</clr-dg-column>
-        <clr-dg-column>Enabled</clr-dg-column>
-        <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
 
-        <clr-dg-row *clrDgItems="let s of services">
-          <clr-dg-cell><code>{{ s.label }}</code></clr-dg-cell>
-          <clr-dg-cell>
+      <div class="info-card">
+        <p>Cloud daemons self-report their state to the data store.
+        Toggle enable to stop/start a service.  ds-server cannot be
+        disabled (the IPC socket would go dead).</p>
+      </div>
+
+      <div class="svc-grid" style="margin-top:24px;">
+        <div class="svc-card" *ngFor="let s of services">
+          <div class="svc-header">
+            <code class="svc-name">{{ s.label }}</code>
             <app-status-badge [label]="s.state||'unknown'"
               [state]="s.state||''"></app-status-badge>
-          </clr-dg-cell>
-          <clr-dg-cell>
-            <input type="checkbox" [checked]="s.enabled"
-              [disabled]="!isAdmin || s.key==='ds'"
-              (change)="toggleEnable(s)" />
-          </clr-dg-cell>
-          <clr-dg-cell *ngIf="isAdmin">
-            <button class="btn btn-sm"
-              [disabled]="s.restarting || s.key==='ds'"
+          </div>
+          <p class="svc-desc">{{ s.desc }}</p>
+
+          <div class="svc-actions">
+            <clr-checkbox-wrapper *ngIf="s.key !== 'ds'">
+              <input type="checkbox" clrCheckbox
+                [checked]="s.enabled"
+                [disabled]="!isAdmin"
+                (change)="toggleEnable(s)" />
+              <label>Enabled</label>
+            </clr-checkbox-wrapper>
+            <span *ngIf="s.key === 'ds'" class="hint">always on</span>
+
+            <button *ngIf="s.key !== 'ds' && isAdmin"
+              class="btn btn-sm" [disabled]="s.restarting"
               (click)="restart(s)">
               {{ s.restarting ? '…' : 'Restart' }}
             </button>
-          </clr-dg-cell>
-        </clr-dg-row>
-
-        <clr-dg-footer>{{ services.length }} services</clr-dg-footer>
-      </clr-datagrid>
-      <p class="hint">ds-server cannot be disabled or self-restart.  Restart: 2 s disable → enable cycle.</p>
+          </div>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
     .page { padding: 24px; }
-    h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
+    h3 { color: #333; margin: 0 0 16px 0; font-size: 16px; font-weight: 600; }
+    .hint { color: #888; font-weight: normal; font-size: 11px; }
+    .info-card {
+      background: #f0f5ff; border: 1px solid #b3d4ff; border-radius: 4px;
+      padding: 12px 16px; font-size: 13px; color: #333;
+    }
+    .info-card code { background: #d0e4ff; padding: 1px 4px; border-radius: 2px; font-size: 12px; }
+    .svc-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    @media (max-width: 900px) { .svc-grid { grid-template-columns: 1fr; } }
+    .svc-card {
+      background: #fff; border: 1px solid #e0e0e0; border-radius: 6px;
+      padding: 16px;
+    }
+    .svc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .svc-name { font-size: 14px; font-weight: 600; color: #1a1a2e; background: none; }
+    .svc-desc { font-size: 12px; color: #757575; margin: 0 0 12px 0; }
+    .svc-actions { display: flex; align-items: center; gap: 12px; }
     .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
-    .hint { font-size: 12px; color: #757575; margin-top: 16px; }
   `]
 })
 export class ServicesListComponent implements OnInit, OnDestroy {
   services: SvcRow[] = [
-    { key: 'ds',            label: 'ds-server',        enable_key: '',            state: '', enabled: true,  uptime: '', restarting: false },
-    { key: 'iot.cloudd',      label: 'iot-cloudd',        enable_key: 'services.cloud.iot.cloudd.enable',       state: '', enabled: true,  uptime: '', restarting: false },
-    { key: 'iot.httpd',       label: 'iot-httpd',         enable_key: 'services.cloud.iot.httpd.enable',        state: '', enabled: true,  uptime: '', restarting: false },
-    { key: 'openvpn.server',  label: 'openvpn-server',    enable_key: 'services.cloud.openvpn.server.enable',   state: '', enabled: true,  uptime: '', restarting: false },
+    { key: 'ds',             label: 'ds-server',        desc: 'Data store — IPC backbone. Schema-enforced, Lua-backed key/value store.', enable_key: '', state: '', enabled: true,  restarting: false },
+    { key: 'iot.cloudd',     label: 'iot-cloudd',        desc: 'Cloud daemon — LwM2M BS/DM, VPN registry, endpoint provisioning.',        enable_key: 'services.cloud.iot.cloudd.enable',       state: '', enabled: true,  restarting: false },
+    { key: 'iot.httpd',      label: 'iot-httpd',         desc: 'REST API + Cloud UI server. Serves /webui/ + /api/v1/* endpoints.',       enable_key: 'services.cloud.iot.httpd.enable',        state: '', enabled: true,  restarting: false },
+    { key: 'openvpn.server', label: 'openvpn-server',    desc: 'OpenVPN server — manages per-device tunnels on 10.9.0.0/24 subnet.',       enable_key: 'services.cloud.openvpn.server.enable',   state: '', enabled: true,  restarting: false },
   ];
   private active = true;
 
@@ -73,35 +92,28 @@ export class ServicesListComponent implements OnInit, OnDestroy {
 
   private poll(): void {
     if (!this.active) return;
-
-    // Read service state keys for all cloud services
     const keys = ['services.ds.state'];
     for (const s of this.services) {
       if (s.key === 'ds') continue;
       keys.push(s.enable_key, s.enable_key.replace('.enable', '.state'));
     }
-
     this.http.dbGet(keys).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
           const d = r.data as Record<string, unknown>;
-          // ds-server
           const dsState = d['services.ds.state'];
           if (typeof dsState === 'string') this.services[0].state = dsState;
-          // Cloud daemons
           for (const s of this.services) {
             if (s.key === 'ds') continue;
-            const stateVal = d[s.enable_key.replace('.enable', '.state')];
-            const enVal    = d[s.enable_key];
-            if (typeof stateVal === 'string') s.state = stateVal;
-            if (typeof enVal === 'boolean') s.enabled = enVal;
+            const sv = d[s.enable_key.replace('.enable', '.state')];
+            const ev = d[s.enable_key];
+            if (typeof sv === 'string') s.state = sv;
+            if (typeof ev === 'boolean') s.enabled = ev;
           }
         }
         if (this.active) setTimeout(() => this.poll(), 5000);
       },
-      error: () => {
-        if (this.active) setTimeout(() => this.poll(), 5000);
-      }
+      error: () => { if (this.active) setTimeout(() => this.poll(), 5000); }
     });
   }
 
@@ -110,12 +122,8 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     const newVal = !svc.enabled;
     this.http.dbSet([{ key: svc.enable_key, value: newVal }]).subscribe({
       next: (r) => {
-        if (r.ok) {
-          svc.enabled = newVal;
-          this.toast.success(svc.label + (newVal ? ' enabled' : ' disabled'));
-        } else {
-          this.toast.error(r.err || 'Toggle failed');
-        }
+        if (r.ok) { svc.enabled = newVal; this.toast.success(svc.label + (newVal ? ' enabled' : ' disabled')); }
+        else this.toast.error(r.err || 'Toggle failed');
       },
       error: () => this.toast.error('Toggle failed')
     });
@@ -124,26 +132,14 @@ export class ServicesListComponent implements OnInit, OnDestroy {
   restart(svc: SvcRow): void {
     if (!svc.enable_key) return;
     svc.restarting = true;
-    // Disable → 2 s → enable
     this.http.dbSet([{ key: svc.enable_key, value: false }]).subscribe({
-      next: () => {
-        setTimeout(() => {
-          this.http.dbSet([{ key: svc.enable_key, value: true }]).subscribe({
-            next: () => {
-              svc.restarting = false;
-              this.toast.success(svc.label + ' restarted');
-            },
-            error: () => {
-              svc.restarting = false;
-              this.toast.error(svc.label + ' restart failed');
-            }
-          });
-        }, 2000);
-      },
-      error: () => {
-        svc.restarting = false;
-        this.toast.error(svc.label + ' disable failed');
-      }
+      next: () => setTimeout(() => {
+        this.http.dbSet([{ key: svc.enable_key, value: true }]).subscribe({
+          next: () => { svc.restarting = false; this.toast.success(svc.label + ' restarted'); },
+          error: () => { svc.restarting = false; this.toast.error('Restart failed'); }
+        });
+      }, 2000),
+      error: () => { svc.restarting = false; this.toast.error('Disable failed'); }
     });
   }
 

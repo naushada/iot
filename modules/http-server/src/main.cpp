@@ -294,6 +294,9 @@ int main(int argc, char** argv) {
                httpScheme.c_str(), httpIp.c_str(), httpPort, dsPath.c_str(),
                (tlsPtr && tlsCtx.mtls()) ? " (mTLS)" : "", httpWorkers));
 
+    // Self-report running state to ds so the Services page shows live status.
+    ds.set("services.cloud.iot.httpd.state", data_store::Value{std::string("running")});
+
     // The listening socket is polled directly via non-blocking accept() in
     // the loop below; only the per-connection sessions are registered with
     // the reactor (for their READ events).
@@ -459,6 +462,7 @@ int main(int argc, char** argv) {
 
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [http:%t] %M %N:%l shutting down\n")));
+    ds.set("services.cloud.iot.httpd.state", data_store::Value{std::string("exited")});
     // Join the workers before tearing down the reactor/sessions so no
     // in-flight handler is left holding a session that's about to vanish.
     pool.stop();
