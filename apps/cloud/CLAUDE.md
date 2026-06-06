@@ -25,13 +25,23 @@ daemons. Same pattern as the device-side stack.
 
 ```
 apps/cloud/
-├── Dockerfile          # multi-stage build (Ubuntu builder + Alpine UI)
+├── Dockerfile          # multi-stage build (Ubuntu builder + Node UI + slim runtime)
 ├── docker-compose.yml  # 3-service orchestration
 ├── run.sh              # podman/docker compose wrapper
 ├── server/             # iot-cloudd C++ source
 │   └── src/main.cpp    # wires EndpointRegistry + VpnRegistry + BootstrapProvisioner
 └── ui/                 # Angular 14 Cloud Operator Dashboard (Clarity)
-    └── src/
+    └── src/app/
+        ├── dashboard/       # Online device count, tunnel status, telemetry
+        ├── endpoint-list/   # Device table with Launch UI buttons
+        ├── vpn/             # OpenVPN server config + status
+        ├── wan/             # WAN interface / WiFi
+        ├── routing/         # Port forward / DNAT rules
+        ├── lwm2m/
+        │   ├── lwm2m-config/  # DM (Device Management) config
+        │   └── bs-config/     # BS (Bootstrap Config) + Provision
+        ├── services/        # Service management (cloud daemons)
+        └── log-level/       # Log viewer + log-level selector
 ```
 
 ## Building
@@ -73,17 +83,78 @@ Disable auth at runtime:
 ds-cli set http.auth.enabled false
 ```
 
-## Key data store paths (cloud.*)
+## Key data store paths
 
+### Bootstrap Server (cloud.bs.*)
+```
+cloud.bs.endpoint        → BS server identity (default: urn:dev:gateway-)
+cloud.bs.uri             → BS CoAPs endpoint (default: coaps://0.0.0.0:5684)
+cloud.bs.security.mode   → "PSK" | "None"
+cloud.bs.psk.id          → BS PSK identity (RID 3)
+cloud.bs.psk.key         → BS PSK secret (RID 5, opaque)
+```
+
+### Device Management (cloud.dm.*)
+```
+cloud.dm.uri             → DM server URI (pushed to devices, RID 0)
+cloud.dm.lifetime        → Default registration lifetime (RID 1, default 86400)
+cloud.dm.binding         → Default binding mode (RID 7, default "U")
+cloud.dm.psk.id          → DM PSK identity (post-bootstrap)
+cloud.dm.psk.key         → DM PSK key (post-bootstrap, opaque)
+cloud.dm.lwm2m.version   → LwM2M version (default "1.1")
+```
+
+### Provision (per-device, stored in cloud.provision.configs JSON)
+```
+cloud.provision.request   → Endpoint name to provision (iot-cloudd watches)
+cloud.provision.configs   → JSON blob keyed by endpoint name:
+  {
+    "urn:dev:gateway-42": {
+      "sec.uri":      "coaps://...",    // OID 0 RID 0
+      "sec.bs":       1,                // OID 0 RID 1
+      "sec.mode":     0,                // OID 0 RID 2
+      "sec.identity": "iot-client",     // OID 0 RID 3
+      "sec.key":      "...",            // OID 0 RID 5
+      "sec.ssid":     0,                // OID 0 RID 10
+      "dm.psk.id":    "iot-dm-...",     // DM PSK per-device
+      "dm.psk.key":   "...",            // DM PSK key per-device
+      "srv.lifetime": 86400,            // OID 1 RID 1
+      "srv.binding":  "U",              // OID 1 RID 7
+      "lwm2m.version":"1.1"
+    }
+  }
+cloud.deprovision.request → Endpoint name to deprovision (iot-cloudd watches)
+```
+
+### Endpoints (written by iot-cloudd, read by cloud UI)
 ```
 cloud.endpoints          → JSON array of provisioned endpoints
-cloud.ep.<ep>.state      → "online"|"offline"|"bootstrapping"
-cloud.ep.<ep>.tun.ip     → assigned tunnel IP (10.9.0.x)
-cloud.ep.<ep>.tun.port   → proxy port (5001+)
-cloud.provision.request  → ds-bump: write endpoint name to provision
-cloud.deprovision.request → ds-bump: write endpoint name to deprovision
-cloud.vpn.subnet         → tunnel subnet (default 10.9.0.0/24)
-cloud.vpn.port.next      → next available proxy port
+  [{
+    "endpoint":      "urn:dev:gateway-42",
+    "state":         "online",
+    "tun_ip":        "10.9.0.12",
+    "proxy_port":    5001,
+    "registered":    true,
+    "last_seen_unix": 1718123456
+  }]
+```
+
+### VPN Server (cloud.vpn.*)
+```
+cloud.vpn.subnet         → Tunnel subnet (default 10.9.0.0/24)
+cloud.vpn.port.next      → Next proxy port (5001–6000)
+cloud.vpn.ca.crt         → CA cert path
+cloud.vpn.ca.key         → CA key path (secret volume)
+cloud.vpn.server.crt     → Server cert path
+cloud.vpn.server.key     → Server key path
+```
+
+### Services (services.cloud.*)
+```
+services.ds.state                        → ds-server state
+services.cloud.iot-cloudd.enable|state   → iot-cloudd enable/state
+services.cloud.iot-httpd.enable|state    → iot-httpd enable/state
+services.cloud.openvpn.server.enable|state → openvpn-server enable/state
 ```
 
 ## Related modules

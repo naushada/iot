@@ -69,5 +69,25 @@ return {
                                                write_acl = {"uid:0"} },
     ["services.wifi.client.state"]         = {
         access  = "Viewer", type = "string",  default = "running" },
+
+    -- ── Cloud services (L21) ────────────────────────────────────
+    ["services.cloud.iot-cloudd.enable"]   = {
+        access  = "Admin", type = "boolean", default = true,
+                                               depends_on = {"ds"},
+                                               write_acl = {"uid:0"} },
+    ["services.cloud.iot-cloudd.state"]    = {
+        access  = "Viewer", type = "string",  default = "running" },
+    ["services.cloud.iot-httpd.enable"]    = {
+        access  = "Admin", type = "boolean", default = true,
+                                               depends_on = {"ds"},
+                                               write_acl = {"uid:0"} },
+    ["services.cloud.iot-httpd.state"]     = {
+        access  = "Viewer", type = "string",  default = "running" },
+    ["services.cloud.openvpn.server.enable"] = {
+        access  = "Admin", type = "boolean", default = true,
+                                               depends_on = {"ds"},
+                                               write_acl = {"uid:0"} },
+    ["services.cloud.openvpn.server.state"]  = {
+        access  = "Viewer", type = "string",  default = "running" },
   },
 }
