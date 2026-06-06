@@ -11,7 +11,6 @@ import { MainComponent } from './main/main.component';
 import { LoginComponent } from './login/login.component';
 import { DashboardComponent } from './dashboard/dashboard.component';
 import { EndpointListComponent } from './endpoint-list/endpoint-list.component';
-import { ProvisionComponent } from './provision/provision.component';
 import { StatusBadgeComponent } from './common/status-badge/status-badge.component';
 import { ToastComponent } from './common/toast/toast.component';
 import { LogViewerComponent } from './log-level/log-viewer.component';
@@ -38,8 +37,7 @@ import { SessionService, initSession } from '../common/session.service';
 @NgModule({
   declarations: [
     AppComponent, MainComponent, LoginComponent,
-    DashboardComponent, EndpointListComponent, ProvisionComponent,
-    StatusBadgeComponent, ToastComponent, LogViewerComponent,
+    DashboardComponent, EndpointListComponent, StatusBadgeComponent, ToastComponent, LogViewerComponent,
     VpnSubmenuComponent, VpnConfigComponent, VpnStatusComponent,
     WanSubmenuComponent, WifiConfigComponent, WifiScanComponent, IfacePriorityComponent,
     RoutingSubmenuComponent, PortForwardComponent,

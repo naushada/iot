@@ -14,42 +14,39 @@ export class VpnConfigComponent implements OnInit {
   loading = true;
   get isAdmin(): boolean { return this.session.isAdmin; }
   saving = false;
-  msg = '';
 
-  constructor(private http: HttpsvcService, fb: FormBuilder,
-    private session: SessionService, private toast: ToastService) {
+  constructor(
+    private http: HttpsvcService,
+    fb: FormBuilder,
+    private session: SessionService,
+    private toast: ToastService
+  ) {
     this.form = fb.group({
-      remote_host:  [''],
-      remote_port:  [1194],
-      remote_proto: ['udp'],
-      cert_path:    [''],
-      key_path:     [''],
-      ca_path:      [''],
-      cipher:       ['AES-256-GCM'],
-      dev:          ['tun'],
-      mgmt_port:    [7505],
+      subnet:     ['10.9.0.0/24'],
+      port_next:  [5001],
+      ca_crt:     ['/etc/iot/vpn/ca/ca.crt'],
+      ca_key:     ['/run/secrets/iot-ca-key/ca.key'],
+      server_crt: ['/etc/iot/vpn/server.crt'],
+      server_key: ['/etc/iot/vpn/server.key'],
     });
   }
 
   ngOnInit(): void {
     this.http.dbGet([
-      'vpn.remote.host', 'vpn.remote.port', 'vpn.remote.proto',
-      'vpn.cert.path', 'vpn.key.path', 'vpn.ca.path',
-      'vpn.cipher', 'vpn.dev', 'vpn.mgmt.port'
+      'cloud.vpn.subnet', 'cloud.vpn.port.next',
+      'cloud.vpn.ca.crt', 'cloud.vpn.ca.key',
+      'cloud.vpn.server.crt', 'cloud.vpn.server.key'
     ]).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
           const d = r.data as Record<string, unknown>;
           this.form.patchValue({
-            remote_host:  d['vpn.remote.host']  || '',
-            remote_port:  d['vpn.remote.port']  || 1194,
-            remote_proto: d['vpn.remote.proto'] || 'udp',
-            cert_path:    d['vpn.cert.path']    || '',
-            key_path:     d['vpn.key.path']     || '',
-            ca_path:      d['vpn.ca.path']      || '',
-            cipher:       d['vpn.cipher']       || 'AES-256-GCM',
-            dev:          d['vpn.dev']          || 'tun',
-            mgmt_port:    d['vpn.mgmt.port']    || 7505,
+            subnet:     d['cloud.vpn.subnet']      || '10.9.0.0/24',
+            port_next:  d['cloud.vpn.port.next']   || 5001,
+            ca_crt:     d['cloud.vpn.ca.crt']      || '/etc/iot/vpn/ca/ca.crt',
+            ca_key:     d['cloud.vpn.ca.key']      || '/run/secrets/iot-ca-key/ca.key',
+            server_crt: d['cloud.vpn.server.crt']  || '/etc/iot/vpn/server.crt',
+            server_key: d['cloud.vpn.server.key']  || '/etc/iot/vpn/server.key',
           });
         }
         this.loading = false;
@@ -59,24 +56,22 @@ export class VpnConfigComponent implements OnInit {
   }
 
   save(): void {
-    this.saving = true; this.msg = '';
+    this.saving = true;
     const v = this.form.value;
     this.http.dbSet([
-      { key: 'vpn.remote.host',  value: v.remote_host },
-      { key: 'vpn.remote.port',  value: v.remote_port },
-      { key: 'vpn.remote.proto', value: v.remote_proto },
-      { key: 'vpn.cert.path',    value: v.cert_path },
-      { key: 'vpn.key.path',     value: v.key_path },
-      { key: 'vpn.ca.path',      value: v.ca_path },
-      { key: 'vpn.cipher',       value: v.cipher },
-      { key: 'vpn.dev',          value: v.dev },
-      { key: 'vpn.mgmt.port',    value: v.mgmt_port },
+      { key: 'cloud.vpn.subnet',      value: v.subnet },
+      { key: 'cloud.vpn.port.next',   value: v.port_next },
+      { key: 'cloud.vpn.ca.crt',      value: v.ca_crt },
+      { key: 'cloud.vpn.ca.key',      value: v.ca_key },
+      { key: 'cloud.vpn.server.crt',  value: v.server_crt },
+      { key: 'cloud.vpn.server.key',  value: v.server_key },
     ]).subscribe({
       next: (r) => {
         this.saving = false;
-        if(r.ok) this.toast.success('VPN config saved'); else this.toast.error(r.err||'Save failed');
+        if (r.ok) this.toast.success('VPN config saved');
+        else this.toast.error(r.err || 'Save failed');
       },
-      error: (e) => { this.saving = false; this.toast.error('Save failed'); }
+      error: () => { this.saving = false; this.toast.error('Save failed'); }
     });
   }
 }

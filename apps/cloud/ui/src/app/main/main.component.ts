@@ -15,7 +15,6 @@ export class MainComponent {
   menus = [
     { id: 'dashboard', label: 'Dashboard', svg: 'assets/icons/dashboard.svg' },
     { id: 'endpoints', label: 'Endpoints', svg: 'assets/icons/routing.svg' },
-    { id: 'provision', label: 'Provision', svg: 'assets/icons/services.svg' },
     { id: 'vpn',       label: 'VPN',       svg: 'assets/icons/vpn.svg' },
     { id: 'wan',       label: 'WAN',       svg: 'assets/icons/wan.svg' },
     { id: 'routing',   label: 'Routing',   svg: 'assets/icons/routing.svg' },

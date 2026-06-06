@@ -21,9 +21,8 @@
     <div class="content">
       <app-dashboard *ngIf="selectedMenu==='dashboard'"></app-dashboard>
       <app-endpoint-list *ngIf="selectedMenu==='endpoints'"></app-endpoint-list>
-      <app-provision *ngIf="selectedMenu==='provision'"></app-provision>
 
-      <!-- VPN (from iot-ui) -->
+      <!-- VPN (server-side) -->
       <ng-container *ngIf="selectedMenu==='vpn'">
         <app-vpn-submenu (nav)="onSubNavSelect($event)"></app-vpn-submenu>
         <div class="content-area">
