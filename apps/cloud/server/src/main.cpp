@@ -21,6 +21,7 @@
 #include "data_store/value.hpp"
 
 #include <ace/Log_Msg.h>
+#include <ace/Log_Record.h>
 
 #include <atomic>
 #include <csignal>

@@ -11,6 +11,7 @@
 #include <unordered_map>
 
 #include <ace/Log_Msg.h>
+#include <ace/Log_Record.h>
 
 #include "data_store/client.hpp"
 #include "data_store/service_gate.hpp"
