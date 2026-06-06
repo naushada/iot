@@ -21,14 +21,11 @@
 #include "data_store/value.hpp"
 
 #include <ace/Log_Msg.h>
-#include <ace/Log_Record.h>
-#include <ace/Log_Msg_Callback.h>
+
+#include "data_store/log_buffer.hpp"
 
 #include <atomic>
 #include <csignal>
-#include <ctime>
-#include <deque>
-#include <mutex>
 #include <thread>
 
 #include <nlohmann/json.hpp>
@@ -36,49 +33,8 @@
 namespace {
 
 // ── Log ring buffer ────────────────────────────────────────────────
-// Captures ACE log output into a fixed-size deque so the cloud UI can
-// tail logs via GET /api/v1/log → log.cloudd.text in the data store.
-// Same pattern as iot-httpd.
-
-std::mutex              g_log_mutex;
-std::deque<std::string> g_log_buf;
-constexpr std::size_t   kMaxLogLines = 200;
-
-class LogCallback : public ACE_Log_Msg_Callback {
-public:
-    void log(ACE_Log_Record& rec) override {
-        std::time_t t = static_cast<std::time_t>(rec.time_stamp().sec());
-        struct std::tm tm_buf;
-        ::localtime_r(&t, &tm_buf);
-        char ts[16];
-        std::strftime(ts, sizeof(ts), "%H:%M:%S", &tm_buf);
-
-        const char* lvl = "?";
-        switch (rec.type()) {
-            case LM_DEBUG:    lvl = "DEBUG"; break;
-            case LM_INFO:     lvl = "INFO";  break;
-            case LM_NOTICE:   lvl = "NOTE";  break;
-            case LM_WARNING:  lvl = "WARN";  break;
-            case LM_ERROR:    lvl = "ERROR"; break;
-            case LM_CRITICAL: lvl = "CRIT";  break;
-        }
-
-        std::lock_guard<std::mutex> lk(g_log_mutex);
-        g_log_buf.push_back(
-            std::string(ts) + " " + lvl + " cloudd: " +
-            rec.msg_data() + "\n");
-        while (g_log_buf.size() > kMaxLogLines) g_log_buf.pop_front();
-    }
-};
-
-void flush_log_to_ds(data_store::Client& ds) {
-    std::string text;
-    {
-        std::lock_guard<std::mutex> lk(g_log_mutex);
-        for (const auto& line : g_log_buf) text += line;
-    }
-    ds.set("log.cloudd.text", data_store::Value{text}, 200);  // best-effort
-}
+// Captures ACE log output → ds log.cloudd.text for the cloud UI.
+data_store::LogBuffer g_log("cloudd", "log.cloudd.text");
 
 std::atomic<bool> g_stop{false};
 
@@ -232,11 +188,6 @@ int main(int argc, char** argv) {
     };
     apply_log_level();
 
-    // Intercept ACE log output → ring buffer → flushed to ds log.cloudd.text
-    // so the cloud UI log viewer can tail cloudd logs alongside httpd logs.
-    LogCallback log_cb;
-    ACE_Log_Msg::instance()->msg_callback(&log_cb);
-
     // ── Main loop ─────────────────────────────────────────────────
     // Block on recv_event() up to sync_interval seconds.  A provision
     // or deprovision request from iot-httpd wakes us immediately; a
@@ -293,7 +244,7 @@ int main(int argc, char** argv) {
                 ds.set("cloud.vpn.port.next",
                        data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
                 apply_log_level();
-                flush_log_to_ds(ds);
+                g_log.flush(ds);
             }
         }
     }
@@ -318,9 +269,9 @@ int main(int argc, char** argv) {
                        rs.err.c_str()));
         }
     }
-    flush_log_to_ds(ds);
+    g_log.flush(ds);
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [cloudd:%t] %M %N:%l stopped\n")));
-    flush_log_to_ds(ds);
+    g_log.flush(ds);
     return 0;
 }

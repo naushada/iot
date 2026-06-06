@@ -34,8 +34,8 @@
 
 #include <ace/INET_Addr.h>
 #include <ace/Log_Msg.h>
-#include <ace/Log_Record.h>
-#include <ace/Log_Msg_Callback.h>
+
+#include "data_store/log_buffer.hpp"
 #include <ace/Reactor.h>
 #include <ace/SOCK_Acceptor.h>
 #include <ace/Time_Value.h>
@@ -45,52 +45,8 @@ namespace {
 std::atomic<bool> g_stop{false};
 
 // ── Log ring buffer ────────────────────────────────────────────────
-// Captures ACE log output into a fixed-size deque so the UI can tail
-// logs via GET /api/v1/log → log.text in the data store.
-
-#include <deque>
-#include <mutex>
-
-std::mutex g_log_mutex;
-std::deque<std::string> g_log_buf;
-constexpr std::size_t kMaxLogLines = 200;
-
-// ACE_Log_Msg callback — intercepts every ACE_DEBUG / ACE_ERROR etc.
-class LogCallback : public ACE_Log_Msg_Callback {
-public:
-    void log(ACE_Log_Record& rec) override {
-        std::time_t t = static_cast<std::time_t>(rec.time_stamp().sec());
-        struct std::tm tm_buf;
-        ::localtime_r(&t, &tm_buf);
-        char ts[16];
-        std::strftime(ts, sizeof(ts), "%H:%M:%S", &tm_buf);
-
-        const char* lvl = "?";
-        switch (rec.type()) {
-            case LM_DEBUG:   lvl = "DEBUG"; break;
-            case LM_INFO:    lvl = "INFO";  break;
-            case LM_NOTICE:  lvl = "NOTE";  break;
-            case LM_WARNING: lvl = "WARN";  break;
-            case LM_ERROR:   lvl = "ERROR"; break;
-            case LM_CRITICAL:lvl = "CRIT";  break;
-        }
-
-        std::lock_guard<std::mutex> lk(g_log_mutex);
-        g_log_buf.push_back(
-            std::string(ts) + " " + lvl + " httpd: " +
-            rec.msg_data() + "\n");
-        while (g_log_buf.size() > kMaxLogLines) g_log_buf.pop_front();
-    }
-};
-
-void flush_log_to_ds(data_store::Client& ds) {
-    std::string text;
-    {
-        std::lock_guard<std::mutex> lk(g_log_mutex);
-        for (const auto& line : g_log_buf) text += line;
-    }
-    ds.set("log.text", data_store::Value{text}, 200);  // best-effort
-}
+// Captures ACE log output → ds log.text for the cloud UI.
+data_store::LogBuffer g_log("httpd", "log.text");
 
 void on_signal(int /*sig*/) {
     g_stop.store(true);
@@ -313,10 +269,6 @@ int main(int argc, char** argv) {
     ::signal(SIGTERM, on_signal);
     ::signal(SIGPIPE, SIG_IGN);
 
-    // Intercept ACE log output → ring buffer → flushed to ds log.text
-    static LogCallback log_cb;
-    ACE_Log_Msg::instance()->msg_callback(&log_cb);
-
     // ── Hot-reload (FUP-L18-2) ────────────────────────────────
     // Poll the hot-reloadable http.* keys; when an operator changes one via
     // ds-cli at runtime, apply it without a restart. ds values are
@@ -453,7 +405,7 @@ int main(int argc, char** argv) {
                         static_cast<int>(mask), ACE_Log_Msg::PROCESS);
                 }
                 // Flush ring-buffer logs to data store so the UI can tail them
-                flush_log_to_ds(ds);
+                g_log.flush(ds);
             }
             DsHttpCfg cur = read_ds_http_cfg(ds);
             bool tlsDirty = false, listenDirty = false;

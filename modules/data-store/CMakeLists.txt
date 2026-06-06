@@ -51,7 +51,8 @@ add_library(datastore_client STATIC
     src/client/client.cpp
     src/client/service_gate.cpp
     src/client/dep_watch.cpp
-    src/proto/proto.cpp)
+    src/proto/proto.cpp
+    src/log_buffer.cpp)
 
 target_include_directories(datastore_client
     PUBLIC ${DS_MODULE_DIR}/inc)
