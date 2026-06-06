@@ -54,7 +54,10 @@ export VPN_SUBNET PROXY_START PROXY_END
 case "${1:-start}" in
     build)
         log_section "Building $IMAGE"
-        $CR build -t "$IMAGE" -f "$SCRIPT_DIR/Dockerfile" "$SCRIPT_DIR/../../"
+        # --no-cache ensures schema/config changes are picked up even when
+        # the COPY checksum doesn't bust the layer (common with Lua files).
+        $CR build --no-cache -t "$IMAGE" -f "$SCRIPT_DIR/Dockerfile" \
+            "$SCRIPT_DIR/../../"
         ;;
 
     start|up)
