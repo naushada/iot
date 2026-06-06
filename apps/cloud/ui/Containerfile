@@ -12,4 +12,4 @@ EXPOSE 4300
 # Default: run the Angular dev server, binding to all interfaces so the
 # host can reach port 4300.  Live-reload works because the source is
 # bind-mounted.
-CMD ["ng", "serve", "--host", "0.0.0.0", "--poll", "2000"]
+CMD npm install --no-audit --no-fund && ng serve --host 0.0.0.0 --poll 2000
