@@ -1,6 +1,5 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
-import { Subscription, interval } from 'rxjs';
-import { switchMap } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
 import { HttpsvcService } from '../../common/httpsvc.service';
 import { SessionService } from '../../common/session.service';
@@ -32,7 +31,7 @@ import { environment } from '../../environments/environment';
         <button class="btn btn-sm" (click)="refresh()">Refresh</button>
         <label class="auto-refresh">
           <input type="checkbox" [checked]="autoRefresh" (change)="toggleAuto()" />
-          auto (3s)
+          auto
         </label>
       </div>
       <textarea #ta class="log-textarea" readonly
@@ -66,6 +65,7 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   autoRefresh = true;
   logLevel = 'INFO';
   levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR'];
+  private active = true;
   private sub = new Subscription();
   private api = environment.apiUrl;
 
@@ -88,13 +88,36 @@ export class LogViewerComponent implements OnInit, OnDestroy {
         }
       }
     });
-    // Load log text
+    // Load log text then start long-poll loop
     this.refresh();
-    this.sub.add(
-      interval(3000).pipe(switchMap(() => this.fetchLog())).subscribe({
-        next: (text) => { if (this.autoRefresh) { this.logText = text; this.scrollBottom(); } }
-      })
-    );
+    this.pollLog();
+  }
+
+  /// Long-poll log.text and log.cloudd.text alternately. When either
+  /// changes, re-fetch the full merged log from /api/v1/log.
+  /// Timeout (30s) → re-fetch and poll the next key.
+  private pollIdx = 0;
+  private pollLog(): void {
+    if (!this.active) return;
+    const keys = ['log.text', 'log.cloudd.text'];
+    const key = keys[this.pollIdx % keys.length];
+    this.pollIdx++;
+
+    this.httpSvc.dbGetLongPoll(key, 30).subscribe({
+      next: () => {
+        if (this.autoRefresh) this.fetchAndShow();
+        this.pollLog();
+      },
+      error: () => {
+        this.pollLog();
+      }
+    });
+  }
+
+  private fetchAndShow(): void {
+    this.fetchLog().subscribe({
+      next: (text) => { this.logText = text; this.scrollBottom(); }
+    });
   }
 
   setLevel(level: string): void {
@@ -128,5 +151,5 @@ export class LogViewerComponent implements OnInit, OnDestroy {
     }, 50);
   }
 
-  ngOnDestroy(): void { this.sub.unsubscribe(); }
+  ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
 }
