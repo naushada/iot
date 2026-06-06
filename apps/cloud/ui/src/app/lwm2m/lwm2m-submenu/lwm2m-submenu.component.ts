@@ -7,12 +7,12 @@ import { Component, Output, EventEmitter } from '@angular/core';
       <a class="subnav-tab" [class.active]="active === 'dm'"
          (click)="select('dm')">
         <clr-icon shape="cog"></clr-icon>
-        <span>DM</span>
+        <span>Device Management</span>
       </a>
       <a class="subnav-tab" [class.active]="active === 'bs'"
          (click)="select('bs')">
         <clr-icon shape="cloud"></clr-icon>
-        <span>BS</span>
+        <span>Bootstrap Config</span>
       </a>
     </div>
   `,

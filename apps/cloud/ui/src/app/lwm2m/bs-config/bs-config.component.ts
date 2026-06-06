@@ -53,8 +53,9 @@ export class BsConfigComponent implements OnInit {
       sec_identity: ['iot-client'],
       sec_key:      [''],
       sec_ssid:     [0],
-      srv_lifetime: [86400],
-      srv_binding:  ['U'],
+      srv_lifetime:  [86400],
+      srv_binding:   ['U'],
+      lwm2m_version: ['1.1'],
     });
   }
 
@@ -138,8 +139,9 @@ export class BsConfigComponent implements OnInit {
       'sec.identity': v.sec_identity,
       'sec.key':      v.sec_key,
       'sec.ssid':     v.sec_ssid,
-      'srv.lifetime': v.srv_lifetime,
-      'srv.binding':  v.srv_binding,
+      'srv.lifetime':   v.srv_lifetime,
+      'srv.binding':    v.srv_binding,
+      'lwm2m.version':  v.lwm2m_version,
     };
 
     // Read existing configs, add/update this endpoint, write back
