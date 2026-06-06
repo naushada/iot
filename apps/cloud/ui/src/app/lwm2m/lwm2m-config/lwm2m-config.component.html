@@ -27,6 +27,13 @@
         </select>
         <clr-control-helper>Pushed in Server Object (OID 1) at bootstrap</clr-control-helper>
       </clr-select-container>
+
+      <clr-input-container>
+        <label>LwM2M Version</label>
+        <input clrInput [disabled]="!isAdmin" formControlName="lwm2m_version"
+               placeholder="1.1" />
+        <clr-control-helper>Default version for provisioned devices</clr-control-helper>
+      </clr-input-container>
     </div>
 
     <div class="info-card" style="margin-top:24px;">

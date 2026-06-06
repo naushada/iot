@@ -86,6 +86,14 @@ return {
       type    = "string",
       default = "U",
     },
+    -- LwM2M version reported by devices / expected by the DM server.
+    -- Per-device overrides stored in cloud.provision.configs as
+    -- lwm2m.version inside the endpoint's JSON entry.
+    ["cloud.dm.lwm2m.version"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "1.1",
+    },
 
     -- Provision request: iot-httpd writes the endpoint name here;
     -- iot-cloudd watches this key and calls BootstrapProvisioner.
