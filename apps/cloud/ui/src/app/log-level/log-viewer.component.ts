@@ -37,6 +37,34 @@ import { environment } from '../../environments/environment';
             <option *ngFor="let l of daemonLevels" [value]="l">{{ l }}</option>
           </select>
         </clr-select-container>
+        <clr-select-container>
+          <label>lwm2m-bs</label>
+          <select clrSelect [disabled]="!isAdmin"
+                  [ngModel]="logLevelLwm2mBs" (ngModelChange)="setLevel('log.level.lwm2m.bs', $event)">
+            <option *ngFor="let l of daemonLevels" [value]="l">{{ l }}</option>
+          </select>
+        </clr-select-container>
+        <clr-select-container>
+          <label>lwm2m-dm</label>
+          <select clrSelect [disabled]="!isAdmin"
+                  [ngModel]="logLevelLwm2mDm" (ngModelChange)="setLevel('log.level.lwm2m.dm', $event)">
+            <option *ngFor="let l of daemonLevels" [value]="l">{{ l }}</option>
+          </select>
+        </clr-select-container>
+        <clr-select-container>
+          <label>VPN Server</label>
+          <select clrSelect [disabled]="!isAdmin"
+                  [ngModel]="logLevelVpn" (ngModelChange)="setLevel('log.level.vpn', $event)">
+            <option *ngFor="let l of daemonLevels" [value]="l">{{ l }}</option>
+          </select>
+        </clr-select-container>
+        <clr-select-container>
+          <label>DTLS</label>
+          <select clrSelect [disabled]="!isAdmin"
+                  [ngModel]="logLevelDtls" (ngModelChange)="setLevel('log.level.dtls', $event)">
+            <option *ngFor="let l of daemonLevels" [value]="l">{{ l }}</option>
+          </select>
+        </clr-select-container>
       </div>
 
       <!-- Log Output -->
@@ -80,6 +108,10 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   logLevel = 'INFO';
   logLevelCloudd = '';
   logLevelHttpd = '';
+  logLevelLwm2mBs = '';
+  logLevelLwm2mDm = '';
+  logLevelVpn = '';
+  logLevelDtls = '';
   levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR'];
   daemonLevels: string[] = ['', 'DEBUG', 'INFO', 'WARNING', 'ERROR'];
   private active = true;
@@ -97,16 +129,20 @@ export class LogViewerComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     // Load current log levels (global + per-daemon)
-    this.httpSvc.dbGet(['log.level', 'log.level.cloudd', 'log.level.httpd']).subscribe({
+    const lvlKeys = ['log.level', 'log.level.cloudd', 'log.level.httpd',
+      'log.level.lwm2m.bs', 'log.level.lwm2m.dm', 'log.level.vpn', 'log.level.dtls'];
+    this.httpSvc.dbGet(lvlKeys).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
           const d = r.data as Record<string, unknown>;
           const g = (d['log.level'] as string || 'INFO').toUpperCase();
           if (this.levels.includes(g)) this.logLevel = g;
-          const c = (d['log.level.cloudd'] as string || '').toUpperCase();
-          if (this.daemonLevels.includes(c)) this.logLevelCloudd = c;
-          const h = (d['log.level.httpd'] as string || '').toUpperCase();
-          if (this.daemonLevels.includes(h)) this.logLevelHttpd = h;
+          this.logLevelCloudd = this.pickLevel(d['log.level.cloudd']);
+          this.logLevelHttpd = this.pickLevel(d['log.level.httpd']);
+          this.logLevelLwm2mBs = this.pickLevel(d['log.level.lwm2m.bs']);
+          this.logLevelLwm2mDm = this.pickLevel(d['log.level.lwm2m.dm']);
+          this.logLevelVpn = this.pickLevel(d['log.level.vpn']);
+          this.logLevelDtls = this.pickLevel(d['log.level.dtls']);
         }
       }
     });
@@ -150,6 +186,11 @@ export class LogViewerComponent implements OnInit, OnDestroy {
     });
   }
 
+  private pickLevel(v: unknown): string {
+    const s = (v as string || '').toUpperCase();
+    return this.daemonLevels.includes(s) ? s : '';
+  }
+
   setLevel(key: string, level: string): void {
     this.httpSvc.dbSet([{ key, value: level }]).subscribe({
       next: (r) => {
@@ -157,6 +198,10 @@ export class LogViewerComponent implements OnInit, OnDestroy {
           if (key === 'log.level') this.logLevel = level;
           else if (key === 'log.level.cloudd') this.logLevelCloudd = level;
           else if (key === 'log.level.httpd') this.logLevelHttpd = level;
+          else if (key === 'log.level.lwm2m.bs') this.logLevelLwm2mBs = level;
+          else if (key === 'log.level.lwm2m.dm') this.logLevelLwm2mDm = level;
+          else if (key === 'log.level.vpn') this.logLevelVpn = level;
+          else if (key === 'log.level.dtls') this.logLevelDtls = level;
           this.toast.success(key + ' set to ' + (level || 'inherited'));
         }
         else this.toast.error(r.err || 'Failed to set log level');
@@ -180,16 +225,20 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   }
 
   private reloadLevels(): void {
-    this.httpSvc.dbGet(['log.level', 'log.level.cloudd', 'log.level.httpd']).subscribe({
+    const lvlKeys = ['log.level', 'log.level.cloudd', 'log.level.httpd',
+      'log.level.lwm2m.bs', 'log.level.lwm2m.dm', 'log.level.vpn', 'log.level.dtls'];
+    this.httpSvc.dbGet(lvlKeys).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
           const d = r.data as Record<string, unknown>;
           const g = (d['log.level'] as string || 'INFO').toUpperCase();
           if (this.levels.includes(g)) this.logLevel = g;
-          const c = (d['log.level.cloudd'] as string || '').toUpperCase();
-          if (this.daemonLevels.includes(c)) this.logLevelCloudd = c;
-          const h = (d['log.level.httpd'] as string || '').toUpperCase();
-          if (this.daemonLevels.includes(h)) this.logLevelHttpd = h;
+          this.logLevelCloudd = this.pickLevel(d['log.level.cloudd']);
+          this.logLevelHttpd = this.pickLevel(d['log.level.httpd']);
+          this.logLevelLwm2mBs = this.pickLevel(d['log.level.lwm2m.bs']);
+          this.logLevelLwm2mDm = this.pickLevel(d['log.level.lwm2m.dm']);
+          this.logLevelVpn = this.pickLevel(d['log.level.vpn']);
+          this.logLevelDtls = this.pickLevel(d['log.level.dtls']);
         }
       }
     });

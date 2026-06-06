@@ -69,17 +69,55 @@ return {
       type    = "string",
       default = "",
     },
+    ["log.level.lwm2m.bs"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
+    ["log.level.lwm2m.dm"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
+    ["log.level.vpn"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
+    ["log.level.dtls"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
     -- Recent log output (plain text, newline-separated). Each daemon
     -- writes to its own key so they don't clobber each other. The cloud
     -- UI log viewer merges all keys. Capped at ~200 lines / ~16 KB each.
-    --   log.text        — iot-httpd
-    --   log.cloudd.text — iot-cloudd
+    --   log.text           — iot-httpd
+    --   log.cloudd.text    — iot-cloudd
+    --   log.lwm2m.text     — lwm2m (device/client mode)
+    --   log.lwm2m.bs.text  — lwm2m-bs (cloud bootstrap server)
+    --   log.lwm2m.dm.text  — lwm2m-dm (cloud device management)
     ["log.text"] = {
         access  = "Viewer",
       type    = "string",
       default = "",
     },
     ["log.cloudd.text"] = {
+        access  = "Viewer",
+      type    = "string",
+      default = "",
+    },
+    ["log.lwm2m.text"] = {
+        access  = "Viewer",
+      type    = "string",
+      default = "",
+    },
+    ["log.lwm2m.bs.text"] = {
+        access  = "Viewer",
+      type    = "string",
+      default = "",
+    },
+    ["log.lwm2m.dm.text"] = {
         access  = "Viewer",
       type    = "string",
       default = "",

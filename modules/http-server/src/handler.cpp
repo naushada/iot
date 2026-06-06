@@ -589,7 +589,9 @@ void install_handlers(Router& router,
                 return r;
             }
             std::vector<data_store::Client::GetResult> got;
-            auto rs = ds->get({"log.text", "log.cloudd.text"}, got);
+            auto rs = ds->get({"log.text", "log.cloudd.text",
+                               "log.lwm2m.text", "log.lwm2m.bs.text",
+                               "log.lwm2m.dm.text"}, got);
             std::string merged;
             if (rs.ok) {
                 for (const auto& g : got) {

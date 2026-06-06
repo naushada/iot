@@ -135,6 +135,51 @@ inline void tx_via(App& app,
     app.udpAdapter()->tx(local, svc);
 }
 
+// ── Log ring buffer ────────────────────────────────────────────────
+// Captures ACE log output → ds key set at startup. Same pattern as
+// httpd and cloudd.
+
+std::mutex              g_log_mutex;
+std::deque<std::string> g_log_buf;
+constexpr std::size_t   kMaxLogLines = 200;
+std::string             g_log_key = "log.lwm2m.text";  // default, may be overridden
+
+class LogCallback : public ACE_Log_Msg_Callback {
+public:
+    void log(ACE_Log_Record& rec) override {
+        std::time_t t = static_cast<std::time_t>(rec.time_stamp().sec());
+        struct std::tm tm_buf;
+        ::localtime_r(&t, &tm_buf);
+        char ts[16];
+        std::strftime(ts, sizeof(ts), "%H:%M:%S", &tm_buf);
+
+        const char* lvl = "?";
+        switch (rec.type()) {
+            case LM_DEBUG:    lvl = "DEBUG"; break;
+            case LM_INFO:     lvl = "INFO";  break;
+            case LM_NOTICE:   lvl = "NOTE";  break;
+            case LM_WARNING:  lvl = "WARN";  break;
+            case LM_ERROR:    lvl = "ERROR"; break;
+            case LM_CRITICAL: lvl = "CRIT";  break;
+        }
+
+        std::lock_guard<std::mutex> lk(g_log_mutex);
+        g_log_buf.push_back(
+            std::string(ts) + " " + lvl + " lwm2m: " +
+            rec.msg_data() + "\n");
+        while (g_log_buf.size() > kMaxLogLines) g_log_buf.pop_front();
+    }
+};
+
+void flush_log_to_ds(data_store::Client& ds) {
+    std::string text;
+    {
+        std::lock_guard<std::mutex> lk(g_log_mutex);
+        for (const auto& line : g_log_buf) text += line;
+    }
+    ds.set(g_log_key, data_store::Value{text}, 200);  // best-effort
+}
+
 /// Read the existing security/server-object JSON files under
 /// `apps/config/{securityObject,serverObject}/` and synthesise one
 /// AccountProvisioning per Security Object instance. Only instances
@@ -635,6 +680,54 @@ int main(std::int32_t argc, char *argv[]) {
     // instead of the device-side services.lwm2m.server.* keys.
     const std::string lwm2m_instance = argValueMap["lwm2m-instance"];
 
+    // Ring-buffer log key — per-instance when running in cloud server
+    // role, generic "log.lwm2m.text" for device/client mode.
+    if (!lwm2m_instance.empty()) {
+        g_log_key = "log.lwm2m." + lwm2m_instance + ".text";
+    }
+    // Add log.*.text keys so ds-server schema knows them
+    {
+        ds.set("log.lwm2m.text", data_store::Value{std::string("")}, 100);
+        ds.set("log.lwm2m.bs.text", data_store::Value{std::string("")}, 100);
+        ds.set("log.lwm2m.dm.text", data_store::Value{std::string("")}, 100);
+    }
+
+    // Intercept ACE log output → ring buffer → flushed to ds
+    LogCallback log_cb;
+    ACE_Log_Msg::instance()->msg_callback(&log_cb);
+
+    // Per-daemon log level (lwm2m instance or generic lwm2m), falls
+    // back to global log.level.
+    const std::string log_level_key =
+        !lwm2m_instance.empty()
+            ? "log.level.lwm2m." + lwm2m_instance
+            : "log.level.lwm2m";
+    auto apply_log_level = [&ds, &log_level_key]() {
+        std::vector<data_store::Client::GetResult> lg;
+        auto ls = ds.get({log_level_key, "log.level"}, lg);
+        std::string lvl_str;
+        if (ls.ok) {
+            for (const auto& g : lg) {
+                if (g.has_value) {
+                    if (auto s = data_store::to_string(g.value)) {
+                        if (!s->empty()) { lvl_str = *s; break; }
+                    }
+                }
+            }
+        }
+        unsigned long mask = LM_INFO;
+        if (!lvl_str.empty()) {
+            for (auto& c : lvl_str) c = static_cast<char>(std::toupper(c));
+            if (lvl_str == "DEBUG")       mask = LM_DEBUG;
+            else if (lvl_str == "INFO")   mask = LM_INFO;
+            else if (lvl_str == "WARNING") mask = LM_WARNING;
+            else if (lvl_str == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
+        }
+        ACE_Log_Msg::instance()->priority_mask(
+            static_cast<int>(mask), ACE_Log_Msg::PROCESS);
+    };
+    apply_log_level();
+
     std::unique_ptr<data_store::ServiceGate> svc_gate;
     std::unique_ptr<data_store::DepWatch>    dep_watch;
     if (auto* cli = ds.client()) {
@@ -884,6 +977,9 @@ int main(std::int32_t argc, char *argv[]) {
                        lwm2m_instance.c_str()));
         }
     }
+
+    // Flush remaining log lines before exit.
+    if (auto* cli = ds.client()) flush_log_to_ds(*cli);
 
     // L16/D5b cleanup — wake the watcher thread + join.
     svc_stop.store(true, std::memory_order_release);
