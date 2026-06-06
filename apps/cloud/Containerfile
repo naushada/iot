@@ -107,7 +107,7 @@ COPY --from=builder /tmp/bcloud/iot-cloudd /usr/local/bin/
 COPY --from=builder /tmp/bhttp/iot-httpd /usr/local/bin/
 
 # Static assets
-COPY --from=ui-builder /ui/dist/cloud-ui /usr/share/iot/cloud-www/
+COPY --from=ui-builder /ui/dist/cloud-ui /usr/share/iot/cloud-www/webui/
 
 # Schemas
 COPY modules/data-store/schemas/iot.lua /etc/iot/ds-schemas/
