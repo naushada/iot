@@ -96,7 +96,7 @@ ResourceMap load_object_resources(const std::string& path) {
     LuaStatePtr L(luaL_newstate());
     if (!L) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l lua_config %C: luaL_newstate failed\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l lua_config %C: luaL_newstate failed\n"),
                    path.c_str()));
         return out;
     }
@@ -109,7 +109,7 @@ ResourceMap load_object_resources(const std::string& path) {
         std::string msg = err ? err : "(no error message)";
         if (msg.find("cannot open") == std::string::npos) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l lua_config %C: %C\n"),
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l lua_config %C: %C\n"),
                        path.c_str(), msg.c_str()));
         }
         return out;
@@ -117,7 +117,7 @@ ResourceMap load_object_resources(const std::string& path) {
 
     if (!lua_istable(L.get(), -1)) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l lua_config %C: top-level return is not a table\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l lua_config %C: top-level return is not a table\n"),
                    path.c_str()));
         return out;
     }
@@ -127,14 +127,14 @@ ResourceMap load_object_resources(const std::string& path) {
     lua_pushnil(L.get());
     if (lua_next(L.get(), -2) == 0) {
         ACE_ERROR((LM_WARNING,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l lua_config %C: top-level table is empty\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l lua_config %C: top-level table is empty\n"),
                    path.c_str()));
         return out;
     }
     // Stack: top-level table (-3), key (-2), object-table (-1)
     if (!lua_istable(L.get(), -1)) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l lua_config %C: object value is not a table\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l lua_config %C: object value is not a table\n"),
                    path.c_str()));
         lua_pop(L.get(), 2);
         return out;

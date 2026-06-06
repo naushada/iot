@@ -183,7 +183,7 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
 
         for(const auto& uri: uris) {
             ACE_DEBUG((LM_DEBUG,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l uri: %C\n"),
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l uri: %C\n"),
                        uri.c_str()));
             if(uri.length() >= 0 && uri.length() <= 12) {
                 optdelta |= (uri.length() & 0xF);
@@ -229,7 +229,7 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
 
         for(const auto& query: queries) {
             ACE_DEBUG((LM_DEBUG,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l query: %C\n"),
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l query: %C\n"),
                        query.c_str()));
             if(query.length() > 0 && query.length() <= 12) {
                 optdelta |= query.length();
@@ -278,7 +278,7 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
         optdelta = (offset & 0xF) /*Uri-Path*/ << 4;
         for(const auto& uri: uris) {
             ACE_DEBUG((LM_DEBUG,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l uri: %C\n"),
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l uri: %C\n"),
                        uri.c_str()));
             if(uri.length() >= 0 && uri.length() <= 12) {
                 optdelta |= (uri.length() & 0xF);
@@ -334,7 +334,7 @@ bool CoAPAdapter::serialise(const std::vector<std::string> &uris, const std::vec
         
         for(const auto& query: queries) {
             ACE_DEBUG((LM_DEBUG,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l query: %C\n"),
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l query: %C\n"),
                        query.c_str()));
             if(query.length() > 0 && query.length() <= 12) {
                 optdelta |= query.length();
@@ -417,7 +417,7 @@ bool CoAPAdapter::serialisePOST(const std::vector<std::string> &uris, const std:
         optdelta = (offset & 0xF) /*Uri-Path*/ << 4;
         for(const auto& uri: uris) {
             ACE_DEBUG((LM_DEBUG,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l uri: %C\n"),
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l uri: %C\n"),
                        uri.c_str()));
             if(uri.length() >= 0 && uri.length() <= 12) {
                 optdelta |= (uri.length() & 0xF);
@@ -464,7 +464,7 @@ bool CoAPAdapter::serialisePOST(const std::vector<std::string> &uris, const std:
         
         for(const auto& query: queries) {
             ACE_DEBUG((LM_DEBUG,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l query: %C\n"),
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l query: %C\n"),
                        query.c_str()));
             if(query.length() > 0 && query.length() <= 12) {
                 optdelta |= query.length();
@@ -670,7 +670,7 @@ std::string CoAPAdapter::buildResponse(const CoAPMessage& message) {
             ///Objects are extracted successfully
             for(const auto& ent: object.m_value) {
                 ACE_DEBUG((LM_DEBUG,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l object.m_oid:%u "
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l object.m_oid:%u "
                                     "ent.m_oiid:%u ent.m_riid:%u ent.m_rid:%C "
                                     "ent.m_ridlength:%u ent.m_ridvalue.size:%u\n"),
                            static_cast<unsigned>(object.m_oid),
@@ -690,7 +690,7 @@ std::string CoAPAdapter::buildResponse(const CoAPMessage& message) {
 
     } else {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l This is not an LwM2M Object\n")));
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l This is not an LwM2M Object\n")));
     }
     return(std::string());
 }
@@ -707,7 +707,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
     do {
         if(!istrstr.read(reinterpret_cast<char *>(&fourbytes), sizeof(fourbytes)).good()) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l input buffer is too small to process\n")));
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l input buffer is too small to process\n")));
             break;
         }
 
@@ -722,7 +722,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
             coapmessage.tokens.resize(len);
             if(!istrstr.read(reinterpret_cast<char *>(coapmessage.tokens.data()), len).good()) {
                 ACE_ERROR((LM_ERROR,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l input buffer is too small to process\n")));
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l input buffer is too small to process\n")));
                 break;
             }
         }
@@ -737,7 +737,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
 
                 if(!istrstr.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
                     ACE_ERROR((LM_ERROR,
-                               ACE_TEXT("%D [iot:%t] %M %N:%l input buffer is too small to process\n")));
+                               ACE_TEXT("%D [lwm2m:%t] %M %N:%l input buffer is too small to process\n")));
                     break;
                 }
                 opt.optiondelta = onebyte + 13;
@@ -746,7 +746,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
 
                 if(!istrstr.read(reinterpret_cast<char *>(&mid), sizeof(mid)).good()) {
                     ACE_ERROR((LM_ERROR,
-                               ACE_TEXT("%D [iot:%t] %M %N:%l input buffer is too small to process\n")));
+                               ACE_TEXT("%D [lwm2m:%t] %M %N:%l input buffer is too small to process\n")));
                     break;
                 }
 
@@ -775,11 +775,11 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
                         /// The last block might be less than 1024 bytes while len says it's 1024.
                         if(istrstr.eof()) {
                             ACE_ERROR((LM_ERROR,
-                                       ACE_TEXT("%D [iot:%t] %M %N:%l expected length: %d\n"),
+                                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l expected length: %d\n"),
                                        static_cast<int>(len)));
                             auto len = istrstr.gcount();
                             ACE_DEBUG((LM_DEBUG,
-                                       ACE_TEXT("%D [iot:%t] %M %N:%l actual length: %d\n"),
+                                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l actual length: %d\n"),
                                        static_cast<int>(len)));
                             contents.resize(len);
                         }
@@ -791,7 +791,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
                         /// The last block might be less than 1024 bytes while len says it's 1024.
                         auto len = istrstr.gcount();
                         ACE_DEBUG((LM_DEBUG,
-                                   ACE_TEXT("%D [iot:%t] %M %N:%l actual length: %d\n"),
+                                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l actual length: %d\n"),
                                    static_cast<int>(len)));
                         contents.resize(len);
                     }
@@ -805,7 +805,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
                 opt.optionvalue.resize(opt.optionlength);
                 if(!istrstr.read(reinterpret_cast<char *>(opt.optionvalue.data()), opt.optionlength).good()) {
                     ACE_ERROR((LM_ERROR,
-                               ACE_TEXT("%D [iot:%t] %M %N:%l input buffer is too small to process\n")));
+                               ACE_TEXT("%D [lwm2m:%t] %M %N:%l input buffer is too small to process\n")));
                     break;
                 }
 
@@ -813,7 +813,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
 
                 if(!istrstr.read(reinterpret_cast<char *>(&onebyte), sizeof(onebyte)).good()) {
                     ACE_ERROR((LM_ERROR,
-                               ACE_TEXT("%D [iot:%t] %M %N:%l input buffer is too small to process\n")));
+                               ACE_TEXT("%D [lwm2m:%t] %M %N:%l input buffer is too small to process\n")));
                     break;
                 }
 
@@ -821,7 +821,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
                 opt.optionvalue.resize(opt.optionlength);
                 if(!istrstr.read(reinterpret_cast<char *>(opt.optionvalue.data()), opt.optionlength).good()) {
                     ACE_ERROR((LM_ERROR,
-                               ACE_TEXT("%D [iot:%t] %M %N:%l input buffer is too small to process\n")));
+                               ACE_TEXT("%D [lwm2m:%t] %M %N:%l input buffer is too small to process\n")));
                     break;
                 }
 
@@ -829,7 +829,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
 
                 if(!istrstr.read(reinterpret_cast<char *>(&mid), sizeof(mid)).good()) {
                     ACE_ERROR((LM_ERROR,
-                               ACE_TEXT("%D [iot:%t] %M %N:%l input buffer is too small to process\n")));
+                               ACE_TEXT("%D [lwm2m:%t] %M %N:%l input buffer is too small to process\n")));
                     break;
                 }
 
@@ -837,7 +837,7 @@ std::int32_t CoAPAdapter::parseRequest(const std::string& in, CoAPMessage& coapm
                 opt.optionvalue.resize(opt.optionlength);
                 if(!istrstr.read(reinterpret_cast<char *>(opt.optionvalue.data()), opt.optionlength).good()) {
                     ACE_ERROR((LM_ERROR,
-                               ACE_TEXT("%D [iot:%t] %M %N:%l input buffer is too small to process\n")));
+                               ACE_TEXT("%D [lwm2m:%t] %M %N:%l input buffer is too small to process\n")));
                     break;
                 }
             }
@@ -865,7 +865,7 @@ bool CoAPAdapter::uncompress(const std::string &input, std::string &output) {
 
     if(inflateInit(&zStream) != Z_OK) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l Failed to initialize uncompression\n")));
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l Failed to initialize uncompression\n")));
         inflateEnd(&zStream);
         return false;
     }
@@ -885,7 +885,7 @@ bool CoAPAdapter::uncompress(const std::string &input, std::string &output) {
                 || inflateStatus == Z_DATA_ERROR
                 || inflateStatus == Z_MEM_ERROR) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l Failed to uncompress\n")));
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l Failed to uncompress\n")));
             inflateEnd(&zStream);
             output.clear();
             return false;
@@ -897,18 +897,18 @@ bool CoAPAdapter::uncompress(const std::string &input, std::string &output) {
     while(zStream.avail_out == 0);
     if(inflateEnd(&zStream) != Z_OK) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l Failed to finalize uncompression\n")));
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l Failed to finalize uncompression\n")));
         output.clear();
         return false;
     }
 
     if (!output.empty()) {
         ACE_DEBUG((LM_DEBUG,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l uncompression ratio input/output: %C\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l uncompression ratio input/output: %C\n"),
                    std::to_string(double(input.size())/output.size()).c_str()));
     } else {
         ACE_DEBUG((LM_DEBUG,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l uncompression output empty\n")));
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l uncompression output empty\n")));
     }
     return true;
 }
@@ -948,12 +948,12 @@ bool CoAPAdapter::compress(const std::string &input, std::string &output) {
     output.resize(zStream.total_out);
     if (!output.empty()) {
         ACE_DEBUG((LM_DEBUG,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l compression ratio input/output: %C, output size: %d\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l compression ratio input/output: %C, output size: %d\n"),
                    std::to_string(double(input.size())/output.size()).c_str(),
                    static_cast<int>(output.size())));
     } else {
         ACE_DEBUG((LM_DEBUG,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l compression output empty\n")));
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l compression output empty\n")));
     }
     return true;
 }
@@ -965,7 +965,7 @@ bool CoAPAdapter::writeIntoFile(const std::string &input, const std::string& fil
 
     if(!ofs.is_open()) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l Opening of file: %C is Failed\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l Opening of file: %C is Failed\n"),
                    fileName.c_str()));
         return(false);
     }
@@ -1012,7 +1012,7 @@ std::vector<std::string> CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAP
         if(!ret) {
             for(const auto& ent: object.m_value) {
                 ACE_DEBUG((LM_DEBUG,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l object.m_oid:%u ent.m_oiid:%u ent.m_riid:%u ent.m_rid:%C ent.m_ridlength:%u ent.m_ridvalue.size:%d ent.m_ridvalue:\n"),
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l object.m_oid:%u ent.m_oiid:%u ent.m_riid:%u ent.m_rid:%C ent.m_ridlength:%u ent.m_ridvalue.size:%d ent.m_ridvalue:\n"),
                            static_cast<unsigned>(object.m_oid),
                            static_cast<unsigned>(ent.m_oiid),
                            static_cast<unsigned>(ent.m_riid),
@@ -1022,7 +1022,7 @@ std::vector<std::string> CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAP
 
                 if(oid == 0 && ent.m_rid == 0) {
                     ACE_DEBUG((LM_DEBUG,
-                               ACE_TEXT("%D [iot:%t] %M %N:%l %C\n"),
+                               ACE_TEXT("%D [lwm2m:%t] %M %N:%l %C\n"),
                                std::string(ent.m_ridvalue.begin(), ent.m_ridvalue.end()).c_str()));
                 } else {
                     for(const auto& elm: ent.m_ridvalue) {
@@ -1108,7 +1108,7 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
             if("rd" == uri || "bs" == uri) {
                 //rsp = buildResponse(coapmessage);
                 ACE_DEBUG((LM_DEBUG,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l building an ACK\n")));
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l building an ACK\n")));
                 
                 if(!isAmIClient && !uri.compare(0, 2, "bs")) {
                     rsp = buildRegistrationAck(coapmessage);
@@ -1165,7 +1165,7 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
                     writeIntoFile(output, "ucborz_cf_12201.txt");
                     auto payload = json::from_cbor(output.c_str());
                     ACE_DEBUG((LM_DEBUG,
-                               ACE_TEXT("%D [iot:%t] %M %N:%l The Response is\n%C\n"),
+                               ACE_TEXT("%D [lwm2m:%t] %M %N:%l The Response is\n%C\n"),
                                payload.dump().c_str()));
                 }
             } else if(12119/*TS*/ == ct) {
@@ -1177,7 +1177,7 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
                     
                 }
                 ACE_DEBUG((LM_DEBUG,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l The Response is\n%C\n"),
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l The Response is\n%C\n"),
                            payload.dump().c_str()));
 
             } else if(12202/*SUCBOR*/ == ct) {
@@ -1206,7 +1206,7 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
                         ///Objects are extracted successfully
                         for(const auto& ent: object.m_value) {
                             ACE_DEBUG((LM_DEBUG,
-                                       ACE_TEXT("%D [iot:%t] %M %N:%l object.m_oid:%u ent.m_oiid:%u ent.m_riid:%u ent.m_rid:%C ent.m_ridlength:%u ent.m_ridvalue.size:%d ent.m_ridvalue:\n"),
+                                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l object.m_oid:%u ent.m_oiid:%u ent.m_riid:%u ent.m_rid:%C ent.m_ridlength:%u ent.m_ridvalue.size:%d ent.m_ridvalue:\n"),
                                        static_cast<unsigned>(object.m_oid),
                                        static_cast<unsigned>(ent.m_oiid),
                                        static_cast<unsigned>(ent.m_riid),
@@ -1235,7 +1235,7 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
     auto ret = parseRequest(in, coapmessage);
     auto cf = getContentFormat(coapmessage);
     ACE_DEBUG((LM_DEBUG,
-               ACE_TEXT("%D [iot:%t] %M %N:%l processRequest with session cf.length: %d\n"),
+               ACE_TEXT("%D [lwm2m:%t] %M %N:%l processRequest with session cf.length: %d\n"),
                static_cast<int>(cf.length())));
 
     // L9 / FUP-2 — Acknowledgement short-circuit + dispatch to
@@ -1302,7 +1302,7 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
             if("rd" == uri || "bs" == uri) {
                 //rsp = buildResponse(coapmessage);
                 ACE_DEBUG((LM_DEBUG,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l building an ACK\n")));
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l building an ACK\n")));
                 std::string rsp = buildRegistrationAck(coapmessage);
                 out.push_back(rsp);
                 if(!uri.compare(0, 2, "bs") && !isAmIClient) {
@@ -1316,7 +1316,7 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
                 }
             } else {
                 ACE_DEBUG((LM_DEBUG,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l received LwM2M Object oid: %u oiid: %u\n"),
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l received LwM2M Object oid: %u oiid: %u\n"),
                            static_cast<unsigned>(oid),
                            static_cast<unsigned>(oiid)));
                 out = handleLwM2MObjects(coapmessage, uri, oid, oiid, rid, riid);
@@ -1388,7 +1388,7 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
                         ///Objects are extracted successfully
                         for(const auto& ent: object.m_value) {
                             ACE_DEBUG((LM_DEBUG,
-                                       ACE_TEXT("%D [iot:%t] %M %N:%l object.m_oid:%u ent.m_oiid:%u ent.m_riid:%u ent.m_rid:%C ent.m_ridlength:%u ent.m_ridvalue.size:%d ent.m_ridvalue:\n"),
+                                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l object.m_oid:%u ent.m_oiid:%u ent.m_riid:%u ent.m_rid:%C ent.m_ridlength:%u ent.m_ridvalue.size:%d ent.m_ridvalue:\n"),
                                        static_cast<unsigned>(object.m_oid),
                                        static_cast<unsigned>(ent.m_oiid),
                                        static_cast<unsigned>(ent.m_riid),
@@ -1421,7 +1421,7 @@ void CoAPAdapter::dumpCoAPMessage(const CoAPMessage& coapmessage) {
         ss << getMethodCode(static_cast<std::uint32_t>(coapmessage.coapheader.code));
     }
     ACE_DEBUG((LM_DEBUG,
-               ACE_TEXT("%D [iot:%t] %M %N:%l ver: %C type: %C tokenlength: %C code: %C msgid: %u\n"),
+               ACE_TEXT("%D [lwm2m:%t] %M %N:%l ver: %C type: %C tokenlength: %C code: %C msgid: %u\n"),
                std::to_string(coapmessage.coapheader.ver).c_str(),
                getRequestType(static_cast<std::uint32_t>(coapmessage.coapheader.type)).c_str(),
                std::to_string(coapmessage.coapheader.tokenlength).c_str(),
@@ -1430,7 +1430,7 @@ void CoAPAdapter::dumpCoAPMessage(const CoAPMessage& coapmessage) {
 
     for(auto const& opt: coapmessage.uripath) {
         ACE_DEBUG((LM_DEBUG,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l optiondelta: %C optionlength: %C optionvalue: %C\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l optiondelta: %C optionlength: %C optionvalue: %C\n"),
                    getOptionNumber(static_cast<std::uint32_t>(opt.optiondelta)).c_str(),
                    std::to_string(opt.optionlength).c_str(),
                    opt.optionvalue.c_str()));
@@ -1449,7 +1449,7 @@ void CoAPAdapter::dumpCoAPMessage(const CoAPMessage& coapmessage) {
         auto num = (blk1 >> 4) & 0b1111;
 
         ACE_DEBUG((LM_DEBUG,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l Block Number: %C More: %C Block Size: %C\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l Block Number: %C More: %C Block Size: %C\n"),
                    std::to_string(num).c_str(),
                    std::to_string(m).c_str(),
                    std::to_string(szx).c_str()));

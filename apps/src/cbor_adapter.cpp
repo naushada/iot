@@ -26,7 +26,7 @@ std::int32_t CBORAdapter::json2cbor(const std::string& in, std::string& out) {
         return 0;
     } catch (const std::exception& e) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l json2cbor parse error: %C\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l json2cbor parse error: %C\n"),
                    e.what()));
         return -1;
     }
@@ -40,7 +40,7 @@ std::string CBORAdapter::getJson(const std::string& fileName) {
 
     if(!ifs.is_open()) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l failed to open file: %C\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l failed to open file: %C\n"),
                    fileName.c_str()));
         return(std::string());
     }
@@ -64,7 +64,7 @@ std::int32_t CBORAdapter::getCBOR(const std::string& fname, std::string& cbor) {
     auto data = getJson(fname);
     if(!data.length()) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l unable to read JSON contents from %C\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l unable to read JSON contents from %C\n"),
                    fname.c_str()));
         return(-1);
     }
@@ -80,7 +80,7 @@ bool CBORAdapter::writeIntoFile(const std::string &input, const std::string& fil
 
     if(!ofs.is_open()) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l failed to open file for write: %C\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l failed to open file for write: %C\n"),
                    fileName.c_str()));
         return(false);
     }

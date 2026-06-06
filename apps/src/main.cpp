@@ -79,7 +79,7 @@ void parsePeerOption(const std::string& in, UDPAdapter::Scheme_t& scheme, std::s
     if(in.empty()) {
         ///input is empty, 
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l parsePeerOption: empty input\n")));
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l parsePeerOption: empty input\n")));
         return;
     }
 
@@ -185,7 +185,7 @@ load_provisioning_from_config(const std::string& configDir,
         s.serverUri         = string_or(m, 0, "");
         if (iid == 1 && dsUri) {
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l DM server URI from "
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l DM server URI from "
                                 "data-store: %C\n"),
                        dsUri->c_str()));
             s.serverUri = *dsUri;
@@ -207,7 +207,7 @@ load_provisioning_from_config(const std::string& configDir,
         row.lifetime      = uint_or(srv, 1, 86400);
         if (dsLifetime) {
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l Server lifetime from "
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l Server lifetime from "
                                 "data-store: %u\n"),
                        static_cast<unsigned>(*dsLifetime)));
             row.lifetime  = *dsLifetime;
@@ -276,7 +276,7 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         auto expired = registry->expire(now);
         if (!expired.empty()) {
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l expired %u registration(s)\n"),
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l expired %u registration(s)\n"),
                        static_cast<unsigned>(expired.size())));
             // L3 follow-up: forward expired locations to the RegistryMirror
             // when the Mongo schema PR lands.
@@ -362,7 +362,7 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     cfg.lifetime     = dsLifetime.value_or(86400);
     if (dsLifetime) {
         ACE_DEBUG((LM_INFO,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l Registration lifetime from "
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l Registration lifetime from "
                             "data-store: %u\n"),
                    static_cast<unsigned>(cfg.lifetime)));
     }
@@ -392,7 +392,7 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         auto r = wreg_bs.lock();
         if (!a || !r) return;
         ACE_DEBUG((LM_INFO,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l bootstrap commit done; "
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l bootstrap commit done; "
                             "sending Register\n")));
         auto payload = r->build_register_request(next_msgid(),
                                                  std::string{static_cast<char>(0x01)});
@@ -434,7 +434,7 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                     ctx->peerPort(rebind->port);
                 }
                 ACE_DEBUG((LM_INFO,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l swapped DM peer to "
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l swapped DM peer to "
                                     "%C:%u for next Register\n"),
                            rebind->host.c_str(),
                            static_cast<unsigned>(rebind->port)));
@@ -453,7 +453,7 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         if (reg->state() == ::lwm2m::RegistrationState::Unregistered &&
             !reg->is_disabled()) {
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l no bootstrap; "
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l no bootstrap; "
                                 "sending Register directly\n")));
             auto payload = reg->build_register_request(
                 next_msgid(),
@@ -471,7 +471,7 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         if (reg->pending_reregister() &&
             reg->state() == ::lwm2m::RegistrationState::Registered) {
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l endpoint changed — "
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l endpoint changed — "
                                 "sending Deregister, will rejoin under new "
                                 "endpoint on next tick\n")));
             auto payload = reg->build_deregister_request(
@@ -512,7 +512,7 @@ int main(std::int32_t argc, char *argv[]) {
     if(!argValueMap.empty()) {
         for(const auto& ent: argValueMap) {
             ACE_DEBUG((LM_DEBUG,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l arg %C=%C\n"),
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l arg %C=%C\n"),
                        ent.first.c_str(), ent.second.c_str()));
         }
     }
@@ -522,7 +522,7 @@ int main(std::int32_t argc, char *argv[]) {
         role = roleMap[argValueMap["role"]];
     } else {
         ACE_ERROR_RETURN((LM_ERROR,
-                          ACE_TEXT("%D [iot:%t] %M %N:%l invalid option for role\n")),
+                          ACE_TEXT("%D [lwm2m:%t] %M %N:%l invalid option for role\n")),
                          -1);
     }
 
@@ -533,7 +533,7 @@ int main(std::int32_t argc, char *argv[]) {
     if(UDPAdapter::Role_t::CLIENT == role) {
         if(argValueMap["bs"].empty()) {
             ACE_ERROR_RETURN((LM_ERROR,
-                              ACE_TEXT("%D [iot:%t] %M %N:%l bs=value missing from command line\n")),
+                              ACE_TEXT("%D [lwm2m:%t] %M %N:%l bs=value missing from command line\n")),
                              -1);
         }
         parsePeerOption(argValueMap["bs"], scheme, bsHost, bsPort);
@@ -543,13 +543,13 @@ int main(std::int32_t argc, char *argv[]) {
     std::uint16_t selfPort;
     if(argValueMap["local"].empty()) {
         ACE_ERROR_RETURN((LM_ERROR,
-                          ACE_TEXT("%D [iot:%t] %M %N:%l local=value missing from command line\n")),
+                          ACE_TEXT("%D [lwm2m:%t] %M %N:%l local=value missing from command line\n")),
                          -1);
     }
     parsePeerOption(argValueMap["local"], scheme, selfHost, selfPort);
 
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [iot:%t] %M %N:%l scheme=%d host=%C port=%u\n"),
+               ACE_TEXT("%D [lwm2m:%t] %M %N:%l scheme=%d host=%C port=%u\n"),
                static_cast<int>(scheme), selfHost.c_str(),
                static_cast<unsigned>(selfPort)));
 
@@ -558,7 +558,7 @@ int main(std::int32_t argc, char *argv[]) {
         ///identity & secret are mandatory argument
         if(argValueMap["identity"].empty() || argValueMap["secret"].empty()) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l identity or secret missing for coaps\n")));
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l identity or secret missing for coaps\n")));
             return(-2);
         }
 
@@ -625,7 +625,7 @@ int main(std::int32_t argc, char *argv[]) {
     if (auto v = ds.endpoint(); v.has_value() && argValueMap["ep"].empty()) {
         endpoint = std::move(*v);
         ACE_DEBUG((LM_INFO,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l endpoint from data-store: %C\n"),
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l endpoint from data-store: %C\n"),
                    endpoint.c_str()));
     }
 
@@ -687,12 +687,12 @@ int main(std::int32_t argc, char *argv[]) {
             auto rs = cli->set(sk, data_store::Value{std::string("running")});
             if (!rs.ok) {
                 ACE_ERROR((LM_ERROR,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l set %C=running"
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l set %C=running"
                                     " failed: %C\n"),
                            sk.c_str(), rs.err.c_str()));
             }
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l cloud lwm2m-%C "
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l cloud lwm2m-%C "
                                 "self-reported running\n"),
                        lwm2m_instance.c_str()));
         }
@@ -706,7 +706,7 @@ int main(std::int32_t argc, char *argv[]) {
         // L17a/D4 — dep check before svc check (dep_down > disabled).
         if (!dep_watch->healthy()) {
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l dep %C unhealthy "
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l dep %C unhealthy "
                                 "at startup; parking\n"),
                        dep_watch->unhealthy_dep().c_str()));
             svc_gate->publish_state("disabled");
@@ -715,7 +715,7 @@ int main(std::int32_t argc, char *argv[]) {
 
         if (!svc_gate->enabled()) {
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l services.%C.enable=false "
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l services.%C.enable=false "
                                 "at startup; parking until re-enabled\n"),
                        svc_name.c_str()));
             svc_gate->publish_state("disabled");
@@ -825,7 +825,7 @@ int main(std::int32_t argc, char *argv[]) {
                 if (!v) return;
                 reg->set_lifetime(*v);
                 ACE_DEBUG((LM_INFO,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l applied "
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l applied "
                                     "iot.lifetime=%u to live "
                                     "RegistrationClient — next Update tick "
                                     "uses it\n"),
@@ -835,7 +835,7 @@ int main(std::int32_t argc, char *argv[]) {
                 if (!v) return;
                 reg->set_endpoint(*v);
                 ACE_DEBUG((LM_INFO,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l applied "
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l applied "
                                     "iot.endpoint=%C — re-register cycle "
                                     "queued for next 1Hz tick\n"),
                            v->c_str()));
@@ -848,14 +848,14 @@ int main(std::int32_t argc, char *argv[]) {
                 parsePeerOption(*v, sc, h, p);
                 if (h.empty() || p == 0) {
                     ACE_ERROR((LM_WARNING,
-                               ACE_TEXT("%D [iot:%t] %M %N:%l iot.server.uri "
+                               ACE_TEXT("%D [lwm2m:%t] %M %N:%l iot.server.uri "
                                         "'%C' failed to parse — rebind skipped\n"),
                                v->c_str()));
                     return;
                 }
                 if (sc == UDPAdapter::Scheme_t::CoAPs) {
                     ACE_ERROR((LM_WARNING,
-                               ACE_TEXT("%D [iot:%t] %M %N:%l iot.server.uri "
+                               ACE_TEXT("%D [lwm2m:%t] %M %N:%l iot.server.uri "
                                         "scheme=coaps live rebind not yet "
                                         "supported (needs DTLS teardown); "
                                         "applying peer change only — next "
@@ -870,7 +870,7 @@ int main(std::int32_t argc, char *argv[]) {
                 }
                 reg->request_reregister();
                 ACE_DEBUG((LM_INFO,
-                           ACE_TEXT("%D [iot:%t] %M %N:%l applied "
+                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l applied "
                                     "iot.server.uri=%C — rebind to %C:%u "
                                     "queued for next 1Hz tick (after "
                                     "Deregister to old server completes)\n"),
@@ -912,7 +912,7 @@ int main(std::int32_t argc, char *argv[]) {
         rline.start();
     } else {
         ACE_DEBUG((LM_INFO,
-                   ACE_TEXT("%D [iot:%t] %M %N:%l stdin is not a TTY; "
+                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l stdin is not a TTY; "
                             "running in non-interactive mode (reactor only)\n")));
         // ACE_Task::wait() blocks until svc() returns.
         app->udpAdapter()->wait();
@@ -926,7 +926,7 @@ int main(std::int32_t argc, char *argv[]) {
                                    + lwm2m_instance + ".state";
             cli->set(sk, data_store::Value{std::string("exited")});
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [iot:%t] %M %N:%l cloud lwm2m-%C "
+                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l cloud lwm2m-%C "
                                 "self-reported exited\n"),
                        lwm2m_instance.c_str()));
         }
