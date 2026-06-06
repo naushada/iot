@@ -75,7 +75,11 @@ LogBuffer::LogBuffer(const std::string& daemon, const std::string& log_key)
     : LogBuffer(daemon, log_key, "log.level") {}
 
 void LogBuffer::start() {
-    if (m_impl) ACE_Log_Msg::instance()->msg_callback(&m_impl->cb);
+    if (!m_impl) return;
+    // Enable the callback sink — default flags only have STDERR.
+    auto* lm = ACE_Log_Msg::instance();
+    lm->set_flags(lm->flags() | ACE_Log_Msg::MSG_CALLBACK);
+    lm->msg_callback(&m_impl->cb);
 }
 
 LogBuffer::~LogBuffer() {
