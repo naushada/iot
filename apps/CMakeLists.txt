@@ -93,12 +93,23 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
 link_directories(${ACE_ROOT}/lib)
 
-# ACE — prefer static .a when provided (Yocto sets -DACE_LIBRARY).
-# Fall back to -lACE for shared-library builds.
+# External libs — Yocto passes full paths via -DLIBNAME_LIBRARY=...
+# When defined, use the full path (creates ninja dependency, no -l needed).
+# When not defined, fall back to -l flag for native/dev builds.
 if(DEFINED ACE_LIBRARY)
     set(ACE_LINK_LIB ${ACE_LIBRARY})
 else()
     set(ACE_LINK_LIB ACE)
+endif()
+if(DEFINED BSONCXX_LIBRARY)
+    set(BSONCXX_LINK_LIB ${BSONCXX_LIBRARY})
+else()
+    set(BSONCXX_LINK_LIB bsoncxx)
+endif()
+if(DEFINED MONGOCXX_LIBRARY)
+    set(MONGOCXX_LINK_LIB ${MONGOCXX_LIBRARY})
+else()
+    set(MONGOCXX_LINK_LIB mongocxx)
 endif()
 
 # tinydtls — prefer sysroot when cross-compiling (Yocto sets
@@ -128,8 +139,8 @@ target_link_libraries(lwm2m
                         z
                         readline
                         pthread
-                        bsoncxx
-                        mongocxx
+                        ${BSONCXX_LINK_LIB}
+                        ${MONGOCXX_LINK_LIB}
                         ssl
                         crypto
                         ${LUA_LINK_LIBS})
