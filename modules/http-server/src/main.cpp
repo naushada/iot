@@ -266,7 +266,7 @@ int main(int argc, char** argv) {
     }
 
     // Push startup logs immediately so the cloud UI can tail them.
-    g_log.flush(ds);
+    g_log.flush(ds, 200);
 
     // The listening socket is polled directly via non-blocking accept() in
     // the loop below; only the per-connection sessions are registered with
@@ -384,7 +384,7 @@ int main(int argc, char** argv) {
                 // (stateless — no cache to invalidate).
 
                 g_log.apply_level(ds);
-                g_log.flush(ds);
+                g_log.flush(ds, 200);
             }
             DsHttpCfg cur = read_ds_http_cfg(ds);
             bool tlsDirty = false, listenDirty = false;

@@ -672,7 +672,7 @@ int main(std::int32_t argc, char *argv[]) {
     std::thread log_flush_thread([&ds, &log_flush_stop]() {
         while (!log_flush_stop.load(std::memory_order_acquire)) {
             std::this_thread::sleep_for(std::chrono::seconds(10));
-            if (auto* cli = ds.client()) g_log.flush(*cli);
+            if (auto* cli = ds.client()) g_log.flush(*cli, 200);
         }
     });
 

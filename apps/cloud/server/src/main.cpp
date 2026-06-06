@@ -224,7 +224,7 @@ int main(int argc, char** argv) {
                 ds.set("cloud.vpn.port.next",
                        data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
                 g_log.apply_level(ds);
-                g_log.flush(ds);
+                g_log.flush(ds, 200);
             }
         }
     }

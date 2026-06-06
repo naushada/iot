@@ -63,8 +63,11 @@ public:
     LogBuffer& operator=(LogBuffer&&)      = delete;
 
     /// Push accumulated ring-buffer lines into the data store.
-    /// Best-effort — errors are silently dropped.
-    void flush(Client& ds);
+    /// Only writes if there is new data since the last flush AND
+    /// at least `min_bytes` of new text has accumulated (default 0
+    /// = flush any new data). Best-effort — errors are silently dropped.
+    /// Safe to call as often as you like — cheap no-op most of the time.
+    void flush(Client& ds, std::size_t min_bytes = 0);
 
     /// Change the data-store log-text key for subsequent flushes
     /// (useful when the same binary runs in different roles).

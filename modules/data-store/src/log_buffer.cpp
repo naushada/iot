@@ -19,6 +19,7 @@ struct LogBuffer::Impl {
     std::string             key;        // ds key for flush ("log.cloudd.text")
     std::string             daemon;     // "cloudd", "httpd", "lwm2m"
     std::string             level_key;  // "log.level.cloudd"
+    std::size_t             bytes_since_flush = 0;
     static constexpr std::size_t kMaxLines = 200;
 
     // Inner callback registered with ACE — lives as long as the Impl.
@@ -42,10 +43,12 @@ struct LogBuffer::Impl {
                 case LM_CRITICAL: lvl = "CRIT";  break;
             }
 
-            std::lock_guard<std::mutex> lk(m_owner->mtx);
-            m_owner->buf.push_back(
+            std::string line =
                 std::string(ts) + " " + lvl + " " + m_owner->daemon + ": " +
-                rec.msg_data() + "\n");
+                rec.msg_data() + "\n";
+            std::lock_guard<std::mutex> lk(m_owner->mtx);
+            m_owner->bytes_since_flush += line.size();
+            m_owner->buf.push_back(std::move(line));
             while (m_owner->buf.size() > kMaxLines)
                 m_owner->buf.pop_front();
         }
@@ -79,13 +82,15 @@ LogBuffer::~LogBuffer() {
     if (m_impl) ACE_Log_Msg::instance()->msg_callback(nullptr);
 }
 
-void LogBuffer::flush(Client& ds) {
+void LogBuffer::flush(Client& ds, std::size_t min_bytes) {
     std::string text;
     {
         std::lock_guard<std::mutex> lk(m_impl->mtx);
+        if (m_impl->bytes_since_flush < min_bytes) return;  // below threshold
         for (const auto& line : m_impl->buf) text += line;
+        m_impl->bytes_since_flush = 0;
     }
-    ds.set(m_impl->key, Value{text}, 200);  // best-effort
+    if (!text.empty()) ds.set(m_impl->key, Value{text}, 200);  // best-effort
 }
 
 void LogBuffer::set_log_key(const std::string& key) {
