@@ -11,7 +11,7 @@ interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered
     <div class="page">
       <div class="header-row">
         <h3>Endpoints</h3>
-        <a class="btn btn-primary btn-sm" routerLink="/main" (click)="$event.preventDefault(); menu('provision')">+ Provision</a>
+        <span></span>
       </div>
 
       <clr-datagrid>
