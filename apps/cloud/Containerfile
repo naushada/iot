@@ -84,7 +84,7 @@ COPY apps/cloud/ui/package.json apps/cloud/ui/package-lock.json ./
 RUN npm ci 2>/dev/null || npm install --no-audit --no-fund
 
 COPY apps/cloud/ui/ ./
-RUN npx ng build --configuration production --base-href / --progress=false
+RUN npx ng build --configuration production --base-href /webui/ --progress=false
 
 # ============================================================
 # Stage 3: Minimal runtime (xpmile pattern)
@@ -116,11 +116,12 @@ COPY modules/http-server/schemas/http.lua /etc/iot/ds-schemas/
 COPY modules/http-server/schemas/auth.lua /etc/iot/ds-schemas/
 COPY modules/server/lwm2m/schemas/cloud.lua /etc/iot/ds-schemas/
 
-RUN mkdir -p /var/run/iot /etc/iot/ds-schemas
+RUN mkdir -p /var/run/iot /var/lib/iot /etc/iot/ds-schemas
 
 EXPOSE 8080 5683 5684
 
-CMD ds-server --socket=/var/run/iot/data_store.sock --schema-dir=/etc/iot/ds-schemas & \
+CMD ds-server --socket=/var/run/iot/data_store.sock --schema-dir=/etc/iot/ds-schemas \
+    --persist-dir=/var/lib/iot & \
     sleep 2 && \
     exec iot-httpd ds-socket=/var/run/iot/data_store.sock \
         http-port=8080 www-dir=/usr/share/iot/cloud-www
