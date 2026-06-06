@@ -5,6 +5,9 @@
 #include "endpoint_registry.hpp"
 #include "bootstrap.hpp"
 
+#include "data_store/client.hpp"
+#include "data_store/value.hpp"
+
 #include <nlohmann/json.hpp>
 #include <string>
 
@@ -24,7 +27,8 @@ json parse_body(const std::string& body) {
 
 void install_cloud_handlers(Router& router,
                             server::lwm2m::EndpointRegistry* ep_reg,
-                            server::lwm2m::BootstrapProvisioner* provisioner) {
+                            server::lwm2m::BootstrapProvisioner* provisioner,
+                            data_store::Client* ds) {
 
     // ── GET /api/v1/cloud/endpoints ──────────────────────────────
     router.add("GET", "/api/v1/cloud/endpoints",
@@ -139,6 +143,63 @@ void install_cloud_handlers(Router& router,
             if (!ok) resp["err"] = "endpoint not found";
             r.body = resp.dump();
             if (!ok) r.status = 404;
+            return r;
+        });
+
+    // ── POST /api/v1/cloud/push?ep=<ep> ──────────────────────────
+    // Device pushes data points via CoAP /push; the LwM2M server
+    // forwards them here as JSON.  Each key-value is written to the
+    // data store under ep.<ep>.<key> so the cloud UI and rules
+    // engine can read per-device telemetry.
+    router.add("POST", "/api/v1/cloud/push",
+        [ep_reg, ds](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            // Resolve endpoint
+            auto it = req.query.find("ep");
+            if (it == req.query.end()) {
+                r.status = 400;
+                r.body = R"json({"ok":false,"err":"missing ep query param"})json";
+                return r;
+            }
+            std::string ep = it->second;
+            if (!ep_reg || !ep_reg->lookup_by_ep(ep)) {
+                r.status = 404;
+                r.body = R"json({"ok":false,"err":"endpoint not found"})json";
+                return r;
+            }
+            // Parse JSON payload
+            auto doc = parse_body(req.body);
+            if (!doc.is_object()) {
+                r.status = 400;
+                r.body = R"json({"ok":false,"err":"payload must be a JSON object"})json";
+                return r;
+            }
+            // Write each key-value pair to ds under ep.<ep>.<key>
+            if (ds) {
+                std::vector<data_store::KV> pairs;
+                for (auto& [key, value] : doc.items()) {
+                    std::string ds_key = "ep." + ep + "." + key;
+                    data_store::Value val;
+                    if (value.is_string())        val = value.get<std::string>();
+                    else if (value.is_boolean())   val = value.get<bool>();
+                    else if (value.is_number_integer()) {
+                        auto n = value.get<int>();
+                        val = n >= 0 ? data_store::Value{static_cast<std::uint32_t>(n)}
+                                     : data_store::Value{static_cast<std::int32_t>(n)};
+                    } else if (value.is_number_float()) {
+                        val = value.get<double>();
+                    } else {
+                        val = value.dump();
+                    }
+                    pairs.emplace_back(ds_key, val);
+                }
+                ds->set(pairs);
+            }
+            json resp;
+            resp["ok"]  = true;
+            resp["ep"]  = ep;
+            resp["count"] = doc.size();
+            r.body = resp.dump();
             return r;
         });
 }

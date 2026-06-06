@@ -24,7 +24,8 @@ void install_handlers(Router& router,
 /// the router.  Call after install_handlers().
 void install_cloud_handlers(Router& router,
                             server::lwm2m::EndpointRegistry* ep_reg,
-                            server::lwm2m::BootstrapProvisioner* provisioner);
+                            server::lwm2m::BootstrapProvisioner* provisioner,
+                            data_store::Client* ds = nullptr);
 
 } // namespace http_server
 
