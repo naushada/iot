@@ -80,10 +80,12 @@ int main(int argc, char** argv) {
             sync_interval = std::stoi(a.substr(14));
     }
 
-    // Register ACE log callback now that ACE is initialised
+    // ACE::init() is required before msg_callback() works correctly.
+    ACE::init();
     g_log.start();
 
     // Verify ring buffer is live
+    g_log.append("cloudd: log buffer started\n");
     ACE_DEBUG((LM_INFO, "cloudd: log buffer started\n"));
     std::fprintf(stderr, "cloudd: g_log.start() called, lines=%zu\n",
                  g_log.line_count());

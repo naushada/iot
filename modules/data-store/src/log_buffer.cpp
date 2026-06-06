@@ -109,6 +109,14 @@ void LogBuffer::set_level_key(const std::string& key) {
     m_impl->level_key = key;
 }
 
+void LogBuffer::append(const std::string& line) {
+    std::lock_guard<std::mutex> lk(m_impl->mtx);
+    m_impl->bytes_since_flush += line.size();
+    m_impl->buf.push_back(line);
+    while (m_impl->buf.size() > Impl::kMaxLines)
+        m_impl->buf.pop_front();
+}
+
 std::size_t LogBuffer::line_count() const {
     std::lock_guard<std::mutex> lk(m_impl->mtx);
     return m_impl->buf.size();

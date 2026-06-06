@@ -81,6 +81,10 @@ public:
     /// Call at startup and on watch events for hot-reload.
     void apply_level(Client& ds);
 
+    /// Append a line directly to the ring buffer (bypasses ACE).
+    /// Use for critical messages when the ACE callback isn't reliable.
+    void append(const std::string& line);
+
     /// Number of lines currently buffered (for tests).
     std::size_t line_count() const;
 
