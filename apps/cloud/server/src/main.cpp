@@ -166,6 +166,7 @@ int main(int argc, char** argv) {
     // Lambda applies the log.level string to ACE_Log_Msg::priority_mask.
     // Called at startup, on watch events, and on periodic timeout ticks.
     g_log.apply_level(ds);
+    g_log.flush(ds);  // push startup logs immediately
 
     // ── Main loop ─────────────────────────────────────────────────
     // Block on recv_event() up to sync_interval seconds.  A provision

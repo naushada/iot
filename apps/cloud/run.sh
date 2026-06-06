@@ -91,7 +91,7 @@ case "${1:-start}" in
 
     logs)
         shift 2>/dev/null || true
-        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" logs -f "${@}"
+        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" logs "${@}"
         ;;
 
     ps|status)

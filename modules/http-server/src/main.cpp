@@ -265,6 +265,9 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Push startup logs immediately so the cloud UI can tail them.
+    g_log.flush(ds);
+
     // The listening socket is polled directly via non-blocking accept() in
     // the loop below; only the per-connection sessions are registered with
     // the reactor (for their READ events).

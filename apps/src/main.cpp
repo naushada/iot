@@ -1,6 +1,7 @@
 #ifndef __main_cpp__
 #define __main_cpp__
 
+#include <chrono>
 #include <thread>
 #include <iostream>
 #include <vector>
@@ -659,8 +660,21 @@ int main(std::int32_t argc, char *argv[]) {
                  data_store::Value{std::string("")}, 100);
     }
 
-    if (auto* cli = ds.client())
+    if (auto* cli = ds.client()) {
         g_log.apply_level(*cli);
+        g_log.flush(*cli);  // push startup logs immediately
+    }
+
+    // Background thread that flushes the log ring-buffer every 10 s.
+    // The lwm2m binary blocks on ACE_Reactor::run_reactor_event_loop()
+    // and has no periodic timeout — the thread ensures logs reach ds.
+    std::atomic<bool> log_flush_stop{false};
+    std::thread log_flush_thread([&ds, &log_flush_stop]() {
+        while (!log_flush_stop.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::seconds(10));
+            if (auto* cli = ds.client()) g_log.flush(*cli);
+        }
+    });
 
     std::unique_ptr<data_store::ServiceGate> svc_gate;
     std::unique_ptr<data_store::DepWatch>    dep_watch;
@@ -914,6 +928,8 @@ int main(std::int32_t argc, char *argv[]) {
 
     // Flush remaining log lines before exit.
     if (auto* cli = ds.client()) g_log.flush(*cli);
+    log_flush_stop.store(true, std::memory_order_release);
+    if (log_flush_thread.joinable()) log_flush_thread.join();
 
     // L16/D5b cleanup — wake the watcher thread + join.
     svc_stop.store(true, std::memory_order_release);
