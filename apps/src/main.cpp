@@ -663,8 +663,10 @@ int main(std::int32_t argc, char *argv[]) {
             ? "log.level.lwm2m." + lwm2m_instance
             : "log.level.lwm2m";
     auto apply_log_level = [&ds, &log_level_key]() {
+        auto* cli = ds.client();
+        if (!cli) return;
         std::vector<data_store::Client::GetResult> lg;
-        auto ls = ds.get({log_level_key, "log.level"}, lg);
+        auto ls = cli->get({log_level_key, "log.level"}, lg);
         std::string lvl_str;
         if (ls.ok) {
             for (const auto& g : lg) {
