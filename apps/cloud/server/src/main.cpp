@@ -1,15 +1,17 @@
 /// iot-cloudd — Cloud server daemon (L21/D8).
 ///
-/// Wires the multi-tenant IoT cloud: endpoint registry, VPN IP/port
-/// allocator, bootstrap provisioner, and periodic state sync with
-/// the data store (cloud.* keys).
+/// Wires cloud-specific modules that mirror the device-side stack:
 ///
-/// The cloud UI (iot-httpd) reads cloud.* keys; this daemon writes
-/// them on device bootstrap / deprovision / state change.
+///   Device                Cloud
+///   ──────                ─────
+///   data-store (ds)    →  ds-server (same binary, cloud.* keys)
+///   openvpn-client      →  openvpn-server (managed by VPN registry)
+///   net-router           →  nftables per-device DNAT (port 5000+ → tun IP)
+///   iot-httpd            →  iot-httpd + server/web proxy (device UI proxy)
+///   lwm2m client         →  lwm2m server (CoAP /bs, /push, /rd)
 ///
-/// IPC: data_store::Client → ds-server Unix socket.
-/// Does NOT listen on CoAP — the existing lwm2m binary handles that
-/// for the cloud mode (--role server).
+/// IPC: ALL daemons use data_store::Client → ds-server.
+/// No HTTP between daemons — same pattern as device side.
 
 #include "endpoint_registry.hpp"
 #include "vpn_registry.hpp"
