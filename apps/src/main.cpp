@@ -12,6 +12,7 @@
 
 #include <ace/Log_Msg.h>
 #include <ace/Log_Record.h>
+#include <ace/Log_Msg_Callback.h>
 
 #include "data_store/client.hpp"
 #include "data_store/service_gate.hpp"
