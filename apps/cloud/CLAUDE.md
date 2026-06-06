@@ -147,9 +147,35 @@ cd apps/cloud && ./run.sh build
 ```bash
 cd apps/cloud
 ./run.sh           # docker compose up -d (all 5 services)
-./run.sh logs      # tail logs
+./run.sh logs      # tail logs (ds-cli + service states)
 ./run.sh stop      # stop all
 ```
+
+### Volume persistence and schema updates
+
+`docker-compose.yml` uses named volumes so data survives container
+restarts:
+
+| Volume | Mount point | Content |
+|--------|-------------|---------|
+| `iot-etc` | `/etc/iot` | Schemas, config files |
+| `iot-lib` | `/var/lib/iot` | Persisted data store |
+| `iot-run` | `/var/run/iot` | Unix socket (tmpfs-like) |
+
+**Important:** Named volumes are populated from the image only on
+**first creation**. After a rebuild that changes schema files
+(`services.lua`, `iot.lua`, etc.) or config files under `apps/config/`,
+the old volume still has the old files. To pick up changes:
+
+```bash
+./run.sh stop
+podman volume rm cloud_iot-etc   # or: docker volume rm cloud_iot-etc
+./run.sh
+```
+
+The volume will be recreated with the latest image contents.
+`iot-lib` (persisted data) and `iot-run` (socket) do not need to be
+reset.
 
 Service ports:
 | Port | Service |
