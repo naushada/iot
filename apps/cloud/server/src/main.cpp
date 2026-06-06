@@ -82,11 +82,7 @@ int main(int argc, char** argv) {
 
     g_log.start();
 
-    // Verify ring buffer is live
-    g_log.append("cloudd: log buffer started\n");
-    ACE_DEBUG((LM_INFO, "cloudd: log buffer started\n"));
-    std::fprintf(stderr, "cloudd: g_log.start() called, lines=%zu\n",
-                 g_log.line_count());
+    // ── Connect to ds-server ──────────────────────────────────────
 
     // ── Connect to ds-server ──────────────────────────────────────
     data_store::Client ds;
@@ -144,6 +140,8 @@ int main(int argc, char** argv) {
         auto rs = ds.set("services.cloud.iot.cloudd.state",
                          data_store::Value{std::string("running")});
         if (!rs.ok) {
+            g_log.append("cloudd: FAILED set cloudd.state=running: " +
+                         rs.err + "\n");
             ACE_ERROR((LM_ERROR,
                        ACE_TEXT("%D [cloudd:%t] %M %N:%l set cloudd.state=running"
                                 " failed: %C\n"),
@@ -161,6 +159,8 @@ int main(int argc, char** argv) {
         }
     }
 
+    g_log.append("cloudd: started, ds=" + ds_path +
+                 " vpn-subnet=" + vpn_subnet + "\n");
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [cloudd:%t] %M %N:%l started, ds=%C vpn-subnet=%C"
                         " proxy=%d-%d sync-interval=%d\n"),

@@ -131,10 +131,6 @@ int main(int argc, char** argv) {
     // Register ACE log callback now that ACE is initialised
     g_log.start();
 
-    ACE_DEBUG((LM_INFO, "httpd: log buffer started\n"));
-    std::fprintf(stderr, "httpd: g_log.start() called, lines=%zu\n",
-                 g_log.line_count());
-
     data_store::Client ds;
     auto cs = ds.connect(dsPath);
     if (!cs.ok) {
@@ -256,6 +252,9 @@ int main(int argc, char** argv) {
                         "ds=%C%C workers=%d\n"),
                httpScheme.c_str(), httpIp.c_str(), httpPort, dsPath.c_str(),
                (tlsPtr && tlsCtx.mtls()) ? " (mTLS)" : "", httpWorkers));
+
+    g_log.append("httpd: listening on " + httpScheme + "://" + httpIp +
+                 ":" + std::to_string(httpPort) + " ds=" + dsPath + "\n");
 
     // Self-report running state to ds so the Services page shows live status.
     {
