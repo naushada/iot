@@ -1,0 +1,260 @@
+// ── Disabled inputs (Viewer mode) ────────────────────────────────────
+
+input:disabled, select:disabled, textarea:disabled {
+  background: #f0f0f0 !important;
+  color: #888 !important;
+  cursor: not-allowed;
+  border-color: #e0e0e0 !important;
+}
+
+// ── Form table label column ──────────────────────────────────────────
+
+.label-col {
+  width: 140px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  vertical-align: middle;
+  white-space: nowrap;
+  text-align: left;
+  padding: 6px 12px 6px 0;
+}
+
+// ── Borderless table ─────────────────────────────────────────────────
+
+.table-borderless,
+.table-borderless td,
+.table-borderless th {
+  border: none !important;
+}
+
+.table-borderless td {
+  padding: 6px 12px 6px 0;
+}
+
+// ── Form grid (4 columns) ───────────────────────────────────────────
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0 20px;
+
+  @media (max-width: 1200px) { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 900px)  { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 600px)  { grid-template-columns: 1fr; }
+}
+
+// ── Global button styles ────────────────────────────────────────────
+
+button, .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1;
+}
+
+// ── Global button colour styles ─────────────────────────────────────
+
+.btn-primary {
+  background: #2e7d32;
+  border: 1px solid #256b29;
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+
+  &:hover { background: #388e3c; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.btn-sm {
+  background: #e8e8e8;
+  border: 1px solid #d0d0d0;
+  color: #333;
+  padding: 4px 12px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover { background: #ddd; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.btn-danger {
+  background: #c62828;
+  border: 1px solid #b71c1c;
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover { background: #d32f2f; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// ── Status colours ──────────────────────────────────────────────────
+
+$iot-green:  #2e7d32;
+$iot-yellow: #f9a825;
+$iot-red:    #c62828;
+$iot-grey:   #9e9e9e;
+
+// Live subnav — mirrors xpmile main.component.scss
+.live-subnav {
+  background: #1a1a2e;
+  color: #e0e0e0;
+  padding: 0 1rem;
+  height: 40px;
+  display: flex;
+  align-items: center;
+
+  .live-strip {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .live-tag {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .live-pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: $iot-green;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .live-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: $iot-green;
+  }
+
+  .live-date-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  .stat-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    background: rgba(255,255,255,0.08);
+
+    .stat-num { font-weight: 600; }
+    .stat-lbl { opacity: 0.7; }
+  }
+
+  .live-spacer { flex: 1; }
+
+  .live-refresh-btn {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 4px;
+    &:hover { opacity: 0.7; }
+  }
+}
+
+// Dashboard cards
+.status-card {
+  text-align: center;
+  padding: 1.5rem;
+
+  .card-label { font-size: 13px; opacity: 0.7; margin-top: 8px; }
+  .card-value { font-size: 20px; font-weight: 600; }
+
+  &.connected   { border-top: 3px solid $iot-green; }
+  &.disconnected { border-top: 3px solid $iot-red; }
+  &.starting    { border-top: 3px solid $iot-yellow; }
+  &.disabled    { border-top: 3px solid $iot-grey; }
+}
+
+.signal-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 16px;
+
+  .bar {
+    width: 3px;
+    background: $iot-grey;
+    border-radius: 1px;
+
+    &.active { background: $iot-green; }
+    &.weak   { background: $iot-yellow; }
+    &.none   { background: $iot-grey; }
+  }
+}
+
+// ── Dark theme ────────────────────────────────────────────────────
+
+body.dark-theme {
+  background: #1a1a2e; color: #e0e0e0;
+
+  .app-shell { background: #12122a; }
+  .sidebar { background: #1a1a2e; border-color: #2a2a4a; }
+  .sidebar-brand { border-color: #2a2a4a; }
+  .brand-text { color: #e0e0e0; }
+  .nav-item { color: #9e9e9e; &:hover { color: #fff; background: rgba(255,255,255,0.06); } }
+  .nav-child { color: #888; .child-dot { background: #555; } }
+  .tree-children { border-color: #2a2a4a; }
+  .nav-child::before { background: #2a2a4a; }
+  .nav-child.tree-last::after { background: #1a1a2e; }
+  .main-area { background: #12122a; }
+  .live-strip { background: #16213e; border-color: #2a2a4a; color: #bdbdbd; }
+  .content { background: #12122a; }
+  .page h3, .page h4, h3, h4 { color: #e0e0e0; }
+  .clr-control-label, label { color: #bdbdbd !important; }
+  .table, .datagrid { color: #e0e0e0; }
+  .table th, .datagrid-header .datagrid-column-title { color: #9e9e9e; }
+  .card { background: #1a1a2e; border-color: #2a2a4a; }
+  .clr-input, .clr-select { background: #16213e; color: #e0e0e0; border-color: #2a2a4a; }
+  .btn-sm { background: #2a2a4a; color: #bdbdbd; border-color: #3a3a5a; }
+  .nav-logout { border-color: #2a2a4a; }
+}
+
+// ── Responsive ────────────────────────────────────────────────────
+
+@media (max-width: 900px) {
+  .sidebar { width: 60px !important; min-width: 60px !important; }
+  .sidebar .brand-text, .sidebar .nav-item span, .sidebar .expand-chevron { display: none; }
+  .sidebar-brand { padding: 12px 8px; justify-content: center; }
+  .sidebar-brand img { width: 28px; height: 28px; }
+  .nav-item { justify-content: center; padding: 12px 8px; }
+  .tree-children { display: none; }
+  .form-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 600px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .live-strip { flex-wrap: wrap; height: auto; padding: 8px; gap: 6px; font-size: 10px; }
+  .app-shell { flex-direction: column; }
+  .sidebar { width: 100% !important; min-width: 100% !important; flex-direction: row; overflow-x: auto; height: 48px; }
+  .sidebar-brand { display: none; }
+  .nav-item { flex-shrink: 0; padding: 8px 10px; font-size: 11px; border-left: none; border-bottom: 2px solid transparent; }
+  .nav-item.active { border-left: none; border-bottom-color: #2e7d32; }
+  .nav-child { display: none; }
+  .sidebar-spacer, .nav-logout { display: none; }
+  .page { padding: 12px; }
+}
