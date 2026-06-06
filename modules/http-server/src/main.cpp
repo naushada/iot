@@ -131,6 +131,10 @@ int main(int argc, char** argv) {
     // Register ACE log callback now that ACE is initialised
     g_log.start();
 
+    ACE_DEBUG((LM_INFO, "httpd: log buffer started\n"));
+    std::fprintf(stderr, "httpd: g_log.start() called, lines=%zu\n",
+                 g_log.line_count());
+
     data_store::Client ds;
     auto cs = ds.connect(dsPath);
     if (!cs.ok) {
@@ -266,7 +270,7 @@ int main(int argc, char** argv) {
     }
 
     // Push startup logs immediately so the cloud UI can tail them.
-    g_log.flush(ds, 200);
+    g_log.flush(ds);
 
     // The listening socket is polled directly via non-blocking accept() in
     // the loop below; only the per-connection sessions are registered with

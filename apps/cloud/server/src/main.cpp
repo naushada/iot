@@ -83,6 +83,11 @@ int main(int argc, char** argv) {
     // Register ACE log callback now that ACE is initialised
     g_log.start();
 
+    // Verify ring buffer is live
+    ACE_DEBUG((LM_INFO, "cloudd: log buffer started\n"));
+    std::fprintf(stderr, "cloudd: g_log.start() called, lines=%zu\n",
+                 g_log.line_count());
+
     // ── Connect to ds-server ──────────────────────────────────────
     data_store::Client ds;
     auto cs = ds.connect(ds_path);
