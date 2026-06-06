@@ -10,9 +10,6 @@ endif()
 
 set(CLOUD_SERVER_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Find data-store library (built earlier in Containerfile at /tmp/bds)
-link_directories(/tmp/bds)
-
 # nlohmann::json — vendored
 set(NLOHMANN_JSON_INCLUDE
     ${CLOUD_SERVER_DIR}/../../3rdparty/json/single_include)
@@ -31,8 +28,14 @@ add_executable(iot-cloudd
     ../../../modules/server/lwm2m/src/bootstrap.cpp
     ../../../modules/server/openvpn/src/vpn_registry.cpp)
 
+if(DEFINED DATASTORE_LIB)
+    set(DS_LINK_LIB ${DATASTORE_LIB})
+else()
+    set(DS_LINK_LIB datastore_client)
+endif()
+
 target_link_libraries(iot-cloudd
-    datastore_client ACE pthread)
+    ${DS_LINK_LIB} ACE pthread)
 
 # ── Install ──────────────────────────────────────────────────────
 include(GNUInstallDirs)

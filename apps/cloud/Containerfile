@@ -64,12 +64,13 @@ RUN mkdir -p /tmp/bhttp && cd /tmp/bhttp && \
     -DBUILD_HTTP_SERVER_TESTS=OFF \
     -GNinja && ninja -j$(nproc)
 
-# Build cloud server daemon (iot-cloudd)
+# Build cloud server daemon (iot-cloudd) — links against ds lib
 RUN mkdir -p /tmp/bcloud && cd /tmp/bcloud && \
     cmake /src/apps/cloud/server \
     -DCMAKE_BUILD_TYPE=Release \
     -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
-    -GNinja && ninja -j$(nproc)
+    -DDATASTORE_LIB=/tmp/bds/libdatastore_client.a \
+    && make -j2
 
 # ============================================================
 # Stage 2: Build Angular cloud UI (xpmile pattern)
