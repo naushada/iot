@@ -90,11 +90,11 @@ case "${1:-start}" in
         ;;
 
     logs)
-        # Read logs from data store via ds-cli, strip the "key=" prefix.
+        # Read logs from data store via ds-cli.
         $CR exec iot-ds-server ds-cli get log.text log.cloudd.text \
-            log.lwm2m.text log.lwm2m.bs.text log.lwm2m.dm.text 2>/dev/null | \
-            sed 's/^[^=]*=//' || \
-        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" logs
+            log.lwm2m.text log.lwm2m.bs.text log.lwm2m.dm.text && exit 0
+        # Fallback: tail container stdout
+        $CR logs iot-ds-server iot-cloudd iot-httpd 2>/dev/null
         ;;
 
     ps|status)
