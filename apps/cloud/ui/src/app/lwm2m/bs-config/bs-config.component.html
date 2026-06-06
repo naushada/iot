@@ -111,6 +111,19 @@
                formControlName="sec_ssid" min="0" max="65535" />
       </clr-input-container>
 
+      <!-- DM PSK (post-bootstrap, separate from BS PSK above) -->
+      <clr-input-container>
+        <label>DM PSK Identity <span class="hint">(per-device)</span></label>
+        <input clrInput [disabled]="!isAdmin" formControlName="dm_psk_id"
+               placeholder="iot-dm-client" />
+      </clr-input-container>
+
+      <clr-input-container>
+        <label>DM PSK Key <span class="hint">(per-device, hex)</span></label>
+        <input clrInput [disabled]="!isAdmin" formControlName="dm_psk_key"
+               placeholder="hex-encoded key" />
+      </clr-input-container>
+
       <!-- ── Server Object (OID 1) ───────────────────────────── -->
       <clr-input-container>
         <label>Lifetime — OID 1 RID 1 <span class="hint">(seconds)</span></label>

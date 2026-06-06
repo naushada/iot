@@ -29,6 +29,20 @@
       </clr-select-container>
 
       <clr-input-container>
+        <label>DM PSK Identity</label>
+        <input clrInput [disabled]="!isAdmin" formControlName="dm_psk_id"
+               placeholder="iot-dm-client" />
+        <clr-control-helper>Device identity for post-bootstrap DM communication</clr-control-helper>
+      </clr-input-container>
+
+      <clr-input-container>
+        <label>DM PSK Key <span class="hint">(hex secret)</span></label>
+        <input clrInput [disabled]="!isAdmin" formControlName="dm_psk_key"
+               placeholder="hex-encoded PSK" />
+        <clr-control-helper>Separate from BS PSK — used after bootstrap</clr-control-helper>
+      </clr-input-container>
+
+      <clr-input-container>
         <label>LwM2M Version</label>
         <input clrInput [disabled]="!isAdmin" formControlName="lwm2m_version"
                placeholder="1.1" />

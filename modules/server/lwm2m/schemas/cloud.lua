@@ -86,6 +86,19 @@ return {
       type    = "string",
       default = "U",
     },
+    -- DM-level PSK for post-bootstrap device communication.
+    -- Separate from cloud.bs.psk.* (used only during bootstrapping).
+    -- Per-device overrides stored in cloud.provision.configs per endpoint.
+    ["cloud.dm.psk.id"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "iot-dm-client",
+    },
+    ["cloud.dm.psk.key"] = {
+        access  = "Admin",
+      type    = "opaque",
+      default = "",
+    },
     -- LwM2M version reported by devices / expected by the DM server.
     -- Per-device overrides stored in cloud.provision.configs as
     -- lwm2m.version inside the endpoint's JSON entry.
