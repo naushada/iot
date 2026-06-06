@@ -27,25 +27,10 @@ struct LogBuffer::Impl {
     public:
         explicit Callback(Impl* owner) : m_owner(owner) {}
         void log(ACE_Log_Record& rec) override {
-            std::time_t t = static_cast<std::time_t>(rec.time_stamp().sec());
-            struct std::tm tm_buf;
-            ::localtime_r(&t, &tm_buf);
-            char ts[16];
-            std::strftime(ts, sizeof(ts), "%H:%M:%S", &tm_buf);
-
-            const char* lvl = "?";
-            switch (rec.type()) {
-                case LM_DEBUG:    lvl = "DEBUG"; break;
-                case LM_INFO:     lvl = "INFO";  break;
-                case LM_NOTICE:   lvl = "NOTE";  break;
-                case LM_WARNING:  lvl = "WARN";  break;
-                case LM_ERROR:    lvl = "ERROR"; break;
-                case LM_CRITICAL: lvl = "CRIT";  break;
-            }
-
+            // ACE already formats timestamps + levels via %D %M %N:%l.
+            // Just tag with the daemon name for grep-ability.
             std::string line =
-                std::string(ts) + " " + lvl + " " + m_owner->daemon + ": " +
-                rec.msg_data() + "\n";
+                m_owner->daemon + ": " + rec.msg_data() + "\n";
             std::lock_guard<std::mutex> lk(m_owner->mtx);
             m_owner->bytes_since_flush += line.size();
             m_owner->buf.push_back(std::move(line));
