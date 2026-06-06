@@ -16,8 +16,9 @@ namespace data_store {
 struct LogBuffer::Impl {
     std::mutex              mtx;
     std::deque<std::string> buf;
-    std::string             key;
-    std::string             daemon;  // "cloudd", "httpd", "lwm2m"
+    std::string             key;        // ds key for flush ("log.cloudd.text")
+    std::string             daemon;     // "cloudd", "httpd", "lwm2m"
+    std::string             level_key;  // "log.level.cloudd"
     static constexpr std::size_t kMaxLines = 200;
 
     // Inner callback registered with ACE — lives as long as the Impl.
@@ -56,14 +57,19 @@ struct LogBuffer::Impl {
     Callback cb{this};
 };
 
-LogBuffer::LogBuffer(const std::string& daemon, const std::string& ds_key)
+LogBuffer::LogBuffer(const std::string& daemon, const std::string& log_key,
+                     const std::string& level_key)
     : m_impl(std::make_unique<Impl>()) {
-    m_impl->daemon = daemon;
-    m_impl->key    = ds_key;
+    m_impl->daemon    = daemon;
+    m_impl->key       = log_key;
+    m_impl->level_key = level_key;
     // NOTE: start() must be called from main() to register the
     // ACE callback — doing it in the constructor would run during
     // static initialisation, before ACE is ready.
 }
+
+LogBuffer::LogBuffer(const std::string& daemon, const std::string& log_key)
+    : LogBuffer(daemon, log_key, "log.level") {}
 
 void LogBuffer::start() {
     if (m_impl) ACE_Log_Msg::instance()->msg_callback(&m_impl->cb);
@@ -82,14 +88,19 @@ void LogBuffer::flush(Client& ds) {
     ds.set(m_impl->key, Value{text}, 200);  // best-effort
 }
 
-void LogBuffer::set_key(const std::string& key) {
+void LogBuffer::set_log_key(const std::string& key) {
     std::lock_guard<std::mutex> lk(m_impl->mtx);
     m_impl->key = key;
 }
 
-void LogBuffer::apply_level(Client& ds, const std::string& own_key) {
+void LogBuffer::set_level_key(const std::string& key) {
+    std::lock_guard<std::mutex> lk(m_impl->mtx);
+    m_impl->level_key = key;
+}
+
+void LogBuffer::apply_level(Client& ds) {
     std::vector<Client::GetResult> lg;
-    auto ls = ds.get({own_key, "log.level"}, lg);
+    auto ls = ds.get({m_impl->level_key, "log.level"}, lg);
     std::string lvl_str;
     if (ls.ok) {
         for (const auto& g : lg) {

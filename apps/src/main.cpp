@@ -140,7 +140,7 @@ inline void tx_via(App& app,
 // ── Log ring buffer ────────────────────────────────────────────────
 // Captures ACE log output → ds log.lwm2m.*.text for the cloud UI.
 // Key may be overridden at startup for per-instance logs (bs / dm).
-data_store::LogBuffer g_log("lwm2m", "log.lwm2m.text");
+data_store::LogBuffer g_log("lwm2m", "log.lwm2m.text", "log.level.lwm2m");
 
 /// Read the existing security/server-object JSON files under
 /// `apps/config/{securityObject,serverObject}/` and synthesise one
@@ -646,7 +646,8 @@ int main(std::int32_t argc, char *argv[]) {
 
     // Per-instance log key for cloud server role
     if (!lwm2m_instance.empty()) {
-        g_log.set_key("log.lwm2m." + lwm2m_instance + ".text");
+        g_log.set_log_key("log.lwm2m." + lwm2m_instance + ".text");
+        g_log.set_level_key("log.level.lwm2m." + lwm2m_instance);
     }
     // Seed schema keys so ds-server knows about them
     if (auto* cli = ds.client()) {
@@ -658,14 +659,8 @@ int main(std::int32_t argc, char *argv[]) {
                  data_store::Value{std::string("")}, 100);
     }
 
-    // Per-daemon log level (lwm2m instance or generic lwm2m), falls
-    // back to global log.level.
-    const std::string log_level_key =
-        !lwm2m_instance.empty()
-            ? "log.level.lwm2m." + lwm2m_instance
-            : "log.level.lwm2m";
     if (auto* cli = ds.client())
-        g_log.apply_level(*cli, log_level_key);
+        g_log.apply_level(*cli);
 
     std::unique_ptr<data_store::ServiceGate> svc_gate;
     std::unique_ptr<data_store::DepWatch>    dep_watch;

@@ -16,13 +16,17 @@
 /// Usage (one instance per daemon, before any ACE_DEBUG calls):
 ///
 ///   #include "data_store/log_buffer.hpp"
-///   data_store::LogBuffer g_log("cloudd", "log.cloudd.text");
+///   data_store::LogBuffer g_log("cloudd", "log.cloudd.text",
+///                               "log.level.cloudd");
 ///   …
 ///   int main() {
 ///       g_log.start();  // register ACE callback after ACE is ready
+///       g_log.apply_level(ds);  // read log.level.cloudd → log.level
 ///       …
 ///       g_log.flush(ds);
 ///   }
+///   // In event loop, on log.level / log.level.cloudd watch:
+///   g_log.apply_level(ds);  // hot-reload
 
 #include <memory>
 #include <string>
@@ -34,10 +38,17 @@ class Client;  // forward — defined in data_store/client.hpp
 class LogBuffer {
 public:
     /// Start capturing ACE log output.
-    /// @param daemon  Short name inserted into each log line
-    /// @param ds_key  Data-store key written by flush() (may be changed
-    ///                later with set_key())
-    LogBuffer(const std::string& daemon, const std::string& ds_key);
+    /// @param daemon     Short name inserted into each log line
+    /// @param log_key    Data-store key written by flush() (may be changed
+    ///                   later with set_key())
+    /// @param level_key  Per-daemon log-level key ("log.level.cloudd").
+    ///                   apply_level() reads this key first, then falls
+    ///                   back to the global "log.level".
+    LogBuffer(const std::string& daemon, const std::string& log_key,
+              const std::string& level_key);
+
+    /// Convenience — level_key defaults to "log.level" (no per-daemon key).
+    LogBuffer(const std::string& daemon, const std::string& log_key);
 
     /// Register the ACE log callback.  Must be called from main()
     /// after ACE is initialised — NOT during static initialisation.
@@ -55,16 +66,17 @@ public:
     /// Best-effort — errors are silently dropped.
     void flush(Client& ds);
 
-    /// Change the data-store key for subsequent flushes (useful when
-    /// the same binary runs in different roles, e.g. lwm2m-bs vs dm).
-    void set_key(const std::string& key);
+    /// Change the data-store log-text key for subsequent flushes
+    /// (useful when the same binary runs in different roles).
+    void set_log_key(const std::string& key);
 
-    /// Read log.level.<key> (or log.level) from ds and update
-    /// ACE_Log_Msg::priority_mask.  Call periodically or on watch
-    /// events so operator changes via the cloud UI take effect.
-    /// @param own_key  Per-daemon key ("log.level.cloudd"), read
-    ///                 before falling back to "log.level".
-    void apply_level(Client& ds, const std::string& own_key);
+    /// Change the log-level key for subsequent apply_level() calls.
+    void set_level_key(const std::string& key);
+
+    /// Read the per-daemon log-level key (given at construction) and
+    /// fall back to "log.level".  Updates ACE_Log_Msg::priority_mask.
+    /// Call at startup and on watch events for hot-reload.
+    void apply_level(Client& ds);
 
 private:
     struct Impl;

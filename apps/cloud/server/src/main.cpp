@@ -34,7 +34,7 @@ namespace {
 
 // ── Log ring buffer ────────────────────────────────────────────────
 // Captures ACE log output → ds log.cloudd.text for the cloud UI.
-data_store::LogBuffer g_log("cloudd", "log.cloudd.text");
+data_store::LogBuffer g_log("cloudd", "log.cloudd.text", "log.level.cloudd");
 
 std::atomic<bool> g_stop{false};
 
@@ -165,7 +165,7 @@ int main(int argc, char** argv) {
     // ── Log level from data store (reused from device pattern) ─────
     // Lambda applies the log.level string to ACE_Log_Msg::priority_mask.
     // Called at startup, on watch events, and on periodic timeout ticks.
-    g_log.apply_level(ds, "log.level.cloudd");
+    g_log.apply_level(ds);
 
     // ── Main loop ─────────────────────────────────────────────────
     // Block on recv_event() up to sync_interval seconds.  A provision
@@ -208,7 +208,7 @@ int main(int argc, char** argv) {
                                (ok ? "ok" : "failed (not found)"), ep->c_str()));
                 }
             } else if (ev.key == "log.level") {
-                g_log.apply_level(ds, "log.level.cloudd");
+                g_log.apply_level(ds);
                 ACE_DEBUG((LM_INFO,
                            ACE_TEXT("%D [cloudd:%t] %M %N:%l log level changed\n")));
             }
@@ -222,7 +222,7 @@ int main(int argc, char** argv) {
                 sync_endpoints_to_ds(ds, ep_reg);
                 ds.set("cloud.vpn.port.next",
                        data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
-                g_log.apply_level(ds, "log.level.cloudd");
+                g_log.apply_level(ds);
                 g_log.flush(ds);
             }
         }

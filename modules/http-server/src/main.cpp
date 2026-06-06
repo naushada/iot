@@ -46,7 +46,7 @@ std::atomic<bool> g_stop{false};
 
 // ── Log ring buffer ────────────────────────────────────────────────
 // Captures ACE log output → ds log.text for the cloud UI.
-data_store::LogBuffer g_log("httpd", "log.text");
+data_store::LogBuffer g_log("httpd", "log.text", "log.level.httpd");
 
 void on_signal(int /*sig*/) {
     g_stop.store(true);
@@ -380,7 +380,7 @@ int main(int argc, char** argv) {
                 // Password hash is reloaded on each login attempt
                 // (stateless — no cache to invalidate).
 
-                g_log.apply_level(ds, "log.level.httpd");
+                g_log.apply_level(ds);
                 g_log.flush(ds);
             }
             DsHttpCfg cur = read_ds_http_cfg(ds);
