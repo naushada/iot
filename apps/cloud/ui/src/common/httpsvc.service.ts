@@ -95,7 +95,6 @@ export class HttpsvcService {
       `${this.api}/api/v1/service/restart`, body,
       { headers: this.jsonHeaders(), withCredentials: true });
   }
-}
 
   // ── Cloud API (L21) ──────────────────────────────────────────────
 
