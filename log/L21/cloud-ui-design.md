@@ -180,10 +180,22 @@ Cloud UI (Angular SPA)
     ├── POST /api/v1/cloud/provision → BootstrapProvisioner → VPN alloc
     ├── GET /api/v1/db/get?ep=device-1&key=/3/0/6 → CoAP to device
     └── https://cloud:5001/ → nftables DNAT → tunnel IP:443 → Device UI
+
+Device push → Cloud LwM2M server writes directly to ds-server:
+  
+  Device                    lwm2m (cloud)              ds-server
+    │                           │                         │
+    │── CoAP /push?ep=d1 ──────→│                         │
+    │   {"/3/0/6": 42}          │── ds->set(ep.d1./3/0/6, 42) ──→│
+    │←── 2.04 ──────────────────│                         │
 ```
 
-The cloud UI uses the same `HttpsvcService` pattern, just adds cloud-specific methods.
-Long-poll and toast patterns work identically.
+No HTTP hops between cloud daemons — all IPC via data_store::Client → ds-server.
+Same pattern as device daemons (openvpn-client writes vpn.state, net-router writes
+net.iface.active).
+
+All feature pages (VPN, WAN, Routing, LwM2M, Services) use the same HttpsvcService
+pattern from iot-ui — same API calls, same data flow, same long-poll and toast.
 
 ## Implementation Plan
 

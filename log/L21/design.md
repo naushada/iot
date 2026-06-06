@@ -245,6 +245,46 @@ device or the cloud store.  The `?ep=` query parameter is the switch:
 The cloud UI calls the same `/api/v1/db/get?ep=<id>` endpoints that the
 device-level `iot-ui` calls locally — no new API surface needed.
 
+### 5.5 IPC Architecture — All Daemons Use data_store::Client
+
+Cloud daemons communicate exclusively through the data store (ds-server).
+There is no daemon-to-daemon HTTP — every daemon links `data_store::Client`
+and reads/writes the data store directly.
+
+```
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│ iot-cloudd   │   │  lwm2m       │   │ openvpn      │
+│ (provision,  │   │ (CoAP /bs,   │   │ (tunnel mgr) │
+│  sync state) │   │  /push, /rd) │   │              │
+└──────┬───────┘   └──────┬───────┘   └──────┬───────┘
+       │                  │                  │
+       │  data_store::Client (Unix socket)   │
+       └──────────────────┼──────────────────┘
+                          │
+                   ┌──────┴──────┐
+                   │  ds-server  │
+                   └──────┬──────┘
+                          │
+                   ┌──────┴──────┐
+                   │ iot-httpd   │  (REST API + cloud UI)
+                   │ (reads ds)  │
+                   └─────────────┘
+```
+
+**Key design rule:** No cloud daemon calls another daemon's HTTP endpoint.
+Everything flows through the data store.  Examples:
+
+| Action | Writer | Key | Reader |
+|--------|--------|-----|--------|
+| Device bootstrap | iot-cloudd | `cloud.endpoints` | iot-httpd (cloud UI) |
+| Device /push data | lwm2m | `ep.<ep>./3/0/6` | iot-httpd (cloud UI) |
+| VPN tunnel up | openvpn | `cloud.ep.<ep>.state = online` | iot-httpd, iot-cloudd |
+| Provision request | iot-httpd | `cloud.ep.<ep>.state = bootstrapping` | iot-cloudd |
+
+This mirrors the device-side architecture: openvpn-client writes
+`vpn.state` to ds-server; net-router reads it.  Same pattern,
+cloud side.
+
 ## 6. Cloud UI (`apps/cloud/ui`)
 
 Separate Angular 14 SPA using the same Clarity stack as `iot-ui/`.
