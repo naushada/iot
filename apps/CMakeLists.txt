@@ -93,6 +93,14 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
 link_directories(${ACE_ROOT}/lib)
 
+# ACE — prefer static .a when provided (Yocto sets -DACE_LIBRARY).
+# Fall back to -lACE for shared-library builds.
+if(DEFINED ACE_LIBRARY)
+    set(ACE_LINK_LIB ${ACE_LIBRARY})
+else()
+    set(ACE_LINK_LIB ACE)
+endif()
+
 # tinydtls — prefer sysroot when cross-compiling (Yocto sets
 # -DTINYDTLS_LIBRARY=...), fall back to vendored submodule.
 if(NOT DEFINED TINYDTLS_LIBRARY)
@@ -116,7 +124,7 @@ add_executable(lwm2m ${SOURCES})
 target_link_libraries(lwm2m
                         ${TINYDTLS_LINK_LIB}
                         datastore_client
-                        ACE
+                        ${ACE_LINK_LIB}
                         z
                         readline
                         pthread
