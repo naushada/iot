@@ -151,10 +151,10 @@ cloud.vpn.server.key     → Server key path
 
 ### Services (services.cloud.*)
 ```
-services.ds.state                        → ds-server state
-services.cloud.iot-cloudd.enable|state   → iot-cloudd enable/state
-services.cloud.iot-httpd.enable|state    → iot-httpd enable/state
-services.cloud.openvpn.server.enable|state → openvpn-server enable/state
+services.ds.state                           → ds-server state
+services.cloud.iot.cloudd.enable|state      → iot-cloudd enable/state
+services.cloud.iot.httpd.enable|state       → iot-httpd enable/state
+services.cloud.openvpn.server.enable|state  → openvpn-server enable/state
 ```
 
 ## Related modules

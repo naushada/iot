@@ -55,9 +55,9 @@ interface SvcRow {
 export class ServicesListComponent implements OnInit, OnDestroy {
   services: SvcRow[] = [
     { key: 'ds',            label: 'ds-server',        enable_key: '',            state: '', enabled: true,  uptime: '', restarting: false },
-    { key: 'iot-cloudd',    label: 'iot-cloudd',        enable_key: 'services.cloud.iot-cloudd.enable',    state: '', enabled: true,  uptime: '', restarting: false },
-    { key: 'iot-httpd',     label: 'iot-httpd',         enable_key: 'services.cloud.iot-httpd.enable',     state: '', enabled: true,  uptime: '', restarting: false },
-    { key: 'openvpn-server',label: 'openvpn-server',    enable_key: 'services.cloud.openvpn.server.enable',state: '', enabled: true,  uptime: '', restarting: false },
+    { key: 'iot.cloudd',      label: 'iot-cloudd',        enable_key: 'services.cloud.iot.cloudd.enable',       state: '', enabled: true,  uptime: '', restarting: false },
+    { key: 'iot.httpd',       label: 'iot-httpd',         enable_key: 'services.cloud.iot.httpd.enable',        state: '', enabled: true,  uptime: '', restarting: false },
+    { key: 'openvpn.server',  label: 'openvpn-server',    enable_key: 'services.cloud.openvpn.server.enable',   state: '', enabled: true,  uptime: '', restarting: false },
   ];
   private active = true;
 
