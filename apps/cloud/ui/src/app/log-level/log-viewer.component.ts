@@ -22,7 +22,7 @@ import { environment } from '../../environments/environment';
                   [ngModel]="logLevel" (ngModelChange)="setLevel($event)">
             <option *ngFor="let l of levels" [value]="l">{{ l }}</option>
           </select>
-          <clr-control-helper>Affects all daemons — hot-reloaded within ~60s</clr-control-helper>
+          <clr-control-helper>Affects all daemons — hot-reloaded immediately</clr-control-helper>
         </clr-select-container>
       </div>
 

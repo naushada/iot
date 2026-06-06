@@ -99,9 +99,12 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     private toast: ToastService
   ) {}
 
-  ngOnInit(): void { this.poll(); }
+  private pollIdx = 0;  // round-robin index for long-poll keys
 
-  private poll(): void {
+  ngOnInit(): void { this.fetchAll(); }
+
+  /// Fetch all service state/enable keys via POST, then start long-poll.
+  private fetchAll(): void {
     if (!this.active) return;
     const keys = ['services.ds.state'];
     for (const s of this.services) {
@@ -113,25 +116,46 @@ export class ServicesListComponent implements OnInit, OnDestroy {
       }
     }
     this.http.dbGet(keys).subscribe({
-      next: (r) => {
-        if (r.ok && r.data) {
-          const d = r.data as Record<string, unknown>;
-          const dsState = d['services.ds.state'];
-          if (typeof dsState === 'string') this.services[0].state = dsState;
-          for (const s of this.services) {
-            if (s.key === 'ds') continue;
-            const stateKey = s.state_key || s.enable_key.replace('.enable', '.state');
-            const sv = d[stateKey];
-            if (typeof sv === 'string') s.state = sv;
-            if (s.enable_key) {
-              const ev = d[s.enable_key];
-              if (typeof ev === 'boolean') s.enabled = ev;
-            }
-          }
+      next: (r) => this.applyState(r),
+      error: () => this.scheduleLongPoll()
+    });
+  }
+
+  private applyState(r: { ok: boolean; data?: Record<string, unknown> }): void {
+    if (r.ok && r.data) {
+      const d = r.data as Record<string, unknown>;
+      const dsState = d['services.ds.state'];
+      if (typeof dsState === 'string') this.services[0].state = dsState;
+      for (const s of this.services) {
+        if (s.key === 'ds') continue;
+        const stateKey = s.state_key || s.enable_key.replace('.enable', '.state');
+        const sv = d[stateKey];
+        if (typeof sv === 'string') s.state = sv;
+        if (s.enable_key) {
+          const ev = d[s.enable_key];
+          if (typeof ev === 'boolean') s.enabled = ev;
         }
-        if (this.active) setTimeout(() => this.poll(), 5000);
-      },
-      error: () => { if (this.active) setTimeout(() => this.poll(), 5000); }
+      }
+    }
+    this.scheduleLongPoll();
+  }
+
+  /// Long-poll one state key at a time (round-robin). When any key
+  /// changes or the poll times out, refresh all keys via POST.
+  private scheduleLongPoll(): void {
+    if (!this.active) return;
+    // Collect all state keys for round-robin
+    const stateKeys: string[] = ['services.ds.state'];
+    for (const s of this.services) {
+      if (s.key === 'ds') continue;
+      stateKeys.push(s.state_key || s.enable_key.replace('.enable', '.state'));
+    }
+    const key = stateKeys[this.pollIdx % stateKeys.length];
+    this.pollIdx++;
+
+    this.http.dbGetLongPoll(key, 30).subscribe({
+      next: () => this.fetchAll(),
+      error: () => this.fetchAll()
     });
   }
 

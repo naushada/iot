@@ -57,11 +57,17 @@ return {
       type    = "string",
       default = "INFO",
     },
-    -- Recent log output from all iot daemons (plain text, newline-
-    -- separated).  Each daemon appends timestamped lines.  Displayed
-    -- in the UI as a scrollable textarea via GET /api/v1/log.
-    -- Capped at ~200 lines / ~16 KB.
+    -- Recent log output (plain text, newline-separated). Each daemon
+    -- writes to its own key so they don't clobber each other. The cloud
+    -- UI log viewer merges all keys. Capped at ~200 lines / ~16 KB each.
+    --   log.text        — iot-httpd
+    --   log.cloudd.text — iot-cloudd
     ["log.text"] = {
+        access  = "Viewer",
+      type    = "string",
+      default = "",
+    },
+    ["log.cloudd.text"] = {
         access  = "Viewer",
       type    = "string",
       default = "",

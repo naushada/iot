@@ -576,7 +576,9 @@ void install_handlers(Router& router,
         });
 
     // ── GET /api/v1/log ──────────────────────────────────────────
-    // Returns log.text as plain text for the UI's scrollable log viewer.
+    // Returns merged log.*.text as plain text for the UI's scrollable
+    // log viewer. Each daemon writes to its own key so they don't
+    // clobber each other — we merge all of them here.
     router.add("GET", "/api/v1/log",
         [ds](const HttpParser::Request& /*req*/) -> HttpResponse {
             HttpResponse r;
@@ -587,10 +589,17 @@ void install_handlers(Router& router,
                 return r;
             }
             std::vector<data_store::Client::GetResult> got;
-            auto rs = ds->get({"log.text"}, got);
-            if (rs.ok && !got.empty() && got[0].has_value) {
-                if (auto s = data_store::to_string(got[0].value)) r.body = *s;
+            auto rs = ds->get({"log.text", "log.cloudd.text"}, got);
+            std::string merged;
+            if (rs.ok) {
+                for (const auto& g : got) {
+                    if (g.has_value) {
+                        if (auto s = data_store::to_string(g.value))
+                            merged += *s;
+                    }
+                }
             }
+            r.body = std::move(merged);
             return r;
         });
 
