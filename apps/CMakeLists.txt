@@ -159,6 +159,9 @@ endif()
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
 add_executable(lwm2m ${SOURCES})
+# Cross-compilation: ensure the linker searches the sysroot lib dir.
+# link_directories may be skipped for sysroot paths; target_link_directories is explicit.
+target_link_directories(lwm2m PRIVATE ${ACE_ROOT}/lib)
 target_link_libraries(lwm2m
                         ${TINYDTLS_LINK_LIB}
                         datastore_client
