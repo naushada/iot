@@ -154,22 +154,14 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   /// Long-poll log.text and log.cloudd.text alternately. When either
   /// changes, re-fetch the full merged log from /api/v1/log.
   /// Timeout (30s) → re-fetch and poll the next key.
-  private pollIdx = 0;
   private pollLog(): void {
     if (!this.active) return;
-    // Watch log text keys + per-daemon log level keys
-    const keys = ['log.text', 'log.cloudd.text',
-                  'log.level', 'log.level.cloudd', 'log.level.httpd'];
-    const key = keys[this.pollIdx % keys.length];
-    this.pollIdx++;
-
-    this.httpSvc.dbGetLongPoll(key, 30).subscribe({
-      next: (res) => {
+    // Long-poll a single key (log.version) that every daemon bumps on
+    // flush. When it changes, re-fetch the full merged log + levels.
+    this.httpSvc.dbGetLongPoll('log.version', 30).subscribe({
+      next: () => {
         if (this.autoRefresh) {
-          // If a log level key changed, reload the level trackers
-          if (res.changed && res.key && res.key.startsWith('log.level')) {
-            this.reloadLevels();
-          }
+          this.reloadLevels();
           this.fetchAndShow();
         }
         this.pollLog();

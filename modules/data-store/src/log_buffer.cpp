@@ -90,7 +90,13 @@ void LogBuffer::flush(Client& ds, std::size_t min_bytes) {
         for (const auto& line : m_impl->buf) text += line;
         m_impl->bytes_since_flush = 0;
     }
-    if (!text.empty()) ds.set(m_impl->key, Value{text}, 200);  // best-effort
+    if (!text.empty()) {
+        ds.set(m_impl->key, Value{text}, 200);              // per-daemon log
+        // Bump log.version so the cloud UI's long-poll wakes up.
+        // Use timestamp in seconds — each flush produces a new value.
+        auto ts = static_cast<std::int32_t>(std::time(nullptr));
+        ds.set("log.version", Value{ts}, 100);
+    }
 }
 
 void LogBuffer::set_log_key(const std::string& key) {

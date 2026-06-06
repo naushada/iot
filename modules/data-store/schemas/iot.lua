@@ -89,6 +89,14 @@ return {
       type    = "string",
       default = "",
     },
+    -- Bumped by every daemon on log flush so the cloud UI can long-poll
+    -- a single key instead of round-robining through all log.*.text keys.
+    ["log.version"] = {
+        access  = "Viewer",
+      type    = "integer",
+      default = 0,
+    },
+
     -- Recent log output (plain text, newline-separated). Each daemon
     -- writes to its own key so they don't clobber each other. The cloud
     -- UI log viewer merges all keys. Capped at ~200 lines / ~16 KB each.
