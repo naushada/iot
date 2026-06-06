@@ -65,7 +65,7 @@ import { ToastService } from '../../../common/toast.service';
 export class PortForwardComponent implements OnInit, OnDestroy {
   view = 'ports';  // 'ports' | 'dnat'
   targetIp = ''; targetPort = 5684; forwardPorts = '80,443,5684';
-  savingDnat = false; savingPorts = false;
+  savingDnat = false; savingPorts = false; msg = '';
   routeState = ''; rulesApplied = 0; lastApply = '';
   private sub = new Subscription();
 
@@ -112,4 +112,6 @@ export class PortForwardComponent implements OnInit, OnDestroy {
       error: () => { this.savingPorts = false; this.toast.error('Port save failed'); }
     });
   }
+
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
 }
