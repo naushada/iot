@@ -20,9 +20,10 @@
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"
 
+#include <ace/Log_Msg.h>
+
 #include <atomic>
 #include <csignal>
-#include <iostream>
 #include <thread>
 
 #include <nlohmann/json.hpp>
@@ -77,7 +78,9 @@ int main(int argc, char** argv) {
     data_store::Client ds;
     auto cs = ds.connect(ds_path);
     if (!cs.ok) {
-        std::cerr << "cloudd: ds-server connect failed: " << cs.err << "\n";
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [cloudd:%t] %M %N:%l ds-server connect failed: %C\n"),
+                   cs.err.c_str()));
         return 1;
     }
 
@@ -97,13 +100,15 @@ int main(int argc, char** argv) {
     // Events arrive via recv_event() in the main loop below.
     auto ws_prov = ds.watch("cloud.provision.request", 1000);
     if (!ws_prov.ok) {
-        std::cerr << "cloudd: watch provision.request failed: "
-                  << ws_prov.err << "\n";
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [cloudd:%t] %M %N:%l watch provision.request failed: %C\n"),
+                   ws_prov.err.c_str()));
     }
     auto ws_depr = ds.watch("cloud.deprovision.request", 1000);
     if (!ws_depr.ok) {
-        std::cerr << "cloudd: watch deprovision.request failed: "
-                  << ws_depr.err << "\n";
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [cloudd:%t] %M %N:%l watch deprovision.request failed: %C\n"),
+                   ws_depr.err.c_str()));
     }
 
     // Seed initial VPN config in ds
@@ -116,10 +121,36 @@ int main(int argc, char** argv) {
     ds.set("services.cloud.iot.cloudd.state", data_store::Value{std::string("running")});
     ds.set("services.cloud.openvpn.server.state", data_store::Value{std::string("running")});
 
-    std::cout << "cloudd: started, ds=" << ds_path
-              << " vpn-subnet=" << vpn_subnet
-              << " proxy=" << proxy_port_start << "-" << proxy_port_end
-              << " sync-interval=" << sync_interval << "\n";
+    ACE_DEBUG((LM_INFO,
+               ACE_TEXT("%D [cloudd:%t] %M %N:%l started, ds=%C vpn-subnet=%C"
+                        " proxy=%d-%d sync-interval=%d\n"),
+               ds_path.c_str(), vpn_subnet.c_str(),
+               proxy_port_start, proxy_port_end, sync_interval));
+
+    // ── Log level from data store (reused from device pattern) ─────
+    // Priority mask maps the log.level string to ACE log priority.
+    // Default is LM_INFO; operator changes via cloud UI take effect
+    // on the next timeout tick.
+    {
+        std::vector<data_store::Client::GetResult> lg;
+        auto ls = ds.get({"log.level"}, lg);
+        if (ls.ok && !lg.empty() && lg[0].has_value) {
+            if (auto lv = data_store::to_string(lg[0].value)) {
+                unsigned long mask = LM_INFO;
+                std::string upper = *lv;
+                for (auto& c : upper) c = static_cast<char>(std::toupper(c));
+                if (upper == "DEBUG")       mask = LM_DEBUG;
+                else if (upper == "INFO")   mask = LM_INFO;
+                else if (upper == "WARNING") mask = LM_WARNING;
+                else if (upper == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
+                ACE_Log_Msg::instance()->priority_mask(
+                    static_cast<int>(mask), ACE_Log_Msg::PROCESS);
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D [cloudd:%t] %M %N:%l log level set to %C\n"),
+                           upper.c_str()));
+            }
+        }
+    }
 
     // ── Main loop ─────────────────────────────────────────────────
     // Block on recv_event() up to sync_interval seconds.  A provision
@@ -134,24 +165,32 @@ int main(int argc, char** argv) {
             // A watched key changed
             if (ev.key == "cloud.provision.request") {
                 if (auto ep = data_store::to_string(ev.value)) {
-                    std::cout << "cloudd: provision request '" << *ep << "'\n";
+                    ACE_DEBUG((LM_INFO,
+                               ACE_TEXT("%D [cloudd:%t] %M %N:%l provision request '%C'\n"),
+                               ep->c_str()));
                     auto result = provisioner.provision(*ep);
                     if (result.has_value()) {
-                        std::cout << "cloudd: provisioned " << result->endpoint
-                                  << " tun=" << result->tun_ip
-                                  << " proxy=" << result->proxy_port << "\n";
+                        ACE_DEBUG((LM_INFO,
+                                   ACE_TEXT("%D [cloudd:%t] %M %N:%l provisioned %C"
+                                            " tun=%C proxy=%d\n"),
+                                   result->endpoint.c_str(), result->tun_ip.c_str(),
+                                   static_cast<int>(result->proxy_port)));
                     } else {
-                        std::cerr << "cloudd: provision failed '"
-                                  << *ep << "' (dup or exhausted)\n";
+                        ACE_ERROR((LM_ERROR,
+                                   ACE_TEXT("%D [cloudd:%t] %M %N:%l provision failed"
+                                            " '%C' (dup or exhausted)\n"),
+                                   ep->c_str()));
                     }
                 }
             } else if (ev.key == "cloud.deprovision.request") {
                 if (auto ep = data_store::to_string(ev.value)) {
-                    std::cout << "cloudd: deprovision request '" << *ep << "'\n";
+                    ACE_DEBUG((LM_INFO,
+                               ACE_TEXT("%D [cloudd:%t] %M %N:%l deprovision request '%C'\n"),
+                               ep->c_str()));
                     bool ok = provisioner.deprovision(*ep);
-                    std::cout << "cloudd: deprovision "
-                              << (ok ? "ok" : "failed (not found)")
-                              << " '" << *ep << "'\n";
+                    ACE_DEBUG((LM_INFO,
+                               ACE_TEXT("%D [cloudd:%t] %M %N:%l deprovision %C '%C'\n"),
+                               (ok ? "ok" : "failed (not found)"), ep->c_str()));
                 }
             }
             // Sync after every event so the UI sees changes quickly
@@ -164,12 +203,33 @@ int main(int argc, char** argv) {
                 sync_endpoints_to_ds(ds, ep_reg);
                 ds.set("cloud.vpn.port.next",
                        data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
+                // Reload log level so operator changes via cloud UI
+                // take effect without a daemon restart.
+                {
+                    std::vector<data_store::Client::GetResult> lg;
+                    auto ls = ds.get({"log.level"}, lg);
+                    if (ls.ok && !lg.empty() && lg[0].has_value) {
+                        if (auto lv = data_store::to_string(lg[0].value)) {
+                            unsigned long mask = LM_INFO;
+                            std::string upper = *lv;
+                            for (auto& c : upper)
+                                c = static_cast<char>(std::toupper(c));
+                            if (upper == "DEBUG")       mask = LM_DEBUG;
+                            else if (upper == "INFO")   mask = LM_INFO;
+                            else if (upper == "WARNING") mask = LM_WARNING;
+                            else if (upper == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
+                            ACE_Log_Msg::instance()->priority_mask(
+                                static_cast<int>(mask), ACE_Log_Msg::PROCESS);
+                        }
+                    }
+                }
             }
         }
     }
 
     ds.set("services.cloud.iot.cloudd.state", data_store::Value{std::string("exited")});
     ds.set("services.cloud.openvpn.server.state", data_store::Value{std::string("exited")});
-    std::cout << "cloudd: stopped\n";
+    ACE_DEBUG((LM_INFO,
+               ACE_TEXT("%D [cloudd:%t] %M %N:%l stopped\n")));
     return 0;
 }
