@@ -30,6 +30,7 @@ import { Lwm2mConfigComponent } from './lwm2m/lwm2m-config/lwm2m-config.componen
 import { BsConfigComponent } from './lwm2m/bs-config/bs-config.component';
 import { ServicesSubmenuComponent } from './services/services-submenu/services-submenu.component';
 import { ServicesListComponent } from './services/services-list/services-list.component';
+import { HttpConfigComponent } from './http-config/http-config.component';
 
 import { SsoAuthInterceptor } from '../common/sso-auth.interceptor';
 import { SessionService, initSession } from '../common/session.service';
@@ -42,7 +43,7 @@ import { SessionService, initSession } from '../common/session.service';
     WanSubmenuComponent, WifiConfigComponent, WifiScanComponent, IfacePriorityComponent,
     RoutingSubmenuComponent, PortForwardComponent,
     Lwm2mSubmenuComponent, Lwm2mConfigComponent, BsConfigComponent,
-    ServicesSubmenuComponent, ServicesListComponent,
+    ServicesSubmenuComponent, ServicesListComponent, HttpConfigComponent,
   ],
   imports: [
     BrowserModule, AppRoutingModule, BrowserAnimationsModule,

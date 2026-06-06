@@ -31,6 +31,9 @@
         </div>
       </ng-container>
 
+      <!-- HTTP Server Config -->
+      <app-http-config *ngIf="selectedMenu==='http'"></app-http-config>
+
       <!-- WAN (from iot-ui) -->
       <ng-container *ngIf="selectedMenu==='wan'">
         <app-wan-submenu (nav)="onSubNavSelect($event)"></app-wan-submenu>
