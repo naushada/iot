@@ -104,7 +104,7 @@ void install_cloud_handlers(Router& router,
             auto result = provisioner->provision(ep);
             if (!result.has_value()) {
                 r.status = 400;
-                r.body = R"({"ok":false,"err":"provision failed (duplicate or exhausted)"})";
+                r.body = R"json({"ok":false,"err":"provision failed - duplicate or exhausted"})json";
                 return r;
             }
             json resp;

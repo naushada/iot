@@ -34,6 +34,7 @@
 
 #include <ace/INET_Addr.h>
 #include <ace/Log_Msg.h>
+#include <ace/Log_Record.h>
 #include <ace/Reactor.h>
 #include <ace/SOCK_Acceptor.h>
 #include <ace/Time_Value.h>
