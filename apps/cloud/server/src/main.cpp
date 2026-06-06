@@ -110,6 +110,14 @@ int main(int argc, char** argv) {
                    ACE_TEXT("%D [cloudd:%t] %M %N:%l watch deprovision.request failed: %C\n"),
                    ws_depr.err.c_str()));
     }
+    // Watch log.level so operator changes via cloud UI take effect
+    // immediately (no need to wait for the periodic timeout tick).
+    auto ws_loglevel = ds.watch("log.level", 5000);
+    if (!ws_loglevel.ok) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D [cloudd:%t] %M %N:%l watch log.level failed: %C\n"),
+                   ws_loglevel.err.c_str()));
+    }
 
     // Seed initial VPN config in ds
     ds.set("cloud.vpn.subnet", data_store::Value{vpn_subnet});
@@ -128,10 +136,9 @@ int main(int argc, char** argv) {
                proxy_port_start, proxy_port_end, sync_interval));
 
     // ── Log level from data store (reused from device pattern) ─────
-    // Priority mask maps the log.level string to ACE log priority.
-    // Default is LM_INFO; operator changes via cloud UI take effect
-    // on the next timeout tick.
-    {
+    // Lambda applies the log.level string to ACE_Log_Msg::priority_mask.
+    // Called at startup, on watch events, and on periodic timeout ticks.
+    auto apply_log_level = [&ds]() {
         std::vector<data_store::Client::GetResult> lg;
         auto ls = ds.get({"log.level"}, lg);
         if (ls.ok && !lg.empty() && lg[0].has_value) {
@@ -145,12 +152,10 @@ int main(int argc, char** argv) {
                 else if (upper == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
                 ACE_Log_Msg::instance()->priority_mask(
                     static_cast<int>(mask), ACE_Log_Msg::PROCESS);
-                ACE_DEBUG((LM_INFO,
-                           ACE_TEXT("%D [cloudd:%t] %M %N:%l log level set to %C\n"),
-                           upper.c_str()));
             }
         }
-    }
+    };
+    apply_log_level();
 
     // ── Main loop ─────────────────────────────────────────────────
     // Block on recv_event() up to sync_interval seconds.  A provision
@@ -192,6 +197,10 @@ int main(int argc, char** argv) {
                                ACE_TEXT("%D [cloudd:%t] %M %N:%l deprovision %C '%C'\n"),
                                (ok ? "ok" : "failed (not found)"), ep->c_str()));
                 }
+            } else if (ev.key == "log.level") {
+                apply_log_level();
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D [cloudd:%t] %M %N:%l log level changed\n")));
             }
             // Sync after every event so the UI sees changes quickly
             sync_endpoints_to_ds(ds, ep_reg);
@@ -203,26 +212,7 @@ int main(int argc, char** argv) {
                 sync_endpoints_to_ds(ds, ep_reg);
                 ds.set("cloud.vpn.port.next",
                        data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
-                // Reload log level so operator changes via cloud UI
-                // take effect without a daemon restart.
-                {
-                    std::vector<data_store::Client::GetResult> lg;
-                    auto ls = ds.get({"log.level"}, lg);
-                    if (ls.ok && !lg.empty() && lg[0].has_value) {
-                        if (auto lv = data_store::to_string(lg[0].value)) {
-                            unsigned long mask = LM_INFO;
-                            std::string upper = *lv;
-                            for (auto& c : upper)
-                                c = static_cast<char>(std::toupper(c));
-                            if (upper == "DEBUG")       mask = LM_DEBUG;
-                            else if (upper == "INFO")   mask = LM_INFO;
-                            else if (upper == "WARNING") mask = LM_WARNING;
-                            else if (upper == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
-                            ACE_Log_Msg::instance()->priority_mask(
-                                static_cast<int>(mask), ACE_Log_Msg::PROCESS);
-                        }
-                    }
-                }
+                apply_log_level();
             }
         }
     }
