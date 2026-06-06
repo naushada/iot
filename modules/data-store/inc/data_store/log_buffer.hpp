@@ -59,6 +59,13 @@ public:
     /// the same binary runs in different roles, e.g. lwm2m-bs vs dm).
     void set_key(const std::string& key);
 
+    /// Read log.level.<key> (or log.level) from ds and update
+    /// ACE_Log_Msg::priority_mask.  Call periodically or on watch
+    /// events so operator changes via the cloud UI take effect.
+    /// @param own_key  Per-daemon key ("log.level.cloudd"), read
+    ///                 before falling back to "log.level".
+    void apply_level(Client& ds, const std::string& own_key);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

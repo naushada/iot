@@ -165,31 +165,7 @@ int main(int argc, char** argv) {
     // ── Log level from data store (reused from device pattern) ─────
     // Lambda applies the log.level string to ACE_Log_Msg::priority_mask.
     // Called at startup, on watch events, and on periodic timeout ticks.
-    auto apply_log_level = [&ds]() {
-        std::vector<data_store::Client::GetResult> lg;
-        auto ls = ds.get({"log.level.cloudd", "log.level"}, lg);
-        std::string lvl_str;
-        if (ls.ok) {
-            for (const auto& g : lg) {
-                if (g.has_value) {
-                    if (auto s = data_store::to_string(g.value)) {
-                        if (!s->empty()) { lvl_str = *s; break; }
-                    }
-                }
-            }
-        }
-        unsigned long mask = LM_INFO;
-        if (!lvl_str.empty()) {
-            for (auto& c : lvl_str) c = static_cast<char>(std::toupper(c));
-            if (lvl_str == "DEBUG")       mask = LM_DEBUG;
-            else if (lvl_str == "INFO")   mask = LM_INFO;
-            else if (lvl_str == "WARNING") mask = LM_WARNING;
-            else if (lvl_str == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
-        }
-        ACE_Log_Msg::instance()->priority_mask(
-            static_cast<int>(mask), ACE_Log_Msg::PROCESS);
-    };
-    apply_log_level();
+    g_log.apply_level(ds, "log.level.cloudd");
 
     // ── Main loop ─────────────────────────────────────────────────
     // Block on recv_event() up to sync_interval seconds.  A provision
@@ -232,7 +208,7 @@ int main(int argc, char** argv) {
                                (ok ? "ok" : "failed (not found)"), ep->c_str()));
                 }
             } else if (ev.key == "log.level") {
-                apply_log_level();
+                g_log.apply_level(ds, "log.level.cloudd");
                 ACE_DEBUG((LM_INFO,
                            ACE_TEXT("%D [cloudd:%t] %M %N:%l log level changed\n")));
             }
@@ -246,7 +222,7 @@ int main(int argc, char** argv) {
                 sync_endpoints_to_ds(ds, ep_reg);
                 ds.set("cloud.vpn.port.next",
                        data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
-                apply_log_level();
+                g_log.apply_level(ds, "log.level.cloudd");
                 g_log.flush(ds);
             }
         }

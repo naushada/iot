@@ -380,34 +380,7 @@ int main(int argc, char** argv) {
                 // Password hash is reloaded on each login attempt
                 // (stateless — no cache to invalidate).
 
-                // Reload log level — per-daemon key takes precedence,
-                // falls back to global log.level.
-                {
-                    std::vector<data_store::Client::GetResult> lg;
-                    auto ls = ds.get({"log.level.httpd", "log.level"}, lg);
-                    std::string lvl_str;
-                    if (ls.ok) {
-                        for (const auto& g : lg) {
-                            if (g.has_value) {
-                                if (auto s = data_store::to_string(g.value)) {
-                                    if (!s->empty()) { lvl_str = *s; break; }
-                                }
-                            }
-                        }
-                    }
-                    unsigned long mask = LM_INFO;  // default
-                    if (!lvl_str.empty()) {
-                        for (auto& c : lvl_str)
-                            c = static_cast<char>(std::toupper(c));
-                        if (lvl_str == "DEBUG")       mask = LM_DEBUG;
-                        else if (lvl_str == "INFO")   mask = LM_INFO;
-                        else if (lvl_str == "WARNING") mask = LM_WARNING;
-                        else if (lvl_str == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
-                    }
-                    ACE_Log_Msg::instance()->priority_mask(
-                        static_cast<int>(mask), ACE_Log_Msg::PROCESS);
-                }
-                // Flush ring-buffer logs to data store so the UI can tail them
+                g_log.apply_level(ds, "log.level.httpd");
                 g_log.flush(ds);
             }
             DsHttpCfg cur = read_ds_http_cfg(ds);

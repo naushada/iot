@@ -664,33 +664,8 @@ int main(std::int32_t argc, char *argv[]) {
         !lwm2m_instance.empty()
             ? "log.level.lwm2m." + lwm2m_instance
             : "log.level.lwm2m";
-    auto apply_log_level = [&ds, &log_level_key]() {
-        auto* cli = ds.client();
-        if (!cli) return;
-        std::vector<data_store::Client::GetResult> lg;
-        auto ls = cli->get({log_level_key, "log.level"}, lg);
-        std::string lvl_str;
-        if (ls.ok) {
-            for (const auto& g : lg) {
-                if (g.has_value) {
-                    if (auto s = data_store::to_string(g.value)) {
-                        if (!s->empty()) { lvl_str = *s; break; }
-                    }
-                }
-            }
-        }
-        unsigned long mask = LM_INFO;
-        if (!lvl_str.empty()) {
-            for (auto& c : lvl_str) c = static_cast<char>(std::toupper(c));
-            if (lvl_str == "DEBUG")       mask = LM_DEBUG;
-            else if (lvl_str == "INFO")   mask = LM_INFO;
-            else if (lvl_str == "WARNING") mask = LM_WARNING;
-            else if (lvl_str == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
-        }
-        ACE_Log_Msg::instance()->priority_mask(
-            static_cast<int>(mask), ACE_Log_Msg::PROCESS);
-    };
-    apply_log_level();
+    if (auto* cli = ds.client())
+        g_log.apply_level(*cli, log_level_key);
 
     std::unique_ptr<data_store::ServiceGate> svc_gate;
     std::unique_ptr<data_store::DepWatch>    dep_watch;
