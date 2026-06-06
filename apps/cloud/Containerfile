@@ -24,6 +24,25 @@ RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_
     ldconfig && echo /usr/local/ACE_TAO-7.0.0/lib > /etc/ld.so.conf.d/ace.conf && \
     rm -rf /tmp/ACE_wrappers /tmp/ace.tar.gz
 
+# ── VPN PKI: per-build CA + server cert (xpmile pattern) ─────
+# CA key is generated and used to sign server + client certs,
+# then PURGED so it never lands in the final image.  iot-cloudd
+# generates per-device client certs at provision time by reading
+# ca.key from a mounted secret volume at runtime.
+RUN mkdir -p /etc/iot/vpn /etc/iot/vpn/ca && cd /tmp && \
+    openssl genrsa -out ca.key 4096 && \
+    openssl req -new -x509 -days 3650 -key ca.key -out ca.crt \
+        -subj "/O=IoT Cloud/CN=iot-cloud-ca" && \
+    openssl genrsa -out server.key 2048 && \
+    openssl req -new -key server.key -out server.csr \
+        -subj "/O=IoT Cloud/CN=cloud-vpn" && \
+    openssl x509 -req -days 3650 -in server.csr \
+        -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt && \
+    cp ca.crt /etc/iot/vpn/ca/ca.crt && \
+    cp server.crt server.key /etc/iot/vpn/ && \
+    rm -f server.csr ca.srl && \
+    echo "VPN PKI generated — CA valid 10 years, server valid 10 years"
+
 COPY modules/ /src/modules/
 COPY apps/3rdparty/ /src/apps/3rdparty/
 COPY apps/cloud/server/ /src/apps/cloud/server/

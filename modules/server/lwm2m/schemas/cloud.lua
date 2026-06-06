@@ -40,5 +40,25 @@ return {
       min     = 5001,
       max     = 6000,
     },
+
+    -- VPN PKI paths.  CA + server certs are generated at image build
+    -- time (per-build CA, xpmile pattern).  ca.key is NOT in the image
+    -- — mount at runtime via secret volume.
+    ["cloud.vpn.ca.crt"] = {
+      type    = "string",
+      default = "/etc/iot/vpn/ca/ca.crt",
+    },
+    ["cloud.vpn.ca.key"] = {
+      type    = "string",
+      default = "/run/secrets/iot-ca-key/ca.key",
+    },
+    ["cloud.vpn.server.crt"] = {
+      type    = "string",
+      default = "/etc/iot/vpn/server.crt",
+    },
+    ["cloud.vpn.server.key"] = {
+      type    = "string",
+      default = "/etc/iot/vpn/server.key",
+    },
   },
 }
