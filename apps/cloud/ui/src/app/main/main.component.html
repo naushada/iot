@@ -22,6 +22,50 @@
       <app-dashboard *ngIf="selectedMenu==='dashboard'"></app-dashboard>
       <app-endpoint-list *ngIf="selectedMenu==='endpoints'"></app-endpoint-list>
       <app-provision *ngIf="selectedMenu==='provision'"></app-provision>
+
+      <!-- VPN (from iot-ui) -->
+      <ng-container *ngIf="selectedMenu==='vpn'">
+        <app-vpn-submenu (nav)="onSubNavSelect($event)"></app-vpn-submenu>
+        <div class="content-area">
+          <app-vpn-config *ngIf="!selectedSubNav || selectedSubNav==='config'"></app-vpn-config>
+          <app-vpn-status *ngIf="selectedSubNav==='status'"></app-vpn-status>
+        </div>
+      </ng-container>
+
+      <!-- WAN (from iot-ui) -->
+      <ng-container *ngIf="selectedMenu==='wan'">
+        <app-wan-submenu (nav)="onSubNavSelect($event)"></app-wan-submenu>
+        <div class="content-area">
+          <app-wifi-config    *ngIf="!selectedSubNav || selectedSubNav==='wifi'"></app-wifi-config>
+          <app-wifi-scan      *ngIf="selectedSubNav==='scan'"></app-wifi-scan>
+          <app-iface-priority *ngIf="selectedSubNav==='priority'"></app-iface-priority>
+        </div>
+      </ng-container>
+
+      <!-- Routing (from iot-ui) -->
+      <ng-container *ngIf="selectedMenu==='routing'">
+        <app-routing-submenu (nav)="onSubNavSelect($event)"></app-routing-submenu>
+        <div class="content-area">
+          <app-port-forward *ngIf="!selectedSubNav || selectedSubNav==='ports' || selectedSubNav==='dnat'"></app-port-forward>
+        </div>
+      </ng-container>
+
+      <!-- LwM2M (from iot-ui) -->
+      <ng-container *ngIf="selectedMenu==='lwm2m'">
+        <app-lwm2m-submenu (nav)="onSubNavSelect($event)"></app-lwm2m-submenu>
+        <div class="content-area">
+          <app-lwm2m-config *ngIf="!selectedSubNav || selectedSubNav==='server' || selectedSubNav==='security'"></app-lwm2m-config>
+        </div>
+      </ng-container>
+
+      <!-- Services (from iot-ui) -->
+      <ng-container *ngIf="selectedMenu==='services'">
+        <app-services-submenu (nav)="onSubNavSelect($event)"></app-services-submenu>
+        <div class="content-area">
+          <app-services-list *ngIf="!selectedSubNav || selectedSubNav==='list'"></app-services-list>
+        </div>
+      </ng-container>
+
       <app-log-viewer *ngIf="selectedMenu==='logs'"></app-log-viewer>
     </div>
   </div>

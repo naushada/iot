@@ -16,6 +16,21 @@ import { StatusBadgeComponent } from './common/status-badge/status-badge.compone
 import { ToastComponent } from './common/toast/toast.component';
 import { LogViewerComponent } from './log-level/log-viewer.component';
 
+// Feature pages (from iot-ui)
+import { VpnSubmenuComponent } from './vpn/vpn-submenu/vpn-submenu.component';
+import { VpnConfigComponent } from './vpn/vpn-config/vpn-config.component';
+import { VpnStatusComponent } from './vpn/vpn-status/vpn-status.component';
+import { WanSubmenuComponent } from './wan/wan-submenu/wan-submenu.component';
+import { WifiConfigComponent } from './wan/wifi-config/wifi-config.component';
+import { WifiScanComponent } from './wan/wifi-scan/wifi-scan.component';
+import { IfacePriorityComponent } from './wan/iface-priority/iface-priority.component';
+import { RoutingSubmenuComponent } from './routing/routing-submenu/routing-submenu.component';
+import { PortForwardComponent } from './routing/port-forward/port-forward.component';
+import { Lwm2mSubmenuComponent } from './lwm2m/lwm2m-submenu/lwm2m-submenu.component';
+import { Lwm2mConfigComponent } from './lwm2m/lwm2m-config/lwm2m-config.component';
+import { ServicesSubmenuComponent } from './services/services-submenu/services-submenu.component';
+import { ServicesListComponent } from './services/services-list/services-list.component';
+
 import { SsoAuthInterceptor } from '../common/sso-auth.interceptor';
 import { SessionService, initSession } from '../common/session.service';
 
@@ -24,6 +39,11 @@ import { SessionService, initSession } from '../common/session.service';
     AppComponent, MainComponent, LoginComponent,
     DashboardComponent, EndpointListComponent, ProvisionComponent,
     StatusBadgeComponent, ToastComponent, LogViewerComponent,
+    VpnSubmenuComponent, VpnConfigComponent, VpnStatusComponent,
+    WanSubmenuComponent, WifiConfigComponent, WifiScanComponent, IfacePriorityComponent,
+    RoutingSubmenuComponent, PortForwardComponent,
+    Lwm2mSubmenuComponent, Lwm2mConfigComponent,
+    ServicesSubmenuComponent, ServicesListComponent,
   ],
   imports: [
     BrowserModule, AppRoutingModule, BrowserAnimationsModule,
