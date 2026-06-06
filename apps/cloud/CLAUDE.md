@@ -185,6 +185,57 @@ mirror).
 `apps/config/`) are also copied into the cloud image at `/etc/iot/` so
 the lwm2m binary finds the schema and provisioning data it expects.
 
+## Log Levels
+
+Default is `INFO` for all daemons. Per-daemon keys override the global
+`log.level`; an empty per-daemon value means "inherit global".
+
+| Key | Scope |
+|-----|-------|
+| `log.level` | Global default (default `"INFO"`) |
+| `log.level.cloudd` | iot-cloudd |
+| `log.level.httpd` | iot-httpd |
+| `log.level.lwm2m.bs` | lwm2m Bootstrap Server |
+| `log.level.lwm2m.dm` | lwm2m Device Management |
+| `log.level.vpn` | VPN server |
+| `log.level.dtls` | DTLS stack |
+
+Valid levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`.
+
+Changes take effect immediately — each daemon watches its log level key
+and hot-reloads via `ACE_Log_Msg::priority_mask()`.
+
+### Enabling DEBUG at boot
+
+On a cold first boot the schema default `"INFO"` wins. To start at DEBUG:
+
+**Persist the value (survives restarts):**
+```bash
+ds-cli set log.level DEBUG
+```
+Once set via the cloud UI or ds-cli, the value is persisted to
+`/var/lib/iot/data_store.lua` and loads before any daemon connects on
+the next boot.
+
+**Per-daemon at boot (before the daemon starts):**
+```bash
+ds-cli set log.level.cloudd DEBUG   # cloudd only
+```
+
+Daemons self-report their log output to ds so the cloud UI log viewer
+can tail them live:
+
+| Daemon | Log key |
+|--------|---------|
+| iot-httpd | `log.text` |
+| iot-cloudd | `log.cloudd.text` |
+| lwm2m (client) | `log.lwm2m.text` |
+| lwm2m-bs | `log.lwm2m.bs.text` |
+| lwm2m-dm | `log.lwm2m.dm.text` |
+
+Each log line includes the daemon name for debugging: `... cloudd: ...`,
+`... httpd: ...`, `... lwm2m: ...`.
+
 ## Auth
 
 Session-auth via cookies (SHA-256 password hashing). Default: `admin/admin`.
