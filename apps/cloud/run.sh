@@ -90,8 +90,9 @@ case "${1:-start}" in
         ;;
 
     logs)
-        shift 2>/dev/null || true
-        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" logs "${@}"
+        # Use podman/docker logs directly (compose logs has compat issues)
+        $CR logs iot-ds-server iot-cloudd iot-httpd iot-lwm2m-bs iot-lwm2m-dm 2>/dev/null || \
+        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" logs
         ;;
 
     ps|status)

@@ -257,7 +257,11 @@ int main(int argc, char** argv) {
     {
         auto rs = ds.set("services.cloud.iot.httpd.state",
                          data_store::Value{std::string("running")});
-        if (!rs.ok) {
+        if (rs.ok) {
+            std::fprintf(stderr, "httpd: state self-reported httpd=running\n");
+        } else {
+            std::fprintf(stderr, "httpd: FAILED httpd.state=running: %s\n",
+                         rs.err.c_str());
             ACE_ERROR((LM_ERROR,
                        ACE_TEXT("%D [http:%t] %M %N:%l set httpd.state=running"
                                 " failed: %C\n"),

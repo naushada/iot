@@ -684,7 +684,14 @@ int main(std::int32_t argc, char *argv[]) {
         if (!lwm2m_instance.empty()) {
             const std::string sk = std::string("services.cloud.lwm2m.")
                                    + lwm2m_instance + ".state";
-            cli->set(sk, data_store::Value{std::string("running")});
+            auto rs = cli->set(sk, data_store::Value{std::string("running")});
+            if (rs.ok) {
+                std::fprintf(stderr, "lwm2m: state self-reported %s=running\n",
+                             sk.c_str());
+            } else {
+                std::fprintf(stderr, "lwm2m: FAILED %s=running: %s\n",
+                             sk.c_str(), rs.err.c_str());
+            }
             ACE_DEBUG((LM_INFO,
                        ACE_TEXT("%D [iot:%t] %M %N:%l cloud lwm2m-%C "
                                 "self-reported running\n"),

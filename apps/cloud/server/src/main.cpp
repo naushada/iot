@@ -138,7 +138,11 @@ int main(int argc, char** argv) {
     {
         auto rs = ds.set("services.cloud.iot.cloudd.state",
                          data_store::Value{std::string("running")});
-        if (!rs.ok) {
+        if (rs.ok) {
+            std::fprintf(stderr, "cloudd: state self-reported cloudd=running\n");
+        } else {
+            std::fprintf(stderr, "cloudd: FAILED cloudd.state=running: %s\n",
+                         rs.err.c_str());
             ACE_ERROR((LM_ERROR,
                        ACE_TEXT("%D [cloudd:%t] %M %N:%l set cloudd.state=running"
                                 " failed: %C\n"),
@@ -148,7 +152,11 @@ int main(int argc, char** argv) {
     {
         auto rs = ds.set("services.cloud.openvpn.server.state",
                          data_store::Value{std::string("running")});
-        if (!rs.ok) {
+        if (rs.ok) {
+            std::fprintf(stderr, "cloudd: state self-reported openvpn=running\n");
+        } else {
+            std::fprintf(stderr, "cloudd: FAILED openvpn.state=running: %s\n",
+                         rs.err.c_str());
             ACE_ERROR((LM_ERROR,
                        ACE_TEXT("%D [cloudd:%t] %M %N:%l set openvpn.server.state=running"
                                 " failed: %C\n"),
