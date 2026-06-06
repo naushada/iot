@@ -122,21 +122,42 @@ link_directories(${ACE_ROOT}/lib)
 
 # External libs — Yocto passes full paths via -DLIBNAME_LIBRARY=...
 # When defined, use the full path (creates ninja dependency, no -l needed).
-# When not defined, fall back to -l flag for native/dev builds.
+# When not defined, search via find_library (works for both native and
+# cross-compilation sysroots), then fall back to bare -l flag.
 if(DEFINED ACE_LIBRARY)
     set(ACE_LINK_LIB ${ACE_LIBRARY})
 else()
-    set(ACE_LINK_LIB ACE)
+    find_library(ACE_LIBRARY ACE
+                 HINTS ${ACE_ROOT}/lib
+                 NO_DEFAULT_PATH)
+    if(NOT ACE_LIBRARY)
+        find_library(ACE_LIBRARY ACE)
+    endif()
+    if(ACE_LIBRARY)
+        set(ACE_LINK_LIB ${ACE_LIBRARY})
+    else()
+        set(ACE_LINK_LIB ACE)
+    endif()
 endif()
 if(DEFINED BSONCXX_LIBRARY)
     set(BSONCXX_LINK_LIB ${BSONCXX_LIBRARY})
 else()
-    set(BSONCXX_LINK_LIB bsoncxx)
+    find_library(BSONCXX_LIBRARY bsoncxx)
+    if(BSONCXX_LIBRARY)
+        set(BSONCXX_LINK_LIB ${BSONCXX_LIBRARY})
+    else()
+        set(BSONCXX_LINK_LIB bsoncxx)
+    endif()
 endif()
 if(DEFINED MONGOCXX_LIBRARY)
     set(MONGOCXX_LINK_LIB ${MONGOCXX_LIBRARY})
 else()
-    set(MONGOCXX_LINK_LIB mongocxx)
+    find_library(MONGOCXX_LIBRARY mongocxx)
+    if(MONGOCXX_LIBRARY)
+        set(MONGOCXX_LINK_LIB ${MONGOCXX_LIBRARY})
+    else()
+        set(MONGOCXX_LINK_LIB mongocxx)
+    endif()
 endif()
 
 # tinydtls — prefer sysroot when cross-compiling (Yocto sets
