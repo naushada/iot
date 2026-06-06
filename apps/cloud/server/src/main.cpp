@@ -126,8 +126,26 @@ int main(int argc, char** argv) {
 
     // Self-report running state to ds for Services page.
     // openvpn-server is managed internally by iot-cloudd — report its state too.
-    ds.set("services.cloud.iot.cloudd.state", data_store::Value{std::string("running")});
-    ds.set("services.cloud.openvpn.server.state", data_store::Value{std::string("running")});
+    {
+        auto rs = ds.set("services.cloud.iot.cloudd.state",
+                         data_store::Value{std::string("running")});
+        if (!rs.ok) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [cloudd:%t] %M %N:%l set cloudd.state=running"
+                                " failed: %C\n"),
+                       rs.err.c_str()));
+        }
+    }
+    {
+        auto rs = ds.set("services.cloud.openvpn.server.state",
+                         data_store::Value{std::string("running")});
+        if (!rs.ok) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [cloudd:%t] %M %N:%l set openvpn.server.state=running"
+                                " failed: %C\n"),
+                       rs.err.c_str()));
+        }
+    }
 
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [cloudd:%t] %M %N:%l started, ds=%C vpn-subnet=%C"
@@ -217,8 +235,26 @@ int main(int argc, char** argv) {
         }
     }
 
-    ds.set("services.cloud.iot.cloudd.state", data_store::Value{std::string("exited")});
-    ds.set("services.cloud.openvpn.server.state", data_store::Value{std::string("exited")});
+    {
+        auto rs = ds.set("services.cloud.iot.cloudd.state",
+                         data_store::Value{std::string("exited")});
+        if (!rs.ok) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [cloudd:%t] %M %N:%l set cloudd.state=exited"
+                                " failed: %C\n"),
+                       rs.err.c_str()));
+        }
+    }
+    {
+        auto rs = ds.set("services.cloud.openvpn.server.state",
+                         data_store::Value{std::string("exited")});
+        if (!rs.ok) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [cloudd:%t] %M %N:%l set openvpn.server.state=exited"
+                                " failed: %C\n"),
+                       rs.err.c_str()));
+        }
+    }
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [cloudd:%t] %M %N:%l stopped\n")));
     return 0;
