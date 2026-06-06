@@ -56,7 +56,7 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
             if (m_tls->drain_outgoing(out)) peer().send_n(out.data(), out.size());
             if (hs < 0) {
                 ACE_DEBUG((LM_WARNING,
-                           ACE_TEXT("%D [http:%t] %M %N:%l TLS handshake "
+                           ACE_TEXT("%D httpd:thread:%t %M %N:%l TLS handshake "
                                     "failed\n")));
                 return -1;
             }
@@ -76,7 +76,7 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
 
     if (m_parser.error()) {
         ACE_DEBUG((LM_WARNING,
-                   ACE_TEXT("%D [http:%t] %M %N:%l parse error: %C\n"),
+                   ACE_TEXT("%D httpd:thread:%t %M %N:%l parse error: %C\n"),
                    m_parser.error_msg().c_str()));
         const char* bad =
             (m_parser.error_status() == 411)

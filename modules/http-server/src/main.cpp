@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
     auto cs = ds.connect(dsPath);
     if (!cs.ok) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [http:%t] %M %N:%l ds-server connect to %C "
+                   ACE_TEXT("%D httpd:thread:%t %M %N:%l ds-server connect to %C "
                             "failed: %C\n"),
                    dsPath.c_str(), cs.err.c_str()));
         return 1;
@@ -181,20 +181,20 @@ int main(int argc, char** argv) {
     if (httpScheme == "https") {
         if (tlsCert.empty() || tlsKey.empty()) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [http:%t] %M %N:%l https requires "
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l https requires "
                                 "http.tls.cert + http.tls.key\n")));
             return 1;
         }
         if (!tlsCtx.load_server(tlsCert, tlsKey, tlsCa)) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [http:%t] %M %N:%l TLS init failed: %C\n"),
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l TLS init failed: %C\n"),
                        tlsCtx.err().c_str()));
             return 1;
         }
         tlsPtr = &tlsCtx;
     } else if (httpScheme != "http") {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [http:%t] %M %N:%l unknown http.listen.scheme "
+                   ACE_TEXT("%D httpd:thread:%t %M %N:%l unknown http.listen.scheme "
                             "'%C' (expected http|https)\n"),
                    httpScheme.c_str()));
         return 1;
@@ -241,14 +241,14 @@ int main(int argc, char** argv) {
     ACE_SOCK_Acceptor sock_acceptor;
     if (sock_acceptor.open(addr, 1) == -1) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [http:%t] %M %N:%l bind %C:%d failed "
+                   ACE_TEXT("%D httpd:thread:%t %M %N:%l bind %C:%d failed "
                             "(errno=%d)\n"),
                    httpIp.c_str(), httpPort, errno));
         return 1;
     }
 
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [http:%t] %M %N:%l listening on %C://%C:%d "
+               ACE_TEXT("%D httpd:thread:%t %M %N:%l listening on %C://%C:%d "
                         "ds=%C%C workers=%d\n"),
                httpScheme.c_str(), httpIp.c_str(), httpPort, dsPath.c_str(),
                (tlsPtr && tlsCtx.mtls()) ? " (mTLS)" : "", httpWorkers));
@@ -259,7 +259,7 @@ int main(int argc, char** argv) {
                          data_store::Value{std::string("running")});
         if (!rs.ok) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [http:%t] %M %N:%l set httpd.state=running"
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l set httpd.state=running"
                                 " failed: %C\n"),
                        rs.err.c_str()));
         }
@@ -290,14 +290,14 @@ int main(int argc, char** argv) {
         if (httpScheme == "https") {
             if (tlsCert.empty() || tlsKey.empty()) {
                 ACE_ERROR((LM_ERROR,
-                           ACE_TEXT("%D [http:%t] %M %N:%l reload: https needs "
+                           ACE_TEXT("%D httpd:thread:%t %M %N:%l reload: https needs "
                                     "cert+key — keeping current\n")));
                 return;
             }
             http_server::TlsContext fresh;
             if (!fresh.load_server(tlsCert, tlsKey, tlsCa)) {
                 ACE_ERROR((LM_ERROR,
-                           ACE_TEXT("%D [http:%t] %M %N:%l reload: TLS load "
+                           ACE_TEXT("%D httpd:thread:%t %M %N:%l reload: TLS load "
                                     "failed: %C — keeping current\n"),
                            fresh.err().c_str()));
                 return;
@@ -305,12 +305,12 @@ int main(int argc, char** argv) {
             tlsCtx = std::move(fresh);
             tlsPtr = &tlsCtx;
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [http:%t] %M %N:%l TLS reloaded "
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l TLS reloaded "
                                 "(mtls=%d)\n"), tlsCtx.mtls()));
         } else {
             tlsPtr = nullptr;
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [http:%t] %M %N:%l scheme=http — TLS off "
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l scheme=http — TLS off "
                                 "for new connections\n")));
         }
     };
@@ -323,7 +323,7 @@ int main(int argc, char** argv) {
         ACE_SOCK_Acceptor fresh;
         if (fresh.open(na, 1) == -1) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [http:%t] %M %N:%l reload: bind %C:%d "
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l reload: bind %C:%d "
                                 "failed (errno=%d) — keeping current\n"),
                        httpIp.c_str(), httpPort, errno));
             return;
@@ -332,7 +332,7 @@ int main(int argc, char** argv) {
         sock_acceptor.set_handle(fresh.get_handle());
         fresh.set_handle(ACE_INVALID_HANDLE);
         ACE_DEBUG((LM_INFO,
-                   ACE_TEXT("%D [http:%t] %M %N:%l re-bound to %C:%d\n"),
+                   ACE_TEXT("%D httpd:thread:%t %M %N:%l re-bound to %C:%d\n"),
                    httpIp.c_str(), httpPort));
     };
 
@@ -360,7 +360,7 @@ int main(int argc, char** argv) {
         int rc = ACE_Reactor::instance()->handle_events(tv);
         if (rc < 0 && errno != EINTR) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [http:%t] %M %N:%l handle_events "
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l handle_events "
                                 "rc=%d errno=%d\n"), rc, errno));
             break;
         }
@@ -410,13 +410,13 @@ int main(int argc, char** argv) {
     }
 
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [http:%t] %M %N:%l shutting down\n")));
+               ACE_TEXT("%D httpd:thread:%t %M %N:%l shutting down\n")));
     {
         auto rs = ds.set("services.cloud.iot.httpd.state",
                          data_store::Value{std::string("exited")});
         if (!rs.ok) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [http:%t] %M %N:%l set httpd.state=exited"
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l set httpd.state=exited"
                                 " failed: %C\n"),
                        rs.err.c_str()));
         }

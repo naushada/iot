@@ -42,14 +42,14 @@ DsConfig::DsConfig(std::string socketPath)
     auto cs = m_impl->client.connect(m_path);
     if (!cs.ok) {
         ACE_DEBUG((LM_INFO,
-                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l data-store not available "
+                   ACE_TEXT("%D lwm2m:thread:%t %M %N:%l data-store not available "
                             "at %C (%C); using fallback defaults\n"),
                    m_path.c_str(), cs.err.c_str()));
         return;
     }
     m_ok = true;
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [lwm2m:%t] %M %N:%l data-store ready at %C\n"),
+               ACE_TEXT("%D lwm2m:thread:%t %M %N:%l data-store ready at %C\n"),
                m_path.c_str()));
 
     // Prime the cache with one initial get for all three keys. Missing
@@ -93,7 +93,7 @@ DsConfig::DsConfig(std::string socketPath)
             }
             if (!changed) return;
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D [lwm2m:%t] %M %N:%l data-store key '%C' "
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l data-store key '%C' "
                                 "changed — registered on_change handlers fire "
                                 "next\n"),
                        ev.key.c_str()));
@@ -107,7 +107,7 @@ DsConfig::DsConfig(std::string socketPath)
         &m_impl->watch_handle);
     if (!ws.ok) {
         ACE_ERROR((LM_WARNING,
-                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l watch register failed: %C — "
+                   ACE_TEXT("%D lwm2m:thread:%t %M %N:%l watch register failed: %C — "
                             "cache primed but hot-reload disabled\n"),
                    ws.err.c_str()));
     }

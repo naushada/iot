@@ -78,7 +78,7 @@ std::string SessionStore::make_token() {
     unsigned char buf[32];  // 256 bits of entropy
     if (RAND_bytes(buf, sizeof(buf)) != 1) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [http:%t] %M %N:%l RAND_bytes failed — "
+                   ACE_TEXT("%D httpd:thread:%t %M %N:%l RAND_bytes failed — "
                             "falling back to low-entropy token\n")));
         // Fallback: not cryptographically safe, but keeps the server running.
         for (auto& b : buf) b = static_cast<unsigned char>(std::rand() & 0xFF);
@@ -99,7 +99,7 @@ std::string SessionStore::create_session(const std::string& username,
     std::lock_guard<std::mutex> lk(m_mutex);
     m_sessions[token] = s;
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [http:%t] %M %N:%l session created for %C "
+               ACE_TEXT("%D httpd:thread:%t %M %N:%l session created for %C "
                         "(role=%C, access=%C, %zu active)\n"),
                username.c_str(), role.c_str(), access.c_str(),
                m_sessions.size()));
@@ -163,7 +163,7 @@ std::string CredentialStore::load_admin_password_hash(
         }
     }
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [http:%t] %M %N:%l auth.users.admin.password.hash "
+               ACE_TEXT("%D httpd:thread:%t %M %N:%l auth.users.admin.password.hash "
                         "unset — using compiled-in default\n")));
     return kDefaultHash;
 }

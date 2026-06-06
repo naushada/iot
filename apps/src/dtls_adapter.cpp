@@ -250,7 +250,7 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
         buf.resize(len);
         dtls_debug("got %d bytes from port %d\n", len, ntohs(session.addr.sin.sin_port));
         ACE_DEBUG((LM_DEBUG,
-                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l rx %d bytes from port %u\n"),
+                   ACE_TEXT("%D lwm2m:thread:%t %M %N:%l rx %d bytes from port %u\n"),
                    len, static_cast<unsigned>(ntohs(session.addr.sin.sin_port))));
 
         if(len <= DTLS_MAX_BUF) {

@@ -356,7 +356,7 @@ std::int32_t LwM2MAdapter::parseLwM2MUri(const std::string& uri, std::uint32_t& 
 
     if(uri.empty() || (uri.at(0) != '/')) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [lwm2m:%t] %M %N:%l Error uri is empty\n")));
+                   ACE_TEXT("%D lwm2m:thread:%t %M %N:%l Error uri is empty\n")));
         return(-1);
     }
 
@@ -451,7 +451,7 @@ std::int32_t LwM2MAdapter::serialiseObjects(const json& rid, std::string& out) {
 
             } else {
                 ACE_ERROR((LM_ERROR,
-                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l Error unsupported type\n")));
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l Error unsupported type\n")));
             }
             riid++;
         }

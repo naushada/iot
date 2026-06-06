@@ -156,7 +156,7 @@ class DTLSAdapter {
         void add_credential(const std::string& identity, const std::string& secret) {
             if(!device_credentials.insert(std::pair<std::string, std::string>(identity, secret)).second) {
                 ACE_ERROR((LM_ERROR,
-                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l add_credential: identity already registered\n")));
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l add_credential: identity already registered\n")));
             }
         }
 

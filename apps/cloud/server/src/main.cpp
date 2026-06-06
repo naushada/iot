@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
     auto cs = ds.connect(ds_path);
     if (!cs.ok) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [cloudd:%t] %M %N:%l ds-server connect failed: %C\n"),
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l ds-server connect failed: %C\n"),
                    cs.err.c_str()));
         return 1;
     }
@@ -111,13 +111,13 @@ int main(int argc, char** argv) {
     auto ws_prov = ds.watch("cloud.provision.request", 1000);
     if (!ws_prov.ok) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [cloudd:%t] %M %N:%l watch provision.request failed: %C\n"),
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch provision.request failed: %C\n"),
                    ws_prov.err.c_str()));
     }
     auto ws_depr = ds.watch("cloud.deprovision.request", 1000);
     if (!ws_depr.ok) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [cloudd:%t] %M %N:%l watch deprovision.request failed: %C\n"),
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch deprovision.request failed: %C\n"),
                    ws_depr.err.c_str()));
     }
     // Watch log.level so operator changes via cloud UI take effect
@@ -125,7 +125,7 @@ int main(int argc, char** argv) {
     auto ws_loglevel = ds.watch("log.level", 5000);
     if (!ws_loglevel.ok) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [cloudd:%t] %M %N:%l watch log.level failed: %C\n"),
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch log.level failed: %C\n"),
                    ws_loglevel.err.c_str()));
     }
 
@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
                          data_store::Value{std::string("running")});
         if (!rs.ok) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [cloudd:%t] %M %N:%l set cloudd.state=running"
+                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l set cloudd.state=running"
                                 " failed: %C\n"),
                        rs.err.c_str()));
         }
@@ -151,14 +151,14 @@ int main(int argc, char** argv) {
                          data_store::Value{std::string("running")});
         if (!rs.ok) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [cloudd:%t] %M %N:%l set openvpn.server.state=running"
+                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l set openvpn.server.state=running"
                                 " failed: %C\n"),
                        rs.err.c_str()));
         }
     }
 
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [cloudd:%t] %M %N:%l started, ds=%C vpn-subnet=%C"
+               ACE_TEXT("%D cloudd:thread:%t %M %N:%l started, ds=%C vpn-subnet=%C"
                         " proxy=%d-%d sync-interval=%d\n"),
                ds_path.c_str(), vpn_subnet.c_str(),
                proxy_port_start, proxy_port_end, sync_interval));
@@ -183,18 +183,18 @@ int main(int argc, char** argv) {
             if (ev.key == "cloud.provision.request") {
                 if (auto ep = data_store::to_string(ev.value)) {
                     ACE_DEBUG((LM_INFO,
-                               ACE_TEXT("%D [cloudd:%t] %M %N:%l provision request '%C'\n"),
+                               ACE_TEXT("%D cloudd:thread:%t %M %N:%l provision request '%C'\n"),
                                ep->c_str()));
                     auto result = provisioner.provision(*ep);
                     if (result.has_value()) {
                         ACE_DEBUG((LM_INFO,
-                                   ACE_TEXT("%D [cloudd:%t] %M %N:%l provisioned %C"
+                                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l provisioned %C"
                                             " tun=%C proxy=%d\n"),
                                    result->endpoint.c_str(), result->tun_ip.c_str(),
                                    static_cast<int>(result->proxy_port)));
                     } else {
                         ACE_ERROR((LM_ERROR,
-                                   ACE_TEXT("%D [cloudd:%t] %M %N:%l provision failed"
+                                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l provision failed"
                                             " '%C' (dup or exhausted)\n"),
                                    ep->c_str()));
                     }
@@ -202,17 +202,17 @@ int main(int argc, char** argv) {
             } else if (ev.key == "cloud.deprovision.request") {
                 if (auto ep = data_store::to_string(ev.value)) {
                     ACE_DEBUG((LM_INFO,
-                               ACE_TEXT("%D [cloudd:%t] %M %N:%l deprovision request '%C'\n"),
+                               ACE_TEXT("%D cloudd:thread:%t %M %N:%l deprovision request '%C'\n"),
                                ep->c_str()));
                     bool ok = provisioner.deprovision(*ep);
                     ACE_DEBUG((LM_INFO,
-                               ACE_TEXT("%D [cloudd:%t] %M %N:%l deprovision %C '%C'\n"),
+                               ACE_TEXT("%D cloudd:thread:%t %M %N:%l deprovision %C '%C'\n"),
                                (ok ? "ok" : "failed (not found)"), ep->c_str()));
                 }
             } else if (ev.key == "log.level") {
                 g_log.apply_level(ds);
                 ACE_DEBUG((LM_INFO,
-                           ACE_TEXT("%D [cloudd:%t] %M %N:%l log level changed\n")));
+                           ACE_TEXT("%D cloudd:thread:%t %M %N:%l log level changed\n")));
             }
             // Sync after every event so the UI sees changes quickly
             sync_endpoints_to_ds(ds, ep_reg);
@@ -235,7 +235,7 @@ int main(int argc, char** argv) {
                          data_store::Value{std::string("exited")});
         if (!rs.ok) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [cloudd:%t] %M %N:%l set cloudd.state=exited"
+                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l set cloudd.state=exited"
                                 " failed: %C\n"),
                        rs.err.c_str()));
         }
@@ -245,14 +245,14 @@ int main(int argc, char** argv) {
                          data_store::Value{std::string("exited")});
         if (!rs.ok) {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D [cloudd:%t] %M %N:%l set openvpn.server.state=exited"
+                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l set openvpn.server.state=exited"
                                 " failed: %C\n"),
                        rs.err.c_str()));
         }
     }
     g_log.flush(ds);
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [cloudd:%t] %M %N:%l stopped\n")));
+               ACE_TEXT("%D cloudd:thread:%t %M %N:%l stopped\n")));
     g_log.flush(ds);
     return 0;
 }

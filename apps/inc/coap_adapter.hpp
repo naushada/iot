@@ -291,7 +291,7 @@ class CoAPAdapter {
 
             if(it != coapmessage.uripath.end()) {
                 ACE_DEBUG((LM_DEBUG,
-                           ACE_TEXT("%D [lwm2m:%t] %M %N:%l value=%C cf=%u\n"),
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l value=%C cf=%u\n"),
                            it->optionvalue.c_str(),
                            static_cast<unsigned>(::ntohs(atoi(it->optionvalue.c_str())))));
                 return(getContentFormat(::ntohs(atoi(it->optionvalue.c_str()))));
