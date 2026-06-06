@@ -82,12 +82,12 @@ interface SvcRow {
 })
 export class ServicesListComponent implements OnInit, OnDestroy {
   services: SvcRow[] = [
-    { key: 'ds',             label: 'ds-server',        desc: 'Data store — IPC backbone. Schema-enforced, Lua-backed key/value store.', enable_key: '', state: '', enabled: true,  restarting: false },
-    { key: 'iot.cloudd',     label: 'iot-cloudd',        desc: 'Cloud daemon — LwM2M BS/DM, VPN registry, endpoint provisioning.',        enable_key: 'services.cloud.iot.cloudd.enable',       state: '', enabled: true,  restarting: false },
-    { key: 'iot.httpd',      label: 'iot-httpd',         desc: 'REST API + Cloud UI server. Serves /webui/ + /api/v1/* endpoints.',       enable_key: 'services.cloud.iot.httpd.enable',        state: '', enabled: true,  restarting: false },
-    { key: 'openvpn.server', label: 'openvpn-server',    desc: 'OpenVPN server — manages per-device tunnels on 10.9.0.0/24 subnet.',       enable_key: 'services.cloud.openvpn.server.enable',   state: '', enabled: true,  restarting: false },
-    { key: 'lwm2m.bs',       label: 'lwm2m-bs',          desc: 'LwM2M Bootstrap Server — CoAPs endpoint on port 5684.',                   enable_key: '', state: '', enabled: true, restarting: false, state_key: 'services.cloud.lwm2m.bs.state' },
-    { key: 'lwm2m.dm',       label: 'lwm2m-dm',          desc: 'LwM2M Device Management — CoAPs endpoint on port 5683.',                  enable_key: '', state: '', enabled: true, restarting: false, state_key: 'services.cloud.lwm2m.dm.state' },
+    { key: 'ds',             label: 'ds-server',        desc: 'Data store — IPC backbone. Schema-enforced, Lua-backed key/value store.', enable_key: '', state: 'stopped', enabled: true,  restarting: false },
+    { key: 'iot.cloudd',     label: 'iot-cloudd',        desc: 'Cloud daemon — LwM2M BS/DM, VPN registry, endpoint provisioning.',        enable_key: 'services.cloud.iot.cloudd.enable',       state: 'stopped', enabled: true,  restarting: false },
+    { key: 'iot.httpd',      label: 'iot-httpd',         desc: 'REST API + Cloud UI server. Serves /webui/ + /api/v1/* endpoints.',       enable_key: 'services.cloud.iot.httpd.enable',        state: 'stopped', enabled: true,  restarting: false },
+    { key: 'openvpn.server', label: 'openvpn-server',    desc: 'OpenVPN server — manages per-device tunnels on 10.9.0.0/24 subnet.',       enable_key: 'services.cloud.openvpn.server.enable',   state: 'stopped', enabled: true,  restarting: false },
+    { key: 'lwm2m.bs',       label: 'lwm2m-bs',          desc: 'LwM2M Bootstrap Server — CoAPs endpoint on port 5684.',                   enable_key: '', state: 'stopped', enabled: true, restarting: false, state_key: 'services.cloud.lwm2m.bs.state' },
+    { key: 'lwm2m.dm',       label: 'lwm2m-dm',          desc: 'LwM2M Device Management — CoAPs endpoint on port 5683.',                  enable_key: '', state: 'stopped', enabled: true, restarting: false, state_key: 'services.cloud.lwm2m.dm.state' },
   ];
   private active = true;
 

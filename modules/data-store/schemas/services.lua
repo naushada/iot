@@ -3,9 +3,9 @@
 -- Operator-controlled enable/state plane for every iot daemon.
 -- Each gateable daemon (X) owns:
 --   services.X.enable   boolean default true   operator-flipped gate
---   services.X.state    string  default "running"
---                                  one of: running / disabled / starting /
---                                  stopping / exited / conflict
+--   services.X.state    string  default "stopped"
+--                                  one of: stopped / running / disabled /
+--                                  starting / stopping / exited / conflict
 --
 -- L17a/D1 — each enable key declares an optional depends_on array
 -- of bare service names (e.g. "net.router"). When a dependency is
@@ -28,7 +28,7 @@ return {
   keys = {
     -- ds-server: state surface only
     ["services.ds.state"]                  = {
-        access  = "Viewer", type = "string",  default = "running" },
+        access  = "Viewer", type = "string",  default = "stopped" },
     ["services.ds.uptime.sec"]             = {
         access  = "Viewer", type = "integer", default = 0, min = 0 },
 
@@ -38,7 +38,7 @@ return {
                                                depends_on = {},
                                                write_acl = {"uid:0"} },
     ["services.net.router.state"]          = {
-        access  = "Viewer", type = "string",  default = "running" },
+        access  = "Viewer", type = "string",  default = "stopped" },
 
     -- openvpn-client (depends on net.router for forwarding)
     ["services.openvpn.client.enable"]     = {
@@ -46,7 +46,7 @@ return {
                                                depends_on = {"net.router"},
                                                write_acl = {"uid:0"} },
     ["services.openvpn.client.state"]      = {
-        access  = "Viewer", type = "string",  default = "running" },
+        access  = "Viewer", type = "string",  default = "stopped" },
 
     -- lwm2m-client / lwm2m-server
     ["services.lwm2m.client.enable"]       = {
@@ -54,13 +54,13 @@ return {
                                                depends_on = {"net.router"},
                                                write_acl = {"uid:0"} },
     ["services.lwm2m.client.state"]        = {
-        access  = "Viewer", type = "string",  default = "running" },
+        access  = "Viewer", type = "string",  default = "stopped" },
     ["services.lwm2m.server.enable"]       = {
         access  = "Admin", type = "boolean", default = true,
                                                depends_on = {"net.router"},
                                                write_acl = {"uid:0"} },
     ["services.lwm2m.server.state"]        = {
-        access  = "Viewer", type = "string",  default = "running" },
+        access  = "Viewer", type = "string",  default = "stopped" },
 
     -- wifi-client
     ["services.wifi.client.enable"]        = {
@@ -68,7 +68,7 @@ return {
                                                depends_on = {"net.router"},
                                                write_acl = {"uid:0"} },
     ["services.wifi.client.state"]         = {
-        access  = "Viewer", type = "string",  default = "running" },
+        access  = "Viewer", type = "string",  default = "stopped" },
 
     -- ── Cloud services (L21) ────────────────────────────────────
     ["services.cloud.iot.cloudd.enable"]   = {
@@ -76,26 +76,26 @@ return {
                                                depends_on = {"ds"},
                                                write_acl = {"uid:0"} },
     ["services.cloud.iot.cloudd.state"]    = {
-        access  = "Viewer", type = "string",  default = "running" },
+        access  = "Viewer", type = "string",  default = "stopped" },
     ["services.cloud.iot.httpd.enable"]    = {
         access  = "Admin", type = "boolean", default = true,
                                                depends_on = {"ds"},
                                                write_acl = {"uid:0"} },
     ["services.cloud.iot.httpd.state"]     = {
-        access  = "Viewer", type = "string",  default = "running" },
+        access  = "Viewer", type = "string",  default = "stopped" },
     ["services.cloud.openvpn.server.enable"] = {
         access  = "Admin", type = "boolean", default = true,
                                                depends_on = {"ds"},
                                                write_acl = {"uid:0"} },
     ["services.cloud.openvpn.server.state"]  = {
-        access  = "Viewer", type = "string",  default = "running" },
+        access  = "Viewer", type = "string",  default = "stopped" },
 
     -- LwM2M CoAP server containers (lwm2m-bs / lwm2m-dm).
     -- These run the device lwm2m binary in role=server mode and are
     -- docker-compose managed (no enable toggle — always-on like ds).
     ["services.cloud.lwm2m.bs.state"]       = {
-        access  = "Viewer", type = "string",  default = "running" },
+        access  = "Viewer", type = "string",  default = "stopped" },
     ["services.cloud.lwm2m.dm.state"]       = {
-        access  = "Viewer", type = "string",  default = "running" },
+        access  = "Viewer", type = "string",  default = "stopped" },
   },
 }

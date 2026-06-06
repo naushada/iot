@@ -33,10 +33,14 @@ dispatch. Running it in `role=server` mode gives us the LwM2M CoAP endpoints
 without writing a second CoAP stack. MongoDB linking is patched out (the
 cloud doesn't need the device-side registration mirror).
 
-**Daemon self-state:** iot-httpd and iot-cloudd write
-`services.cloud.iot.httpd.state` / `services.cloud.iot.cloudd.state`
-to ds at startup ("running") and shutdown ("exited"). The Services page
-polls these keys every 5s.
+**Daemon self-state:** Every daemon writes its own state to ds
+immediately after connecting: iot-cloudd writes
+`services.cloud.iot.cloudd.state` / `services.cloud.openvpn.server.state`,
+iot-httpd writes `services.cloud.iot.httpd.state`, and the LwM2M CoAP
+containers (lwm2m-bs, lwm2m-dm) write `services.cloud.lwm2m.*.state` via
+`ds-cli set` before exec'ing the lwm2m binary. All state keys default to
+`"stopped"` in the schema — the daemon self-reports `"running"` at startup
+and `"exited"` at shutdown. The Services page polls these keys every 5s.
 
 ## Directory layout
 
@@ -273,12 +277,16 @@ cloud.vpn.server.key     → Server key path
 
 ### Services (services.cloud.*)
 ```
-services.ds.state                           → ds-server state
+services.ds.state                           → ds-server state (default "stopped")
 services.cloud.iot.cloudd.enable|state      → iot-cloudd enable/state
 services.cloud.iot.httpd.enable|state       → iot-httpd enable/state
 services.cloud.openvpn.server.enable|state  → openvpn-server enable/state
+services.cloud.lwm2m.bs.state               → lwm2m-bs state (always-on, docker-compose managed)
+services.cloud.lwm2m.dm.state               → lwm2m-dm state (always-on, docker-compose managed)
 ```
-All service keys use dots only. Daemons self-report state at startup/shutdown.
+All state keys default to `"stopped"`. Each daemon self-reports `"running"`
+immediately after connecting to ds-server, and `"exited"` at shutdown.
+The Services page polls every 5s.
 
 ## Related modules
 
