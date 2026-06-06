@@ -35,7 +35,7 @@ int Server::open() {
     // EADDRINUSE. ENOENT is fine — file simply doesn't exist yet.
     if (::unlink(m_socketPath.c_str()) == -1 && errno != ENOENT) {
         ACE_ERROR_RETURN((LM_ERROR,
-                          ACE_TEXT("%D [DS:%t] %M %N:%l unlink(%C) "
+                          ACE_TEXT("%D ds:thread:%t %M %N:%l unlink(%C) "
                                    "failed errno=%d\n"),
                           m_socketPath.c_str(), errno),
                          -1);
@@ -44,7 +44,7 @@ int Server::open() {
     ACE_UNIX_Addr addr(m_socketPath.c_str());
     if (m_acceptor.open(addr) == -1) {
         ACE_ERROR_RETURN((LM_ERROR,
-                          ACE_TEXT("%D [DS:%t] %M %N:%l acceptor.open(%C) "
+                          ACE_TEXT("%D ds:thread:%t %M %N:%l acceptor.open(%C) "
                                    "failed errno=%d\n"),
                           m_socketPath.c_str(), errno),
                          -1);
@@ -54,7 +54,7 @@ int Server::open() {
     // operator-tunable via the systemd unit / installer.
     if (::chmod(m_socketPath.c_str(), kDefaultMode) == -1) {
         ACE_ERROR((LM_WARNING,
-                   ACE_TEXT("%D [DS:%t] %M %N:%l chmod(%C, 0%o) "
+                   ACE_TEXT("%D ds:thread:%t %M %N:%l chmod(%C, 0%o) "
                             "failed errno=%d (not fatal)\n"),
                    m_socketPath.c_str(),
                    static_cast<unsigned>(kDefaultMode), errno));
@@ -63,7 +63,7 @@ int Server::open() {
     if (ACE_Reactor::instance()->register_handler(
             this, ACE_Event_Handler::ACCEPT_MASK) == -1) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [DS:%t] %M %N:%l register_handler "
+                   ACE_TEXT("%D ds:thread:%t %M %N:%l register_handler "
                             "failed errno=%d\n"),
                    errno));
         m_acceptor.close();
@@ -72,7 +72,7 @@ int Server::open() {
     }
 
     ACE_DEBUG((LM_DEBUG,
-               ACE_TEXT("%D [DS:%t] %M %N:%l listening on %C (mode 0%o)\n"),
+               ACE_TEXT("%D ds:thread:%t %M %N:%l listening on %C (mode 0%o)\n"),
                m_socketPath.c_str(),
                static_cast<unsigned>(kDefaultMode)));
     m_open = true;
@@ -113,7 +113,7 @@ int Server::handle_input(ACE_HANDLE /*fd*/) {
     ACE_LSOCK_Stream stream;
     if (m_acceptor.accept(stream) == -1) {
         ACE_ERROR_RETURN((LM_ERROR,
-                          ACE_TEXT("%D [DS:%t] %M %N:%l accept "
+                          ACE_TEXT("%D ds:thread:%t %M %N:%l accept "
                                    "failed errno=%d\n"),
                           errno),
                          0);     // stay registered
@@ -122,7 +122,7 @@ int Server::handle_input(ACE_HANDLE /*fd*/) {
     Worker* w = m_pool ? m_pool->next() : nullptr;
     if (!w) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [DS:%t] %M %N:%l no worker pool; "
+                   ACE_TEXT("%D ds:thread:%t %M %N:%l no worker pool; "
                             "dropping connection\n")));
         stream.close();
         return 0;
@@ -139,7 +139,7 @@ int Server::handle_input(ACE_HANDLE /*fd*/) {
     if (ACE_Reactor::instance()->register_handler(
             s, ACE_Event_Handler::READ_MASK) == -1) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [DS:%t] %M %N:%l register_handler for "
+                   ACE_TEXT("%D ds:thread:%t %M %N:%l register_handler for "
                             "session failed errno=%d\n"),
                    errno));
         {

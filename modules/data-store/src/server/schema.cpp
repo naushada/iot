@@ -222,7 +222,7 @@ void SchemaRegistry::load_one(const std::string& path) {
         auto [it, inserted] = m_entries.emplace(key, e);
         if (!inserted) {
             ACE_ERROR((LM_WARNING,
-                       ACE_TEXT("%D [Schema:%t] %M %N:%l duplicate key '%C' "
+                       ACE_TEXT("%D schema:thread:%t %M %N:%l duplicate key '%C' "
                                 "in %C — overriding previous definition\n"),
                        key.c_str(), path.c_str()));
             it->second = e;
@@ -250,7 +250,7 @@ std::size_t SchemaRegistry::load_directory(const std::string& dir) {
             load_one(path);
         } catch (const std::exception& e) {
             ACE_ERROR((LM_WARNING,
-                       ACE_TEXT("%D [Schema:%t] %M %N:%l skipping %C: %C\n"),
+                       ACE_TEXT("%D schema:thread:%t %M %N:%l skipping %C: %C\n"),
                        path.c_str(), e.what()));
         }
     }
@@ -283,7 +283,7 @@ std::size_t SchemaRegistry::load_directory(const std::string& dir) {
                         std::string dep_key = "services." + dep + ".enable";
                         if (in_stack.count(dep_key)) {
                             ACE_ERROR((LM_ERROR,
-                                       ACE_TEXT("%D [Schema:%t] %M %N:%l cycle "
+                                       ACE_TEXT("%D schema:thread:%t %M %N:%l cycle "
                                                 "detected in depends_on: %C → %C\n"),
                                        node.c_str(), dep.c_str()));
                             return true;

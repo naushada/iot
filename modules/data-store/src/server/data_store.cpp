@@ -18,7 +18,7 @@ void DataStore::flush_locked_release(
         m_persistor->save(snapshot);
     } catch (const std::exception& e) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [DS:%t] %M %N:%l persist failed: %C\n"),
+                   ACE_TEXT("%D ds:thread:%t %M %N:%l persist failed: %C\n"),
                    e.what()));
     }
 }
