@@ -628,9 +628,25 @@ int main(std::int32_t argc, char *argv[]) {
     // lwm2m.client and lwm2m.server depend on net.router for
     // forwarding. When net.router is disabled, the lwm2m daemon
     // parks via the same set_disabled path the svc gate uses.
+    // Cloud LwM2M server instance — bs or dm. When set, the binary
+    // self-reports state to services.cloud.lwm2m.<instance>.state
+    // instead of the device-side services.lwm2m.server.* keys.
+    const std::string lwm2m_instance = argValueMap["lwm2m-instance"];
+
     std::unique_ptr<data_store::ServiceGate> svc_gate;
     std::unique_ptr<data_store::DepWatch>    dep_watch;
     if (auto* cli = ds.client()) {
+        // Cloud server mode — self-report running state immediately
+        // after the ds connection is established.
+        if (!lwm2m_instance.empty()) {
+            cli->set("services.cloud.lwm2m." + lwm2m_instance + ".state",
+                     data_store::Value{std::string("running")});
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l cloud lwm2m-%C "
+                                "self-reported running\n"),
+                       lwm2m_instance.c_str()));
+        }
+
         const std::string svc_name =
             (UDPAdapter::CLIENT == role) ? "lwm2m.client" : "lwm2m.server";
         svc_gate = std::make_unique<data_store::ServiceGate>(*cli, svc_name);
@@ -852,6 +868,18 @@ int main(std::int32_t argc, char *argv[]) {
         app->udpAdapter()->wait();
     }
     app->stop();
+
+    // Cloud LwM2M server mode — self-report exited at shutdown.
+    if (!lwm2m_instance.empty()) {
+        if (auto* cli = ds.client()) {
+            cli->set("services.cloud.lwm2m." + lwm2m_instance + ".state",
+                     data_store::Value{std::string("exited")});
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [iot:%t] %M %N:%l cloud lwm2m-%C "
+                                "self-reported exited\n"),
+                       lwm2m_instance.c_str()));
+        }
+    }
 
     // L16/D5b cleanup — wake the watcher thread + join.
     svc_stop.store(true, std::memory_order_release);

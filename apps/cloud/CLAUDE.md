@@ -37,8 +37,9 @@ cloud doesn't need the device-side registration mirror).
 immediately after connecting: iot-cloudd writes
 `services.cloud.iot.cloudd.state` / `services.cloud.openvpn.server.state`,
 iot-httpd writes `services.cloud.iot.httpd.state`, and the LwM2M CoAP
-containers (lwm2m-bs, lwm2m-dm) write `services.cloud.lwm2m.*.state` via
-`ds-cli set` before exec'ing the lwm2m binary. All state keys default to
+containers (lwm2m-bs, lwm2m-dm) run the lwm2m binary with `lwm2m-instance=bs|dm`
+which self-reports `services.cloud.lwm2m.*.state` immediately after
+connecting to ds. All state keys default to
 `"stopped"` in the schema — the daemon self-reports `"running"` at startup
 and `"exited"` at shutdown. The Services page polls these keys every 5s.
 

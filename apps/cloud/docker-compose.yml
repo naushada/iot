@@ -63,12 +63,13 @@ services:
     image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}
     container_name: iot-lwm2m-bs
     command: >
-      sh -c "ds-cli set services.cloud.lwm2m.bs.state running
-      && exec lwm2m
+      lwm2m
       role=server
       local=coaps://0.0.0.0:5684
       identity=${LWM2M_PSK_ID:-97554878B284CE3B727D8DD06E87659A}
-      secret=${LWM2M_PSK_KEY:-3894beedaa7fe0eae6597dc350a59525}"
+      secret=${LWM2M_PSK_KEY:-3894beedaa7fe0eae6597dc350a59525}
+      ds-socket=/var/run/iot/data_store.sock
+      lwm2m-instance=bs
     ports:
       - "5684:5684/udp"
     volumes:
@@ -86,12 +87,13 @@ services:
     image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}
     container_name: iot-lwm2m-dm
     command: >
-      sh -c "ds-cli set services.cloud.lwm2m.dm.state running
-      && exec lwm2m
+      lwm2m
       role=server
       local=coaps://0.0.0.0:5683
       identity=${LWM2M_PSK_ID:-97554878B284CE3B727D8DD06E87659A}
-      secret=${LWM2M_PSK_KEY:-3894beedaa7fe0eae6597dc350a59525}"
+      secret=${LWM2M_PSK_KEY:-3894beedaa7fe0eae6597dc350a59525}
+      ds-socket=/var/run/iot/data_store.sock
+      lwm2m-instance=dm
     ports:
       - "5683:5683/udp"
     volumes:
