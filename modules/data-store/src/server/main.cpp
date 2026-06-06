@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
     }
 
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D ds:thread:%t %M %N:%l socket=%C store=%C schemas=%C "
+               ACE_TEXT("%D dsserver:thread:%t %M %N:%l socket=%C store=%C schemas=%C "
                         "rate-limit-ms=%u\n"),
                socketPath.c_str(),
                storePath.c_str(),
@@ -113,7 +113,7 @@ int main(int argc, char** argv) {
     auto schema = std::make_shared<data_store::server::SchemaRegistry>();
     auto n = schema->load_directory(schemaDir);
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D ds:thread:%t %M %N:%l loaded %u schema key(s) "
+               ACE_TEXT("%D dsserver:thread:%t %M %N:%l loaded %u schema key(s) "
                         "from %C\n"),
                static_cast<unsigned>(n), schemaDir.c_str()));
 
@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
         store->load_from(persistor.load());
     } catch (const data_store::server::CorruptStoreError& e) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D ds:thread:%t %M %N:%l corrupt store at %C: %C — "
+                   ACE_TEXT("%D dsserver:thread:%t %M %N:%l corrupt store at %C: %C — "
                             "refusing to start (exit 3)\n"),
                    storePath.c_str(), e.what()));
         return 3;
@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
     store->set_persistor(&persistor);
     store->set_rate_limit_ms(rateLimitMs);
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D ds:thread:%t %M %N:%l loaded %u key(s) from %C\n"),
+               ACE_TEXT("%D dsserver:thread:%t %M %N:%l loaded %u key(s) from %C\n"),
                static_cast<unsigned>(store->size()), storePath.c_str()));
 
     // Active-object worker pool — N=5 threads, round-robin. Same
@@ -145,7 +145,7 @@ int main(int argc, char** argv) {
     data_store::server::WorkerPool pool(store, schema);
     if (pool.open() != 0) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D ds:thread:%t %M %N:%l worker pool open failed; "
+                   ACE_TEXT("%D dsserver:thread:%t %M %N:%l worker pool open failed; "
                             "exit 1\n")));
         return 1;
     }
@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
 
     if (server.open() != 0) {
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D ds:thread:%t %M %N:%l server open failed; "
+                   ACE_TEXT("%D dsserver:thread:%t %M %N:%l server open failed; "
                             "exit 1\n")));
         pool.close();
         return 1;
@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
             // -1 with errno=EINTR is normal during shutdown.
             if (errno != EINTR) {
                 ACE_ERROR((LM_ERROR,
-                           ACE_TEXT("%D ds:thread:%t %M %N:%l handle_events "
+                           ACE_TEXT("%D dsserver:thread:%t %M %N:%l handle_events "
                                     "rc=%d errno=%d\n"),
                            rc, errno));
                 break;
@@ -207,6 +207,6 @@ int main(int argc, char** argv) {
     server.close();
     pool.close();
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D ds:thread:%t %M %N:%l clean exit\n")));
+               ACE_TEXT("%D dsserver:thread:%t %M %N:%l clean exit\n")));
     return 0;
 }
