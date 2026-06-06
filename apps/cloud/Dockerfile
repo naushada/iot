@@ -73,10 +73,8 @@ RUN mkdir -p /tmp/bcloud && cd /tmp/bcloud && \
     && make -j2
 
 # Build LwM2M binary (reused in server role for BS + DM).
-# The device CMakeLists.txt unconditionally links mongocxx/bsoncxx even
-# with IOT_ENABLE_MONGO=OFF.  Patch the link line to skip them on the
-# cloud (Mongo is a device-side registration mirror — not needed here).
-RUN sed -i 's/\${BSONCXX_LINK_LIB}//g; s/\${MONGOCXX_LINK_LIB}//g' /src/apps/CMakeLists.txt
+# IOT_ENABLE_MONGO=OFF is now cleanly supported by apps/CMakeLists.txt
+# (the else branch clears BSONCXX_LINK_LIB and MONGOCXX_LINK_LIB).
 RUN mkdir -p /tmp/blwm2m && cd /tmp/blwm2m && \
     cmake /src/apps \
     -DCMAKE_BUILD_TYPE=Release \

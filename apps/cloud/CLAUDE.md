@@ -8,18 +8,30 @@ device's local UI, and serves the Cloud Operator Dashboard.
 ## Architecture
 
 ```
-ds-server ──→ iot-cloudd ──→ iot-httpd (REST API + Cloud UI)
-    │              │
-    └──────────────┴── all IPC via /var/run/iot/data_store.sock
+                    ┌──── lwm2m-bs (coaps://0.0.0.0:5684)
+                    │
+ds-server ── iot-cloudd ── iot-httpd (REST API + Cloud UI)
+    │          │   │
+    │          │   └──── lwm2m-dm (coaps://0.0.0.0:5683)
+    │          │
+    └──────────┴────── all IPC via /var/run/iot/data_store.sock
 ```
 
-**Three binaries** (all in one image):
+**Four binaries** (all in one image) → **five containers** at runtime:
 - `ds-server` — shared data store (Lua-backed, schema-enforced)
-- `iot-cloudd` — LwM2M BS/DM, VPN registry, endpoint provisioning
+- `iot-cloudd` — LwM2M BS/DM logic, VPN registry, endpoint provisioning
 - `iot-httpd` — REST API (/api/v1/*) + serves Cloud UI (/webui/)
+- `lwm2m` — **device binary reused in server role** for CoAP/DTLS transport;
+  runs as two separate containers (`lwm2m-bs` on 5684, `lwm2m-dm` on 5683)
 
 All daemons communicate exclusively through ds-server — no HTTP between
 daemons. Same pattern as the device-side stack.
+
+**Why reuse the device lwm2m binary?**  The device binary already has full
+CoAP/UDP/DTLS support and handles `/bs` (bootstrap) and `/rd` (registration)
+dispatch. Running it in `role=server` mode gives us the LwM2M CoAP endpoints
+without writing a second CoAP stack. MongoDB linking is patched out (the
+cloud doesn't need the device-side registration mirror).
 
 **Daemon self-state:** iot-httpd and iot-cloudd write
 `services.cloud.iot.httpd.state` / `services.cloud.iot.cloudd.state`
@@ -32,7 +44,7 @@ polls these keys every 5s.
 apps/cloud/
 ├── CLAUDE.md           # this file
 ├── Dockerfile          # multi-stage build (Ubuntu builder + Node UI + slim runtime)
-├── docker-compose.yml  # 3-service orchestration
+├── docker-compose.yml  # 5-service orchestration
 ├── run.sh              # podman/docker compose wrapper
 ├── server/             # iot-cloudd C++ source
 │   └── src/main.cpp    # wires EndpointRegistry + VpnRegistry + BootstrapProvisioner
@@ -104,6 +116,19 @@ services.cloud.iot-cloudd.enable   ✗ (hyphen)
 
 ## Building
 
+The cloud image builds four binaries from the same source tree:
+
+| Binary | Source | Flags |
+|--------|--------|-------|
+| `ds-server`, `ds-cli` | `modules/data-store/` | — |
+| `iot-httpd` | `modules/http-server/` | — |
+| `iot-cloudd` | `apps/cloud/server/` | — |
+| `lwm2m` | `apps/CMakeLists.txt` | `-DIOT_ENABLE_MONGO=OFF` |
+
+The `lwm2m` binary is the **same** one built by `docker/Dockerfile` for
+device images — only the `IOT_ENABLE_MONGO` flag differs (device = ON,
+cloud = OFF).
+
 ```bash
 # From repo root:
 podman build -t naushada/iot-cloud:latest -f apps/cloud/Dockerfile .
@@ -116,7 +141,7 @@ cd apps/cloud && ./run.sh build
 
 ```bash
 cd apps/cloud
-./run.sh           # docker compose up -d (all 3 services)
+./run.sh           # docker compose up -d (all 5 services)
 ./run.sh logs      # tail logs
 ./run.sh stop      # stop all
 ```
@@ -128,6 +153,32 @@ Service ports:
 | 5683 | LwM2M DM (CoAPs) |
 | 5684 | LwM2M Bootstrap (CoAPs) |
 | 1194 | OpenVPN (UDP) |
+
+## LwM2M CoAP Server
+
+The device `lwm2m` binary (from `apps/CMakeLists.txt`) is built inside the
+cloud image and run as two containers in `role=server` mode:
+
+| Container | Port | Role | CoAP Endpoint |
+|-----------|------|------|---------------|
+| `lwm2m-bs` | 5684/udp | Bootstrap Server | `coaps://0.0.0.0:5684` |
+| `lwm2m-dm` | 5683/udp | Device Management | `coaps://0.0.0.0:5683` |
+
+Both share the same PSK identity/secret, configured via env vars:
+```bash
+LWM2M_PSK_ID=97554878B284CE3B727D8DD06E87659A   # default
+LWM2M_PSK_KEY=3894beedaa7fe0eae6597dc350a59525  # default
+```
+
+The device binary already handles `/bs` (bootstrap session) and `/rd`
+(registration) dispatch over CoAP/UDP/DTLS. It is built from the same
+`apps/CMakeLists.txt` as the device, with `-DIOT_ENABLE_MONGO=OFF` to
+skip MongoDB linking (the cloud doesn't need the device-side registration
+mirror).
+
+**Device schemas and configs** (`net.lua`, `vpn.lua`, `wifi.lua`, and
+`apps/config/`) are also copied into the cloud image at `/etc/iot/` so
+the lwm2m binary finds the schema and provisioning data it expects.
 
 ## Auth
 
@@ -235,7 +286,8 @@ All service keys use dots only. Daemons self-report state at startup/shutdown.
 |--------|------|
 | `modules/data-store` | ds-server + client lib (IPC backbone) |
 | `modules/http-server` | iot-httpd — reused for both cloud and device |
-| `modules/server/lwm2m` | LwM2M BS/DM server libs |
+| `apps/CMakeLists.txt` | Device lwm2m binary (reused in server role) |
+| `modules/server/lwm2m` | LwM2M BS/DM server libs (used by iot-cloudd) |
 | `modules/server/openvpn` | VPN registry lib |
 | `modules/server/web` | Device UI reverse proxy |
 
