@@ -31,6 +31,11 @@ return {
     -- configure the CoAP /bs endpoint and to build the Security +
     -- Server object TLV payloads that are pushed to devices during
     -- bootstrap.
+    ["cloud.bs.endpoint"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "urn:dev:gateway-",
+    },
     ["cloud.bs.uri"] = {
         access  = "Admin",
       type    = "string",
@@ -80,6 +85,39 @@ return {
         access  = "Admin",
       type    = "string",
       default = "U",
+    },
+
+    -- Provision request: iot-httpd writes the endpoint name here;
+    -- iot-cloudd watches this key and calls BootstrapProvisioner.
+    ["cloud.provision.request"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
+    -- Per-endpoint Security Object (OID 0) configs — a table of
+    -- tables keyed by endpoint name, stored as a JSON string:
+    -- {
+    --   "urn:dev:gateway-42": {
+    --     "sec.uri":      "coaps://cloud:5683",
+    --     "sec.mode":     0,
+    --     "sec.identity": "iot-client",
+    --     "sec.key":      "0102...",
+    --     "sec.bs":       1,
+    --     "sec.ssid":     0
+    --   }
+    -- }
+    -- iot-cloudd reads the matching entry at provision time.
+    ["cloud.provision.configs"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "{}",
+    },
+    -- Deprovision request: iot-httpd writes the endpoint name here;
+    -- iot-cloudd watches this key and calls deprovision().
+    ["cloud.deprovision.request"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
     },
 
     -- VPN subnet for tunnel IP allocation.

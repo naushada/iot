@@ -3,20 +3,23 @@ import { Component, Output, EventEmitter } from '@angular/core';
 @Component({
   selector: 'app-lwm2m-submenu',
   template: `
-    <nav class="subnav">
-      <a class="subnav-item" [class.active]="active==='dm'" (click)="s('dm')">DM</a>
-      <a class="subnav-item" [class.active]="active==='bs'" (click)="s('bs')">BS</a>
-    </nav>
+    <div class="subnav-bar">
+      <a class="subnav-tab" [class.active]="active === 'dm'"
+         (click)="select('dm')">
+        <clr-icon shape="cog"></clr-icon>
+        <span>DM</span>
+      </a>
+      <a class="subnav-tab" [class.active]="active === 'bs'"
+         (click)="select('bs')">
+        <clr-icon shape="cloud"></clr-icon>
+        <span>BS</span>
+      </a>
+    </div>
   `,
-  styles: [`
-    .subnav { display:flex; background:#16213e; padding:0 1rem; border-bottom:1px solid #1a5276; }
-    .subnav-item { padding:10px 16px; color:#bdbdbd; cursor:pointer; font-size:13px; border-bottom:2px solid transparent; }
-    .subnav-item:hover { color:#e0e0e0; }
-    .subnav-item.active { color:#66bb6a; border-bottom-color:#2e7d32; }
-  `]
+  // styles provided by global .subnav-bar / .subnav-tab in styles.scss
 })
 export class Lwm2mSubmenuComponent {
   active = 'dm';
   @Output() nav = new EventEmitter<string>();
-  s(item: string): void { this.active = item; this.nav.emit(item); }
+  select(item: string): void { this.active = item; this.nav.emit(item); }
 }
