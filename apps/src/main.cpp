@@ -12,8 +12,10 @@
 
 #include <ace/Log_Msg.h>
 
+#include "data_store/client.hpp"
 #include "data_store/service_gate.hpp"
 #include "data_store/dep_watch.hpp"
+#include "data_store/value.hpp"
 
 #include "app.hpp"
 #include "readline.hpp"
