@@ -16,10 +16,18 @@ if(IOT_ENABLE_MONGO)
     add_definitions(-DIOT_ENABLE_MONGO)
 endif()
 
-# ACE_TAO install prefix — kept in sync with xpmile (see ../../xpmile/CMakeLists.txt).
-# Override on the command line with -DACE_ROOT=/some/other/prefix if needed.
+# ACE_TAO install prefix — overridable via -DACE_ROOT=...
+# Uses find_path so it works for both native builds and Yocto cross-compilation
+# (recipe passes -DACE_ROOT=${STAGING_DIR_HOST}/usr, but find_path finds it anyway).
 if(NOT DEFINED ACE_ROOT)
-    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
+    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
+              HINTS ${CMAKE_SYSROOT}/usr/include
+                    /usr/local/ACE_TAO-7.0.0/include)
+    if(ACE_INCLUDE_DIR)
+        get_filename_component(ACE_ROOT ${ACE_INCLUDE_DIR} DIRECTORY)
+    else()
+        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
+    endif()
 endif()
 
 # Lua — required for apps/src/lua_config.cpp which now backs the
@@ -46,10 +54,29 @@ endif()
 # Include External cmake file
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
-include_directories(/usr/local/include/mongocxx/v_noabi)
-include_directories(/usr/local/include/bsoncxx/v_noabi)
 include_directories(${ACE_ROOT}/include)
 include_directories(${LUA_INCLUDE_DIR})
+
+# MongoDB — find_path for both native and Yocto.  Recipe passes
+# -DMONGOCXX_INCLUDE_DIR=... / -DBSONCXX_INCLUDE_DIR=... to skip search.
+if(IOT_ENABLE_MONGO)
+    if(NOT DEFINED MONGOCXX_INCLUDE_DIR)
+        find_path(MONGOCXX_INCLUDE_DIR mongocxx/pool.hpp
+                  HINTS ${CMAKE_SYSROOT}/usr/include/mongocxx/v_noabi
+                        /usr/local/include/mongocxx/v_noabi)
+    endif()
+    if(NOT DEFINED BSONCXX_INCLUDE_DIR)
+        find_path(BSONCXX_INCLUDE_DIR bsoncxx/json.hpp
+                  HINTS ${CMAKE_SYSROOT}/usr/include/bsoncxx/v_noabi
+                        /usr/local/include/bsoncxx/v_noabi)
+    endif()
+    if(MONGOCXX_INCLUDE_DIR)
+        include_directories(${MONGOCXX_INCLUDE_DIR})
+    endif()
+    if(BSONCXX_INCLUDE_DIR)
+        include_directories(${BSONCXX_INCLUDE_DIR})
+    endif()
+endif()
 
 include_directories(inc)
 

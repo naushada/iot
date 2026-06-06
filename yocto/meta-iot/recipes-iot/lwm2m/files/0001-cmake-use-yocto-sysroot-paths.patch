@@ -1,39 +1,29 @@
 From: iot-yocto-build
 Subject: [PATCH] cmake: use Yocto sysroot paths for cross-compilation
 
-Make all five CMakeLists.txt files Yocto/OE sysroot-aware.
+Minimal patch — most Yocto logic is now in the source.
 
 Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 
 ---
- apps/CMakeLists.txt                    | 31
+ apps/CMakeLists.txt                    | 5
  modules/data-store/CMakeLists.txt                    | 14
  modules/net/router/CMakeLists.txt                    | 11
  modules/openvpn/client/CMakeLists.txt                    | 11
  modules/wan/wifi/client/CMakeLists.txt                    | 11
- 5 files changed, 66 insertions(+), 12 deletions(-)
+ 5 files changed, 43 insertions(+), 9 deletions(-)
 
 --- a/apps/CMakeLists.txt
 +++ b/apps/CMakeLists.txt
-@@ -18,8 +18,16 @@
- 
- # ACE_TAO install prefix — kept in sync with xpmile (see ../../xpmile/CMakeLists.txt).
- # Override on the command line with -DACE_ROOT=/some/other/prefix if needed.
-+# When cross-compiling for Yocto, -DACE_ROOT passed via EXTRA_OECMAKE.
+@@ -19,6 +19,7 @@
+ # ACE_TAO install prefix — overridable via -DACE_ROOT=...
+ # Uses find_path so it works for both native builds and Yocto cross-compilation
+ # (recipe passes -DACE_ROOT=${STAGING_DIR_HOST}/usr, but find_path finds it anyway).
++# When cross-compiling for Yocto, -DACE_ROOT is passed via EXTRA_OECMAKE.
  if(NOT DEFINED ACE_ROOT)
--    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
-+    find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
-+              HINTS ${CMAKE_SYSROOT}/usr/include
-+                    /usr/local/ACE_TAO-7.0.0/include)
-+    if(ACE_INCLUDE_DIR)
-+        get_filename_component(ACE_ROOT ${ACE_INCLUDE_DIR} DIRECTORY)
-+    else()
-+        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
-+    endif()
- endif()
- 
- # Lua — required for apps/src/lua_config.cpp which now backs the
-@@ -33,6 +41,7 @@
+     find_path(ACE_INCLUDE_DIR ace/Log_Msg.h
+               HINTS ${CMAKE_SYSROOT}/usr/include
+@@ -41,6 +42,7 @@
               NAMES liblua5.3.a liblua.a
               PATHS /usr/lib/aarch64-linux-gnu
                     /usr/lib/x86_64-linux-gnu
@@ -41,34 +31,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
                     /usr/lib
                     /usr/local/lib
               NO_DEFAULT_PATH)
-@@ -46,11 +55,24 @@
- # Include External cmake file
- include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
- include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
--include_directories(/usr/local/include/mongocxx/v_noabi)
--include_directories(/usr/local/include/bsoncxx/v_noabi)
- include_directories(${ACE_ROOT}/include)
- include_directories(${LUA_INCLUDE_DIR})
- 
-+if(IOT_ENABLE_MONGO)
-+    find_path(MONGOCXX_INCLUDE_DIR mongocxx/pool.hpp
-+              HINTS ${CMAKE_SYSROOT}/usr/include/mongocxx/v_noabi
-+                    /usr/local/include/mongocxx/v_noabi)
-+    find_path(BSONCXX_INCLUDE_DIR bsoncxx/json.hpp
-+              HINTS ${CMAKE_SYSROOT}/usr/include/bsoncxx/v_noabi
-+                    /usr/local/include/bsoncxx/v_noabi)
-+    if(MONGOCXX_INCLUDE_DIR)
-+        include_directories(${MONGOCXX_INCLUDE_DIR})
-+    endif()
-+    if(BSONCXX_INCLUDE_DIR)
-+        include_directories(${BSONCXX_INCLUDE_DIR})
-+    endif()
-+endif()
-+
- include_directories(inc)
- 
- # Data-store client lib — sibling module under ../modules/data-store.
-@@ -91,6 +113,9 @@
+@@ -118,6 +120,9 @@
  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
  
  link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
@@ -77,7 +40,7 @@ Upstream-status: Inappropriate [Yocto-specific cross-compilation support]
 +endif()
  link_directories(${ACE_ROOT}/lib)
  
- # ACE — prefer static .a when provided (Yocto sets -DACE_LIBRARY).
+ # External libs — Yocto passes full paths via -DLIBNAME_LIBRARY=...
 --- a/modules/data-store/CMakeLists.txt
 +++ b/modules/data-store/CMakeLists.txt
 @@ -6,7 +6,14 @@
