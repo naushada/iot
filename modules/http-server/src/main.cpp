@@ -295,7 +295,16 @@ int main(int argc, char** argv) {
                (tlsPtr && tlsCtx.mtls()) ? " (mTLS)" : "", httpWorkers));
 
     // Self-report running state to ds so the Services page shows live status.
-    ds.set("services.cloud.iot.httpd.state", data_store::Value{std::string("running")});
+    {
+        auto rs = ds.set("services.cloud.iot.httpd.state",
+                         data_store::Value{std::string("running")});
+        if (!rs.ok) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [http:%t] %M %N:%l set httpd.state=running"
+                                " failed: %C\n"),
+                       rs.err.c_str()));
+        }
+    }
 
     // The listening socket is polled directly via non-blocking accept() in
     // the loop below; only the per-connection sessions are registered with
@@ -462,7 +471,16 @@ int main(int argc, char** argv) {
 
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D [http:%t] %M %N:%l shutting down\n")));
-    ds.set("services.cloud.iot.httpd.state", data_store::Value{std::string("exited")});
+    {
+        auto rs = ds.set("services.cloud.iot.httpd.state",
+                         data_store::Value{std::string("exited")});
+        if (!rs.ok) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [http:%t] %M %N:%l set httpd.state=exited"
+                                " failed: %C\n"),
+                       rs.err.c_str()));
+        }
+    }
     // Join the workers before tearing down the reactor/sessions so no
     // in-flight handler is left holding a session that's about to vanish.
     pool.stop();
