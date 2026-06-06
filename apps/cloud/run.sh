@@ -90,11 +90,17 @@ case "${1:-start}" in
         ;;
 
     logs)
-        # Read logs from data store via ds-cli.
+        echo "=== Logs ==="
         $CR exec iot-ds-server ds-cli get log.text log.cloudd.text \
-            log.lwm2m.text log.lwm2m.bs.text log.lwm2m.dm.text && exit 0
-        # Fallback: tail container stdout
-        $CR logs iot-ds-server iot-cloudd iot-httpd 2>/dev/null
+            log.lwm2m.text log.lwm2m.bs.text log.lwm2m.dm.text 2>&1
+        echo ""
+        echo "=== Services ==="
+        $CR exec iot-ds-server ds-cli get services.ds.state \
+            services.cloud.iot.cloudd.state \
+            services.cloud.iot.httpd.state \
+            services.cloud.openvpn.server.state \
+            services.cloud.lwm2m.bs.state \
+            services.cloud.lwm2m.dm.state 2>&1
         ;;
 
     ps|status)
