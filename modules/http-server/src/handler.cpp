@@ -273,7 +273,7 @@ void install_handlers(Router& router,
     // ── POST /api/v1/auth/login ──────────────────────────────────
     // Body: { "id": "admin", "password": "<plaintext>" }
     // The server SHA-256-hashes the submitted password and compares
-    // against auth.users.admin.password_hash in the data store.
+    // against auth.users.admin.password.hash in the data store.
     router.add("POST", "/api/v1/auth/login",
         [ds, auth](const HttpParser::Request& req) -> HttpResponse {
             HttpResponse r;

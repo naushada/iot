@@ -156,14 +156,14 @@ std::string sha256_hex(const std::string& input) {
 std::string CredentialStore::load_admin_password_hash(
     data_store::Client& ds) {
     std::vector<data_store::Client::GetResult> got;
-    auto rs = ds.get({"auth.users.admin.password_hash"}, got);
+    auto rs = ds.get({"auth.users.admin.password.hash"}, got);
     if (rs.ok && !got.empty() && got[0].has_value) {
         if (auto s = data_store::to_string(got[0].value)) {
             if (!s->empty()) return *s;
         }
     }
     ACE_DEBUG((LM_INFO,
-               ACE_TEXT("%D [http:%t] %M %N:%l auth.users.admin.password_hash "
+               ACE_TEXT("%D [http:%t] %M %N:%l auth.users.admin.password.hash "
                         "unset — using compiled-in default\n")));
     return kDefaultHash;
 }

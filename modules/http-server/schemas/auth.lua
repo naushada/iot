@@ -8,7 +8,7 @@
 --   { "id": "admin", "password": "<plaintext>" }
 --
 -- The server SHA-256-hashes the submitted password and compares it
--- against auth.users.admin.password_hash.  There is no plain-text path.
+-- against auth.users.admin.password.hash.  There is no plain-text path.
 --
 -- Install at /etc/iot/ds-schemas/auth.lua (ds-server auto-loads on
 -- boot; iot-httpd reads them through the data_store::Client).
@@ -20,7 +20,7 @@ return {
     -- Default value is the SHA-256 of "admin":
     --   echo -n "admin" | sha256sum
     --   8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
-    ["auth.users.admin.password_hash"] = {
+    ["auth.users.admin.password.hash"] = {
       type    = "string",
       default = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
     },

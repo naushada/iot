@@ -12,7 +12,7 @@
 ///
 /// Credentials — SHA-256 (no plain text):
 ///   Login body:   { "id": "admin", "password": "<plaintext>" }
-///   Stored key:   auth.users.admin.password_hash  (64-char hex digest)
+///   Stored key:   auth.users.admin.password.hash  (64-char hex digest)
 ///   Comparison:   sha256(submitted_plaintext) == stored_hash
 ///   Default hash: sha256("admin")
 ///
@@ -82,7 +82,7 @@ std::string sha256_hex(const std::string& input);
 class CredentialStore {
 public:
     /// Load the admin password hash from the data store.
-    /// Key: auth.users.admin.password_hash  — SHA-256 hex digest
+    /// Key: auth.users.admin.password.hash  — SHA-256 hex digest
     /// Falls back to the compiled-in default (sha256("admin")) when
     /// the key is unset.
     static std::string load_admin_password_hash(data_store::Client& ds);
