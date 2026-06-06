@@ -34,6 +34,7 @@ else()
     set(DS_LINK_LIB datastore_client)
 endif()
 
+target_link_directories(iot-cloudd PRIVATE ${ACE_ROOT}/lib)
 target_link_libraries(iot-cloudd
     ${DS_LINK_LIB} ACE pthread)
 
