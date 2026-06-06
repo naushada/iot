@@ -543,8 +543,7 @@ void install_handlers(Router& router,
             else if (svc == "wifi.client")    enable_key = "services.wifi.client.enable";
             else if (svc == "ds") {
                 r.status = 400;
-                r.body = R"({"ok":false,"err":"cannot restart ds-server "
-                         "(self-disable would kill the API)"})";
+                r.body = R"({"ok":false,"err":"cannot restart ds-server (self-disable would kill the API)"})";
                 return r;
             } else {
                 r.status = 400;
