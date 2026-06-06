@@ -122,7 +122,7 @@ void ServiceContext_t::handle_input_coap(const std::string& bytes,
     }
 }
 
-void ServiceContext_t::handle_input_coaps(const std::vector<std::uint8_t>& bytes,
+void ServiceContext_t::handle_input_coaps(const std::vector<std::uint8_t>& /*bytes*/,
                                           const ACE_INET_Addr& /*from*/) {
     if (!m_dtlsAdapter) {
         return;

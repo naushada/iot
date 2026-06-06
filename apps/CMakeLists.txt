@@ -51,9 +51,9 @@ else()
     set(LUA_LINK_LIBS ${LUA_LIBRARIES})
 endif()
 
-# Include External cmake file
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
+# Include External cmake file — SYSTEM suppresses warnings in vendored code
+include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
+include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/single_include)
 include_directories(${ACE_ROOT}/include)
 include_directories(${LUA_INCLUDE_DIR})
 
