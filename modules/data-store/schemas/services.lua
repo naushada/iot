@@ -121,6 +121,7 @@ local stats_services = {
 }
 for _, s in ipairs(stats_services) do
   keys[s .. ".cpu.permille"] = { access = "Viewer", type = "integer", default = 0, min = 0 }
+  keys[s .. ".cpu.count"]    = { access = "Viewer", type = "integer", default = 0, min = 0 }
   keys[s .. ".mem.rss.kb"]   = { access = "Viewer", type = "integer", default = 0, min = 0 }
   keys[s .. ".fd.count"]     = { access = "Viewer", type = "integer", default = 0, min = 0 }
   keys[s .. ".threads"]      = { access = "Viewer", type = "integer", default = 0, min = 0 }

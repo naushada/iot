@@ -9,11 +9,13 @@
 
 #include <dirent.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <limits>
@@ -119,6 +121,24 @@ std::int32_t count_fds(const StatsRoots& r) {
     return n;
 }
 
+std::int32_t read_ncpu(const StatsRoots& r, CgVersion cg) {
+    // Prefer the cgroup CPU quota (effective cores the container may use).
+    if (cg == CgVersion::v2) {
+        std::ifstream ifs(r.cgroup_root + "/cpu.max");
+        std::string quota, period;
+        if ((ifs >> quota >> period) && quota != "max") {
+            char* e1 = nullptr; char* e2 = nullptr;
+            long long q = std::strtoll(quota.c_str(),  &e1, 10);
+            long long p = std::strtoll(period.c_str(), &e2, 10);
+            if (q > 0 && p > 0)
+                return clamp_i32(static_cast<unsigned long long>((q + p - 1) / p));
+        }
+    }
+    // Unlimited / v1 / none → online processors.
+    long n = ::sysconf(_SC_NPROCESSORS_ONLN);
+    return static_cast<std::int32_t>(n < 1 ? 1 : n);
+}
+
 std::int32_t cpu_permille(unsigned long long prev_usec,
                           unsigned long long now_usec, double dt_sec) {
     if (dt_sec <= 0.0 || now_usec < prev_usec) return 0;  // reset / bad dt
@@ -208,6 +228,7 @@ StatsSample StatsPublisher::sample() {
     s.mem_rss_kb = stats_detail::read_mem_kb(m_roots, m_cg);
     s.threads    = stats_detail::read_pids(m_roots, m_cg);
     s.fd_count   = stats_detail::count_fds(m_roots);
+    s.cpu_count  = stats_detail::read_ncpu(m_roots, m_cg);
 
     unsigned long long usage = 0;
     const bool have = stats_detail::read_cpu_usec(m_roots, m_cg, usage);
@@ -230,8 +251,9 @@ StatsSample StatsPublisher::sample() {
 void StatsPublisher::publish(const StatsSample& s) {
     if (!m_sink) return;
     std::vector<KV> kv;
-    kv.reserve(5);
+    kv.reserve(6);
     kv.emplace_back(m_prefix + ".cpu.permille", Value{s.cpu_permille});
+    kv.emplace_back(m_prefix + ".cpu.count",    Value{s.cpu_count});
     kv.emplace_back(m_prefix + ".mem.rss.kb",   Value{s.mem_rss_kb});
     kv.emplace_back(m_prefix + ".fd.count",     Value{s.fd_count});
     kv.emplace_back(m_prefix + ".threads",      Value{s.threads});

@@ -53,10 +53,17 @@ precedent (typed `integer`, `min = 0`, `access = "Viewer"`).
 ```
 services.<name>.cpu.permille   integer  default 0  min 0   -- parts-per-1000
                                                             --   123 = 12.3 %
+services.<name>.cpu.count      integer  default 0  min 0   -- cores the % is
+                                                            --   normalised against
 services.<name>.mem.rss.kb     integer  default 0  min 0   -- resident set, KB
 services.<name>.fd.count       integer  default 0  min 0   -- open file descriptors
 services.<name>.threads        integer  default 0  min 0   -- live threads
 ```
+
+`cpu.permille` is whole-host normalised (one fully-busy core = 1000 ‰ = 100 %),
+so it can exceed 100 % on multi-core hosts. `cpu.count` is the denominator —
+the cgroup v2 `cpu.max` quota when set, else online CPUs — so the UI can show
+how many cores the percentage is measured against.
 
 `cpu.permille` (not `cpu.percent`) keeps the value an **integer** while
 preserving one decimal of resolution — ds has no float type, and 12.3 % must
