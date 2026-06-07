@@ -176,8 +176,14 @@ FILES:${PN} = "\
 "
 
 # ds-server — the AF_UNIX config-plane daemon (required by all others)
+# Each daemon ships its own systemd unit(s): SYSTEMD_SERVICE registers them
+# for enable/disable but does NOT add them to FILES, and the per-package FILES
+# below override the default ${PN} globs — so claim the units explicitly or
+# do_package fails "installed but not shipped". (Harmless when the systemd
+# PACKAGECONFIG is off: FILES may list paths that weren't installed.)
 FILES:${PN}-ds-server = "\
     ${bindir}/ds-server \
+    ${systemd_system_unitdir}/iot-ds.service \
 "
 RDEPENDS:${PN}-ds-server = "\
     ace-tao \
@@ -193,6 +199,8 @@ RDEPENDS:${PN}-ds-cli = "ace-tao"
 # lwm2m — combined LwM2M client + server binary (role selected at CLI)
 FILES:${PN}-lwm2m = "\
     ${bindir}/lwm2m \
+    ${systemd_system_unitdir}/iot-lwm2m-client.service \
+    ${systemd_system_unitdir}/iot-lwm2m-server.service \
 "
 RDEPENDS:${PN}-lwm2m = "\
     ace-tao \
@@ -213,6 +221,7 @@ RRECOMMENDS:${PN}-lwm2m = "\
 # openvpn-client — OpenVPN tunnel supervisor
 FILES:${PN}-openvpn-client = "\
     ${bindir}/openvpn-client \
+    ${systemd_system_unitdir}/iot-openvpn-client.service \
 "
 RDEPENDS:${PN}-openvpn-client = "ace-tao openvpn"
 RRECOMMENDS:${PN}-openvpn-client = "\
@@ -223,6 +232,7 @@ RRECOMMENDS:${PN}-openvpn-client = "\
 # net-router — nftables + iproute2 network daemon
 FILES:${PN}-net-router = "\
     ${bindir}/net-router \
+    ${systemd_system_unitdir}/iot-net-router.service \
 "
 RDEPENDS:${PN}-net-router = "\
     ace-tao \
@@ -237,6 +247,7 @@ RRECOMMENDS:${PN}-net-router = "\
 # wifi-client — wpa_supplicant + DHCP supervisor
 FILES:${PN}-wifi-client = "\
     ${bindir}/wifi-client \
+    ${systemd_system_unitdir}/iot-wifi-client.service \
 "
 RDEPENDS:${PN}-wifi-client = "\
     ace-tao \
@@ -251,6 +262,7 @@ RRECOMMENDS:${PN}-wifi-client = "\
 # httpd — HTTP REST API server fronting ds-server (L18)
 FILES:${PN}-httpd = "\
     ${bindir}/iot-httpd \
+    ${systemd_system_unitdir}/iot-httpd.service \
 "
 RDEPENDS:${PN}-httpd = "ace-tao"
 RRECOMMENDS:${PN}-httpd = "\
