@@ -119,6 +119,19 @@ RUN apt-get -o Acquire::Check-Date=false update && \
     libssl3 zlib1g libreadline8 liblua5.3-0 iptables openvpn ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# PSK provisioning (task P): shared cloud service account/group. The cloud
+# server processes (iot-cloudd, lwm2m-bs, lwm2m-dm) run with primary group
+# `cloud-svc` so the data-store read_acl/write_acl (gid:cloud-svc) on
+# cloud.endpoint.credentials matches them via SO_PEERCRED, while ds-cli run
+# as root is denied. ds-server chgrp's its socket to `cloud-svc`
+# (ds-socket-group= in docker-compose) so the group can also connect.
+# See apps/docs/tdd-psk-provisioning.md (task P) for the docker-compose
+# `user:`/capability wiring needed to actually run the containers as this
+# account.
+RUN groupadd --system cloud-svc && \
+    useradd --system --no-create-home --shell /usr/sbin/nologin \
+            --gid cloud-svc cloud-svc
+
 # ACE shared libraries
 COPY --from=builder /usr/local/ACE_TAO-7.0.0/lib/libACE.so* /usr/local/lib/
 RUN ldconfig

@@ -10,9 +10,14 @@ Type=simple
 ExecStart=/usr/bin/ds-server \
     ds-socket=/run/iot/data_store.sock \
     ds-store=/var/lib/iot/data_store.lua \
-    ds-schema-dir=/etc/iot/ds-schemas
+    ds-schema-dir=/etc/iot/ds-schemas \
+    ds-socket-group=iot
 
 DynamicUser=yes
+# PSK provisioning (task J3): join the shared `iot` group so ds-server can
+# chgrp its 0660 socket to `iot` (ds-socket-group= above); the static
+# `engineer` client is also in `iot` and can then connect.
+SupplementaryGroups=iot
 RuntimeDirectory=iot
 RuntimeDirectoryMode=0755
 StateDirectory=iot

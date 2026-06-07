@@ -44,6 +44,15 @@ public:
 
     const std::string& socket_path() const { return m_socketPath; }
 
+    /// PSK provisioning (task J3) — optionally chgrp the socket to a
+    /// shared group after bind, so a static service account (e.g.
+    /// `engineer`, member of that group) can connect to a 0660 socket
+    /// owned by ds-server's own (DynamicUser) account. Empty = leave the
+    /// group as-is. Set before open().
+    void set_socket_group(std::string group) {
+        m_socketGroup = std::move(group);
+    }
+
     /// Reactor-thread call from Session::handle_close: drop the
     /// session pointer from our registry. The Session itself is
     /// freed by its owner Worker once the SessionClosed message
@@ -54,6 +63,7 @@ private:
     std::shared_ptr<DataStore>      m_store;
     WorkerPool*                     m_pool;
     std::string                     m_socketPath;
+    std::string                     m_socketGroup;   ///< J3: shared access group (optional)
     ACE_LSOCK_Acceptor              m_acceptor;
     bool                            m_open = false;
     std::mutex                      m_sessionsMtx;

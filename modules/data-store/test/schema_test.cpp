@@ -218,3 +218,123 @@ return {
     ::unlink((dir + "/services.lua").c_str());
     ::rmdir(dir.c_str());
 }
+
+// ── PSK provisioning: read_acl enforcement (task C) ────────────────
+//
+// Mirrors check_write_acl. The write-only PSK keys carry
+// read_acl={"gid:engineer"}; only the engineer client (and dev-mode,
+// handled in the worker) may read them. ds-cli (root) is denied.
+
+namespace {
+// A schema with a read-protected key, mirroring the iot.bs.psk.key
+// shape. We use uid:1234 so the test is deterministic without needing
+// a real group on the build host.
+ds::SchemaRegistry load_psk_schema(const std::string& dir) {
+    write_file(dir + "/psk.lua", R"(
+return {
+  namespace = "iot",
+  keys = {
+    ["iot.bs.psk.key"] = { type="opaque",
+                           write_acl={"uid:1234"},
+                           read_acl={"uid:1234"} },
+    ["iot.endpoint"]   = { type="string", default="urn:dev:client-1" },
+  },
+})");
+    ds::SchemaRegistry r;
+    r.load_directory(dir);
+    return r;
+}
+} // namespace
+
+TEST(Schema, check_read_acl_denies_unlisted_uid) {
+    auto dir = make_tmpdir();
+    if (dir.empty()) GTEST_SKIP();
+    auto r = load_psk_schema(dir);
+    // root (uid 0) is NOT in read_acl → denied.
+    auto err = r.check_read_acl("iot.bs.psk.key", /*uid*/0, /*gid*/0);
+    ASSERT_TRUE(err.has_value());
+    EXPECT_NE(std::string::npos, err->find("read_acl"));
+    EXPECT_NE(std::string::npos, err->find("iot.bs.psk.key"));
+    ::unlink((dir + "/psk.lua").c_str()); ::rmdir(dir.c_str());
+}
+
+TEST(Schema, check_read_acl_allows_listed_uid) {
+    auto dir = make_tmpdir();
+    if (dir.empty()) GTEST_SKIP();
+    auto r = load_psk_schema(dir);
+    EXPECT_FALSE(r.check_read_acl("iot.bs.psk.key", 1234, 0).has_value());
+    ::unlink((dir + "/psk.lua").c_str()); ::rmdir(dir.c_str());
+}
+
+TEST(Schema, check_read_acl_allows_key_without_acl) {
+    auto dir = make_tmpdir();
+    if (dir.empty()) GTEST_SKIP();
+    auto r = load_psk_schema(dir);
+    // iot.endpoint has no read_acl → unrestricted.
+    EXPECT_FALSE(r.check_read_acl("iot.endpoint", 0, 0).has_value());
+    ::unlink((dir + "/psk.lua").c_str()); ::rmdir(dir.c_str());
+}
+
+TEST(Schema, check_read_acl_allows_unknown_key) {
+    auto dir = make_tmpdir();
+    if (dir.empty()) GTEST_SKIP();
+    auto r = load_psk_schema(dir);
+    // No schema entry at all → passthrough (allowed).
+    EXPECT_FALSE(r.check_read_acl("not.in.schema", 0, 0).has_value());
+    ::unlink((dir + "/psk.lua").c_str()); ::rmdir(dir.c_str());
+}
+
+TEST(Schema, real_iot_lua_declares_psk_keys) {
+    // Load the shipped schema and assert the PSK provisioning keys exist
+    // with the expected types + ACLs. Try a few candidate paths so the
+    // test works from the in-tree build dir or the container /src layout.
+    ds::SchemaRegistry r;
+    const char* candidates[] = {
+        "../schemas",
+        "/src/modules/data-store/schemas",
+        "schemas",
+        "../../schemas",
+    };
+    bool loaded = false;
+    for (const char* p : candidates) {
+        if (r.load_directory(p) > 0) { loaded = true; break; }
+    }
+    if (!loaded) GTEST_SKIP() << "shipped schemas dir not found from cwd";
+
+    struct Expect { const char* key; ds::SchemaType type; bool read_locked; };
+    const Expect want[] = {
+        {"iot.serial",          ds::SchemaType::String,  false},
+        {"iot.dev.mode",        ds::SchemaType::Boolean, false},
+        {"iot.bs.psk.identity", ds::SchemaType::String,  true },
+        {"iot.bs.psk.key",      ds::SchemaType::Opaque,  true },
+        {"iot.dm.psk.identity", ds::SchemaType::String,  true },
+        {"iot.dm.psk.key",      ds::SchemaType::Opaque,  true },
+    };
+    for (const auto& w : want) {
+        auto* e = r.find(w.key);
+        ASSERT_NE(nullptr, e) << "missing key " << w.key;
+        EXPECT_EQ(w.type, e->type) << w.key;
+        EXPECT_FALSE(e->write_acl.empty()) << w.key << " should be write-gated";
+        EXPECT_EQ("gid:engineer", e->write_acl[0]) << w.key;
+        if (w.read_locked) {
+            ASSERT_FALSE(e->read_acl.empty()) << w.key << " should be read-gated";
+            EXPECT_EQ("gid:engineer", e->read_acl[0]) << w.key;
+        } else {
+            EXPECT_TRUE(e->read_acl.empty()) << w.key << " should stay readable";
+        }
+    }
+}
+
+TEST(Schema, parses_both_write_and_read_acl) {
+    auto dir = make_tmpdir();
+    if (dir.empty()) GTEST_SKIP();
+    auto r = load_psk_schema(dir);
+    auto* e = r.find("iot.bs.psk.key");
+    ASSERT_NE(nullptr, e);
+    EXPECT_EQ(ds::SchemaType::Opaque, e->type);
+    ASSERT_EQ(1u, e->write_acl.size());
+    ASSERT_EQ(1u, e->read_acl.size());
+    EXPECT_EQ("uid:1234", e->write_acl[0]);
+    EXPECT_EQ("uid:1234", e->read_acl[0]);
+    ::unlink((dir + "/psk.lua").c_str()); ::rmdir(dir.c_str());
+}

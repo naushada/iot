@@ -10,8 +10,13 @@ endif()
 
 set(LWM2M_SERVER_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
+# nlohmann/json single-header (vendored under apps/3rdparty).
+set(JSON_INCLUDE_DIR
+    ${LWM2M_SERVER_DIR}/../../../apps/3rdparty/json/single_include)
+
 include_directories(
     ${LWM2M_SERVER_DIR}/inc
+    ${JSON_INCLUDE_DIR}
     ${ACE_ROOT}/include
 )
 
@@ -21,6 +26,7 @@ link_directories(${ACE_ROOT}/lib)
 add_library(server_lwm2m STATIC
     src/endpoint_registry.cpp
     src/bootstrap.cpp
+    src/cloud_credentials.cpp
     src/management.cpp)
 
 target_include_directories(server_lwm2m PUBLIC inc)
@@ -62,4 +68,14 @@ if(BUILD_SERVER_LWM2M_TESTS)
     target_link_libraries(mgmt-tests
         GTest::gtest_main GTest::gtest pthread)
     add_test(NAME mgmt-tests COMMAND mgmt-tests)
+
+    # PSK provisioning (task M) — cloud credential helpers.
+    add_executable(cloud-credentials-tests
+        test/cloud_credentials_test.cpp
+        src/cloud_credentials.cpp)
+    target_include_directories(cloud-credentials-tests
+        PRIVATE ${LWM2M_SERVER_DIR}/inc ${JSON_INCLUDE_DIR})
+    target_link_libraries(cloud-credentials-tests
+        GTest::gtest_main GTest::gtest pthread)
+    add_test(NAME cloud-credentials-tests COMMAND cloud-credentials-tests)
 endif()

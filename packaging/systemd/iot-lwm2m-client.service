@@ -18,15 +18,21 @@ Type=simple
 EnvironmentFile=/etc/iot/lwm2m-client.env
 ExecStart=/usr/local/bin/lwm2m $LWM2M_ARGS
 
-DynamicUser=yes
-# Match ds-ds's RuntimeDirectory name so both units see the same
-# /run/iot/ tree (and thus the same socket file). Both units claim the
-# directory; systemd's RuntimeDirectory= semantics make this safe —
-# whichever starts first creates it, the other re-uses it.
-RuntimeDirectory=iot
-RuntimeDirectoryMode=0755
+# PSK provisioning (apps/docs/tdd-psk-provisioning.md): the client runs
+# as the STATIC `engineer` account (NOT DynamicUser) so it has a stable
+# primary gid the data-store read_acl/write_acl (gid:engineer) can match
+# — that is what lets only this client read the write-only PSK keys.
+# `iot` (supplementary) grants access to ds-server's 0660 socket. The
+# account is provisioned by packaging/systemd/iot-sysusers.conf.
+User=engineer
+Group=engineer
+SupplementaryGroups=iot
+# No RuntimeDirectory here — iot-ds owns /run/iot (0755, traversable);
+# the client only connects to the socket. After=iot-ds.service orders it.
 
-Restart=on-failure
+# A PSK change in dev-mode makes the client self-exit; systemd relaunches
+# it with fresh credentials. Restart=always so a clean exit also restarts.
+Restart=always
 RestartSec=5s
 
 StandardOutput=journal

@@ -437,30 +437,55 @@ void emit_value(std::string& out, const Value& v) {
 }
 } // namespace
 
+namespace {
+// Shared ACL matcher for read/write checks. `acl` holds "uid:N" /
+// "gid:name" entries. Returns true when the peer (uid/gid) matches any
+// entry. An empty ACL is treated as "unrestricted" by the callers, not
+// here.
+bool acl_matches(const std::vector<std::string>& acl,
+                 std::uint32_t uid, std::uint32_t gid) {
+    for (const auto& entry : acl) {
+        if (entry.rfind("uid:", 0) == 0) {
+            auto n = static_cast<std::uint32_t>(std::strtoul(
+                entry.c_str() + 4, nullptr, 10));
+            if (n == uid) return true;                // uid match
+        } else if (entry.rfind("gid:", 0) == 0) {
+            // gid match — resolve the named group via getgrnam() and
+            // compare against the peer's primary gid.
+            std::string grp(entry, 4);
+            struct group* gr = ::getgrnam(grp.c_str());
+            if (gr && static_cast<std::uint32_t>(gr->gr_gid) == gid)
+                return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
 std::optional<std::string> SchemaRegistry::check_write_acl(
         const std::string& key, std::uint32_t uid, std::uint32_t gid) const {
     auto it = m_entries.find(key);
     if (it == m_entries.end()) return std::nullopt;  // unknown key: passthrough
     const auto& acl = it->second.write_acl;
     if (acl.empty()) return std::nullopt;             // no ACL: unrestricted
-
-    for (const auto& entry : acl) {
-        if (entry.rfind("uid:", 0) == 0) {
-            auto n = static_cast<std::uint32_t>(std::strtoul(
-                entry.c_str() + 4, nullptr, 10));
-            if (n == uid) return std::nullopt;        // uid match
-        } else if (entry.rfind("gid:", 0) == 0) {
-            // gid match — check by group name via getgrnam().
-            // We compare the peer's gid against the named group's gid.
-            std::string grp(entry, 4);
-            struct group* gr = ::getgrnam(grp.c_str());
-            if (gr && static_cast<std::uint32_t>(gr->gr_gid) == gid)
-                return std::nullopt;
-        }
-    }
+    if (acl_matches(acl, uid, gid)) return std::nullopt;
 
     std::ostringstream ss;
     ss << "write_acl(" << key << "): access denied for uid="
+       << uid << " gid=" << gid;
+    return ss.str();
+}
+
+std::optional<std::string> SchemaRegistry::check_read_acl(
+        const std::string& key, std::uint32_t uid, std::uint32_t gid) const {
+    auto it = m_entries.find(key);
+    if (it == m_entries.end()) return std::nullopt;  // unknown key: passthrough
+    const auto& acl = it->second.read_acl;
+    if (acl.empty()) return std::nullopt;             // no ACL: unrestricted
+    if (acl_matches(acl, uid, gid)) return std::nullopt;
+
+    std::ostringstream ss;
+    ss << "read_acl(" << key << "): access denied for uid="
        << uid << " gid=" << gid;
     return ss.str();
 }

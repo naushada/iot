@@ -17,6 +17,7 @@
 #include "vpn_registry.hpp"
 #include "openvpn_server.hpp"
 #include "bootstrap.hpp"
+#include "cloud_credentials.hpp"
 
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"
@@ -282,6 +283,40 @@ int main(int argc, char** argv) {
                     ACE_DEBUG((LM_INFO,
                                ACE_TEXT("%D cloudd:thread:%t %M %N:%l provision request '%C'\n"),
                                ep->c_str()));
+
+                    // PSK provisioning (task M-wire): the endpoint name IS
+                    // the raw serial. Read the engineer-pasted BS PSK from
+                    // the carrier, mint a DM PSK, and upsert a per-endpoint
+                    // credential record keyed by rpi<serial>@cloud.local.
+                    // Clear the carrier afterwards (it held a secret).
+                    const std::string bs_psk =
+                        ds_str(ds, "cloud.provision.bs.psk", "");
+                    if (!bs_psk.empty()) {
+                        try {
+                            const std::string dm_psk =
+                                server::lwm2m::generate_psk_hex();
+                            const std::string cur =
+                                ds_str(ds, "cloud.endpoint.credentials", "[]");
+                            const std::string next =
+                                server::lwm2m::upsert_credential(
+                                    cur, *ep, bs_psk, dm_psk);
+                            ds.set("cloud.endpoint.credentials",
+                                   data_store::Value{next});
+                            ds.set("cloud.provision.bs.psk",
+                                   data_store::Value{std::string("")});
+                            ACE_DEBUG((LM_INFO,
+                                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l stored "
+                                                "credentials for %C (identity=%C)\n"),
+                                       ep->c_str(),
+                                       server::lwm2m::format_identity(*ep).c_str()));
+                        } catch (const std::exception& e) {
+                            ACE_ERROR((LM_ERROR,
+                                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l credential "
+                                                "provisioning for %C failed: %C\n"),
+                                       ep->c_str(), e.what()));
+                        }
+                    }
+
                     auto result = provisioner.provision(*ep);
                     if (result.has_value()) {
                         ACE_DEBUG((LM_INFO,

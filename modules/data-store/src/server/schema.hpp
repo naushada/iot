@@ -97,6 +97,17 @@ public:
         const std::string& key,
         std::uint32_t uid, std::uint32_t gid) const;
 
+    /// PSK provisioning (task C) — read counterpart of check_write_acl.
+    /// Enforces `read_acl` on the Get / RegisterWatch paths so write-only
+    /// keys (PSK secrets) cannot be read back by an unauthorised peer
+    /// (e.g. ds-cli as root). Same semantics: empty optional = allowed,
+    /// diagnostic string = denied, undeclared/empty ACL = unrestricted.
+    /// dev-mode bypass is handled by the caller (worker), not here, so
+    /// the registry stays pure.
+    std::optional<std::string> check_read_acl(
+        const std::string& key,
+        std::uint32_t uid, std::uint32_t gid) const;
+
     std::size_t size() const { return m_entries.size(); }
     std::size_t namespace_count() const { return m_namespaces.size(); }
 

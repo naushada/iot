@@ -37,6 +37,9 @@
 #include "lwm2m_registration_server.hpp"
 
 #include "ds_config.hpp"
+#include "rpi_serial.hpp"
+#include "provisioning_policy.hpp"
+#include "psk_gen.hpp"
 #include "lua_config.hpp"
 
 
@@ -388,7 +391,26 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     // path inside the callback.
     std::weak_ptr<App>                          wapp_bs = app;
     std::weak_ptr<::lwm2m::RegistrationClient>  wreg_bs = plumb.reg;
-    plumb.bs->on_done([wapp_bs, wreg_bs](const ::lwm2m::bootstrap::StagingBuffer&) {
+    plumb.bs->on_done([wapp_bs, wreg_bs, &ds]
+                      (const ::lwm2m::bootstrap::StagingBuffer& committed) {
+        // Task F — persist the bootstrap-delivered DM credentials to the
+        // data-store (write-only). The DM security instance is the
+        // non-bootstrap PSK entry; its secretKey is raw bytes, so we hex-
+        // encode to match how PSK keys are stored + consumed elsewhere.
+        for (const auto& s : committed.security) {
+            if (s.isBootstrapServer || s.securityMode != 0 /*PSK*/) continue;
+            if (s.identity.empty() || s.secretKey.empty()) continue;
+            const std::string key_hex = iot::hex_encode(
+                reinterpret_cast<const unsigned char*>(s.secretKey.data()),
+                s.secretKey.size());
+            if (ds.set_dm_credentials(s.identity, key_hex)) {
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l DM credentials "
+                                    "persisted to data-store (identity=%C)\n"),
+                           s.identity.c_str()));
+            }
+            break;
+        }
         auto a = wapp_bs.lock();
         auto r = wreg_bs.lock();
         if (!a || !r) return;
@@ -413,7 +435,13 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     std::weak_ptr<::lwm2m::RegistrationClient> wreg = plumb.reg;
     std::weak_ptr<::lwm2m::DmClient>           wdm  = plumb.dm;
     std::weak_ptr<App>                         wapp = app;
-    app->udpAdapter()->on_tick_client([wreg, wdm, wapp, rebind]() {
+    std::weak_ptr<::lwm2m::bootstrap::Client>  wbs  = plumb.bs;
+    // Task K — cooldown so a persistently-rejecting DM doesn't spin the
+    // bootstrap. Shared across ticks; default-constructed = epoch.
+    auto reboot_after =
+        std::make_shared<std::chrono::steady_clock::time_point>();
+    app->udpAdapter()->on_tick_client([wreg, wdm, wapp, rebind, wbs,
+                                       reboot_after]() {
         auto reg = wreg.lock();
         auto dm  = wdm.lock();
         auto a   = wapp.lock();
@@ -492,6 +520,31 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
             reg->note_update_sent(now);
         }
 
+        // Task K — DM rejected us (registration FSM in Failed after a
+        // 4.0x). Fall back to the bootstrap server for fresh DM
+        // credentials. `should_rebootstrap` centralises the trigger
+        // (here: registration rejection; a DM DTLS auth failure surfaces
+        // the same way once the handshake gives up). Cooldown prevents a
+        // spin against a server that keeps rejecting. NOTE: this re-POSTs
+        // /bs over the LwM2MClient service, correct when BS+DM share a
+        // peer; the separate-DM-peer topology needs a peer swap back to
+        // BS first (integration P2 / FUP-DS-11 rebind).
+        if (reg->state() == ::lwm2m::RegistrationState::Failed &&
+            iot::should_rebootstrap(/*dm_dtls_failed*/false,
+                                    /*dm_registration_rejected*/true) &&
+            now >= *reboot_after) {
+            if (auto bs = wbs.lock()) {
+                ACE_ERROR((LM_WARNING,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l DM rejected "
+                                    "registration — re-bootstrapping for fresh "
+                                    "DM credentials\n")));
+                auto payload = bs->build_bs_request(
+                    next_msgid(), std::string{static_cast<char>(0x30)});
+                tx_via(*a, payload, svc);
+                *reboot_after = now + std::chrono::seconds(30);
+            }
+        }
+
         // L9 stub 3 — Notify dispatch. DmClient::tick returns ready-to-
         // ship CoAP frames (NON by default, every-10th CON per D4);
         // we just ship each in order.
@@ -554,17 +607,49 @@ int main(std::int32_t argc, char *argv[]) {
                static_cast<int>(scheme), selfHost.c_str(),
                static_cast<unsigned>(selfPort)));
 
+    // ── PSK provisioning (tasks A/E) ──────────────────────────────────
+    // Connect the data-store config plane early so the serial-derived
+    // endpoint + BS DTLS credentials are available before we wire the
+    // DTLS adapter. ds-server is optional (absence → CLI/compiled-in
+    // fallback). On a Raspberry Pi the serial is auto-filled here.
+    iot::DsConfig ds(argValueMap["ds-sock"]);
+    const bool rpi = iot::is_rpi();
+    iot::EndpointResolution epres = iot::resolve_endpoint(
+        argValueMap["ep"], ds.serial(), rpi,
+        rpi ? iot::read_rpi_serial() : std::string());
+    if (!epres.serial_to_write.empty()) {
+        if (ds.set_serial(epres.serial_to_write)) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l RPi serial auto-filled "
+                                "to data-store: %C\n"),
+                       epres.serial_to_write.c_str()));
+        }
+    }
+
     std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");
     if(scheme == UDPAdapter::Scheme_t::CoAPs) {
-        ///identity & secret are mandatory argument
-        if(argValueMap["identity"].empty() || argValueMap["secret"].empty()) {
+        // Prefer data-store BS credentials: identity = raw serial,
+        // secret = iot.bs.psk.key (provisioned by device-ui). The CLI
+        // identity=/secret= args remain a fallback (dev / server role).
+        auto dsId  = ds.bs_psk_identity();
+        auto dsKey = ds.bs_psk_key();
+        if (UDPAdapter::Role_t::CLIENT == role &&
+            dsId && !dsId->empty() && dsKey && !dsKey->empty()) {
+            identity = *dsId;
+            secret   = *dsKey;
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK from data-store "
+                                "(identity=%C)\n"), identity.c_str()));
+        } else if (!argValueMap["identity"].empty() &&
+                   !argValueMap["secret"].empty()) {
+            identity.assign(argValueMap["identity"]);
+            secret.assign(argValueMap["secret"]);
+        } else {
             ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l identity or secret missing for coaps\n")));
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l identity or secret missing "
+                                "for coaps (no CLI args and no data-store BS PSK)\n")));
             return(-2);
         }
-
-        identity.assign(argValueMap["identity"]);
-        secret.assign(argValueMap["secret"]);
     }
 
     UDPAdapter::ServiceType_t service;
@@ -612,23 +697,18 @@ int main(std::int32_t argc, char *argv[]) {
     const std::string configDir = !argValueMap["config"].empty()
                                       ? argValueMap["config"]
                                       : std::string("../config");
-    std::string endpoint        = !argValueMap["ep"].empty()
-                                      ? argValueMap["ep"]
-                                      : std::string("urn:dev:client-1");
+    // Endpoint resolved above (task E) from CLI ep= / data-store serial /
+    // RPi auto-detect. When non-RPi and nothing is provisioned yet,
+    // epres.ready is false → fall back to the legacy placeholder so the
+    // binary still comes up; registration effectively waits for the
+    // installer to enter a serial via device-ui (which re-fires the watch).
+    std::string endpoint = epres.ready ? epres.endpoint
+                                       : std::string("urn:dev:client-1");
 
-    // ds-server config-plane: optional. When connected, `iot.endpoint`
-    // / `iot.lifetime` / `iot.server.uri` override the CLI/file
-    // defaults. Empty `ds-sock=` ⇒ default socket path; ds-server not
-    // running just means we fall through to compiled-in defaults.
+    // ds-server config-plane: `ds` connected above. `iot.endpoint` /
+    // `iot.lifetime` / `iot.server.uri` continue to override file
+    // defaults via the watch + on_change handler below.
     g_log.start();  // register ACE callback now that ACE is initialised
-
-    iot::DsConfig ds(argValueMap["ds-sock"]);
-    if (auto v = ds.endpoint(); v.has_value() && argValueMap["ep"].empty()) {
-        endpoint = std::move(*v);
-        ACE_DEBUG((LM_INFO,
-                   ACE_TEXT("%D lwm2m:thread:%t %M %N:%l endpoint from data-store: %C\n"),
-                   endpoint.c_str()));
-    }
 
     // L16/D5 — services.lwm2m.{client,server}.enable gate. Minimal
     // cut: publish state at startup, park if disabled, return when
@@ -838,7 +918,26 @@ int main(std::int32_t argc, char *argv[]) {
     if (clientPlumbing.reg) {
         std::weak_ptr<::lwm2m::RegistrationClient>      wreg = clientPlumbing.reg;
         std::shared_ptr<ClientPlumbing::Rebind>         rebind = clientPlumbing.rebind;
-        ds.on_change([wreg, rebind, &ds](iot::DsConfig::Key k) {
+        ds.on_change([wreg, rebind, &ds, started_bs_psk = secret]
+                     (iot::DsConfig::Key k) {
+            // Task G — a BS PSK change underneath us (e.g. an engineer
+            // edits iot.bs.psk.key via ds-cli in dev-mode) means the next
+            // DTLS handshake needs the new key. Self-exit; systemd
+            // (Restart=always) relaunches us cleanly with fresh
+            // credentials. The client never writes iot.bs.psk.key itself,
+            // so any change here is genuinely external.
+            if (k == iot::DsConfig::Key::BsPskKey) {
+                const std::string cur = ds.bs_psk_key().value_or("");
+                if (iot::should_restart_on_psk_change(/*initialized*/true,
+                                                      started_bs_psk, cur)) {
+                    ACE_ERROR((LM_WARNING,
+                               ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK changed "
+                                        "— exiting for systemd restart with new "
+                                        "credentials\n")));
+                    ::exit(0);
+                }
+                return;
+            }
             auto reg = wreg.lock();
             if (!reg) return;
             if (k == iot::DsConfig::Key::Lifetime) {

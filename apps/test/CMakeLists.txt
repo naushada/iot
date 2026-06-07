@@ -62,7 +62,10 @@ file(GLOB SOURCES "*.cpp"
                     "../src/lwm2m_codec_senml.cpp"
                     "../src/lwm2m_object_3_device.cpp"
                     "../src/lwm2m_object_stubs.cpp"
-                    "../src/lua_config.cpp")
+                    "../src/lua_config.cpp"
+                    "../src/rpi_serial.cpp"
+                    "../src/psk_gen.cpp"
+                    "../src/provisioning_policy.cpp")
 
 add_executable(lwm2m_test ${SOURCES})
 

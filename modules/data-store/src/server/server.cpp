@@ -6,6 +6,7 @@
 
 #include <cerrno>
 #include <cstring>
+#include <grp.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -58,6 +59,35 @@ int Server::open() {
                             "failed errno=%d (not fatal)\n"),
                    m_socketPath.c_str(),
                    static_cast<unsigned>(kDefaultMode), errno));
+    }
+
+    // PSK provisioning (task J3): chgrp the 0660 socket to a shared group
+    // so a static service account (engineer) that belongs to that group
+    // can connect even though the socket is owned by ds-server's own
+    // (DynamicUser) account. Resolve the name with getgrnam(); a process
+    // may chgrp a file it owns to any group it is a member of, so
+    // ds-server must also have that group (SupplementaryGroups= in its
+    // unit). Non-fatal on failure — falls back to the default group.
+    if (!m_socketGroup.empty()) {
+        struct group* gr = ::getgrnam(m_socketGroup.c_str());
+        if (!gr) {
+            ACE_ERROR((LM_WARNING,
+                       ACE_TEXT("%D dsserver:thread:%t %M %N:%l getgrnam(%C) "
+                                "failed errno=%d (socket group unchanged)\n"),
+                       m_socketGroup.c_str(), errno));
+        } else if (::chown(m_socketPath.c_str(),
+                           static_cast<uid_t>(-1), gr->gr_gid) == -1) {
+            ACE_ERROR((LM_WARNING,
+                       ACE_TEXT("%D dsserver:thread:%t %M %N:%l chown(%C, grp=%C) "
+                                "failed errno=%d (socket group unchanged)\n"),
+                       m_socketPath.c_str(), m_socketGroup.c_str(), errno));
+        } else {
+            ACE_DEBUG((LM_DEBUG,
+                       ACE_TEXT("%D dsserver:thread:%t %M %N:%l socket %C group "
+                                "set to %C (gid=%d)\n"),
+                       m_socketPath.c_str(), m_socketGroup.c_str(),
+                       static_cast<int>(gr->gr_gid)));
+        }
     }
 
     if (ACE_Reactor::instance()->register_handler(

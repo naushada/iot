@@ -153,6 +153,13 @@ int main(int argc, char** argv) {
 
     data_store::server::Server server(store, &pool, socketPath);
 
+    // PSK provisioning (task J3): optional shared access group for the
+    // socket so a static service account (engineer) can connect to a
+    // 0660 socket owned by ds-server's own account. ds-server must be a
+    // member of this group too (SupplementaryGroups= in its unit).
+    std::string socketGroup = arg_value(argc, argv, "ds-socket-group");
+    if (!socketGroup.empty()) server.set_socket_group(socketGroup);
+
     if (server.open() != 0) {
         ACE_ERROR((LM_ERROR,
                    ACE_TEXT("%D dsserver:thread:%t %M %N:%l server open failed; "
