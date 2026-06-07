@@ -42,11 +42,11 @@ interface SvcRow {
             <app-status-badge [label]="s.state||'unknown'"
               [state]="s.state||''"></app-status-badge>
           </clr-dg-cell>
-          <clr-dg-cell class="num">{{ fmtCpu(s.cpu_permille) }}</clr-dg-cell>
-          <clr-dg-cell class="num">{{ s.cpu_count ?? '—' }}</clr-dg-cell>
-          <clr-dg-cell class="num">{{ fmtKb(s.mem_kb) }}</clr-dg-cell>
-          <clr-dg-cell class="num">{{ s.fd_count ?? '—' }}</clr-dg-cell>
-          <clr-dg-cell class="num">{{ s.threads ?? '—' }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ hasStats(s) ? fmtCpu(s.cpu_permille) : '—' }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ hasStats(s) ? s.cpu_count : '—' }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ hasStats(s) ? fmtKb(s.mem_kb) : '—' }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ hasStats(s) ? s.fd_count : '—' }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ hasStats(s) ? s.threads : '—' }}</clr-dg-cell>
           <clr-dg-cell>
             <clr-checkbox-wrapper *ngIf="gateable(s)">
               <input type="checkbox" clrCheckbox
@@ -111,6 +111,11 @@ export class ServicesListComponent implements OnInit, OnDestroy {
 
   /// Services that can be enabled/disabled + restarted (have an enable key).
   gateable(s: SvcRow): boolean { return !!s.enable_key; }
+
+  /// A live StatsPublisher always reports >=1 core, so cpu_count==0 means
+  /// the service isn't separately measured (e.g. openvpn-server, which is
+  /// managed by iot-cloudd and has no process of its own) — show "—".
+  hasStats(s: SvcRow): boolean { return (s.cpu_count ?? 0) > 0; }
 
   /// ds key prefix for a service's L22 telemetry keys.
   private statsPrefix(s: SvcRow): string {
