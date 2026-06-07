@@ -121,6 +121,9 @@ case "${1:-start}" in
             log_info "Refreshing config volume ${PROJECT}_iot-etc (set RESET_CONFIG=0 to keep)"
             $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" down --remove-orphans 2>/dev/null || true
             $CR volume rm "${PROJECT}_iot-etc" 2>/dev/null || true
+            # iot-vpn holds the image-provided server PKI (ca/server certs);
+            # repopulate it from the (possibly rebuilt) image too.
+            $CR volume rm "${PROJECT}_iot-vpn" 2>/dev/null || true
         fi
 
         log_section "Starting IoT Cloud"

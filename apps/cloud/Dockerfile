@@ -134,6 +134,11 @@ COPY --from=builder /tmp/blwm2m/lwm2m /usr/local/bin/
 # by iot-httpd depending on www-dir.
 COPY --from=ui-builder /ui/dist/cloud-ui /usr/share/iot/cloud-www/webui/
 
+# VPN server PKI (ca.crt + server.crt/key) generated in the builder stage.
+# Without this the runtime image has no /etc/iot/vpn and openvpn(8) fails
+# to start (--ca/--cert/--key: No such file or directory).
+COPY --from=builder /etc/iot/vpn /etc/iot/vpn
+
 # Schemas (device + cloud — same ds-server loads both)
 COPY modules/data-store/schemas/iot.lua /etc/iot/ds-schemas/
 COPY modules/data-store/schemas/services.lua /etc/iot/ds-schemas/
