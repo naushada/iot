@@ -14,7 +14,7 @@ export class Lwm2mConfigComponent implements OnInit {
   loading = true; saving = false; msg = '';
 
   // PSK provisioning (task H).
-  devMode = false;             // iot.dev_mode — gates PSK generation/reveal
+  devMode = false;             // iot.dev.mode — gates PSK generation/reveal
   serialAutoDetected = false;  // true when iot.serial was already populated (RPi)
   generatedPsk = '';           // last generated BS PSK (hex), shown once to copy
   generatingPsk = false;
