@@ -2,10 +2,18 @@
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"
 
+#include <ace/Event_Handler.h>
 #include <ace/Log_Msg.h>
 #include <ace/Log_Record.h>
 #include <ace/Log_Msg_Callback.h>
+#include <ace/OS_NS_Thread.h>
+#include <ace/Reactor.h>
+#include <ace/Synch_Traits.h>
+#include <ace/Task.h>
+#include <ace/Time_Value.h>
 
+#include <atomic>
+#include <cerrno>
 #include <ctime>
 #include <deque>
 #include <mutex>
@@ -43,6 +51,34 @@ struct LogBuffer::Impl {
     };
 
     Callback cb{this};
+
+    // ── Periodic flush timer (same pattern as StatsPublisher) ────────
+    // A private ACE_Reactor run on its own ACE_Task thread fires every
+    // interval and flushes the ring buffer to ds — so daemons don't flush
+    // from their own loop / a std::thread.
+    LogBuffer*    owner = nullptr;          // back-ref for flush()
+    Client*       ds    = nullptr;          // flush target (set in open())
+    std::size_t   min_bytes = 0;
+    ACE_Reactor*  reactor = nullptr;        // private, owned while running
+    long          timer_id = -1;
+
+    struct Pump : ACE_Task<ACE_MT_SYNCH> {
+        ACE_Reactor* reactor = nullptr;
+        std::atomic<bool> running{false};
+        int svc() override {
+            reactor->owner(ACE_OS::thr_self());
+            reactor->run_reactor_event_loop();
+            return 0;
+        }
+    } pump;
+
+    struct Tick : ACE_Event_Handler {
+        Impl* impl = nullptr;
+        int handle_timeout(const ACE_Time_Value&, const void*) override {
+            if (impl->owner && impl->ds) impl->owner->flush(*impl->ds, impl->min_bytes);
+            return 0;
+        }
+    } tick;
 };
 
 LogBuffer::LogBuffer(const std::string& daemon, const std::string& log_key,
@@ -67,7 +103,56 @@ void LogBuffer::start() {
     lm->msg_callback(&m_impl->cb);
 }
 
+int LogBuffer::open(Client& ds, int interval_sec, std::size_t min_bytes) {
+    if (!m_impl || m_impl->timer_id != -1) return 0;   // already open
+    if (interval_sec < 1) interval_sec = 1;
+
+    m_impl->owner     = this;
+    m_impl->ds        = &ds;
+    m_impl->min_bytes = min_bytes;
+    m_impl->tick.impl = m_impl.get();
+    m_impl->reactor   = new ACE_Reactor();
+
+    ACE_Time_Value iv(interval_sec);
+    long id = m_impl->reactor->schedule_timer(&m_impl->tick, nullptr, iv, iv);
+    if (id == -1) {
+        delete m_impl->reactor; m_impl->reactor = nullptr; m_impl->ds = nullptr;
+        ACE_ERROR_RETURN((LM_ERROR,
+                          ACE_TEXT("%D %M %N:%l log flush schedule_timer failed "
+                                   "for %C\n"), m_impl->daemon.c_str()),
+                         -1);
+    }
+    m_impl->timer_id = id;
+
+    m_impl->pump.reactor = m_impl->reactor;
+    m_impl->pump.running.store(true);
+    if (m_impl->pump.activate(THR_NEW_LWP | THR_JOINABLE, 1) == -1) {
+        m_impl->reactor->cancel_timer(&m_impl->tick);
+        m_impl->timer_id = -1;
+        m_impl->pump.running.store(false);
+        delete m_impl->reactor; m_impl->reactor = nullptr; m_impl->ds = nullptr;
+        ACE_ERROR_RETURN((LM_ERROR,
+                          ACE_TEXT("%D %M %N:%l log flush activate failed for "
+                                   "%C errno=%d\n"), m_impl->daemon.c_str(), errno),
+                         -1);
+    }
+    return 0;
+}
+
+void LogBuffer::close() {
+    if (!m_impl || m_impl->timer_id == -1) return;
+    m_impl->reactor->cancel_timer(&m_impl->tick);
+    m_impl->timer_id = -1;
+    m_impl->reactor->end_reactor_event_loop();
+    m_impl->pump.wait();                       // join the flush thread
+    m_impl->pump.running.store(false);
+    if (m_impl->ds) flush(*m_impl->ds, 0);     // final flush while ds alive
+    delete m_impl->reactor; m_impl->reactor = nullptr;
+    m_impl->ds = nullptr;
+}
+
 LogBuffer::~LogBuffer() {
+    close();
     if (m_impl) ACE_Log_Msg::instance()->msg_callback(nullptr);
 }
 

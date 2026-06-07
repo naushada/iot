@@ -69,6 +69,19 @@ public:
     /// Safe to call as often as you like — cheap no-op most of the time.
     void flush(Client& ds, std::size_t min_bytes = 0);
 
+    /// Drive flush() automatically on a dedicated ACE reactor timer — same
+    /// pattern as StatsPublisher (a private ACE_Reactor run on its own
+    /// ACE_Task thread). Call once, after start(), instead of flushing from
+    /// the daemon's own loop / a std::thread. `ds` must outlive close().
+    /// @param interval_sec  flush cadence (default 10s).
+    /// @param min_bytes     only write when this many new bytes accrued.
+    int  open(Client& ds, int interval_sec = 10, std::size_t min_bytes = 0);
+
+    /// Cancel the timer, do a final flush, end the loop and join the thread.
+    /// Idempotent; also called by the destructor (but call it explicitly
+    /// while `ds` is still alive — e.g. before main() returns).
+    void close();
+
     /// Change the data-store log-text key for subsequent flushes
     /// (useful when the same binary runs in different roles).
     void set_log_key(const std::string& key);

@@ -692,16 +692,10 @@ int main(std::int32_t argc, char *argv[]) {
     }
 
 
-    // Background thread that flushes the log ring-buffer every 10 s.
-    // The lwm2m binary blocks on ACE_Reactor::run_reactor_event_loop()
-    // and has no periodic timeout — the thread ensures logs reach ds.
-    std::atomic<bool> log_flush_stop{false};
-    std::thread log_flush_thread([&ds, &log_flush_stop]() {
-        while (!log_flush_stop.load(std::memory_order_acquire)) {
-            std::this_thread::sleep_for(std::chrono::seconds(10));
-            if (auto* cli = ds.client()) g_log.flush(*cli, 200);
-        }
-    });
+    // Flush the log ring-buffer every 10s via LogBuffer's own ACE reactor
+    // timer (private reactor on its own thread — same pattern as
+    // StatsPublisher). Replaces the old std::thread flusher.
+    if (auto* cli = ds.client()) g_log.open(*cli, 10, 200);
 
     std::unique_ptr<data_store::ServiceGate> svc_gate;
     std::unique_ptr<data_store::DepWatch>    dep_watch;
@@ -959,10 +953,8 @@ int main(std::int32_t argc, char *argv[]) {
         }
     }
 
-    // Flush remaining log lines before exit.
-    if (auto* cli = ds.client()) g_log.flush(*cli);
-    log_flush_stop.store(true, std::memory_order_release);
-    if (log_flush_thread.joinable()) log_flush_thread.join();
+    // Stop the log-flush timer + final flush (ds still alive).
+    g_log.close();
 
     // L16/D5b cleanup — wake the watcher thread + join.
     svc_stop.store(true, std::memory_order_release);
