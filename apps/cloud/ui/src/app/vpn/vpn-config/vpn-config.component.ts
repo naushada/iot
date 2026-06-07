@@ -22,8 +22,14 @@ export class VpnConfigComponent implements OnInit {
     private toast: ToastService
   ) {
     this.form = fb.group({
-      subnet:     ['10.9.0.0/24'],
-      port_next:  [5001],
+      subnet:      ['10.9.0.0/24'],
+      port_next:   [5001],
+      listen_port: [1194],
+      proto:       ['udp'],
+      cipher:      ['AES-256-GCM'],
+      dev:         ['tun'],
+      mgmt_port:   [7506],
+      verb:        [3],
       ca_crt:     ['/etc/iot/vpn/ca/ca.crt'],
       ca_key:     ['/run/secrets/iot-ca-key/ca.key'],
       server_crt: ['/etc/iot/vpn/server.crt'],
@@ -34,6 +40,8 @@ export class VpnConfigComponent implements OnInit {
   ngOnInit(): void {
     this.http.dbGet([
       'cloud.vpn.subnet', 'cloud.vpn.port.next',
+      'cloud.vpn.listen.port', 'cloud.vpn.proto', 'cloud.vpn.cipher',
+      'cloud.vpn.dev', 'cloud.vpn.mgmt.port', 'cloud.vpn.verb',
       'cloud.vpn.ca.crt', 'cloud.vpn.ca.key',
       'cloud.vpn.server.crt', 'cloud.vpn.server.key'
     ]).subscribe({
@@ -41,8 +49,14 @@ export class VpnConfigComponent implements OnInit {
         if (r.ok && r.data) {
           const d = r.data as Record<string, unknown>;
           this.form.patchValue({
-            subnet:     d['cloud.vpn.subnet']      || '10.9.0.0/24',
-            port_next:  d['cloud.vpn.port.next']   || 5001,
+            subnet:      d['cloud.vpn.subnet']      || '10.9.0.0/24',
+            port_next:   d['cloud.vpn.port.next']   || 5001,
+            listen_port: d['cloud.vpn.listen.port'] || 1194,
+            proto:       d['cloud.vpn.proto']       || 'udp',
+            cipher:      d['cloud.vpn.cipher']      || 'AES-256-GCM',
+            dev:         d['cloud.vpn.dev']         || 'tun',
+            mgmt_port:   d['cloud.vpn.mgmt.port']   || 7506,
+            verb:        d['cloud.vpn.verb']        ?? 3,
             ca_crt:     d['cloud.vpn.ca.crt']      || '/etc/iot/vpn/ca/ca.crt',
             ca_key:     d['cloud.vpn.ca.key']      || '/run/secrets/iot-ca-key/ca.key',
             server_crt: d['cloud.vpn.server.crt']  || '/etc/iot/vpn/server.crt',
@@ -61,6 +75,12 @@ export class VpnConfigComponent implements OnInit {
     this.http.dbSet([
       { key: 'cloud.vpn.subnet',      value: v.subnet },
       { key: 'cloud.vpn.port.next',   value: v.port_next },
+      { key: 'cloud.vpn.listen.port', value: v.listen_port },
+      { key: 'cloud.vpn.proto',       value: v.proto },
+      { key: 'cloud.vpn.cipher',      value: v.cipher },
+      { key: 'cloud.vpn.dev',         value: v.dev },
+      { key: 'cloud.vpn.mgmt.port',   value: v.mgmt_port },
+      { key: 'cloud.vpn.verb',        value: v.verb },
       { key: 'cloud.vpn.ca.crt',      value: v.ca_crt },
       { key: 'cloud.vpn.ca.key',      value: v.ca_key },
       { key: 'cloud.vpn.server.crt',  value: v.server_crt },

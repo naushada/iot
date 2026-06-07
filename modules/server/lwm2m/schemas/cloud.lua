@@ -158,6 +158,26 @@ return {
       type    = "string",
       default = "udp",          -- "udp" | "tcp"
     },
+    ["cloud.vpn.cipher"] = {
+      type    = "string",
+      default = "AES-256-GCM",
+    },
+    ["cloud.vpn.dev"] = {
+      type    = "string",
+      default = "tun",          -- "tun" | "tap"
+    },
+    ["cloud.vpn.mgmt.port"] = {
+      type    = "integer",
+      default = 7506,
+      min     = 1,
+      max     = 65535,
+    },
+    ["cloud.vpn.verb"] = {
+      type    = "integer",
+      default = 3,
+      min     = 0,
+      max     = 11,
+    },
 
     -- Next available proxy port (bump-counter).
     ["cloud.vpn.port.next"] = {

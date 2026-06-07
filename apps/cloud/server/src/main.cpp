@@ -56,6 +56,15 @@ std::string ds_str(data_store::Client& ds, const std::string& key,
     return dflt;
 }
 
+// Read an integer ds key with a fallback default.
+int ds_int(data_store::Client& ds, const std::string& key, int dflt) {
+    std::vector<data_store::Client::GetResult> got;
+    auto s = ds.get({key}, got);
+    if (s.ok && !got.empty() && got[0].has_value)
+        if (auto v = data_store::to_int32(got[0].value)) return *v;
+    return dflt;
+}
+
 // Sync endpoint registry to cloud.endpoints JSON in the data store.
 void sync_endpoints_to_ds(data_store::Client& ds,
                            server::lwm2m::EndpointRegistry& reg) {
@@ -169,13 +178,24 @@ int main(int argc, char** argv) {
     ovpn_cfg.ca_path   = ds_str(ds, "cloud.vpn.ca.crt",     "/etc/iot/vpn/ca/ca.crt");
     ovpn_cfg.cert_path = ds_str(ds, "cloud.vpn.server.crt", "/etc/iot/vpn/server.crt");
     ovpn_cfg.key_path  = ds_str(ds, "cloud.vpn.server.key", "/etc/iot/vpn/server.key");
-    {
-        std::vector<data_store::Client::GetResult> got;
-        if (ds.get({"cloud.vpn.listen.port"}, got).ok && !got.empty() &&
-            got[0].has_value)
-            if (auto p = data_store::to_int32(got[0].value); p && *p > 0)
-                ovpn_cfg.port = static_cast<std::uint16_t>(*p);
-    }
+    ovpn_cfg.cipher    = ds_str(ds, "cloud.vpn.cipher",     "AES-256-GCM");
+    ovpn_cfg.dev       = ds_str(ds, "cloud.vpn.dev",        "tun");
+    ovpn_cfg.port      = static_cast<std::uint16_t>(ds_int(ds, "cloud.vpn.listen.port", 1194));
+    ovpn_cfg.mgmt_port = static_cast<std::uint16_t>(ds_int(ds, "cloud.vpn.mgmt.port", 7506));
+    ovpn_cfg.verb      = ds_int(ds, "cloud.vpn.verb", 3);
+    // Seed the effective config back to ds so every cloud.vpn.* key exists
+    // with its default (visible in the cloud UI / ds-cli).
+    ds.set({
+        {"cloud.vpn.proto",       data_store::Value{ovpn_cfg.proto}},
+        {"cloud.vpn.cipher",      data_store::Value{ovpn_cfg.cipher}},
+        {"cloud.vpn.dev",         data_store::Value{ovpn_cfg.dev}},
+        {"cloud.vpn.ca.crt",      data_store::Value{ovpn_cfg.ca_path}},
+        {"cloud.vpn.server.crt",  data_store::Value{ovpn_cfg.cert_path}},
+        {"cloud.vpn.server.key",  data_store::Value{ovpn_cfg.key_path}},
+        {"cloud.vpn.listen.port", data_store::Value{static_cast<std::int32_t>(ovpn_cfg.port)}},
+        {"cloud.vpn.mgmt.port",   data_store::Value{static_cast<std::int32_t>(ovpn_cfg.mgmt_port)}},
+        {"cloud.vpn.verb",        data_store::Value{static_cast<std::int32_t>(ovpn_cfg.verb)}},
+    });
     server::openvpn::OpenVpnServer ovpn(ovpn_cfg);
 
     // Bring openvpn to the operator-desired state and publish it. Runs on
