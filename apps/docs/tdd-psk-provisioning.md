@@ -1,8 +1,17 @@
 # TDD Plan — Serial-derived Endpoint & Write-only PSK Provisioning
 
-Status: APPROVED — implementing in auto mode. Build/test via **podman**.
-Cloud server account = `cloud-svc`; provision API extends existing
-`POST /api/v1/cloud/endpoints` with `serial` + `bs_psk`.
+Status: **COMPLETE** (implementable scope) — merged via PR #101 (+ #102).
+Device side end-to-end + cloud side through the Endpoints provision UI are
+implemented and unit/build-verified in podman (apps 178/178, ds PSK 17/17,
+cloud-cred 10/10, both UIs build, full `lwm2m` builds). Build/test via
+**podman**. Cloud server account = `cloud-svc`; provisioning is **db/set**-
+driven (no bespoke REST endpoint).
+
+**Closed out.** The only remaining work is the live-stack integration pass
+(needs a running BS+DM+device together) — tracked below as N-wire, P
+(container non-root), and K (separate-DM-peer swap). These are deferred
+deliberately: they cannot be meaningfully verified without the integration
+environment.
 
 ### Implementation progress (auto mode)
 
