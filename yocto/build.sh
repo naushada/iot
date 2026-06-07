@@ -185,10 +185,14 @@ build_machine() {
 print_summary() {
     log_section "Build summary"
     for machine in "${MACHINES[@]}"; do
+        # `|| true`: when only one machine was built the others' dirs don't
+        # exist, so find exits non-zero; under `set -euo pipefail` a bare
+        # `local x; x=$(failing pipeline)` would abort the script (and thus
+        # report failure) right after the successful build. Absorb it.
         local img
-        img=$(find "$OUT_DIR/$machine/images" -name 'iot-image*.wic.bz2' -type f 2>/dev/null | sort | tail -1)
+        img=$(find "$OUT_DIR/$machine/images" -name 'iot-image*.wic.bz2' -type f 2>/dev/null | sort | tail -1 || true)
         local ipk_count
-        ipk_count=$(find "$OUT_DIR/$machine/ipk" -name 'iot-*.ipk' -type f 2>/dev/null | wc -l | tr -d ' ')
+        ipk_count=$(find "$OUT_DIR/$machine/ipk" -name 'iot-*.ipk' -type f 2>/dev/null | wc -l | tr -d ' ' || true)
         if [ -n "$img" ]; then
             echo "  ✅ $machine  →  $(basename "$img")  +  ${ipk_count} iot .ipk"
         elif [ "$ipk_count" -gt 0 ]; then
@@ -202,7 +206,7 @@ print_summary() {
 
     # Concrete next steps for the primary RPi target if it was built.
     local rpi_img
-    rpi_img=$(find "$OUT_DIR/raspberrypi3-64/images" -name 'iot-image*.wic.bz2' -type f 2>/dev/null | sort | tail -1)
+    rpi_img=$(find "$OUT_DIR/raspberrypi3-64/images" -name 'iot-image*.wic.bz2' -type f 2>/dev/null | sort | tail -1 || true)
     if [ -n "$rpi_img" ]; then
         cat <<EOF
 
