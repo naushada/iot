@@ -41,6 +41,8 @@
 
 #include "data_store/client.hpp"   // KV, Value
 
+class ACE_Reactor;   // global ACE type — forward decl keeps header ACE-light
+
 namespace data_store {
 
 /// Detected cgroup hierarchy. Probed once at construction.
@@ -80,14 +82,16 @@ public:
     StatsPublisher& operator=(const StatsPublisher&) = delete;
 
     /// Schedule the recurring timer on ACE_Reactor::instance() and spawn
-    /// one ACE_Task thread to run that singleton reactor's event loop.
+    /// the timer on a reactor and (optionally) runs it on a dedicated thread.
     /// @param interval_sec        flush cadence (default STATS_FLUSH_SEC).
-    /// @param run_reactor_thread  true (default) spawns one ACE_Task thread
-    ///        to run the singleton reactor — for daemons that block elsewhere
-    ///        (e.g. Client::recv_event) and never pump the reactor. Pass
-    ///        false for daemons that already run the singleton reactor in
-    ///        their main loop (iot-httpd, ds-server); the timer then fires on
-    ///        their existing reactor thread.
+    /// @param run_reactor_thread  true (default) → use a PRIVATE ACE_Reactor
+    ///        and run it on one dedicated ACE_Task thread. Self-contained: no
+    ///        dependency on (or contention with) the daemon's own reactor —
+    ///        right for daemons that block elsewhere (iot-cloudd on
+    ///        Client::recv_event) or run the singleton reactor on a *different*
+    ///        thread (lwm2m's udpAdapter). false → schedule on
+    ///        ACE_Reactor::instance() and rely on the caller's own loop to
+    ///        dispatch it (iot-httpd, ds-server pump the singleton in-thread).
     int  open(int interval_sec = STATS_FLUSH_SEC,
               bool run_reactor_thread = true);
 
@@ -114,6 +118,8 @@ private:
     CgVersion             m_cg = CgVersion::none;   // probed once in ctor
     long                  m_timer_id = -1;
     bool                  m_own_thread = false;     // we run the reactor loop
+    ACE_Reactor*          m_reactor = nullptr;      // reactor the timer is on
+    ACE_Reactor*          m_priv_reactor = nullptr; // owned iff run_reactor_thread
     unsigned long long    m_last_usage_usec = 0;
     std::chrono::steady_clock::time_point m_last_t{};
     bool                  m_have_baseline = false;

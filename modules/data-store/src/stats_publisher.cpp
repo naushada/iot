@@ -151,14 +151,15 @@ std::int32_t cpu_permille(unsigned long long prev_usec,
 
 }  // namespace stats_detail
 
-// ── ACE active object: runs the singleton reactor loop ──────────────
+// ── ACE active object: runs a reactor's event loop on its own thread ─
 struct StatsPublisher::Impl : public ACE_Task<ACE_MT_SYNCH> {
     std::atomic<bool> running{false};
+    ACE_Reactor*      reactor = nullptr;   // the reactor this thread drives
 
     int svc() override {
-        // Own the reactor on this thread, then pump until end_reactor_event_loop.
-        ACE_Reactor::instance()->owner(ACE_OS::thr_self());
-        ACE_Reactor::instance()->run_reactor_event_loop();
+        // Take ownership on this thread, then pump until end_reactor_event_loop.
+        reactor->owner(ACE_OS::thr_self());
+        reactor->run_reactor_event_loop();
         return 0;
     }
 };
@@ -179,9 +180,20 @@ int StatsPublisher::open(int interval_sec, bool run_reactor_thread) {
     if (!m_impl || m_timer_id != -1) return 0;     // already scheduled
     if (interval_sec < 1) interval_sec = 1;
 
+    // run_reactor_thread → a PRIVATE reactor we drive on our own thread, so
+    // the timer never depends on which thread owns the singleton. Otherwise
+    // schedule on the singleton and let the caller's loop dispatch it.
+    if (run_reactor_thread) {
+        m_priv_reactor = new ACE_Reactor();
+        m_reactor = m_priv_reactor;
+    } else {
+        m_reactor = ACE_Reactor::instance();
+    }
+
     ACE_Time_Value iv(interval_sec);
-    long id = ACE_Reactor::instance()->schedule_timer(this, nullptr, iv, iv);
+    long id = m_reactor->schedule_timer(this, nullptr, iv, iv);
     if (id == -1) {
+        delete m_priv_reactor; m_priv_reactor = nullptr; m_reactor = nullptr;
         ACE_ERROR_RETURN((LM_ERROR,
                           ACE_TEXT("%D stats:thread:%t %M %N:%l schedule_timer "
                                    "failed for %C\n"),
@@ -191,11 +203,13 @@ int StatsPublisher::open(int interval_sec, bool run_reactor_thread) {
     m_timer_id = id;
 
     if (run_reactor_thread) {
+        m_impl->reactor = m_reactor;
         m_impl->running.store(true);
         if (m_impl->activate(THR_NEW_LWP | THR_JOINABLE, 1) == -1) {
-            ACE_Reactor::instance()->cancel_timer(this);
+            m_reactor->cancel_timer(this);
             m_timer_id = -1;
             m_impl->running.store(false);
+            delete m_priv_reactor; m_priv_reactor = nullptr; m_reactor = nullptr;
             ACE_ERROR_RETURN((LM_ERROR,
                               ACE_TEXT("%D stats:thread:%t %M %N:%l activate "
                                        "failed for %C errno=%d\n"),
@@ -209,18 +223,22 @@ int StatsPublisher::open(int interval_sec, bool run_reactor_thread) {
 
 void StatsPublisher::close() {
     if (!m_impl) return;
-    if (m_timer_id != -1) {
-        ACE_Reactor::instance()->cancel_timer(this);
+    if (m_timer_id != -1 && m_reactor) {
+        m_reactor->cancel_timer(this);
         m_timer_id = -1;
     }
     if (m_own_thread && m_impl->running.load()) {
-        // We own the loop — stop it and join. Daemons that pump the reactor
-        // themselves (run_reactor_thread=false) keep owning it.
-        ACE_Reactor::instance()->end_reactor_event_loop();
+        // Stop our private reactor loop and join the thread.
+        m_reactor->end_reactor_event_loop();
         m_impl->wait();              // join the active-object thread
         m_impl->running.store(false);
         m_own_thread = false;
     }
+    if (m_priv_reactor) {
+        delete m_priv_reactor;
+        m_priv_reactor = nullptr;
+    }
+    m_reactor = nullptr;
 }
 
 StatsSample StatsPublisher::sample() {
