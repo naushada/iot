@@ -12,6 +12,8 @@
 #include <unordered_map>
 
 #include <ace/Log_Msg.h>
+#include <ace/OS_NS_unistd.h>   // ACE_OS::sleep
+#include <ace/Time_Value.h>
 
 #include "data_store/log_buffer.hpp"
 #include "data_store/stats_publisher.hpp"
@@ -146,6 +148,16 @@ inline void tx_via(App& app,
 // Captures ACE log output → ds log.lwm2m.*.text for the cloud UI.
 // Key may be overridden at startup for per-instance logs (bs / dm).
 data_store::LogBuffer g_log("lwm2m", "log.lwm2m.text", "log.level.lwm2m");
+
+// tinydtls log sink → ring buffer → ds → UI. tinydtls logs via its own
+// dsrv_log() (fprintf), which bypasses ACE; this C-linkage callback routes
+// each DTLS line into the same LogBuffer so the handshake shows in the UI.
+extern "C" void dtls_set_log_sink(void (*)(int, const char*));
+extern "C" void iot_dtls_log_sink(int /*level*/, const char* line) {
+    std::string s(line ? line : "");
+    while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+    if (!s.empty()) g_log.append("dtls: " + s + "\n");
+}
 
 /// Read the existing security/server-object JSON files under
 /// `apps/config/{securityObject,serverObject}/` and synthesise one
@@ -571,36 +583,34 @@ int main(std::int32_t argc, char *argv[]) {
         }
     }
 
-    UDPAdapter::Role_t role = UDPAdapter::Role_t::SERVER;
-    if(!argValueMap["role"].empty() && (argValueMap["role"] == "server" || argValueMap["role"] == "client")) {
-        role = roleMap[argValueMap["role"]];
-    } else {
+    // Device default is client (it runs client-only and may be launched with
+    // no args, fully ds-driven). The cloud passes role=server explicitly for
+    // the BS/DM instances. Only an explicit, invalid role is an error.
+    UDPAdapter::Role_t role = UDPAdapter::Role_t::CLIENT;
+    if(argValueMap["role"] == "server") {
+        role = UDPAdapter::Role_t::SERVER;
+    } else if(!argValueMap["role"].empty() && argValueMap["role"] != "client") {
         ACE_ERROR_RETURN((LM_ERROR,
-                          ACE_TEXT("%D lwm2m:thread:%t %M %N:%l invalid option for role\n")),
+                          ACE_TEXT("%D lwm2m:thread:%t %M %N:%l invalid role '%C' (use client|server)\n"),
+                          argValueMap["role"].c_str()),
                          -1);
     }
 
     UDPAdapter::Scheme_t scheme;
-    /// Bootstrap Host & Port
+    // Bootstrap host/port are resolved AFTER the ds connection below: for a
+    // client they come from iot.bs.uri (commissioned via device-ui), falling
+    // back to a bs= CLI arg.
     std::string bsHost;
-    std::uint16_t bsPort;
-    if(UDPAdapter::Role_t::CLIENT == role) {
-        if(argValueMap["bs"].empty()) {
-            ACE_ERROR_RETURN((LM_ERROR,
-                              ACE_TEXT("%D lwm2m:thread:%t %M %N:%l bs=value missing from command line\n")),
-                             -1);
-        }
-        parsePeerOption(argValueMap["bs"], scheme, bsHost, bsPort);
-    }
+    std::uint16_t bsPort = 0;
 
     std::string selfHost;
     std::uint16_t selfPort;
-    if(argValueMap["local"].empty()) {
-        ACE_ERROR_RETURN((LM_ERROR,
-                          ACE_TEXT("%D lwm2m:thread:%t %M %N:%l local=value missing from command line\n")),
-                         -1);
-    }
-    parsePeerOption(argValueMap["local"], scheme, selfHost, selfPort);
+    // Local bind defaults to coaps://0.0.0.0:5684 (DTLS) for a ds-driven
+    // launch with no args; the scheme is taken from here.
+    const std::string localUri = !argValueMap["local"].empty()
+                                     ? argValueMap["local"]
+                                     : std::string("coaps://0.0.0.0:5684");
+    parsePeerOption(localUri, scheme, selfHost, selfPort);
 
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l scheme=%d host=%C port=%u\n"),
@@ -613,6 +623,45 @@ int main(std::int32_t argc, char *argv[]) {
     // DTLS adapter. ds-server is optional (absence → CLI/compiled-in
     // fallback). On a Raspberry Pi the serial is auto-filled here.
     iot::DsConfig ds(argValueMap["ds-sock"]);
+
+    // Wire logging BEFORE the provisioning park below so the "awaiting
+    // provisioning" notice + any startup failures reach the UI (ds), not just
+    // stderr. start()/open() are idempotent — the later calls (after the
+    // cloud-instance key setup) just refine the level key.
+    g_log.start();
+    dtls_set_log_sink(&iot_dtls_log_sink);   // DTLS (tinydtls) logs → UI
+    if (auto* cli = ds.client()) { g_log.apply_level(*cli); g_log.open(*cli, 5, 1); }
+
+    // Bootstrap URI + BS PSK (client only): ds-driven from iot.bs.uri /
+    // iot.bs.psk.* (commissioned via device-ui), with bs=/identity=/secret=
+    // CLI fallback. PARK here until commissioned rather than exiting — an
+    // unprovisioned device stays alive (no crash-loop that resets the log
+    // buffer + blocks commissioning) and resumes as soon as the ds watch sees
+    // the values appear. Running as `engineer` is what lets the watch read
+    // the gid:engineer PSK keys.
+    if (UDPAdapter::Role_t::CLIENT == role) {
+        std::string bsUri;
+        bool logged_wait = false;
+        for (;;) {
+            bsUri = ds.bs_uri().value_or(argValueMap["bs"]);
+            auto pid  = ds.bs_psk_identity();
+            auto pkey = ds.bs_psk_key();
+            const bool have_psk =
+                (pid && !pid->empty() && pkey && !pkey->empty()) ||
+                (!argValueMap["identity"].empty() && !argValueMap["secret"].empty());
+            if (!bsUri.empty() && have_psk) break;
+            if (!logged_wait) {
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l awaiting provisioning "
+                                    "(iot.bs.uri + BS PSK via device-ui commissioning)\n")));
+                logged_wait = true;
+            }
+            ACE_OS::sleep(ACE_Time_Value(5, 0));
+        }
+        UDPAdapter::Scheme_t bsScheme;
+        parsePeerOption(bsUri, bsScheme, bsHost, bsPort);
+    }
+
     const bool rpi = iot::is_rpi();
     iot::EndpointResolution epres = iot::resolve_endpoint(
         argValueMap["ep"], ds.serial(), rpi,
@@ -691,12 +740,11 @@ int main(std::int32_t argc, char *argv[]) {
 
     // L9 wiring: instantiate the LwM2M handlers + ObjectStore and bind
     // them to the relevant ServiceContext_t CoAPAdapters. configDir
-    // defaults to "../config" so the existing apps/config/ JSON files
-    // (security, server, device) are picked up when the binary runs
-    // from apps/build/.
+    // defaults to the deployed /etc/iot/config so a ds-driven launch with no
+    // args works; dev builds running from apps/build/ pass config=../config.
     const std::string configDir = !argValueMap["config"].empty()
                                       ? argValueMap["config"]
-                                      : std::string("../config");
+                                      : std::string("/etc/iot/config");
     // Endpoint resolved above (task E) from CLI ep= / data-store serial /
     // RPi auto-detect. When non-RPi and nothing is provisioned yet,
     // epres.ready is false → fall back to the legacy placeholder so the

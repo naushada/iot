@@ -53,6 +53,7 @@ public:
     enum class Key {
         Endpoint,
         ServerUri,
+        BsUri,
         Lifetime,
         // PSK provisioning (tasks E/F/G).
         Serial,
@@ -82,6 +83,7 @@ public:
     /// Thread-safe.
     std::optional<std::string>   endpoint()   const;
     std::optional<std::string>   server_uri() const;
+    std::optional<std::string>   bs_uri()     const;  // iot.bs.uri (commissioned)
     std::optional<std::uint32_t> lifetime()   const;
 
     // PSK provisioning accessors (task E/F/G). All return nullopt when

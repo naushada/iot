@@ -29,19 +29,18 @@ export class Lwm2mConfigComponent implements OnInit {
   constructor(private http: HttpsvcService, fb: FormBuilder, private session: SessionService, private toast: ToastService) {
     this.serverForm = fb.group({
       serial:     [''],
-      server_uri: ['coaps://'],
-      endpoint:   ['urn:dev:client-1'],
+      bs_uri:     ['coaps://'],
+      // Bootstrap-provided (read-only on the Server tab).
+      server_uri: [''],
       binding:    ['U'],
       lifetime:   [86400],
-      observable: [true],
     });
   }
 
   ngOnInit(): void {
     this.http.dbGet([
-      'iot.serial', 'iot.dev.mode',
-      'iot.server.uri', 'iot.endpoint', 'iot.binding',
-      'iot.lifetime', 'iot.observable'
+      'iot.serial', 'iot.dev.mode', 'iot.bs.uri',
+      'iot.server.uri', 'iot.binding', 'iot.lifetime'
     ]).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
@@ -53,11 +52,11 @@ export class Lwm2mConfigComponent implements OnInit {
           this.devMode = d['iot.dev.mode'] === true;
           this.serverForm.patchValue({
             serial:     serial,
-            server_uri: d['iot.server.uri'] || 'coaps://',
-            endpoint:   d['iot.endpoint']   || 'urn:dev:client-1',
+            bs_uri:     d['iot.bs.uri']    || 'coaps://',
+            // DM config below is pushed by the bootstrap server — read-only.
+            server_uri: d['iot.server.uri'] || '(set by bootstrap)',
             binding:    d['iot.binding']    || 'U',
             lifetime:   d['iot.lifetime']   || 86400,
-            observable: d['iot.observable'] ?? true,
           });
         }
         this.loading = false;
@@ -66,29 +65,20 @@ export class Lwm2mConfigComponent implements OnInit {
     });
   }
 
+  // Only the Security (commissioning) tab saves — the Server tab is
+  // read-only DM status pushed by the bootstrap server. Writes the
+  // serial + bootstrap URI (gid:engineer, allowed in commissioning mode).
   save(): void {
     this.saving = true; this.msg = '';
     const v = this.serverForm.value;
-    let pairs: { key: string; value: unknown }[];
-    if (this.mode === 'security') {
-      // Security tab owns the serial. Only push it when the installer
-      // entered it (non-RPi); on RPi the client owns iot.serial read-only.
-      pairs = (!this.serialAutoDetected && v.serial)
-        ? [{ key: 'iot.serial', value: v.serial }]
-        : [];
-      if (pairs.length === 0) { this.saving = false; return; }
-    } else {
-      // Server tab owns the registration (Server Object) fields.
-      pairs = [
-        { key: 'iot.server.uri', value: v.server_uri },
-        { key: 'iot.endpoint',   value: v.endpoint },
-        { key: 'iot.binding',    value: v.binding },
-        { key: 'iot.lifetime',   value: v.lifetime },
-        { key: 'iot.observable', value: v.observable },
-      ];
+    const pairs: { key: string; value: unknown }[] = [
+      { key: 'iot.bs.uri', value: v.bs_uri },
+    ];
+    if (!this.serialAutoDetected && v.serial) {
+      pairs.push({ key: 'iot.serial', value: v.serial });
     }
     this.http.dbSet(pairs).subscribe({
-      next: (r) => { this.saving = false; if(r.ok) this.toast.success('LwM2M config saved'); else this.toast.error(r.err||'Save failed'); },
+      next: (r) => { this.saving = false; if(r.ok) this.toast.success('Commissioning saved'); else this.toast.error(r.err||'Save failed'); },
       error: () => { this.saving = false; this.toast.error('Save failed'); }
     });
   }

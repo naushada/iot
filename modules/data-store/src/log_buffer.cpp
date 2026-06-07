@@ -231,13 +231,21 @@ void LogBuffer::apply_level(Client& ds) {
             }
         }
     }
-    unsigned long mask = LM_INFO;
+    // Cumulative: a level enables itself AND everything more severe, so e.g.
+    // INFO still shows WARNING/ERROR and DEBUG shows INFO. The old mapping
+    // enabled only the single level, hiding higher-severity lines (and hiding
+    // INFO when set to DEBUG).
+    const unsigned long kErr  = LM_ERROR | LM_CRITICAL | LM_ALERT | LM_EMERGENCY;
+    const unsigned long kWarn = LM_WARNING | kErr;
+    const unsigned long kInfo = LM_INFO | LM_NOTICE | kWarn;
+    const unsigned long kDbg  = LM_TRACE | LM_DEBUG | kInfo;
+    unsigned long mask = kInfo;   // default: INFO and above
     if (!lvl_str.empty()) {
         for (auto& c : lvl_str) c = static_cast<char>(std::toupper(c));
-        if (lvl_str == "DEBUG")       mask = LM_DEBUG;
-        else if (lvl_str == "INFO")   mask = LM_INFO;
-        else if (lvl_str == "WARNING") mask = LM_WARNING;
-        else if (lvl_str == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
+        if (lvl_str == "DEBUG")        mask = kDbg;
+        else if (lvl_str == "INFO")    mask = kInfo;
+        else if (lvl_str == "WARNING") mask = kWarn;
+        else if (lvl_str == "ERROR")   mask = kErr;
     }
     s_active_mask = mask;   // remembered for attach_current_thread()
     ACE_Log_Msg::instance()->priority_mask(

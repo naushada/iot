@@ -273,10 +273,14 @@ void Worker::handle_process_request(WorkMsg* msg) {
                                              *err));
                         return;
                     }
-                    // L17c — per-key ACL check.
+                    // L17c — per-key ACL check. PSK provisioning (task C):
+                    // dev-mode bypasses write_acl too (not just read_acl), so
+                    // device-ui/httpd can write the serial + BS PSK + carrier
+                    // during commissioning. Without this, "Generate BS PSK"
+                    // and serial save are denied even with dev.mode on.
                     auto acl_err = m_schema->check_write_acl(
                         k, s->peer_uid(), s->peer_gid());
-                    if (acl_err) {
+                    if (acl_err && !dev_mode_on()) {
                         s->send(encode_error(op, h.reqID,
                                              proto::Status::SchemaRejected,
                                              *acl_err));

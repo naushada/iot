@@ -150,8 +150,14 @@ case "${1:-start}" in
             off|false|0) val=false ;;
             *) echo "Usage: $0 commission [on|off]" >&2; exit 1 ;;
         esac
-        log_info "Setting iot.dev.mode=$val (ds-cli as engineer in lwm2m-client)"
-        $CR exec iot-dev-lwm2m-client ds-cli --socket=/run/iot/data_store.sock set iot.dev.mode "$val"
+        # Use a one-off container running as the engineer account (not exec in
+        # the client, which crash-loops while unprovisioned). engineer's
+        # gid:engineer satisfies the write_acl on iot.dev.mode; --group-add iot
+        # lets it reach the ds socket (group iot).
+        log_info "Setting iot.dev.mode=$val (one-off engineer container)"
+        $CR run --rm --user engineer:engineer --group-add iot \
+            -v "${PROJECT}_dev-run":/run/iot "$IMAGE" \
+            ds-cli --socket=/run/iot/data_store.sock set iot.dev.mode "$val"
         ;;
 
     *)

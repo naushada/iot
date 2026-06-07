@@ -214,6 +214,12 @@ dsrv_print_addr(const session_t *addr, char *buf, size_t len) {
 #ifdef HAVE_VPRINTF
 #ifndef WITH_CONTIKI
 /*Macro-ed in dtls_debug.h in order to use the platform's standard debug output*/
+/*SWISTART*/
+static void (*g_dtls_log_sink)(int level, const char *line) = NULL;
+void dtls_set_log_sink(void (*sink)(int level, const char *line)) {
+  g_dtls_log_sink = sink;
+}
+/*SWISTOP*/
 #ifndef __RTOS__
 void
 dsrv_log(log_t level, char *format, ...) {
@@ -236,6 +242,16 @@ dsrv_log(log_t level, char *format, ...) {
   vfprintf(log_fd, format, ap);
   va_end(ap);
   fflush(log_fd);
+
+  /*SWISTART: mirror the formatted line to the host log sink (→ LogBuffer → UI). */
+  if (g_dtls_log_sink) {
+    char line[512];
+    va_start(ap, format);
+    vsnprintf(line, sizeof(line), format, ap);
+    va_end(ap);
+    g_dtls_log_sink((int)level, line);
+  }
+  /*SWISTOP*/
 }
 #endif /*__RTOS__*/
 #else /* WITH_CONTIKI */

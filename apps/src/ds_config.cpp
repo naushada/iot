@@ -19,6 +19,7 @@ namespace {
 
 constexpr const char* kKeyEndpoint  = "iot.endpoint";
 constexpr const char* kKeyServerUri = "iot.server.uri";
+constexpr const char* kKeyBsUri     = "iot.bs.uri";
 constexpr const char* kKeyLifetime  = "iot.lifetime";
 // PSK provisioning keys (tasks E/F/G).
 constexpr const char* kKeySerial      = "iot.serial";
@@ -38,6 +39,7 @@ struct DsConfig::Impl {
     mutable std::mutex                  mtx;
     std::optional<std::string>          endpoint;
     std::optional<std::string>          server_uri;
+    std::optional<std::string>          bs_uri;
     std::optional<std::uint32_t>        lifetime;
     // PSK provisioning cache (tasks E/F/G).
     std::optional<std::string>          serial;
@@ -55,6 +57,7 @@ struct DsConfig::Impl {
                              const data_store::Value& v) {
         if (key == kKeyEndpoint)   { endpoint = data_store::to_string(v); return Key::Endpoint; }
         if (key == kKeyServerUri)  { server_uri = data_store::to_string(v); return Key::ServerUri; }
+        if (key == kKeyBsUri)      { bs_uri = data_store::to_string(v); return Key::BsUri; }
         if (key == kKeyLifetime)   { lifetime = data_store::to_uint32(v); return Key::Lifetime; }
         if (key == kKeySerial)     { serial = data_store::to_string(v); return Key::Serial; }
         if (key == kKeyBsPskId)    { bs_psk_identity = data_store::to_string(v); return Key::BsPskIdentity; }
@@ -88,7 +91,7 @@ DsConfig::DsConfig(std::string socketPath)
 
     // All keys this reader caches + watches.
     const std::vector<std::string> kKeys = {
-        kKeyEndpoint, kKeyServerUri, kKeyLifetime,
+        kKeyEndpoint, kKeyServerUri, kKeyBsUri, kKeyLifetime,
         kKeySerial, kKeyBsPskId, kKeyBsPskKey,
         kKeyDmPskId, kKeyDmPskKey, kKeyDevMode,
     };
@@ -161,6 +164,12 @@ std::optional<std::string> DsConfig::server_uri() const {
     if (!m_ok) return std::nullopt;
     std::lock_guard<std::mutex> g(m_impl->mtx);
     return m_impl->server_uri;
+}
+
+std::optional<std::string> DsConfig::bs_uri() const {
+    if (!m_ok) return std::nullopt;
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->bs_uri;
 }
 
 std::optional<std::uint32_t> DsConfig::lifetime() const {

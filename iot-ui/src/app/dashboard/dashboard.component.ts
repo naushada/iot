@@ -2,7 +2,7 @@ import { Component, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../common/httpsvc.service';
 import { PubSubService } from '../../common/pubsubsvc.service';
-import { StatusSnapshot, ServiceInfo, ServicesStatus, VpnStatus, WifiStatus, WanStatus } from '../../common/app-globals';
+import { StatusSnapshot } from '../../common/app-globals';
 
 @Component({
   selector: 'app-dashboard',
@@ -72,19 +72,5 @@ export class DashboardComponent implements OnDestroy {
 
   lwm2mState(): string {
     return this.status?.lwm2m?.server_uri ? 'configured' : 'unconfigured';
-  }
-
-  serviceKeys(): string[] {
-    if (!this.status?.services) return [];
-    return Object.keys(this.status.services).sort();
-  }
-
-  svcLabel(key: string): string {
-    return key.replace(/_/g, '.');
-  }
-
-  svcInfo(key: string): ServiceInfo {
-    const svcs = this.status?.services as Record<string, ServiceInfo> | undefined;
-    return svcs?.[key] || {};
   }
 }
