@@ -21,6 +21,16 @@
 
 namespace data_store {
 
+// Most recently start()ed callback + the level mask computed by the last
+// apply_level(). Used by attach_current_thread() so a worker thread running
+// its own reactor can route its ACE log output into the same ring buffer AND
+// honour the configured log level — ACE_Log_Msg is per-thread, so a spawned
+// reactor thread inherits neither. One LogBuffer per process in practice.
+namespace {
+    ACE_Log_Msg_Callback* s_active_cb   = nullptr;
+    unsigned long         s_active_mask = LM_INFO;
+}
+
 struct LogBuffer::Impl {
     std::mutex              mtx;
     std::deque<std::string> buf;
@@ -101,6 +111,18 @@ void LogBuffer::start() {
     auto* lm = ACE_Log_Msg::instance();
     lm->set_flags(lm->flags() | ACE_Log_Msg::MSG_CALLBACK);
     lm->msg_callback(&m_impl->cb);
+    s_active_cb = &m_impl->cb;   // so worker threads can attach the same sink
+}
+
+void LogBuffer::attach_current_thread() {
+    if (!s_active_cb) return;
+    auto* lm = ACE_Log_Msg::instance();
+    lm->set_flags(lm->flags() | ACE_Log_Msg::MSG_CALLBACK);
+    lm->msg_callback(s_active_cb);
+    // Also pin this thread's level to the configured mask — a freshly
+    // spawned reactor thread otherwise defaults to "all levels", leaking
+    // DEBUG noise that the INFO default is meant to suppress.
+    lm->priority_mask(static_cast<int>(s_active_mask), ACE_Log_Msg::THREAD);
 }
 
 int LogBuffer::open(Client& ds, int interval_sec, std::size_t min_bytes) {
@@ -217,6 +239,7 @@ void LogBuffer::apply_level(Client& ds) {
         else if (lvl_str == "WARNING") mask = LM_WARNING;
         else if (lvl_str == "ERROR")  mask = LM_ERROR | LM_CRITICAL;
     }
+    s_active_mask = mask;   // remembered for attach_current_thread()
     ACE_Log_Msg::instance()->priority_mask(
         static_cast<int>(mask), ACE_Log_Msg::PROCESS);
 }

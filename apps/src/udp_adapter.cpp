@@ -2,6 +2,7 @@
 #define __udp_adapter_cpp__
 
 #include "udp_adapter.hpp"
+#include "data_store/log_buffer.hpp"   // LogBuffer::attach_current_thread
 
 #include <ace/Log_Msg.h>
 #include <ace/Reactor.h>
@@ -371,6 +372,12 @@ int UDPAdapter::svc() {
     // this svc() path (see UDPAdapter::start) so the owner() call is
     // unconditional.
     ACE_Reactor::instance()->owner(ACE_Thread::self());
+
+    // ACE_Log_Msg is per-thread: this reactor runs on its own svc() thread,
+    // so without re-attaching the LogBuffer sink here, every CoAP/UDP/DTLS
+    // log line emitted on this thread would bypass the ring buffer and never
+    // reach log.lwm2m.text. Attach the (main-thread-registered) callback.
+    data_store::LogBuffer::attach_current_thread();
 
     ACE_Time_Value to(1, 0);
     while (!m_stop.load()) {

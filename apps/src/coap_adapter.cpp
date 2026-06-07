@@ -1025,10 +1025,14 @@ std::vector<std::string> CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAP
                                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l %C\n"),
                                std::string(ent.m_ridvalue.begin(), ent.m_ridvalue.end()).c_str()));
                 } else {
+                    std::string hex; char b[4];
                     for(const auto& elm: ent.m_ridvalue) {
-                        printf("%0.2X ", (std::uint8_t)elm);
+                        snprintf(b, sizeof(b), "%02X ", (std::uint8_t)elm);
+                        hex += b;
                     }
-                    printf("\n");
+                    ACE_DEBUG((LM_DEBUG,
+                               ACE_TEXT("%D lwm2m:thread:%t %M %N:%l ridvalue(hex): %C\n"),
+                               hex.c_str()));
                 }
             }
 
@@ -1214,10 +1218,16 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
                                        static_cast<unsigned>(ent.m_ridlength),
                                        static_cast<int>(ent.m_ridvalue.size())));
         
-                            for(const auto& elm: ent.m_ridvalue) {
-                                printf("%0.2X ", (std::uint8_t)elm);
+                            {
+                                std::string hex; char b[4];
+                                for(const auto& elm: ent.m_ridvalue) {
+                                    snprintf(b, sizeof(b), "%02X ", (std::uint8_t)elm);
+                                    hex += b;
+                                }
+                                ACE_DEBUG((LM_DEBUG,
+                                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l ridvalue(hex): %C\n"),
+                                           hex.c_str()));
                             }
-                            printf("\n");
                         }
                     }
                 }
@@ -1396,10 +1406,16 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
                                        static_cast<unsigned>(ent.m_ridlength),
                                        static_cast<int>(ent.m_ridvalue.size())));
         
-                            for(const auto& elm: ent.m_ridvalue) {
-                                printf("%0.2X ", (std::uint8_t)elm);
+                            {
+                                std::string hex; char b[4];
+                                for(const auto& elm: ent.m_ridvalue) {
+                                    snprintf(b, sizeof(b), "%02X ", (std::uint8_t)elm);
+                                    hex += b;
+                                }
+                                ACE_DEBUG((LM_DEBUG,
+                                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l ridvalue(hex): %C\n"),
+                                           hex.c_str()));
                             }
-                            printf("\n");
                         }
                     }
                 }
@@ -1443,7 +1459,8 @@ void CoAPAdapter::dumpCoAPMessage(const CoAPMessage& coapmessage) {
     if(it != coapmessage.uripath.end()) {
         auto ent = *it;
         auto blk1 = static_cast<std::uint8_t>(ent.optionvalue.at(0));
-        printf("Block1 Length: %0.2X\n", blk1);
+        ACE_DEBUG((LM_DEBUG,
+                   ACE_TEXT("%D lwm2m:thread:%t %M %N:%l Block1 Length: %02X\n"), blk1));
         auto szx = blk1 & 0b111;
         auto m = (blk1 >> 3) & 0b1;
         auto num = (blk1 >> 4) & 0b1111;
