@@ -222,6 +222,42 @@ TEST(StatsPublish, sink_receives_four_metrics_plus_version) {
     EXPECT_TRUE(cpu && ncpu && mem && fd && thr && ver);
 }
 
+// ── per-PID (process) mode ───────────────────────────────────────────
+TEST(StatsProcMode, samples_self_pid) {
+    const long mypid = ::getpid();
+    ds::StatsPublisher pub("services.test", nullptr, [&]{ return mypid; });
+    auto s = pub.sample();             // baseline → cpu 0, others real
+    EXPECT_GE(s.cpu_count, 1);
+    EXPECT_GT(s.mem_rss_kb, 0);
+    EXPECT_GE(s.fd_count, 1);
+    EXPECT_GE(s.threads, 1);
+}
+
+TEST(StatsProcMode, pid_not_running_all_zero) {
+    ds::StatsPublisher pub("services.test", nullptr, []{ return 0L; });
+    auto s = pub.sample();
+    EXPECT_EQ(s.cpu_count, 0);
+    EXPECT_EQ(s.mem_rss_kb, 0);
+    EXPECT_EQ(s.fd_count, 0);
+    EXPECT_EQ(s.threads, 0);
+}
+
+TEST(StatsProcMode, publish_carries_pid_metrics) {
+    const long mypid = ::getpid();
+    std::vector<ds::KV> got;
+    ds::StatsPublisher pub("services.test",
+        [&](const std::vector<ds::KV>& kv) { got = kv; },
+        [&]{ return mypid; });
+    pub.handle_timeout(ACE_Time_Value::zero, nullptr);
+    ASSERT_EQ(got.size(), 6u);
+    for (auto& kv : got) {
+        if (kv.first == "services.test.cpu.count")
+            EXPECT_GE(ds::to_int32(kv.second).value_or(0), 1);
+        else if (kv.first == "services.test.mem.rss.kb")
+            EXPECT_GT(ds::to_int32(kv.second).value_or(0), 0);
+    }
+}
+
 // ── timer lifecycle (ACE active object) ─────────────────────────────
 TEST(StatsTimer, open_fires_then_close_joins) {
     auto dir = make_tmpdir();

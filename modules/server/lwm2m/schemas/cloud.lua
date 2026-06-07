@@ -147,6 +147,18 @@ return {
       default = "10.9.0.0/24",
     },
 
+    -- OpenVPN server listen socket (iot-cloudd spawns openvpn(8) here).
+    ["cloud.vpn.listen.port"] = {
+      type    = "integer",
+      default = 1194,
+      min     = 1,
+      max     = 65535,
+    },
+    ["cloud.vpn.proto"] = {
+      type    = "string",
+      default = "udp",          -- "udp" | "tcp"
+    },
+
     -- Next available proxy port (bump-counter).
     ["cloud.vpn.port.next"] = {
       type    = "integer",

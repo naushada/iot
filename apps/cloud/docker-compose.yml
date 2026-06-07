@@ -53,6 +53,10 @@ services:
       - iot-ca-key:/run/secrets/iot-ca-key:ro
     cap_add:
       - NET_ADMIN
+    devices:
+      - /dev/net/tun        # openvpn(8) server spawned by iot-cloudd
+    ports:
+      - "1194:1194/udp"     # OpenVPN server
     depends_on:
       ds-server:
         condition: service_healthy

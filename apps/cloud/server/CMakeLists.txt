@@ -26,7 +26,8 @@ add_executable(iot-cloudd
     src/main.cpp
     ../../../modules/server/lwm2m/src/endpoint_registry.cpp
     ../../../modules/server/lwm2m/src/bootstrap.cpp
-    ../../../modules/server/openvpn/src/vpn_registry.cpp)
+    ../../../modules/server/openvpn/src/vpn_registry.cpp
+    ../../../modules/server/openvpn/src/openvpn_server.cpp)
 
 if(DEFINED DATASTORE_LIB)
     set(DS_LINK_LIB ${DATASTORE_LIB})
