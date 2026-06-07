@@ -58,17 +58,17 @@ services:
     user: "engineer:engineer"
     group_add:
       - iot
-    command: >
-      lwm2m
-      role=client
-      local=coaps://0.0.0.0:5684
-      bs=${DEVICE_BS_URI:-coaps://host.docker.internal:5684}
-      identity=${LWM2M_PSK_ID:-97554878B284CE3B727D8DD06E87659A}
-      secret=${LWM2M_PSK_KEY:-3894beedaa7fe0eae6597dc350a59525}
-      config=/etc/iot/config
-      ds-sock=/run/iot/data_store.sock
-    # host.docker.internal → the host, so the client reaches the cloud stack's
-    # published BS/DM ports (Linux needs the host-gateway mapping).
+    # Fully ds-driven: no CLI args. The binary defaults role=client, binds
+    # coaps://0.0.0.0:5684, reads config from /etc/iot/config, connects to the
+    # default ds socket, and reads the bootstrap URI (iot.bs.uri) + BS PSK
+    # (iot.bs.psk.*) + endpoint (iot.endpoint) from the data-store — all
+    # commissioned via device-ui in commissioning mode. Running as `engineer`
+    # is what lets it read those gid:engineer keys. An unprovisioned device
+    # won't connect (by design): commission it first (./run.sh commission on,
+    # then set serial + bootstrap URI + generate BS PSK in device-ui).
+    command: lwm2m
+    # host.docker.internal → the host, so a bootstrap URI of
+    # coaps://host.docker.internal:5684 reaches the cloud stack's published BS.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
