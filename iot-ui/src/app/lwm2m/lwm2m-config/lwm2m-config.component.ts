@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, Input, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
@@ -10,6 +10,11 @@ import { ToastService } from '../../../common/toast.service';
   styleUrls: ['./lwm2m-config.component.scss']
 })
 export class Lwm2mConfigComponent implements OnInit {
+  // Which tab is rendering this component: 'server' shows the registration
+  // fields (Server Object), 'security' shows serial + Bootstrap PSK
+  // (Security Object). Same form-group backs both; we just show a subset.
+  @Input() mode: 'server' | 'security' = 'server';
+
   serverForm: FormGroup;
   loading = true; saving = false; msg = '';
 
@@ -64,17 +69,23 @@ export class Lwm2mConfigComponent implements OnInit {
   save(): void {
     this.saving = true; this.msg = '';
     const v = this.serverForm.value;
-    const pairs: { key: string; value: unknown }[] = [
-      { key: 'iot.server.uri', value: v.server_uri },
-      { key: 'iot.endpoint',   value: v.endpoint },
-      { key: 'iot.binding',    value: v.binding },
-      { key: 'iot.lifetime',   value: v.lifetime },
-      { key: 'iot.observable', value: v.observable },
-    ];
-    // Only push the serial when the installer entered it (non-RPi). On RPi
-    // the client owns iot.serial and the field is read-only.
-    if (!this.serialAutoDetected && v.serial) {
-      pairs.push({ key: 'iot.serial', value: v.serial });
+    let pairs: { key: string; value: unknown }[];
+    if (this.mode === 'security') {
+      // Security tab owns the serial. Only push it when the installer
+      // entered it (non-RPi); on RPi the client owns iot.serial read-only.
+      pairs = (!this.serialAutoDetected && v.serial)
+        ? [{ key: 'iot.serial', value: v.serial }]
+        : [];
+      if (pairs.length === 0) { this.saving = false; return; }
+    } else {
+      // Server tab owns the registration (Server Object) fields.
+      pairs = [
+        { key: 'iot.server.uri', value: v.server_uri },
+        { key: 'iot.endpoint',   value: v.endpoint },
+        { key: 'iot.binding',    value: v.binding },
+        { key: 'iot.lifetime',   value: v.lifetime },
+        { key: 'iot.observable', value: v.observable },
+      ];
     }
     this.http.dbSet(pairs).subscribe({
       next: (r) => { this.saving = false; if(r.ok) this.toast.success('LwM2M config saved'); else this.toast.error(r.err||'Save failed'); },
