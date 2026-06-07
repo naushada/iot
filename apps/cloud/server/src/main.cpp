@@ -15,6 +15,7 @@
 
 #include "endpoint_registry.hpp"
 #include "vpn_registry.hpp"
+#include "openvpn_server.hpp"
 #include "bootstrap.hpp"
 
 #include "data_store/client.hpp"
@@ -39,7 +40,21 @@ data_store::LogBuffer g_log("cloudd", "log.cloudd.text", "log.level.cloudd");
 
 std::atomic<bool> g_stop{false};
 
+// Current openvpn(8) server pid (0 = not running). Written only by the
+// main thread's supervisor; read by the per-pid StatsPublisher thread.
+std::atomic<long> g_ovpn_pid{0};
+
 void on_signal(int) { g_stop.store(true); }
+
+// Read a string ds key with a fallback default.
+std::string ds_str(data_store::Client& ds, const std::string& key,
+                   const std::string& dflt) {
+    std::vector<data_store::Client::GetResult> got;
+    auto s = ds.get({key}, got);
+    if (s.ok && !got.empty() && got[0].has_value)
+        if (auto v = data_store::to_string(got[0].value)) return *v;
+    return dflt;
+}
 
 // Sync endpoint registry to cloud.endpoints JSON in the data store.
 void sync_endpoints_to_ds(data_store::Client& ds,
@@ -147,16 +162,51 @@ int main(int argc, char** argv) {
                        rs.err.c_str()));
         }
     }
+    // ── OpenVPN server — spawn + supervise (config from cloud.vpn.*) ──
+    server::openvpn::OpenVpnServerConfig ovpn_cfg;
+    ovpn_cfg.subnet    = ds_str(ds, "cloud.vpn.subnet",     "10.9.0.0/24");
+    ovpn_cfg.proto     = ds_str(ds, "cloud.vpn.proto",      "udp");
+    ovpn_cfg.ca_path   = ds_str(ds, "cloud.vpn.ca.crt",     "/etc/iot/vpn/ca/ca.crt");
+    ovpn_cfg.cert_path = ds_str(ds, "cloud.vpn.server.crt", "/etc/iot/vpn/server.crt");
+    ovpn_cfg.key_path  = ds_str(ds, "cloud.vpn.server.key", "/etc/iot/vpn/server.key");
     {
-        auto rs = ds.set("services.cloud.openvpn.server.state",
-                         data_store::Value{std::string("running")});
-        if (!rs.ok) {
-            ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l set openvpn.server.state=running"
-                                " failed: %C\n"),
-                       rs.err.c_str()));
-        }
+        std::vector<data_store::Client::GetResult> got;
+        if (ds.get({"cloud.vpn.listen.port"}, got).ok && !got.empty() &&
+            got[0].has_value)
+            if (auto p = data_store::to_int32(got[0].value); p && *p > 0)
+                ovpn_cfg.port = static_cast<std::uint16_t>(*p);
     }
+    server::openvpn::OpenVpnServer ovpn(ovpn_cfg);
+
+    // Bring openvpn to the operator-desired state and publish it. Runs on
+    // the main thread only (single owner of the child process / waitpid).
+    auto supervise_ovpn = [&ds, &ovpn]() {
+        bool enabled = true;
+        {
+            std::vector<data_store::Client::GetResult> got;
+            if (ds.get({"services.cloud.openvpn.server.enable"}, got).ok &&
+                !got.empty() && got[0].has_value)
+                if (auto b = data_store::to_bool(got[0].value)) enabled = *b;
+        }
+        std::string state;
+        if (enabled) {
+            const bool was = ovpn.running();
+            if (!was) {
+                if (ovpn.start()) {
+                    ACE_DEBUG((LM_INFO, ACE_TEXT("%D cloudd:thread:%t %M %N:%l "
+                               "openvpn server (re)started\n")));
+                }
+            }
+            state = ovpn.running() ? "running" : "exited";
+        } else {
+            if (ovpn.running()) ovpn.stop();
+            state = "disabled";
+        }
+        g_ovpn_pid.store(ovpn.running() ? ovpn.pid() : 0);
+        ds.set("services.cloud.openvpn.server.state",
+               data_store::Value{state});
+    };
+    supervise_ovpn();   // initial start
 
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D cloudd:thread:%t %M %N:%l started, ds=%C vpn-subnet=%C"
@@ -187,6 +237,14 @@ int main(int argc, char** argv) {
     // Flush logs to ds every 10s via LogBuffer's own ACE reactor timer
     // (same pattern as StatsPublisher) instead of from the loop below.
     g_log.open(ds, 10, 200);
+
+    // Per-PID telemetry for the openvpn child (own reactor thread; reads
+    // only the atomic pid the main-thread supervisor maintains).
+    data_store::StatsPublisher g_ovpn_stats(
+        "services.cloud.openvpn.server",
+        [&ds](const std::vector<data_store::KV>& kv) { ds.set(kv); },
+        []() -> long { return g_ovpn_pid.load(); });
+    g_ovpn_stats.open();
 
     // ── Main loop ─────────────────────────────────────────────────
     // Block on recv_event() up to sync_interval seconds.  A provision
@@ -238,6 +296,7 @@ int main(int argc, char** argv) {
             sync_tick = 0;
         } else {
             // recv_event timed out — periodic housekeeping
+            supervise_ovpn();   // restart on crash / honor enable flips
             if (++sync_tick >= 3) {
                 sync_tick = 0;
                 sync_endpoints_to_ds(ds, ep_reg);
@@ -258,16 +317,11 @@ int main(int argc, char** argv) {
                        rs.err.c_str()));
         }
     }
-    {
-        auto rs = ds.set("services.cloud.openvpn.server.state",
-                         data_store::Value{std::string("exited")});
-        if (!rs.ok) {
-            ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l set openvpn.server.state=exited"
-                                " failed: %C\n"),
-                       rs.err.c_str()));
-        }
-    }
+    g_ovpn_stats.close();
+    ovpn.stop();
+    g_ovpn_pid.store(0);
+    ds.set("services.cloud.openvpn.server.state",
+           data_store::Value{std::string("exited")});
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D cloudd:thread:%t %M %N:%l stopped\n")));
     g_log.close();   // stop flush timer + final flush (ds still alive)

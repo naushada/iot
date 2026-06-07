@@ -62,6 +62,7 @@ struct StatsSample {
 struct StatsRoots {
     std::string cgroup_root = "/sys/fs/cgroup";
     std::string proc_self   = "/proc/self";
+    std::string proc_root   = "/proc";        // for per-pid sampling (/proc/<pid>)
 };
 
 /// Writes the sampled KV batch (4 metrics + services.stats.version) to
@@ -70,11 +71,23 @@ struct StatsRoots {
 /// lambda over its in-process DataStore; tests capture into a vector.
 using StatsSink = std::function<void(const std::vector<KV>&)>;
 
+/// Returns the PID to sample now, or <=0 if the target isn't running.
+/// Called on every flush so a restarted child (new PID) is picked up.
+using StatsPidFn = std::function<long()>;
+
 class StatsPublisher : public ACE_Event_Handler {
 public:
     static constexpr int STATS_FLUSH_SEC = 10;
 
     StatsPublisher(std::string prefix, StatsSink sink,
+                   StatsRoots roots = StatsRoots{});
+
+    /// Per-PID mode: sample the process returned by `pid_fn` via
+    /// /proc/<pid>/{stat,statm,fd} instead of this container's cgroup. Used
+    /// to publish a managed child's telemetry (e.g. cloudd → openvpn(8)).
+    /// When pid_fn() <= 0 the sample is all-zero (so the UI shows it as not
+    /// running / not measured). A changed PID resets the CPU baseline.
+    StatsPublisher(std::string prefix, StatsSink sink, StatsPidFn pid_fn,
                    StatsRoots roots = StatsRoots{});
     ~StatsPublisher() override;
 
@@ -116,6 +129,8 @@ private:
     StatsSink             m_sink;
     StatsRoots            m_roots;
     CgVersion             m_cg = CgVersion::none;   // probed once in ctor
+    StatsPidFn            m_pid_fn;                  // set → per-pid mode
+    long                  m_last_pid = -1;           // detect restart (reset CPU)
     long                  m_timer_id = -1;
     bool                  m_own_thread = false;     // we run the reactor loop
     ACE_Reactor*          m_reactor = nullptr;      // reactor the timer is on
@@ -140,6 +155,20 @@ namespace stats_detail {
     /// Clamps to 0 on counter reset / non-positive dt.
     std::int32_t cpu_permille(unsigned long long prev_usec,
                               unsigned long long now_usec, double dt_sec);
+
+    // ── per-PID sampling (process mode) ──────────────────────────────
+    /// Read /proc/<pid>/stat: CPU jiffies (utime+stime) + thread count.
+    /// Returns false if the process is gone / unreadable.
+    bool         read_proc_stat(const std::string& proc_dir,
+                                unsigned long long& out_jiffies,
+                                std::int32_t& out_threads);
+    /// Resident memory (KB) from /proc/<pid>/statm field 2.
+    std::int32_t read_proc_mem_kb(const std::string& proc_dir);
+    /// Count entries in <proc_dir>/fd (open descriptors).
+    std::int32_t count_fds_in(const std::string& proc_dir);
+    /// CPU permille from a clock-tick (jiffies) delta over dt_sec.
+    std::int32_t cpu_permille_jiffies(unsigned long long prev_j,
+                                      unsigned long long now_j, double dt_sec);
 }  // namespace stats_detail
 
 }  // namespace data_store

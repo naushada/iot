@@ -20,7 +20,9 @@
 #include <fstream>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <string>
+#include <vector>
 
 namespace data_store {
 
@@ -139,6 +141,66 @@ std::int32_t read_ncpu(const StatsRoots& r, CgVersion cg) {
     return static_cast<std::int32_t>(n < 1 ? 1 : n);
 }
 
+// ── per-PID (process mode) ───────────────────────────────────────────
+bool read_proc_stat(const std::string& proc_dir,
+                    unsigned long long& out_jiffies,
+                    std::int32_t& out_threads) {
+    std::ifstream ifs(proc_dir + "/stat");
+    if (!ifs.is_open()) return false;
+    std::string line;
+    std::getline(ifs, line);
+    // comm (field 2) is parenthesised and may contain spaces/parens — parse
+    // the fixed fields *after* the final ')'.
+    auto rp = line.rfind(')');
+    if (rp == std::string::npos) return false;
+    std::istringstream rest(line.substr(rp + 1));
+    std::vector<std::string> tok;
+    for (std::string t; rest >> t;) tok.push_back(t);
+    // After ')': field 3 = tok[0]. utime=14→tok[11], stime=15→tok[12],
+    // num_threads=20→tok[17].
+    if (tok.size() < 18) return false;
+    unsigned long long utime = std::strtoull(tok[11].c_str(), nullptr, 10);
+    unsigned long long stime = std::strtoull(tok[12].c_str(), nullptr, 10);
+    out_jiffies = utime + stime;
+    out_threads = clamp_i32(std::strtoull(tok[17].c_str(), nullptr, 10));
+    return true;
+}
+
+std::int32_t read_proc_mem_kb(const std::string& proc_dir) {
+    std::ifstream ifs(proc_dir + "/statm");
+    if (!ifs.is_open()) return 0;
+    unsigned long long total = 0, resident = 0;
+    if (!(ifs >> total >> resident)) return 0;
+    long pg = ::sysconf(_SC_PAGESIZE);
+    if (pg <= 0) pg = 4096;
+    return clamp_i32(resident * (static_cast<unsigned long long>(pg) / 1024ULL));
+}
+
+std::int32_t count_fds_in(const std::string& proc_dir) {
+    DIR* d = ::opendir((proc_dir + "/fd").c_str());
+    if (!d) return 0;
+    std::int32_t n = 0;
+    while (struct dirent* e = ::readdir(d)) {
+        const char* nm = e->d_name;
+        if (nm[0] == '.' &&
+            (nm[1] == '\0' || (nm[1] == '.' && nm[2] == '\0'))) continue;
+        ++n;
+    }
+    ::closedir(d);
+    return n;
+}
+
+std::int32_t cpu_permille_jiffies(unsigned long long prev_j,
+                                  unsigned long long now_j, double dt_sec) {
+    if (dt_sec <= 0.0 || now_j < prev_j) return 0;
+    long hz = ::sysconf(_SC_CLK_TCK);
+    if (hz <= 0) hz = 100;
+    double busy_sec = static_cast<double>(now_j - prev_j) / static_cast<double>(hz);
+    double permille = (busy_sec / dt_sec) * 1000.0;
+    if (permille < 0.0) permille = 0.0;
+    return static_cast<std::int32_t>(std::llround(permille));
+}
+
 std::int32_t cpu_permille(unsigned long long prev_usec,
                           unsigned long long now_usec, double dt_sec) {
     if (dt_sec <= 0.0 || now_usec < prev_usec) return 0;  // reset / bad dt
@@ -172,6 +234,16 @@ StatsPublisher::StatsPublisher(std::string prefix, StatsSink sink,
       m_sink(std::move(sink)),
       m_roots(std::move(roots)) {
     m_cg = stats_detail::detect_cgroup(m_roots);
+}
+
+StatsPublisher::StatsPublisher(std::string prefix, StatsSink sink,
+                               StatsPidFn pid_fn, StatsRoots roots)
+    : m_impl(std::make_unique<Impl>()),
+      m_prefix(std::move(prefix)),
+      m_sink(std::move(sink)),
+      m_roots(std::move(roots)),
+      m_pid_fn(std::move(pid_fn)) {
+    // Per-pid mode — no cgroup probe; sample /proc/<pid> in sample().
 }
 
 StatsPublisher::~StatsPublisher() { close(); }
@@ -242,6 +314,43 @@ void StatsPublisher::close() {
 }
 
 StatsSample StatsPublisher::sample() {
+    // ── per-pid mode: sample /proc/<pid> for a managed child ─────────
+    if (m_pid_fn) {
+        StatsSample s;
+        const long pid = m_pid_fn();
+        if (pid <= 0) {                 // not running → all zero (UI shows "—")
+            m_have_baseline = false;
+            m_last_pid = -1;
+            return s;
+        }
+        const std::string proc_dir =
+            m_roots.proc_root + "/" + std::to_string(pid);
+        s.mem_rss_kb = stats_detail::read_proc_mem_kb(proc_dir);
+        s.fd_count   = stats_detail::count_fds_in(proc_dir);
+        long ncpu = ::sysconf(_SC_NPROCESSORS_ONLN);
+        s.cpu_count = static_cast<std::int32_t>(ncpu < 1 ? 1 : ncpu);
+
+        unsigned long long jiffies = 0;
+        std::int32_t threads = 0;
+        const bool ok = stats_detail::read_proc_stat(proc_dir, jiffies, threads);
+        const auto now = std::chrono::steady_clock::now();
+        if (ok) {
+            s.threads = threads;
+            if (m_have_baseline && pid == m_last_pid) {
+                const double dt =
+                    std::chrono::duration<double>(now - m_last_t).count();
+                s.cpu_permille =
+                    stats_detail::cpu_permille_jiffies(m_last_usage_usec, jiffies, dt);
+            } else {
+                m_have_baseline = true;   // first sample / new pid → baseline
+            }
+            m_last_usage_usec = jiffies;
+            m_last_t = now;
+            m_last_pid = pid;
+        }
+        return s;
+    }
+
     StatsSample s;
     s.mem_rss_kb = stats_detail::read_mem_kb(m_roots, m_cg);
     s.threads    = stats_detail::read_pids(m_roots, m_cg);

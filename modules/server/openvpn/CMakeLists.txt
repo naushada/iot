@@ -6,12 +6,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(OVPN_SERVER_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
-include_directories(${OVPN_SERVER_DIR}/inc)
+if(NOT DEFINED ACE_ROOT)
+    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
+endif()
+
+include_directories(${OVPN_SERVER_DIR}/inc ${ACE_ROOT}/include)
 
 add_library(server_openvpn STATIC
-    src/vpn_registry.cpp)
+    src/vpn_registry.cpp
+    src/openvpn_server.cpp)
 
-target_include_directories(server_openvpn PUBLIC inc)
+target_include_directories(server_openvpn PUBLIC inc ${ACE_ROOT}/include)
 target_link_libraries(server_openvpn PUBLIC pthread)
 
 option(BUILD_SERVER_OPENVPN_TESTS "Build server/openvpn gtest suite" OFF)
@@ -27,4 +32,17 @@ if(BUILD_SERVER_OPENVPN_TESTS)
     target_link_libraries(vpn-registry-tests
         GTest::gtest_main GTest::gtest pthread)
     add_test(NAME vpn-registry-tests COMMAND vpn-registry-tests)
+
+    # openvpn_server config rendering (pure; no ACE/process needed at link
+    # since we only test build_server_config + cidr_to_net_mask). The .cpp
+    # pulls ACE headers, so add the include + link ACE.
+    add_executable(openvpn-server-tests
+        test/openvpn_server_test.cpp
+        src/openvpn_server.cpp)
+    target_include_directories(openvpn-server-tests
+        PRIVATE ${OVPN_SERVER_DIR}/inc ${ACE_ROOT}/include)
+    target_link_directories(openvpn-server-tests PRIVATE ${ACE_ROOT}/lib)
+    target_link_libraries(openvpn-server-tests
+        GTest::gtest_main GTest::gtest ACE pthread)
+    add_test(NAME openvpn-server-tests COMMAND openvpn-server-tests)
 endif()
