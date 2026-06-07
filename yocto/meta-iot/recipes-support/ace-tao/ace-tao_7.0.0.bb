@@ -78,22 +78,22 @@ do_compile() {
 # directly from the build tree instead. (do_compile builds libs into
 # ${S}/lib and ACE's headers live under ${S}/ace.)
 do_install() {
-    # Use `cp -dR` (preserve symlinks, recurse) NOT `cp -a`: -a also
-    # preserves the build user's uid/gid (1000), which under pseudo records
-    # non-root ownership and makes do_package fail with "getpwuid(): uid not
-    # found: 1000 ... host contamination". -dR creates the copies as the
-    # pseudo-root user, so they're root-owned to begin with.
     install -d ${D}${libdir}
-    # Versioned shared libs + their .so / .so.MAJOR symlinks.
-    cp -dR ${S}/lib/libACE.so*     ${D}${libdir}/
-    cp -dR ${S}/lib/libACE_SSL.so* ${D}${libdir}/
-    # Ensure the .so symlink exists — some ACE builds don't create it
-    if [ ! -e ${D}${libdir}/libACE.so ]; then
-        ln -sf libACE.so.7.0.0 ${D}${libdir}/libACE.so
-    fi
-    if [ ! -e ${D}${libdir}/libACE_SSL.so ]; then
-        ln -sf libACE_SSL.so.7.0.0 ${D}${libdir}/libACE_SSL.so
-    fi
+    # ACE builds the real shared objects under ${S}/ace (and ace/SSL) and
+    # leaves only symlinks in ${S}/lib (e.g. libACE.so.7.0.0 -> ../ace/
+    # libACE.so.7.0.0). A plain `cp -dR` copies those symlinks verbatim, so
+    # once staged into a downstream recipe-sysroot they dangle (../ace/ does
+    # not exist there) and the iot build fails:
+    #   "libACE.so ... missing and no known rule to make it".
+    # Copy the REAL objects instead — readlink -f dereferences the lib/
+    # symlink to the actual file under ace/ — and `install` writes them as the
+    # pseudo-root user (avoids the uid-1000 host-contamination that `cp -a`
+    # would cause). Then recreate the .so dev symlink ourselves. The ELF
+    # SONAME is libACE.so.7.0.0, so no .so.MAJOR intermediate is needed.
+    install -m 0755 "$(readlink -f ${S}/lib/libACE.so.7.0.0)"     ${D}${libdir}/libACE.so.7.0.0
+    install -m 0755 "$(readlink -f ${S}/lib/libACE_SSL.so.7.0.0)" ${D}${libdir}/libACE_SSL.so.7.0.0
+    ln -sf libACE.so.7.0.0     ${D}${libdir}/libACE.so
+    ln -sf libACE_SSL.so.7.0.0 ${D}${libdir}/libACE_SSL.so
 
     # Public headers: the ace/ tree (*.h, *.inl, and the template *.cpp
     # files that headers #include), minus build artifacts. ACE_SSL headers

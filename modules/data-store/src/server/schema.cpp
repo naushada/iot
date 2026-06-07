@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
+#include <functional>
 #include <grp.h>
 #include <limits>
 #include <memory>

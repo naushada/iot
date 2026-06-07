@@ -2,6 +2,7 @@
 
 #include <ctime>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <sstream>
 #include <unordered_map>
