@@ -196,10 +196,25 @@ build-steps walkthrough.
 
 ### 2. Flash the SD card
 
-Find the SD device first — `lsblk` on Linux (`/dev/sdX`), `diskutil list`
-on macOS (`/dev/diskN`; unmount with `diskutil unmountDisk` first). Write
-the **whole disk**, not a partition. Decompress on the fly and write with
-`dd`:
+**Easiest — the helper script.** `yocto/flash-sd.sh` auto-detects the SD
+card, wipes its partition table, and writes the latest image. It refuses
+internal/system disks and asks for confirmation first:
+
+```sh
+cd yocto
+./flash-sd.sh                 # auto-detect the card (errors if 0 or >1 found)
+./flash-sd.sh /dev/sdX        # or name the device explicitly
+./flash-sd.sh --list          # just list candidate removable disks
+./flash-sd.sh --yes /dev/sdX  # non-interactive (skip the confirmation)
+```
+
+It picks `MACHINE=raspberrypi3-64` by default; override with `MACHINE=…` or
+point at any image with `IMAGE=/path/to.wic.bz2`.
+
+**Manual.** Find the SD device first — `lsblk` on Linux (`/dev/sdX`),
+`diskutil list` on macOS (`/dev/diskN`; unmount with `diskutil unmountDisk`
+first). Write the **whole disk**, not a partition. Decompress on the fly and
+write with `dd`:
 
 ```sh
 IMG=yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-raspberrypi3-64.rootfs.wic.bz2
