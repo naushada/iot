@@ -26,11 +26,11 @@ interface SvcRow {
       <clr-datagrid style="margin-top:16px;">
         <clr-dg-column>Service</clr-dg-column>
         <clr-dg-column>State</clr-dg-column>
-        <clr-dg-column [style.text-align]="'right'"
+        <clr-dg-column [style.text-align]="'center'"
           title="Percent of one host CPU core (per container)">CPU %</clr-dg-column>
-        <clr-dg-column [style.text-align]="'right'">Memory</clr-dg-column>
-        <clr-dg-column [style.text-align]="'right'">FDs</clr-dg-column>
-        <clr-dg-column [style.text-align]="'right'">Threads</clr-dg-column>
+        <clr-dg-column [style.text-align]="'center'">Memory</clr-dg-column>
+        <clr-dg-column [style.text-align]="'center'">FDs</clr-dg-column>
+        <clr-dg-column [style.text-align]="'center'">Threads</clr-dg-column>
         <clr-dg-column>Enabled</clr-dg-column>
         <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
 
@@ -72,7 +72,7 @@ interface SvcRow {
     .page { padding: 24px; }
     h3 { color: #333; margin: 0 0 16px 0; font-size: 16px; font-weight: 600; }
     .hint { color: #888; font-weight: normal; font-size: 11px; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .num { text-align: center; font-variant-numeric: tabular-nums; }
     code { background: none; }
     .info-card {
       background: #f0f5ff; border: 1px solid #b3d4ff; border-radius: 4px;

@@ -14,11 +14,11 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
       <clr-datagrid>
         <clr-dg-column>Service</clr-dg-column>
         <clr-dg-column>State</clr-dg-column>
-        <clr-dg-column [style.text-align]="'right'"
+        <clr-dg-column [style.text-align]="'center'"
           title="Percent of one host CPU core (per container)">CPU %</clr-dg-column>
-        <clr-dg-column [style.text-align]="'right'">Memory</clr-dg-column>
-        <clr-dg-column [style.text-align]="'right'">FDs</clr-dg-column>
-        <clr-dg-column [style.text-align]="'right'">Threads</clr-dg-column>
+        <clr-dg-column [style.text-align]="'center'">Memory</clr-dg-column>
+        <clr-dg-column [style.text-align]="'center'">FDs</clr-dg-column>
+        <clr-dg-column [style.text-align]="'center'">Threads</clr-dg-column>
         <clr-dg-column>Enabled</clr-dg-column>
         <clr-dg-column>Uptime</clr-dg-column>
         <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
@@ -50,7 +50,7 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
   `,
   styles: [`
     .page { padding: 24px; } h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .num { text-align: center; font-variant-numeric: tabular-nums; }
     .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
     .hint { font-size: 12px; color: #757575; margin-top: 16px; }
   `]

@@ -1,8 +1,12 @@
 #!/bin/bash
-# run.sh — Run the IoT Cloud Server (multi-service via docker-compose).
+# run.sh — Run the IoT Cloud Server (multi-service via docker compose).
 #
 # Spawns ds-server, iot-cloudd, and iot-httpd as separate containers
-# communicating through a shared Unix socket volume. Uses podman or docker.
+# communicating through a shared Unix socket volume. Prefers docker
+# (falls back to podman only if docker is absent).
+#
+# On start it refreshes the iot-etc config volume from the image so
+# schema/config changes always take effect (RESET_CONFIG=0 to keep it).
 #
 # Usage:
 #   ./run.sh                    # start all services on http://localhost:8080
@@ -32,15 +36,21 @@ VPN_SUBNET="${VPN_SUBNET:-10.9.0.0/24}"
 PROXY_START="${PROXY_START:-5001}"
 PROXY_END="${PROXY_END:-6000}"
 HTTP_WORKERS="${HTTP_WORKERS:-4}"
+# Reset the iot-etc config volume on start so the latest schema/config
+# from the image is always loaded (set to 0 to preserve manual edits).
+RESET_CONFIG="${RESET_CONFIG:-1}"
+# Compose project name → deterministic volume names (cloud_iot-etc, …).
+PROJECT="${COMPOSE_PROJECT_NAME:-cloud}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 log_section() { echo -e "\n${GREEN}=== $1 ===${NC}"; }
 log_info()    { echo -e "${YELLOW} → $1${NC}"; }
 
 detect_runtime() {
-    if command -v podman &>/dev/null; then echo "podman"
-    elif command -v docker &>/dev/null; then echo "docker"
-    else echo "ERROR: podman or docker required" >&2; exit 1; fi
+    # Prefer docker; fall back to podman only if docker is unavailable.
+    if command -v docker &>/dev/null; then echo "docker"
+    elif command -v podman &>/dev/null; then echo "podman"
+    else echo "ERROR: docker required (podman also accepted)" >&2; exit 1; fi
 }
 
 CR=$(detect_runtime)
@@ -51,6 +61,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 export CLOUD_IMAGE="$IMAGE"
 export HTTP_PORT HTTP_WORKERS
 export VPN_SUBNET PROXY_START PROXY_END
+export COMPOSE_PROJECT_NAME="$PROJECT"
 
 case "${1:-start}" in
     build)
@@ -65,8 +76,8 @@ case "${1:-start}" in
         ;;
 
     start|up)
-        # Pull if not present
-        if ! $CR image exists "$IMAGE" 2>/dev/null; then
+        # Pull if not present (image inspect works on both docker + podman)
+        if ! $CR image inspect "$IMAGE" >/dev/null 2>&1; then
             log_info "Pulling $IMAGE..."
             $CR pull "$IMAGE"
         fi
@@ -74,6 +85,21 @@ case "${1:-start}" in
         # Stop old single-container if running (migration from v1)
         $CR stop iot-cloud 2>/dev/null && log_info "Stopped legacy iot-cloud container" || true
         $CR rm iot-cloud 2>/dev/null || true
+
+        # Always reload schemas/config from the image. The iot-etc volume
+        # (/etc/iot) holds image-provided static config — Lua schemas +
+        # apps/config. Persisting it across image rebuilds causes stale
+        # schemas: new data-store keys get rejected and silently read null
+        # (e.g. the L22 services.*.cpu.permille telemetry, where only
+        # ds-server — which writes in-process, bypassing schema — showed
+        # data). Dropping it forces a repopulate from the current image.
+        # Persisted data (/var/lib/iot) and VPN PKI (/etc/iot/vpn,
+        # /run/secrets) live in separate volumes and are untouched.
+        if [ "$RESET_CONFIG" = "1" ]; then
+            log_info "Refreshing config volume ${PROJECT}_iot-etc (set RESET_CONFIG=0 to keep)"
+            $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" down --remove-orphans 2>/dev/null || true
+            $CR volume rm "${PROJECT}_iot-etc" 2>/dev/null || true
+        fi
 
         log_section "Starting IoT Cloud"
         $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" up -d
