@@ -73,8 +73,8 @@ docker pull docker.io/naushada/iot-cloud:latest
 ## 3B. Install — build the image locally
 
 ```bash
-./run.sh build      # builds docker.io/naushada/iot-cloud:latest from source
-./run.sh            # start the stack
+./run.sh build         # builds docker.io/naushada/iot-cloud:latest for the host arch
+PULL=0 ./run.sh        # start using the local build (don't re-pull)
 ```
 
 `./run.sh nocache` forces a clean rebuild. The build compiles ACE, the C++
@@ -111,6 +111,8 @@ Override on the command line — they pass through to `docker-compose.yml`:
 | `PROXY_START` / `PROXY_END` | `5001` / `6000` | Device-UI reverse-proxy port pool |
 | `HTTP_WORKERS` | `4` | iot-httpd handler threads |
 | `CLOUD_IMAGE` | `docker.io/naushada/iot-cloud:latest` | Image to run |
+| `PULL` | `1` | Pull the image on start. `0` = use a local `./run.sh build` as-is |
+| `PLATFORM` | auto (`uname -m`) | Image arch to pull. The published image is multi-arch (`linux/amd64` + `linux/arm64`), so the host arch is selected automatically; override e.g. `linux/amd64` |
 | `RESET_CONFIG` | `1` | Reload schema/config from the image on each start (see §7). `0` keeps manual `/etc/iot` edits |
 
 Example:

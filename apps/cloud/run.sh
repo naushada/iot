@@ -5,8 +5,12 @@
 # communicating through a shared Unix socket volume. Prefers docker
 # (falls back to podman only if docker is absent).
 #
-# On start it refreshes the iot-etc config volume from the image so
-# schema/config changes always take effect (RESET_CONFIG=0 to keep it).
+# On start it pulls the image for the host's architecture (the published
+# image is a multi-arch manifest: linux/amd64 + linux/arm64) and refreshes
+# the iot-etc config volume so schema/config changes always take effect.
+#   PULL=0          use a local ./run.sh build instead of pulling
+#   PLATFORM=...    override the auto-detected arch (e.g. linux/amd64)
+#   RESET_CONFIG=0  keep manual /etc/iot edits across restarts
 #
 # Usage:
 #   ./run.sh                    # start all services on http://localhost:8080
@@ -41,6 +45,16 @@ HTTP_WORKERS="${HTTP_WORKERS:-4}"
 RESET_CONFIG="${RESET_CONFIG:-1}"
 # Compose project name → deterministic volume names (cloud_iot-etc, …).
 PROJECT="${COMPOSE_PROJECT_NAME:-cloud}"
+# Detect host arch so we pull the matching image from the multi-arch
+# manifest (override with PLATFORM=linux/amd64). PULL=1 fetches the
+# published image on start; PULL=0 uses a local ./run.sh build as-is.
+case "$(uname -m)" in
+    x86_64|amd64)  HOST_PLATFORM="linux/amd64" ;;
+    aarch64|arm64) HOST_PLATFORM="linux/arm64" ;;
+    *)             HOST_PLATFORM="" ;;
+esac
+PLATFORM="${PLATFORM:-$HOST_PLATFORM}"
+PULL="${PULL:-1}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 log_section() { echo -e "\n${GREEN}=== $1 ===${NC}"; }
@@ -65,21 +79,29 @@ export COMPOSE_PROJECT_NAME="$PROJECT"
 
 case "${1:-start}" in
     build)
-        log_section "Building $IMAGE"
+        log_section "Building $IMAGE (${PLATFORM:-host} arch)"
         $CR build -t "$IMAGE" -f "$SCRIPT_DIR/Dockerfile" \
             "$SCRIPT_DIR/../../"
+        log_info "Built locally — start it without re-pulling: PULL=0 ./run.sh"
         ;;
     nocache|build-nocache)
-        log_section "Building $IMAGE (no cache)"
+        log_section "Building $IMAGE (no cache, ${PLATFORM:-host} arch)"
         $CR build --no-cache -t "$IMAGE" -f "$SCRIPT_DIR/Dockerfile" \
             "$SCRIPT_DIR/../../"
+        log_info "Built locally — start it without re-pulling: PULL=0 ./run.sh"
         ;;
 
     start|up)
-        # Pull if not present (image inspect works on both docker + podman)
-        if ! $CR image inspect "$IMAGE" >/dev/null 2>&1; then
-            log_info "Pulling $IMAGE..."
-            $CR pull "$IMAGE"
+        # Fetch the image for this host's architecture. The published image
+        # is a multi-arch manifest, so the pull selects the matching arch.
+        # PULL=0 skips this to use a locally-built image (./run.sh build).
+        if [ "$PULL" = "1" ] || ! $CR image inspect "$IMAGE" >/dev/null 2>&1; then
+            log_info "Pulling $IMAGE (${PLATFORM:-host} arch)..."
+            if [ -n "$PLATFORM" ]; then
+                $CR pull --platform "$PLATFORM" "$IMAGE" || log_info "pull failed — using local image if present"
+            else
+                $CR pull "$IMAGE" || log_info "pull failed — using local image if present"
+            fi
         fi
 
         # Stop old single-container if running (migration from v1)
