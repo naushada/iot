@@ -44,6 +44,7 @@ ds::StatsRoots make_cgroup_v2(const std::string& root,
     write_file(root + "/cpu.stat",
                "usage_usec " + std::to_string(usage_usec) +
                "\nuser_usec 1\nsystem_usec 1\n");
+    write_file(root + "/cpu.max", "max 100000\n");   // unlimited by default
     write_file(root + "/memory.current", std::to_string(mem_bytes) + "\n");
     write_file(root + "/pids.current",   std::to_string(pids) + "\n");
     ds::StatsRoots r;
@@ -127,6 +128,20 @@ TEST(StatsParseV1, cpu_ns_to_usec) {
     EXPECT_EQ(usec, 2000000ULL);
 }
 
+// ── cpu count ───────────────────────────────────────────────────────
+TEST(StatsCpuCount, from_cgroup_v2_quota) {
+    auto dir = make_tmpdir();
+    auto r = make_cgroup_v2(dir, 0, 0, 0);
+    write_file(dir + "/cpu.max", "200000 100000\n");   // quota/period = 2
+    EXPECT_EQ(sd::read_ncpu(r, ds::CgVersion::v2), 2);
+}
+
+TEST(StatsCpuCount, unlimited_falls_back_to_online) {
+    auto dir = make_tmpdir();
+    auto r = make_cgroup_v2(dir, 0, 0, 0);            // cpu.max = "max 100000"
+    EXPECT_GE(sd::read_ncpu(r, ds::CgVersion::v2), 1);  // >= 1 online CPU
+}
+
 // ── cpu math ────────────────────────────────────────────────────────
 TEST(StatsCpu, half_core)   { EXPECT_EQ(sd::cpu_permille(1000000, 1500000, 1.0), 500); }
 TEST(StatsCpu, two_cores)   { EXPECT_EQ(sd::cpu_permille(0, 2000000, 1.0), 2000); }
@@ -193,17 +208,18 @@ TEST(StatsPublish, sink_receives_four_metrics_plus_version) {
 
     pub.handle_timeout(ACE_Time_Value::zero, nullptr);
 
-    ASSERT_EQ(got.size(), 5u);
-    bool cpu=false, mem=false, fd=false, thr=false, ver=false;
+    ASSERT_EQ(got.size(), 6u);
+    bool cpu=false, ncpu=false, mem=false, fd=false, thr=false, ver=false;
     for (auto& kv : got) {
         const std::string& k = kv.first;
         if (k == "services.test.cpu.permille") cpu = true;
+        else if (k == "services.test.cpu.count")  { ncpu = true; EXPECT_GE(ds::to_int32(kv.second).value_or(0), 1); }
         else if (k == "services.test.mem.rss.kb") { mem = true; EXPECT_EQ(ds::to_int32(kv.second).value_or(-1), 40960); }
         else if (k == "services.test.fd.count")   { fd  = true; EXPECT_EQ(ds::to_int32(kv.second).value_or(-1), 9); }
         else if (k == "services.test.threads")    { thr = true; EXPECT_EQ(ds::to_int32(kv.second).value_or(-1), 6); }
         else if (k == "services.stats.version")   { ver = true; EXPECT_GT(ds::to_int32(kv.second).value_or(0), 0); }
     }
-    EXPECT_TRUE(cpu && mem && fd && thr && ver);
+    EXPECT_TRUE(cpu && ncpu && mem && fd && thr && ver);
 }
 
 // ── timer lifecycle (ACE active object) ─────────────────────────────

@@ -50,6 +50,7 @@ enum class CgVersion { v2, v1, none };
 /// unreadable metrics report 0 (never negative).
 struct StatsSample {
     std::int32_t cpu_permille = 0;   // parts-per-1000 of one host-second
+    std::int32_t cpu_count    = 0;   // cores the % is normalised against
     std::int32_t mem_rss_kb   = 0;
     std::int32_t fd_count     = 0;
     std::int32_t threads      = 0;
@@ -127,6 +128,8 @@ namespace stats_detail {
     std::int32_t read_mem_kb (const StatsRoots&, CgVersion);
     std::int32_t read_pids   (const StatsRoots&, CgVersion);
     std::int32_t count_fds   (const StatsRoots&);
+    /// Cores available: cgroup v2 cpu.max quota if set, else online CPUs.
+    std::int32_t read_ncpu   (const StatsRoots&, CgVersion);
     /// permille of one host-second of CPU over [prev,now] across dt_sec.
     /// Clamps to 0 on counter reset / non-positive dt.
     std::int32_t cpu_permille(unsigned long long prev_usec,

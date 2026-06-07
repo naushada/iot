@@ -8,7 +8,7 @@ interface SvcRow {
   state: string; enabled: boolean; restarting: boolean;
   state_key?: string;   // explicit state key for services without .enable counterpart
   // L22 — resource telemetry (per-container cgroup + /proc/self/fd).
-  cpu_permille?: number; mem_kb?: number; fd_count?: number; threads?: number;
+  cpu_permille?: number; cpu_count?: number; mem_kb?: number; fd_count?: number; threads?: number;
 }
 
 @Component({
@@ -26,11 +26,13 @@ interface SvcRow {
       <clr-datagrid style="margin-top:16px;">
         <clr-dg-column>Service</clr-dg-column>
         <clr-dg-column>State</clr-dg-column>
-        <clr-dg-column [style.text-align]="'center'"
-          title="Percent of one host CPU core (per container)">CPU %</clr-dg-column>
-        <clr-dg-column [style.text-align]="'center'">Memory</clr-dg-column>
-        <clr-dg-column [style.text-align]="'center'">FDs</clr-dg-column>
-        <clr-dg-column [style.text-align]="'center'">Threads</clr-dg-column>
+        <clr-dg-column [style.text-align]="'left'"
+          title="Percent of one CPU core; can exceed 100% across multiple cores">CPU %</clr-dg-column>
+        <clr-dg-column [style.text-align]="'left'"
+          title="Cores available to the container">#CPU</clr-dg-column>
+        <clr-dg-column [style.text-align]="'left'">Memory</clr-dg-column>
+        <clr-dg-column [style.text-align]="'left'">FDs</clr-dg-column>
+        <clr-dg-column [style.text-align]="'left'">Threads</clr-dg-column>
         <clr-dg-column>Enabled</clr-dg-column>
         <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
 
@@ -41,6 +43,7 @@ interface SvcRow {
               [state]="s.state||''"></app-status-badge>
           </clr-dg-cell>
           <clr-dg-cell class="num">{{ fmtCpu(s.cpu_permille) }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ s.cpu_count ?? '—' }}</clr-dg-cell>
           <clr-dg-cell class="num">{{ fmtKb(s.mem_kb) }}</clr-dg-cell>
           <clr-dg-cell class="num">{{ s.fd_count ?? '—' }}</clr-dg-cell>
           <clr-dg-cell class="num">{{ s.threads ?? '—' }}</clr-dg-cell>
@@ -72,7 +75,7 @@ interface SvcRow {
     .page { padding: 24px; }
     h3 { color: #333; margin: 0 0 16px 0; font-size: 16px; font-weight: 600; }
     .hint { color: #888; font-weight: normal; font-size: 11px; }
-    .num { text-align: center; font-variant-numeric: tabular-nums; }
+    .num { text-align: left; font-variant-numeric: tabular-nums; }
     code { background: none; }
     .info-card {
       background: #f0f5ff; border: 1px solid #b3d4ff; border-radius: 4px;
@@ -139,7 +142,7 @@ export class ServicesListComponent implements OnInit, OnDestroy {
         if (s.enable_key) keys.push(s.enable_key);
       }
       const p = this.statsPrefix(s);
-      keys.push(p + '.cpu.permille', p + '.mem.rss.kb', p + '.fd.count', p + '.threads');
+      keys.push(p + '.cpu.permille', p + '.cpu.count', p + '.mem.rss.kb', p + '.fd.count', p + '.threads');
     }
     this.http.dbGet(keys).subscribe({
       next: (r) => this.applyState(r),
@@ -168,6 +171,7 @@ export class ServicesListComponent implements OnInit, OnDestroy {
         }
         const p = this.statsPrefix(s);
         s.cpu_permille = num(p + '.cpu.permille');
+        s.cpu_count    = num(p + '.cpu.count');
         s.mem_kb       = num(p + '.mem.rss.kb');
         s.fd_count     = num(p + '.fd.count');
         s.threads      = num(p + '.threads');

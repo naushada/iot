@@ -14,11 +14,13 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
       <clr-datagrid>
         <clr-dg-column>Service</clr-dg-column>
         <clr-dg-column>State</clr-dg-column>
-        <clr-dg-column [style.text-align]="'center'"
-          title="Percent of one host CPU core (per container)">CPU %</clr-dg-column>
-        <clr-dg-column [style.text-align]="'center'">Memory</clr-dg-column>
-        <clr-dg-column [style.text-align]="'center'">FDs</clr-dg-column>
-        <clr-dg-column [style.text-align]="'center'">Threads</clr-dg-column>
+        <clr-dg-column [style.text-align]="'left'"
+          title="Percent of one CPU core; can exceed 100% across multiple cores">CPU %</clr-dg-column>
+        <clr-dg-column [style.text-align]="'left'"
+          title="Cores available to the container">#CPU</clr-dg-column>
+        <clr-dg-column [style.text-align]="'left'">Memory</clr-dg-column>
+        <clr-dg-column [style.text-align]="'left'">FDs</clr-dg-column>
+        <clr-dg-column [style.text-align]="'left'">Threads</clr-dg-column>
         <clr-dg-column>Enabled</clr-dg-column>
         <clr-dg-column>Uptime</clr-dg-column>
         <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
@@ -27,6 +29,7 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
           <clr-dg-cell><code>{{ s.label }}</code></clr-dg-cell>
           <clr-dg-cell><app-status-badge [label]="s.info.state||'unknown'" [state]="s.info.state||''"></app-status-badge></clr-dg-cell>
           <clr-dg-cell class="num">{{ fmtCpu(s.info.cpu_permille) }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ s.info.cpu_count ?? '—' }}</clr-dg-cell>
           <clr-dg-cell class="num">{{ fmtKb(s.info.mem_kb) }}</clr-dg-cell>
           <clr-dg-cell class="num">{{ s.info.fd_count ?? '—' }}</clr-dg-cell>
           <clr-dg-cell class="num">{{ s.info.threads ?? '—' }}</clr-dg-cell>
@@ -50,7 +53,7 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
   `,
   styles: [`
     .page { padding: 24px; } h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
-    .num { text-align: center; font-variant-numeric: tabular-nums; }
+    .num { text-align: left; font-variant-numeric: tabular-nums; }
     .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
     .hint { font-size: 12px; color: #757575; margin-top: 16px; }
   `]
