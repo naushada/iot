@@ -28,11 +28,11 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
         <clr-dg-row *clrDgItems="let s of services">
           <clr-dg-cell><code>{{ s.label }}</code></clr-dg-cell>
           <clr-dg-cell><app-status-badge [label]="s.info.state||'unknown'" [state]="s.info.state||''"></app-status-badge></clr-dg-cell>
-          <clr-dg-cell class="num">{{ fmtCpu(s.info.cpu_permille) }}</clr-dg-cell>
-          <clr-dg-cell class="num">{{ s.info.cpu_count ?? '—' }}</clr-dg-cell>
-          <clr-dg-cell class="num">{{ fmtKb(s.info.mem_kb) }}</clr-dg-cell>
-          <clr-dg-cell class="num">{{ s.info.fd_count ?? '—' }}</clr-dg-cell>
-          <clr-dg-cell class="num">{{ s.info.threads ?? '—' }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ hasStats(s) ? fmtCpu(s.info.cpu_permille) : '—' }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ hasStats(s) ? s.info.cpu_count : '—' }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ hasStats(s) ? fmtKb(s.info.mem_kb) : '—' }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ hasStats(s) ? s.info.fd_count : '—' }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ hasStats(s) ? s.info.threads : '—' }}</clr-dg-cell>
           <clr-dg-cell>
             <input type="checkbox" [checked]="s.info.enable" [disabled]="!isAdmin" (change)="toggleEnable(s)" />
           </clr-dg-cell>
@@ -72,6 +72,10 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     get isAdmin(): boolean { return this.session.isAdmin; }
 
   constructor(private http: HttpsvcService, private session: SessionService) {}
+
+  /// cpu_count==0 ⇒ no live StatsPublisher for this service (not separately
+  /// measured) → show "—" rather than misleading zeros.
+  hasStats(s: SvcRow): boolean { return ((s.info.cpu_count as number) ?? 0) > 0; }
 
   fmtCpu(permille?: number): string {
     if (permille == null) return '—';
