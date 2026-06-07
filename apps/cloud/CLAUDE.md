@@ -80,7 +80,7 @@ Dashboard  Endpoints  VPN  HTTP  WAN  Routing  LwM2M              Services  Logs
 | Page | Writes to |
 |------|-----------|
 | Dashboard | reads /api/v1/status (long-poll) |
-| Endpoints | reads /api/v1/cloud/endpoints, delete deprovisions |
+| Endpoints | reads /api/v1/cloud/endpoints; provision form → cloud.provision.bs.psk + cloud.provision.request; delete deprovisions |
 | VPN | cloud.vpn.* |
 | HTTP | http.* (reused from device) + http.auth.enabled |
 | WAN | vpn.* / wifi.* / net.* (copied from device UI) |
@@ -329,6 +329,54 @@ cloud.provision.configs   → JSON blob keyed by endpoint name:
   }
 cloud.deprovision.request → Endpoint name to deprovision (iot-cloudd watches)
 ```
+
+### PSK provisioning (serial-derived endpoint + write-only PSK)
+
+See `apps/docs/tdd-psk-provisioning.md`. Each device's serial is the LwM2M
+endpoint and the on-the-wire BS DTLS PSK identity (raw serial). The cloud
+owns the formatted identity `rpi<serial>@cloud.local`, which keys both the
+BS and DM PSKs. The **BS PSK is generated in device-ui** (browser) and pasted
+into the cloud Endpoints page; the **DM PSK is minted by iot-cloudd** per
+endpoint. Provisioning is **db/set-driven** — no bespoke REST endpoint.
+
+Flow: cloud-ui writes `cloud.provision.bs.psk` (carrier) then
+`cloud.provision.request` = serial (the existing watched trigger);
+iot-cloudd formats the identity, mints the DM PSK, upserts
+`cloud.endpoint.credentials`, and clears the carrier.
+
+```
+cloud.provision.bs.psk    → Carrier: engineer-pasted BS PSK (64 hex).
+                            Cleared by iot-cloudd after upsert. (gid:cloud-svc)
+cloud.endpoint.credentials → JSON array, per-endpoint creds. The BS/DM
+                            servers load this live (BS keys by raw serial,
+                            DM by formatted identity). Write-only /
+                            no ds-cli read. (gid:cloud-svc)
+  [{
+    "serial":     "100000abcd",
+    "identity":   "rpi100000abcd@cloud.local",
+    "bs.psk.key": "<64 hex>",
+    "dm.psk.id":  "rpi100000abcd@cloud.local",
+    "dm.psk.key": "<64 hex>"
+  }]
+cloud.dev.mode            → Commissioning flag. While true the ds-server
+                            bypasses the PSK ACLs so cloud-httpd can write
+                            the carrier + reveal creds. (gid:cloud-svc)
+```
+
+Device-side PSK keys (`iot.lua`, loaded by the same ds-server; client runs
+as `engineer`):
+```
+iot.serial                → Hardware serial. RPi: auto-filled by the client
+                            at startup; non-RPi: installer enters via
+                            device-ui. = endpoint = BS PSK identity. (gid:engineer write)
+iot.dev.mode              → Commissioning flag (bypasses PSK ACLs). (gid:engineer)
+iot.bs.psk.identity       → = raw serial (on-the-wire BS identity). (gid:engineer rw)
+iot.bs.psk.key            → BS PSK, hex. device-ui-generated, write-only. (gid:engineer rw)
+iot.dm.psk.identity       → = rpi<serial>@cloud.local, from bootstrap. (gid:engineer rw)
+iot.dm.psk.key            → DM PSK, hex, from bootstrap, write-only. (gid:engineer rw)
+```
+`gid:engineer`/`gid:cloud-svc` are unix groups (the static service accounts
+the client / cloud servers run as) — not ds keys, so hyphens are allowed.
 
 ### Endpoints (written by iot-cloudd, read by cloud UI)
 ```
