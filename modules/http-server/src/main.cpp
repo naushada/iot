@@ -268,6 +268,9 @@ int main(int argc, char** argv) {
 
     // Push startup logs immediately so the cloud UI can tail them.
     g_log.flush(ds);
+    // Periodic log flush via LogBuffer's own ACE reactor timer (same
+    // pattern as StatsPublisher) instead of flushing from the loop below.
+    g_log.open(ds, 10, 200);
 
     // ── Resource telemetry (L22) ──────────────────────────────────
     // Publish this container's CPU/mem/fd/threads every 10s. iot-httpd
@@ -399,7 +402,6 @@ int main(int argc, char** argv) {
                 // (stateless — no cache to invalidate).
 
                 g_log.apply_level(ds);
-                g_log.flush(ds, 200);
             }
             DsHttpCfg cur = read_ds_http_cfg(ds);
             bool tlsDirty = false, listenDirty = false;
@@ -436,6 +438,7 @@ int main(int argc, char** argv) {
                        rs.err.c_str()));
         }
     }
+    g_log.close();   // stop flush timer + final flush (ds still alive)
     // Join the workers before tearing down the reactor/sessions so no
     // in-flight handler is left holding a session that's about to vanish.
     pool.stop();

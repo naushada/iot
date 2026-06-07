@@ -184,6 +184,10 @@ int main(int argc, char** argv) {
                             "open failed\n")));
     }
 
+    // Flush logs to ds every 10s via LogBuffer's own ACE reactor timer
+    // (same pattern as StatsPublisher) instead of from the loop below.
+    g_log.open(ds, 10, 200);
+
     // ── Main loop ─────────────────────────────────────────────────
     // Block on recv_event() up to sync_interval seconds.  A provision
     // or deprovision request from iot-httpd wakes us immediately; a
@@ -240,7 +244,6 @@ int main(int argc, char** argv) {
                 ds.set("cloud.vpn.port.next",
                        data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
                 g_log.apply_level(ds);
-                g_log.flush(ds, 200);
             }
         }
     }
@@ -265,9 +268,8 @@ int main(int argc, char** argv) {
                        rs.err.c_str()));
         }
     }
-    g_log.flush(ds);
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D cloudd:thread:%t %M %N:%l stopped\n")));
-    g_log.flush(ds);
+    g_log.close();   // stop flush timer + final flush (ds still alive)
     return 0;
 }
