@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get -o Acquire::Check-Date=false update && \
     apt-get install -y --no-install-recommends \
-    build-essential cmake ninja-build pkg-config \
+    build-essential cmake ninja-build pkg-config autoconf \
     libssl-dev zlib1g-dev libreadline-dev \
     liblua5.3-dev lua5.3 wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -71,6 +71,18 @@ RUN mkdir -p /tmp/bcloud && cd /tmp/bcloud && \
     -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 \
     -DDATASTORE_LIB=/tmp/bds/libdatastore_client.a \
     && make -j2
+
+# Build vendored tinydtls — produces libtinydtls.a, which the lwm2m
+# target links. autoconf → autoheader → configure → make libtinydtls.a.
+# The repo .gitignore excludes apps/3rdparty/tinydtls/doc/, so its
+# autoconf inputs (doc/Makefile.in, doc/Doxyfile.in) aren't in the build
+# context; stub them so configure completes (we don't build the docs).
+RUN cd /src/apps/3rdparty/tinydtls && \
+    mkdir -p doc && \
+    [ -f doc/Makefile.in ] || : > doc/Makefile.in && \
+    [ -f doc/Doxyfile.in ] || : > doc/Doxyfile.in && \
+    autoconf && autoheader && ./configure && \
+    make libtinydtls.a -j$(nproc)
 
 # Build LwM2M binary (reused in server role for BS + DM).
 # IOT_ENABLE_MONGO=OFF is now cleanly supported by apps/CMakeLists.txt
