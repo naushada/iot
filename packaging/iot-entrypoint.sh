@@ -29,7 +29,7 @@ set -e
 # If the first arg is one of our binaries, forward verbatim — supports
 # `podman run iot:l11 ds-cli get foo`.
 case "${1:-}" in
-    ds-cli|ds-server|lwm2m|openvpn-client|openvpn|net-router|nft|ip|wifi-client|wpa_supplicant|wpa_cli|udhcpc|dhclient)
+    ds-cli|ds-server|lwm2m|iot-httpd|openvpn-client|openvpn|net-router|nft|ip|wifi-client|wpa_supplicant|wpa_cli|udhcpc|dhclient)
         exec "$@"
         ;;
 esac
@@ -79,7 +79,7 @@ case "${IOT_ROLE:-}" in
         ;;
     "")
         echo "iot-entrypoint: set IOT_ROLE to one of: ds | client | server | ovpn | net | wifi" >&2
-        echo "                or invoke a binary directly: ds-cli / ds-server / lwm2m / openvpn-client / openvpn / net-router / wifi-client / wpa_supplicant / wpa_cli / udhcpc / dhclient / nft / ip" >&2
+        echo "                or invoke a binary directly: ds-cli / ds-server / lwm2m / iot-httpd / openvpn-client / openvpn / net-router / wifi-client / wpa_supplicant / wpa_cli / udhcpc / dhclient / nft / ip" >&2
         exit 64
         ;;
     *)

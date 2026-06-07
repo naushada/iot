@@ -1,0 +1,120 @@
+# docker-compose.yml — IoT Device stack (dev / e2e, no RPi3B board)
+#
+# Brings up the device-side daemons as separate containers sharing the
+# ds-server Unix socket on the dev-run volume — the same wiring that runs
+# on a real board under systemd. By default it is a SELF-CONTAINED loop:
+# a local lwm2m server (role=server) plays the LwM2M authority and the
+# lwm2m client bootstraps + registers against it over plain CoAP, so
+# `./run.sh` gives a working end-to-end registration cycle with zero
+# external dependencies.
+#
+#   ds-server      → shared data store (IPC backbone)
+#   lwm2m-server   → local Bootstrap (5685) + DM (5683) authority
+#   lwm2m-client   → device client: bootstraps from BS, registers to DM
+#   iot-httpd      → device REST API (/api/v1/*) + device UI (served at /)
+#
+# Point the client at a real cloud instead of the local server by
+# overriding DEVICE_BS_URI (and dropping the local server if you like):
+#   DEVICE_BS_URI=coaps://host.docker.internal:5684 ./run.sh
+# (the cloud compose publishes BS on 5684/DM on 5683 to the host;
+#  host.docker.internal resolves via the host-gateway extra_hosts entry.)
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f lwm2m-client
+#   docker compose down
+#
+#   HTTP_PORT=8081 docker compose up -d   # custom host port for the UI
+
+version: "3.8"
+
+services:
+  # ── Data Store (IPC backbone) ──────────────────────────────────
+  ds-server:
+    image: ${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}
+    container_name: iot-dev-ds
+    command: >
+      ds-server
+      ds-socket=/run/iot/data_store.sock
+      ds-store=/var/lib/iot/data_store.lua
+      ds-schema-dir=/etc/iot/ds-schemas
+    volumes:
+      - dev-run:/run/iot
+      - dev-etc:/etc/iot
+      - dev-lib:/var/lib/iot
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ds-cli", "--socket=/run/iot/data_store.sock", "get", "log.version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ── Local LwM2M authority (Bootstrap 5685 + DM 5683) ───────────
+  # The device binary in role=server. For self-contained e2e only —
+  # override DEVICE_BS_URI to target a real cloud and this sits idle.
+  lwm2m-server:
+    image: ${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}
+    container_name: iot-dev-lwm2m-server
+    command: >
+      lwm2m
+      role=server
+      local=coap://0.0.0.0:5685
+      config=/etc/iot/config
+      ds-sock=/run/iot/data_store.sock
+    volumes:
+      - dev-run:/run/iot
+      - dev-etc:/etc/iot
+    depends_on:
+      ds-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Device LwM2M client ────────────────────────────────────────
+  lwm2m-client:
+    image: ${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}
+    container_name: iot-dev-lwm2m-client
+    command: >
+      lwm2m
+      role=client
+      local=coap://0.0.0.0:5684
+      bs=${DEVICE_BS_URI:-coap://lwm2m-server:5685}
+      config=/etc/iot/config
+      ds-sock=/run/iot/data_store.sock
+    # Lets DEVICE_BS_URI=coaps://host.docker.internal:5684 reach a cloud
+    # stack published on the host (Linux needs the host-gateway mapping).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - dev-run:/run/iot
+      - dev-etc:/etc/iot
+    depends_on:
+      ds-server:
+        condition: service_healthy
+      lwm2m-server:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── HTTP Server (device REST API + device UI) ──────────────────
+  iot-httpd:
+    image: ${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}
+    container_name: iot-dev-httpd
+    command: >
+      iot-httpd
+      ds-socket=/run/iot/data_store.sock
+      http-port=8080
+      www-dir=/usr/share/iot/www
+    ports:
+      - "${HTTP_PORT:-8081}:8080"
+    volumes:
+      - dev-run:/run/iot
+    depends_on:
+      ds-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+# ── Shared volumes ──────────────────────────────────────────────
+volumes:
+  dev-run:    # Unix socket (ds-server ↔ all daemons)
+  dev-etc:    # Schemas, env files, LwM2M object config
+  dev-lib:    # Persisted data store
