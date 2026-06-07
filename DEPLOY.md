@@ -147,13 +147,18 @@ needs only podman or docker; no Yocto SDK, no host Yocto install. The
 build runs entirely in the container and the artifacts are copied back
 to the host.
 
-Two artifacts come out per machine:
+Two artifacts come out per machine, copied back to the host under
+`yocto/build/<machine>/`:
 
-- **`iot-image-*.wic.bz2`** — a flashable SD-card image. The default
-  `MACHINE` is `raspberrypi3-64` (Pi 3B, 64-bit). It bundles the full
-  gateway stack (`packagegroup-iot-full`), all kernel modules, the Pi's
-  onboard Wi-Fi/Bluetooth firmware, an SSH server, and `opkg`.
-- **`.ipk` feed** — the same per-daemon packages, for pushing app
+- **`images/<machine>/iot-image-<machine>.rootfs-<timestamp>.wic.bz2`** — a
+  flashable SD-card image. The default `MACHINE` is `raspberrypi3-64`
+  (Pi 3B, 64-bit), so the Pi image lands at
+  `yocto/build/raspberrypi3-64/images/raspberrypi3-64/`. A stable
+  `iot-image-<machine>.rootfs.wic.bz2` symlink in the same directory always
+  points at the latest build. It bundles the full gateway stack
+  (`packagegroup-iot-full`), all kernel modules, the Pi's onboard
+  Wi-Fi/Bluetooth firmware, an SSH server, and `opkg`.
+- **`ipk/` feed** — the same per-daemon packages, for pushing app
   updates to an already-running target over ssh.
 
 > First boot needs a physical SD-card flash — a Pi can't be
@@ -191,18 +196,23 @@ build-steps walkthrough.
 
 ### 2. Flash the SD card
 
-Find the SD device first (`/dev/sdX` on Linux, `/dev/diskN` on macOS),
-then write it. `bmaptool` is fast and verified; plain `dd` also works:
+Find the SD device first — `lsblk` on Linux (`/dev/sdX`), `diskutil list`
+on macOS (`/dev/diskN`; unmount with `diskutil unmountDisk` first). Write
+the **whole disk**, not a partition. Decompress on the fly and write with
+`dd`:
 
 ```sh
-IMG=yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-*.wic.bz2
+IMG=yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-raspberrypi3-64.rootfs.wic.bz2
 
-# Verified write (recommended — needs bmaptool, picks up the .bmap automatically)
-bmaptool copy $IMG /dev/sdX
-
-# Or plain dd
 bzcat $IMG | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
+# macOS: target the raw node /dev/rdiskN instead of /dev/diskN — much faster.
 ```
+
+> The build does **not** emit a `.bmap` file: `bmaptool` needs the FIEMAP
+> ioctl / `SEEK_HOLE`, which the macOS-podman build filesystem doesn't
+> support, so `wic.bmap` is omitted from `IMAGE_FSTYPES`. If you build on a
+> Linux host and want `bmaptool copy`'s faster verified writes, add
+> `"wic.bmap"` back to `IMAGE_FSTYPES` in `meta-iot/recipes-iot/images/iot-image.bb`.
 
 ### 3. Boot + ssh in
 

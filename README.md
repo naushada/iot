@@ -181,13 +181,17 @@ clones poky + meta-openembedded + meta-raspberrypi at Scarthgap
 in `yocto/build/<machine>/`:
 
 - `images/<machine>/iot-image-*.wic.bz2` — flashable SD-card image
-  (full gateway stack + kernel modules + Pi Wi-Fi/BT firmware + sshd + opkg)
+  (full gateway stack + kernel modules + Pi Wi-Fi/BT firmware + sshd + opkg).
+  A stable `iot-image-<machine>.rootfs.wic.bz2` symlink alongside it always
+  points at the newest build.
 - `ipk/` — the `.ipk` feed for `opkg install` over ssh
 
-Flash, boot, ssh in, then push app updates over ssh:
+Flash (find the SD device with `lsblk` / `diskutil list` first — write the
+whole disk, not a partition), boot, ssh in, then push app updates over ssh:
 
 ```sh
-bmaptool copy yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-*.wic.bz2 /dev/sdX
+bzcat yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-*.wic.bz2 \
+  | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress   # macOS: /dev/rdiskN
 ssh root@<pi-ip>                                   # sshd baked in (debug-tweaks)
 scp yocto/build/raspberrypi3-64/ipk/*/iot-*.ipk root@<pi-ip>:/tmp/   # later updates
 ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'

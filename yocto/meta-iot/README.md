@@ -26,9 +26,13 @@ meta-openembedded + meta-raspberrypi, all at Scarthgap 5.0 LTS), runs
 `bitbake` inside it, and copies the artifacts back to the host. The **first**
 run compiles the whole distribution (toolchain, glibc, ACE, kernel…) — hours.
 
-**2. Collect the output** — per machine, under `yocto/build/<machine>/`:
+**2. Collect the output** — copied back to the host per machine, under
+`yocto/build/<machine>/`:
 
-- `images/<machine>/iot-image-*.wic.bz2` — flashable SD-card image
+- `images/<machine>/iot-image-<machine>.rootfs-<timestamp>.wic.bz2` —
+  flashable SD-card image. A stable `iot-image-<machine>.rootfs.wic.bz2`
+  symlink in the same directory always points at the latest build, e.g.
+  `yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-raspberrypi3-64.rootfs.wic.bz2`
 - `ipk/` — the `.ipk` feed for `opkg install` over ssh
 
 The persistent `iot-yocto-sstate` / `iot-yocto-downloads` volumes make
@@ -118,8 +122,12 @@ mirrors and wires `SSTATE_MIRRORS` / `own-mirrors`.
 ### Deploy to a Raspberry Pi 3B
 
 ```sh
-# 1. Flash the SD card (verified write; or use dd — see build.sh summary)
-bmaptool copy yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-*.wic.bz2 /dev/sdX
+# 1. Flash the SD card. Find the device first: lsblk (Linux) or
+#    `diskutil list` (macOS) — write to the whole disk, not a partition.
+#    Decompress on the fly and write with dd:
+bzcat yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-*.wic.bz2 \
+  | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
+#    (Linux: /dev/sdX. macOS: /dev/rdiskN — the raw node is much faster.)
 
 # 2. Boot the Pi, then ssh in (image runs sshd; debug-tweaks → empty root pw)
 ssh root@<pi-ip>
