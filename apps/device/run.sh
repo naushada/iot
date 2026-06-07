@@ -34,7 +34,7 @@ set -euo pipefail
 
 IMAGE="${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}"
 HTTP_PORT="${HTTP_PORT:-8081}"
-DEVICE_BS_URI="${DEVICE_BS_URI:-coap://lwm2m-server:5685}"
+DEVICE_BS_URI="${DEVICE_BS_URI:-coaps://host.docker.internal:5684}"
 # Reset the dev-etc config volume on start so the latest schema/config
 # from the image is always loaded (set to 0 to preserve manual edits).
 RESET_CONFIG="${RESET_CONFIG:-1}"
@@ -115,7 +115,7 @@ case "${1:-start}" in
 
     logs)
         shift || true
-        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" logs -f "${@}"
+        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" logs -f ${@+"${@}"}
         ;;
 
     ps|status)
@@ -128,15 +128,34 @@ case "${1:-start}" in
         ;;
 
     ds)
-        # Forward to ds-cli inside the ds-server container:
+        # Forward to ds-cli inside the ds-server container (runs as root):
         #   ./run.sh ds get log.lwm2m.text
         #   ./run.sh ds set iot.endpoint '"urn:dev:test-1"'
+        # NOTE: root cannot write gid:engineer keys (serial/PSK/dev.mode) —
+        # use `./run.sh commission` for those.
         shift || true
         $CR exec iot-dev-ds ds-cli --socket=/run/iot/data_store.sock "${@}"
         ;;
 
+    commission)
+        # Enter/leave commissioning mode by setting iot.dev.mode. This key is
+        # write_acl=gid:engineer, so we run ds-cli inside the lwm2m-client
+        # container, which runs as the `engineer` account — root (the `ds`
+        # command / ds-cli on the host) is denied. While on, ds-server
+        # bypasses the PSK ACLs so device-ui can write the serial + BS PSK.
+        #   ./run.sh commission on    # enable, then set serial/PSK in device-ui
+        #   ./run.sh commission off   # lock down after provisioning
+        case "${2:-on}" in
+            on|true|1)  val=true ;;
+            off|false|0) val=false ;;
+            *) echo "Usage: $0 commission [on|off]" >&2; exit 1 ;;
+        esac
+        log_info "Setting iot.dev.mode=$val (ds-cli as engineer in lwm2m-client)"
+        $CR exec iot-dev-lwm2m-client ds-cli --socket=/run/iot/data_store.sock set iot.dev.mode "$val"
+        ;;
+
     *)
-        echo "Usage: $0 {start|stop|logs|ps|build|nocache|restart|ds}" >&2
+        echo "Usage: $0 {start|stop|logs|ps|build|nocache|restart|ds|commission}" >&2
         exit 1
         ;;
 esac

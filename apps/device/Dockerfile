@@ -129,6 +129,18 @@ RUN apt-get -o Acquire::Check-Date=false update && \
     openvpn nftables iproute2 wpasupplicant udhcpc wireless-tools \
     && rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/*
 
+# PSK-provisioning accounts — mirror packaging/systemd/iot-sysusers.conf so
+# the container matches the SD-card/systemd deployment:
+#   * `engineer` runs the LwM2M client; its ds connection carries
+#     gid:engineer, matching the read/write ACLs on the PSK keys.
+#   * `iot` is the ds-socket access group (ds-server chgrp's its 0660 socket
+#     to it; `engineer` is a member so it can connect).
+# httpd stays root and relies on iot.dev.mode for commissioning writes.
+RUN groupadd --system iot && \
+    groupadd --system engineer && \
+    useradd --system --no-create-home --shell /usr/sbin/nologin --gid engineer engineer && \
+    usermod -aG iot engineer
+
 # ACE 7.0.0 shared library.
 COPY --from=builder /usr/local/ACE_TAO-7.0.0/lib/libACE.so* /usr/local/lib/
 RUN ldconfig
