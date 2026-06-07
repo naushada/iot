@@ -69,6 +69,13 @@ log_t dtls_get_log_level(void);
 /** Sets the log level to the specified value. */
 void dtls_set_log_level(log_t level);
 
+/*SWISTART*/
+/** Optional sink: when set, every dsrv_log() line is also delivered here
+ * (in addition to stderr/stdout) so the host app can route DTLS logs into
+ * its own log buffer / UI. `line` is the formatted message (no timestamp). */
+void dtls_set_log_sink(void (*sink)(int level, const char *line));
+/*SWISTOP*/
+
 /**
  * Writes the given text to \c stdout. The text is output only when \p
  * level is below or equal to the log level that set by

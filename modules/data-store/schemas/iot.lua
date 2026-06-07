@@ -33,6 +33,13 @@ return {
         access  = "Admin",
       type    = "string",
     },
+    -- Bootstrap server URI the client connects to (e.g.
+    -- coaps://cloud.example.com:5684). ds-driven: the client reads this
+    -- (falling back to a bs= CLI arg) and re-bootstraps when it changes.
+    ["iot.bs.uri"]     = {
+        access  = "Admin",
+      type    = "string",
+    },
     ["iot.binding"]    = {
         access  = "Admin",
       type    = "string",
@@ -128,6 +135,12 @@ return {
       default = "",
     },
     ["log.level.httpd"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
+    -- Device-side lwm2m client level (cloud servers use .bs/.dm below).
+    ["log.level.lwm2m"] = {
         access  = "Admin",
       type    = "string",
       default = "",
