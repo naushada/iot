@@ -668,8 +668,9 @@ int main(std::int32_t argc, char *argv[]) {
 
     // ── Resource telemetry (L22) ──────────────────────────────────
     // Publish this container's CPU/mem/fd/threads every 10s. The lwm2m
-    // binary runs the singleton reactor on the udpAdapter ACE_Task thread,
-    // so the timer fires there — no extra thread (run_reactor_thread=false).
+    // binary's udpAdapter owns the singleton reactor on its OWN thread, so a
+    // timer scheduled here wouldn't dispatch — StatsPublisher uses its own
+    // private reactor + thread (run_reactor_thread=true, the default).
     // Prefix tracks role: cloud bs/dm instance, else device client/server.
     const std::string stats_prefix =
         !lwm2m_instance.empty()
@@ -682,14 +683,14 @@ int main(std::int32_t argc, char *argv[]) {
             if (auto* c = ds.client()) c->set(kv);
         });
     if (auto* cli = ds.client()) {
-        if (g_stats.open(data_store::StatsPublisher::STATS_FLUSH_SEC,
-                         /*run_reactor_thread=*/false) != 0) {
+        if (g_stats.open() != 0) {   // run_reactor_thread=true (own reactor)
             ACE_ERROR((LM_ERROR,
                        ACE_TEXT("%D lwm2m:thread:%t %M %N:%l stats publisher "
                                 "open failed\n")));
         }
         (void)cli;
     }
+
 
     // Background thread that flushes the log ring-buffer every 10 s.
     // The lwm2m binary blocks on ACE_Reactor::run_reactor_event_loop()
