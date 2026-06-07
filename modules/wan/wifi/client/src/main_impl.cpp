@@ -20,6 +20,9 @@
 #include "ds_bridge.hpp"
 #include "supervisor.hpp"
 
+#include "data_store/client.hpp"
+#include "data_store/stats_publisher.hpp"
+
 namespace wifi_client {
 
 namespace {
@@ -142,6 +145,17 @@ Status run_daemon(const std::string& socketPath,
                ACE_TEXT("%D [wifi:%t] %M %N:%l starting on iface=%C "
                         "wpa=%C ctrl_dir=%C\n"),
                iface.c_str(), wpa_path.c_str(), ctrl_dir.c_str()));
+
+    // L22 — resource telemetry. Blocking supervisor loop (no ACE reactor),
+    // so StatsPublisher spawns its own ACE_Task thread for the singleton
+    // reactor timer (run_reactor_thread=true, the default). wpa_supplicant +
+    // udhcpc run in this container, folded into these cgroup totals.
+    data_store::StatsPublisher stats(
+        "services.wifi.client",
+        [&ds](const std::vector<data_store::KV>& kv) {
+            if (auto* c = ds.client()) c->set(kv);
+        });
+    if (ds.client()) stats.open();
 
     SupervisorOptions opt;
     opt.wpa_path  = wpa_path;

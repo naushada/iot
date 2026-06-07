@@ -36,6 +36,7 @@
 #include <ace/Log_Msg.h>
 
 #include "data_store/log_buffer.hpp"
+#include "data_store/stats_publisher.hpp"
 #include <ace/Reactor.h>
 #include <ace/SOCK_Acceptor.h>
 #include <ace/Time_Value.h>
@@ -267,6 +268,20 @@ int main(int argc, char** argv) {
 
     // Push startup logs immediately so the cloud UI can tail them.
     g_log.flush(ds);
+
+    // ── Resource telemetry (L22) ──────────────────────────────────
+    // Publish this container's CPU/mem/fd/threads every 10s. iot-httpd
+    // already pumps the singleton reactor in the loop below, so the timer
+    // fires there — no extra thread (run_reactor_thread=false).
+    data_store::StatsPublisher g_stats(
+        "services.cloud.iot.httpd",
+        [&ds](const std::vector<data_store::KV>& kv) { ds.set(kv); });
+    if (g_stats.open(data_store::StatsPublisher::STATS_FLUSH_SEC,
+                     /*run_reactor_thread=*/false) != 0) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D httpd:thread:%t %M %N:%l stats publisher "
+                            "open failed\n")));
+    }
 
     // The listening socket is polled directly via non-blocking accept() in
     // the loop below; only the per-connection sessions are registered with

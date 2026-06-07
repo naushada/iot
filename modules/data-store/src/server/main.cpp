@@ -15,6 +15,7 @@
 #include "worker_pool.hpp"
 
 #include "data_store/proto.hpp"
+#include "data_store/stats_publisher.hpp"
 #include "data_store/value.hpp"
 
 #include <atomic>
@@ -175,6 +176,18 @@ int main(int argc, char** argv) {
         nullptr,
         /*delay=*/ACE_Time_Value(60),
         /*interval=*/ACE_Time_Value(60));
+
+    // L22 — resource telemetry. ds-server has no Client (it IS the store),
+    // so the sink writes directly via the in-process DataStore. The main
+    // thread already pumps the singleton reactor below, so the timer fires
+    // there (run_reactor_thread=false).
+    data_store::StatsPublisher stats(
+        "services.ds",
+        [&store](const std::vector<data_store::KV>& kv) {
+            for (const auto& p : kv) store->set(p.first, p.second);
+        });
+    stats.open(data_store::StatsPublisher::STATS_FLUSH_SEC,
+               /*run_reactor_thread=*/false);
 
     ::signal(SIGINT,  on_signal);
     ::signal(SIGTERM, on_signal);

@@ -3,6 +3,9 @@
 #include "ds_bridge.hpp"
 #include "supervisor.hpp"
 
+#include "data_store/client.hpp"
+#include "data_store/stats_publisher.hpp"
+
 #include <cstdint>
 #include <optional>
 #include <sstream>
@@ -80,6 +83,17 @@ Status run_daemon(const std::string& socketPath,
         Status s; s.ok = false; s.code = 2;
         s.err = "missing required vpn.* keys"; return s;
     }
+
+    // L22 — resource telemetry. Blocking supervisor loop (no ACE reactor),
+    // so StatsPublisher spawns its own ACE_Task thread for the singleton
+    // reactor timer (run_reactor_thread=true, the default). openvpn(8) runs
+    // in this container, so its usage is folded into these cgroup totals.
+    data_store::StatsPublisher stats(
+        "services.openvpn.client",
+        [&ds](const std::vector<data_store::KV>& kv) {
+            if (auto* c = ds.client()) c->set(kv);
+        });
+    if (ds.client()) stats.open();
 
     Supervisor::Options opt;
     opt.openvpn_path = openvpn_path;

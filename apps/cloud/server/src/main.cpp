@@ -23,6 +23,7 @@
 #include <ace/Log_Msg.h>
 
 #include "data_store/log_buffer.hpp"
+#include "data_store/stats_publisher.hpp"
 
 #include <atomic>
 #include <csignal>
@@ -168,6 +169,20 @@ int main(int argc, char** argv) {
     // Called at startup, on watch events, and on periodic timeout ticks.
     g_log.apply_level(ds);
     g_log.flush(ds);  // push startup logs immediately
+
+    // ── Resource telemetry (L22) ──────────────────────────────────
+    // Publish this container's CPU/mem/fd/threads to ds every 10s for the
+    // cloud UI Services page. openvpn-server runs inside this same
+    // container, so its usage is already folded into cloudd's cgroup
+    // totals — we publish under services.cloud.iot.cloudd only.
+    data_store::StatsPublisher g_stats(
+        "services.cloud.iot.cloudd",
+        [&ds](const std::vector<data_store::KV>& kv) { ds.set(kv); });
+    if (g_stats.open() != 0) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l stats publisher "
+                            "open failed\n")));
+    }
 
     // ── Main loop ─────────────────────────────────────────────────
     // Block on recv_event() up to sync_interval seconds.  A provision
