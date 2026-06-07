@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
-import { Subscription, interval } from 'rxjs';
-import { switchMap } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
+import { HttpsvcService } from '../../common/httpsvc.service';
 import { environment } from '../../environments/environment';
 
 @Component({
@@ -13,7 +13,7 @@ import { environment } from '../../environments/environment';
         <button class="btn btn-sm" (click)="refresh()">Refresh</button>
         <label class="auto-refresh">
           <input type="checkbox" [checked]="autoRefresh" (change)="toggleAuto()" />
-          auto (3s)
+          auto
         </label>
       </div>
       <textarea #ta class="log-textarea" readonly
@@ -41,27 +41,44 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   @ViewChild('ta') ta!: ElementRef<HTMLTextAreaElement>;
   logText = '';
   autoRefresh = true;
+  private active = true;
   private sub = new Subscription();
   private api = environment.apiUrl;
 
-  constructor(private http: HttpClient) {}
+  // Mirrors the cloud-ui log viewer (apps/cloud/ui log-viewer): one raw
+  // text fetch of the merged /api/v1/log, plus a long-poll on log.version
+  // (every daemon bumps it on flush) to drive live updates. The long-poll
+  // loop re-subscribes in both next and error, so a transient failure
+  // (e.g. a 401 after the session expires) never tears the stream down.
+  constructor(private http: HttpClient, private httpSvc: HttpsvcService) {}
 
   ngOnInit(): void {
     this.refresh();
+    this.pollLog();
+  }
+
+  private pollLog(): void {
+    if (!this.active) return;
     this.sub.add(
-      interval(3000).pipe(switchMap(() => this.fetchLog())).subscribe({
-        next: (text) => { if (this.autoRefresh) { this.logText = text; this.scrollBottom(); } }
+      this.httpSvc.dbGetLongPoll('log.version', 30).subscribe({
+        next: () => {
+          if (this.autoRefresh) this.fetchAndShow();
+          this.pollLog();
+        },
+        error: () => { if (this.active) setTimeout(() => this.pollLog(), 2000); }
       })
     );
   }
 
-  refresh(): void {
+  refresh(): void { this.fetchAndShow(); }
+
+  toggleAuto(): void { this.autoRefresh = !this.autoRefresh; }
+
+  private fetchAndShow(): void {
     this.fetchLog().subscribe({
       next: (text) => { this.logText = text; this.scrollBottom(); }
     });
   }
-
-  toggleAuto(): void { this.autoRefresh = !this.autoRefresh; }
 
   private fetchLog() {
     return this.http.get(`${this.api}/api/v1/log`, {
@@ -76,5 +93,5 @@ export class LogViewerComponent implements OnInit, OnDestroy {
     }, 50);
   }
 
-  ngOnDestroy(): void { this.sub.unsubscribe(); }
+  ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
 }

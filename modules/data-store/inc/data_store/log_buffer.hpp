@@ -54,6 +54,15 @@ public:
     /// after ACE is initialised — NOT during static initialisation.
     void start();
 
+    /// Attach the (already-started) log callback to the CALLING thread.
+    /// ACE_Log_Msg is thread-specific: a thread that runs its own reactor
+    /// (e.g. the LwM2M UDP/CoAP svc() thread) does NOT inherit the callback
+    /// registered by start() on the main thread, so its ACE_DEBUG/ACE_ERROR
+    /// output bypasses the ring buffer and never reaches log.*.text. Such a
+    /// thread must call this once at entry. No-op if start() hasn't run.
+    /// Process-wide: targets the most recently start()ed LogBuffer.
+    static void attach_current_thread();
+
     /// Unregister the callback. Flush one last time before destroying.
     ~LogBuffer();
 

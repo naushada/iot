@@ -1,21 +1,10 @@
 <div class="page">
-  <h3>LwM2M Endpoint Configuration</h3>
+  <h3>{{ mode === 'security' ? 'LwM2M Security (Bootstrap)' : 'LwM2M Server' }}</h3>
 
   <form [formGroup]="serverForm" (ngSubmit)="save()" *ngIf="!loading">
-    <div class="form-grid">
-      <clr-input-container>
-        <label>Serial Number</label>
-        <input clrInput formControlName="serial"
-               [readonly]="serialAutoDetected"
-               [disabled]="!isAdmin"
-               placeholder="enter device serial number" />
-        <clr-control-helper *ngIf="serialAutoDetected">
-          Auto-detected (Raspberry Pi) — read-only
-        </clr-control-helper>
-        <clr-control-helper *ngIf="!serialAutoDetected">
-          Not a Raspberry Pi — enter the serial printed on the device
-        </clr-control-helper>
-      </clr-input-container>
+
+    <!-- ── Server tab: registration / Server Object fields ───────── -->
+    <div class="form-grid" *ngIf="mode === 'server'">
       <clr-input-container>
         <label>Server URI</label>
         <input clrInput [disabled]="!isAdmin" formControlName="server_uri" placeholder="coaps://lwm2m.example.com:5684" />
@@ -39,14 +28,39 @@
       </clr-input-container>
     </div>
 
-    <clr-checkbox-container style="margin-top:16px;">
+    <clr-checkbox-container style="margin-top:16px;" *ngIf="mode === 'server'">
       <clr-checkbox-wrapper>
         <input type="checkbox" clrCheckbox [disabled]="!isAdmin" formControlName="observable" />
         <label>Observable</label>
       </clr-checkbox-wrapper>
     </clr-checkbox-container>
 
-    <div style="margin-top:24px;" *ngIf="isAdmin">
+    <!-- ── Security tab: serial (Security Object identity) ───────── -->
+    <!-- iot.serial is write_acl=gid:engineer; the data-store only accepts
+         a write from device-ui while commissioning mode (iot.dev.mode) is
+         on. So the field is read-only unless devMode (or RPi auto-fill). -->
+    <div class="form-grid" *ngIf="mode === 'security'">
+      <clr-input-container>
+        <label>Serial Number</label>
+        <input clrInput formControlName="serial"
+               [readonly]="serialAutoDetected || !devMode"
+               [disabled]="!isAdmin"
+               placeholder="enter device serial number" />
+        <clr-control-helper *ngIf="serialAutoDetected">
+          Auto-detected (Raspberry Pi) — read-only
+        </clr-control-helper>
+        <clr-control-helper *ngIf="!serialAutoDetected && devMode">
+          Not a Raspberry Pi — enter the serial printed on the device
+        </clr-control-helper>
+        <clr-control-helper *ngIf="!serialAutoDetected && !devMode">
+          Enable commissioning mode (iot.dev.mode) to set the serial
+        </clr-control-helper>
+      </clr-input-container>
+    </div>
+
+    <!-- Save: server fields always; serial only when commissioning + editable -->
+    <div style="margin-top:24px;"
+         *ngIf="isAdmin && (mode === 'server' || (devMode && !serialAutoDetected))">
       <button type="submit" class="btn btn-primary" [disabled]="saving">
         {{ saving ? 'Saving…' : 'Save' }}
       </button>
@@ -54,10 +68,13 @@
     </div>
   </form>
 
-  <!-- PSK provisioning (task H): dev-mode only. Generate a 32-byte BS PSK,
-       show it once so the engineer can copy serial + PSK into cloud-ui. The
-       value is stored write-only; it is never read back from the store. -->
-  <div class="card" style="margin-top:32px;" *ngIf="!loading && devMode && isAdmin">
+  <!-- PSK provisioning (task H): on the Security tab. Generate a 32-byte BS
+       PSK, show it once so the engineer can copy serial + PSK into cloud-ui.
+       The value is stored write-only; it is never read back. Generation
+       requires commissioning mode (iot.dev.mode) so the data-store bypasses
+       the PSK ACLs and httpd can write it. -->
+  <div class="card" style="margin-top:32px;"
+       *ngIf="!loading && mode === 'security' && isAdmin">
     <div class="card-header">Bootstrap PSK (commissioning)</div>
     <div class="card-block">
       <p class="card-text">
@@ -67,9 +84,13 @@
         only once.
       </p>
       <button type="button" class="btn btn-outline"
-              [disabled]="generatingPsk" (click)="generateBsPsk()">
+              [disabled]="generatingPsk || !devMode" (click)="generateBsPsk()">
         {{ generatingPsk ? 'Generating…' : 'Generate BS PSK' }}
       </button>
+      <p *ngIf="!devMode" class="hint" style="margin-top:8px;">
+        Enable commissioning mode (<code>iot.dev.mode</code>) to generate and
+        store the BS PSK.
+      </p>
       <clr-input-container *ngIf="generatedPsk" style="margin-top:12px;">
         <label>Generated BS PSK (copy now)</label>
         <input clrInput readonly [value]="generatedPsk" style="width:34rem;font-family:monospace;" />

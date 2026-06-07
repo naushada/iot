@@ -4,7 +4,7 @@ import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
 import { StatusSnapshot, ServiceInfo } from '../../../common/app-globals';
 
-interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: boolean; msg: string; }
+interface SvcRow { key: string; name: string; label: string; info: ServiceInfo; restarting: boolean; msg: string; }
 
 @Component({
   selector: 'app-services-list',
@@ -26,7 +26,10 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
         <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
 
         <clr-dg-row *clrDgItems="let s of services">
-          <clr-dg-cell><code>{{ s.label }}</code></clr-dg-cell>
+          <clr-dg-cell>
+            <span class="svc-name">{{ s.name }}</span>
+            <code class="svc-key" [title]="s.label + '.state'">{{ s.label }}</code>
+          </clr-dg-cell>
           <clr-dg-cell><app-status-badge [label]="s.info.state||'unknown'" [state]="s.info.state||''"></app-status-badge></clr-dg-cell>
           <clr-dg-cell class="num">{{ hasStats(s) ? fmtCpu(s.info.cpu_permille) : '—' }}</clr-dg-cell>
           <clr-dg-cell class="num">{{ hasStats(s) ? s.info.cpu_count : '—' }}</clr-dg-cell>
@@ -53,6 +56,8 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
   `,
   styles: [`
     .page { padding: 24px; } h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
+    .svc-name { display: block; font-weight: 600; }
+    .svc-key { display: block; font-size: 11px; color: #9e9e9e; }
     .num { text-align: left; font-variant-numeric: tabular-nums; }
     .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
     .hint { font-size: 12px; color: #757575; margin-top: 16px; }
@@ -60,12 +65,11 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
 })
 export class ServicesListComponent implements OnInit, OnDestroy {
   services: SvcRow[] = [
-    { key: 'ds', label: 'services.ds', info: {}, restarting: false, msg: '' },
-    { key: 'net_router',      label: 'services.net.router',     info: {}, restarting: false, msg: '' },
-    { key: 'openvpn_client',  label: 'services.openvpn.client', info: {}, restarting: false, msg: '' },
-    { key: 'lwm2m_client',    label: 'services.lwm2m.client',   info: {}, restarting: false, msg: '' },
-    { key: 'lwm2m_server',    label: 'services.lwm2m.server',   info: {}, restarting: false, msg: '' },
-    { key: 'wifi_client',     label: 'services.wifi.client',    info: {}, restarting: false, msg: '' },
+    { key: 'ds',             name: 'Data Store',     label: 'services.ds',             info: {}, restarting: false, msg: '' },
+    { key: 'net_router',     name: 'Network Router', label: 'services.net.router',     info: {}, restarting: false, msg: '' },
+    { key: 'openvpn_client', name: 'OpenVPN Client', label: 'services.openvpn.client', info: {}, restarting: false, msg: '' },
+    { key: 'lwm2m_client',   name: 'LwM2M Client',   label: 'services.lwm2m.client',   info: {}, restarting: false, msg: '' },
+    { key: 'wifi_client',    name: 'Wi-Fi Client',   label: 'services.wifi.client',    info: {}, restarting: false, msg: '' },
   ];
   private sub = new Subscription();
 
@@ -140,7 +144,6 @@ export class ServicesListComponent implements OnInit, OnDestroy {
       net_router: 'services.net.router.enable',
       openvpn_client: 'services.openvpn.client.enable',
       lwm2m_client: 'services.lwm2m.client.enable',
-      lwm2m_server: 'services.lwm2m.server.enable',
       wifi_client: 'services.wifi.client.enable',
     };
     return m[k] || '';

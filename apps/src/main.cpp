@@ -772,10 +772,11 @@ int main(std::int32_t argc, char *argv[]) {
     }
 
 
-    // Flush the log ring-buffer every 10s via LogBuffer's own ACE reactor
+    // Flush the log ring-buffer every 5s via LogBuffer's own ACE reactor
     // timer (private reactor on its own thread — same pattern as
-    // StatsPublisher). Replaces the old std::thread flusher.
-    if (auto* cli = ds.client()) g_log.open(*cli, 10, 200);
+    // StatsPublisher). min_bytes=1 so even a low-traffic daemon's lines
+    // actually reach ds (200 suppressed small buffers → empty Logs page).
+    if (auto* cli = ds.client()) g_log.open(*cli, 5, 1);
 
     std::unique_ptr<data_store::ServiceGate> svc_gate;
     std::unique_ptr<data_store::DepWatch>    dep_watch;

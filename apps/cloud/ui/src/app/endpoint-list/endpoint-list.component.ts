@@ -20,15 +20,16 @@ interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered
       <div class="card" *ngIf="isAdmin" style="margin-bottom:20px;">
         <div class="card-header">Provision a device</div>
         <div class="card-block">
-          <div class="prov-grid">
-            <clr-input-container>
+          <div class="form-grid">
+            <clr-input-container style="grid-column: span 2;">
               <label>Serial Number</label>
-              <input clrInput [(ngModel)]="provSerial" placeholder="device serial (from device-ui)" />
+              <input clrInput [(ngModel)]="provSerial" style="width:100%;"
+                     placeholder="device serial (from device-ui)" />
             </clr-input-container>
-            <clr-input-container>
+            <clr-input-container style="grid-column: span 2;">
               <label>Bootstrap PSK (64 hex)</label>
-              <input clrInput [(ngModel)]="provBsPsk" placeholder="paste BS PSK from device-ui"
-                     style="width:30rem;font-family:monospace;" />
+              <input clrInput [(ngModel)]="provBsPsk" style="width:100%;font-family:monospace;"
+                     placeholder="paste BS PSK from device-ui" />
             </clr-input-container>
           </div>
           <button class="btn btn-primary" [disabled]="provisioning" (click)="provision()">
