@@ -15,6 +15,7 @@
 #include "shell.hpp"
 
 #include "data_store/service_gate.hpp"
+#include "data_store/stats_publisher.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -184,6 +185,16 @@ Status run_daemon(const std::string& socketPath,
         svc = std::make_unique<data_store::ServiceGate>(*cli, "net.router");
         svc->publish_state("running");
     }
+
+    // L22 — resource telemetry. This daemon runs a blocking poll loop (no
+    // ACE reactor), so StatsPublisher spawns its own ACE_Task thread to run
+    // the singleton reactor timer (run_reactor_thread=true, the default).
+    data_store::StatsPublisher stats(
+        "services.net.router",
+        [&ds](const std::vector<data_store::KV>& kv) {
+            if (auto* c = ds.client()) c->set(kv);
+        });
+    if (ds.client()) stats.open();
 
     const auto names = ordered_iface_names(ds);
     ACE_DEBUG((LM_INFO,

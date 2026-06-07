@@ -23,9 +23,7 @@
 -- Install at /etc/iot/ds-schemas/services.lua (ds-server
 -- auto-loads on boot).
 
-return {
-  namespace = "services",
-  keys = {
+local keys = {
     -- ds-server: state surface only
     ["services.ds.state"]                  = {
         access  = "Viewer", type = "string",  default = "stopped" },
@@ -97,5 +95,43 @@ return {
         access  = "Viewer", type = "string",  default = "stopped" },
     ["services.cloud.lwm2m.dm.state"]       = {
         access  = "Viewer", type = "string",  default = "stopped" },
-  },
+}
+
+-- ── L22 — per-daemon resource telemetry ──────────────────────────────
+-- Four integer metrics per service, published every ~10s by each daemon's
+-- StatsPublisher (cgroup v2/v1 for cpu/mem/threads + /proc/self/fd for the
+-- descriptor count). Typed integers mirror services.ds.uptime.sec:
+--   <svc>.cpu.permille  parts-per-1000 of one host-second (123 = 12.3 %)
+--   <svc>.mem.rss.kb    resident memory, KB
+--   <svc>.fd.count      open file descriptors
+--   <svc>.threads       live task/thread count
+-- One service per container, so these are effectively per-container totals.
+local stats_services = {
+  "services.ds",
+  "services.net.router",
+  "services.openvpn.client",
+  "services.lwm2m.client",
+  "services.lwm2m.server",
+  "services.wifi.client",
+  "services.cloud.iot.cloudd",
+  "services.cloud.iot.httpd",
+  "services.cloud.openvpn.server",
+  "services.cloud.lwm2m.bs",
+  "services.cloud.lwm2m.dm",
+}
+for _, s in ipairs(stats_services) do
+  keys[s .. ".cpu.permille"] = { access = "Viewer", type = "integer", default = 0, min = 0 }
+  keys[s .. ".mem.rss.kb"]   = { access = "Viewer", type = "integer", default = 0, min = 0 }
+  keys[s .. ".fd.count"]     = { access = "Viewer", type = "integer", default = 0, min = 0 }
+  keys[s .. ".threads"]      = { access = "Viewer", type = "integer", default = 0, min = 0 }
+end
+
+-- Bumped by every daemon on each stats flush so the cloud UI long-polls a
+-- single key instead of round-robining all <svc>.* metric keys (mirrors
+-- log.version).
+keys["services.stats.version"] = { access = "Viewer", type = "integer", default = 0 }
+
+return {
+  namespace = "services",
+  keys = keys,
 }

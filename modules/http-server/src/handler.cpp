@@ -404,6 +404,19 @@ void install_handlers(Router& router,
                 "services.lwm2m.server.enable",
                 "services.lwm2m.server.state",
                 "services.wifi.client.enable", "services.wifi.client.state",
+                // L22 — per-container resource telemetry.
+                "services.ds.cpu.permille", "services.ds.mem.rss.kb",
+                "services.ds.fd.count", "services.ds.threads",
+                "services.net.router.cpu.permille", "services.net.router.mem.rss.kb",
+                "services.net.router.fd.count", "services.net.router.threads",
+                "services.openvpn.client.cpu.permille", "services.openvpn.client.mem.rss.kb",
+                "services.openvpn.client.fd.count", "services.openvpn.client.threads",
+                "services.lwm2m.client.cpu.permille", "services.lwm2m.client.mem.rss.kb",
+                "services.lwm2m.client.fd.count", "services.lwm2m.client.threads",
+                "services.lwm2m.server.cpu.permille", "services.lwm2m.server.mem.rss.kb",
+                "services.lwm2m.server.fd.count", "services.lwm2m.server.threads",
+                "services.wifi.client.cpu.permille", "services.wifi.client.mem.rss.kb",
+                "services.wifi.client.fd.count", "services.wifi.client.threads",
             }, got);
             json resp;
             resp["ok"] = true;
@@ -477,6 +490,32 @@ void install_handlers(Router& router,
                 else if (k == "services.lwm2m.server.state")      services["lwm2m_server"]["state"] = sv();
                 else if (k == "services.wifi.client.enable")      services["wifi_client"]["enable"] = bv(true);
                 else if (k == "services.wifi.client.state")       services["wifi_client"]["state"] = sv();
+
+                // L22 — resource telemetry per service.
+                else if (k == "services.ds.cpu.permille")             services["ds"]["cpu_permille"] = iv();
+                else if (k == "services.ds.mem.rss.kb")               services["ds"]["mem_kb"] = iv();
+                else if (k == "services.ds.fd.count")                 services["ds"]["fd_count"] = iv();
+                else if (k == "services.ds.threads")                  services["ds"]["threads"] = iv();
+                else if (k == "services.net.router.cpu.permille")     services["net_router"]["cpu_permille"] = iv();
+                else if (k == "services.net.router.mem.rss.kb")       services["net_router"]["mem_kb"] = iv();
+                else if (k == "services.net.router.fd.count")         services["net_router"]["fd_count"] = iv();
+                else if (k == "services.net.router.threads")          services["net_router"]["threads"] = iv();
+                else if (k == "services.openvpn.client.cpu.permille") services["openvpn_client"]["cpu_permille"] = iv();
+                else if (k == "services.openvpn.client.mem.rss.kb")   services["openvpn_client"]["mem_kb"] = iv();
+                else if (k == "services.openvpn.client.fd.count")     services["openvpn_client"]["fd_count"] = iv();
+                else if (k == "services.openvpn.client.threads")      services["openvpn_client"]["threads"] = iv();
+                else if (k == "services.lwm2m.client.cpu.permille")   services["lwm2m_client"]["cpu_permille"] = iv();
+                else if (k == "services.lwm2m.client.mem.rss.kb")     services["lwm2m_client"]["mem_kb"] = iv();
+                else if (k == "services.lwm2m.client.fd.count")       services["lwm2m_client"]["fd_count"] = iv();
+                else if (k == "services.lwm2m.client.threads")        services["lwm2m_client"]["threads"] = iv();
+                else if (k == "services.lwm2m.server.cpu.permille")   services["lwm2m_server"]["cpu_permille"] = iv();
+                else if (k == "services.lwm2m.server.mem.rss.kb")     services["lwm2m_server"]["mem_kb"] = iv();
+                else if (k == "services.lwm2m.server.fd.count")       services["lwm2m_server"]["fd_count"] = iv();
+                else if (k == "services.lwm2m.server.threads")        services["lwm2m_server"]["threads"] = iv();
+                else if (k == "services.wifi.client.cpu.permille")    services["wifi_client"]["cpu_permille"] = iv();
+                else if (k == "services.wifi.client.mem.rss.kb")      services["wifi_client"]["mem_kb"] = iv();
+                else if (k == "services.wifi.client.fd.count")        services["wifi_client"]["fd_count"] = iv();
+                else if (k == "services.wifi.client.threads")         services["wifi_client"]["threads"] = iv();
             }
             resp["lwm2m"]    = lwm2m;
             resp["vpn"]      = vpn;

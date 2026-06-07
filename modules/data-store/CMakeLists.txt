@@ -52,7 +52,8 @@ add_library(datastore_client STATIC
     src/client/service_gate.cpp
     src/client/dep_watch.cpp
     src/proto/proto.cpp
-    src/log_buffer.cpp)
+    src/log_buffer.cpp
+    src/stats_publisher.cpp)
 
 target_include_directories(datastore_client
     PUBLIC ${DS_MODULE_DIR}/inc)
@@ -71,7 +72,8 @@ add_executable(ds-server
     src/server/schema.cpp
     src/server/worker.cpp
     src/server/worker_pool.cpp
-    src/proto/proto.cpp)
+    src/proto/proto.cpp
+    src/stats_publisher.cpp)
 
 target_link_libraries(ds-server
     ACE
@@ -107,7 +109,9 @@ if(BUILD_DATA_STORE_TESTS)
         test/service_gate_test.cpp
         test/dep_watch_test.cpp
         test/log_buffer_test.cpp
+        test/stats_publisher_test.cpp
         src/log_buffer.cpp
+        src/stats_publisher.cpp
         src/server/server.cpp
         src/server/session.cpp
         src/server/data_store.cpp

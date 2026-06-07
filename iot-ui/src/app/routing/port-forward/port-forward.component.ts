@@ -93,7 +93,7 @@ export class PortForwardComponent implements OnInit, OnDestroy {
   }
 
   saveDnat(): void {
-    this.savingDnat = true; this.msg = '';
+    this.savingDnat = true;
     this.http.dbSet([
       { key: 'net.lwm2m.target.ip',   value: this.targetIp },
       { key: 'net.lwm2m.target.port', value: this.targetPort },
@@ -104,7 +104,7 @@ export class PortForwardComponent implements OnInit, OnDestroy {
   }
 
   savePorts(): void {
-    this.savingPorts = true; this.msg = '';
+    this.savingPorts = true;
     this.http.dbSet([
       { key: 'net.forward.ports', value: this.forwardPorts },
     ]).subscribe({
@@ -112,4 +112,6 @@ export class PortForwardComponent implements OnInit, OnDestroy {
       error: () => { this.savingPorts = false; this.toast.error('Port save failed'); }
     });
   }
+
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
 }
