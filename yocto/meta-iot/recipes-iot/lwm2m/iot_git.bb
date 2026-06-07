@@ -98,7 +98,19 @@ PACKAGECONFIG[systemd] = "\
 "
 
 inherit ${@bb.utils.contains('PACKAGECONFIG', 'systemd', 'systemd', '', d)}
-inherit cmake pkgconfig
+inherit cmake pkgconfig useradd
+
+# ── PSK provisioning accounts (apps/docs/tdd-psk-provisioning.md) ────
+# The LwM2M client runs as the static `engineer` account so the
+# data-store read_acl/write_acl (gid:engineer) can match it — only this
+# client may read the write-only PSK keys. The shared `iot` group lets
+# `engineer` reach ds-server's 0660 socket (ds-server chgrp's the socket
+# to `iot`). The lwm2m package owns these accounts.
+USERADD_PACKAGES = "${PN}-lwm2m"
+GROUPADD_PARAM:${PN}-lwm2m = "--system engineer; --system iot"
+USERADD_PARAM:${PN}-lwm2m = "--system --no-create-home \
+    --shell /usr/sbin/nologin --gid engineer --groups iot \
+    --comment 'IoT LwM2M client' engineer"
 
 # ── CMake configuration ─────────────────────────────────────────────
 # OECMAKE_SOURCEPATH points cmake at the apps/CMakeLists.txt.

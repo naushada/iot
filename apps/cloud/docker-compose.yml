@@ -23,6 +23,7 @@ services:
       --socket=/var/run/iot/data_store.sock
       --schema-dir=/etc/iot/ds-schemas
       --persist-dir=/var/lib/iot
+      ds-socket-group=cloud-svc
     volumes:
       - iot-run:/var/run/iot
       - iot-etc:/etc/iot

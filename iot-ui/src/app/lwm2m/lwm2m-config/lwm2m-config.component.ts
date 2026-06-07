@@ -13,10 +13,17 @@ export class Lwm2mConfigComponent implements OnInit {
   serverForm: FormGroup;
   loading = true; saving = false; msg = '';
 
-    get isAdmin(): boolean { return this.session.isAdmin; }
+  // PSK provisioning (task H).
+  devMode = false;             // iot.dev_mode — gates PSK generation/reveal
+  serialAutoDetected = false;  // true when iot.serial was already populated (RPi)
+  generatedPsk = '';           // last generated BS PSK (hex), shown once to copy
+  generatingPsk = false;
+
+  get isAdmin(): boolean { return this.session.isAdmin; }
 
   constructor(private http: HttpsvcService, fb: FormBuilder, private session: SessionService, private toast: ToastService) {
     this.serverForm = fb.group({
+      serial:     [''],
       server_uri: ['coaps://'],
       endpoint:   ['urn:dev:client-1'],
       binding:    ['U'],
@@ -27,13 +34,20 @@ export class Lwm2mConfigComponent implements OnInit {
 
   ngOnInit(): void {
     this.http.dbGet([
+      'iot.serial', 'iot.dev.mode',
       'iot.server.uri', 'iot.endpoint', 'iot.binding',
       'iot.lifetime', 'iot.observable'
     ]).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
           const d = r.data as Record<string, unknown>;
+          const serial = (d['iot.serial'] as string) || '';
+          // A serial already in the store means the RPi client auto-filled
+          // it → present it read-only. Empty → installer enters it.
+          this.serialAutoDetected = serial.length > 0;
+          this.devMode = d['iot.dev.mode'] === true;
           this.serverForm.patchValue({
+            serial:     serial,
             server_uri: d['iot.server.uri'] || 'coaps://',
             endpoint:   d['iot.endpoint']   || 'urn:dev:client-1',
             binding:    d['iot.binding']    || 'U',
@@ -50,15 +64,48 @@ export class Lwm2mConfigComponent implements OnInit {
   save(): void {
     this.saving = true; this.msg = '';
     const v = this.serverForm.value;
-    this.http.dbSet([
+    const pairs: { key: string; value: unknown }[] = [
       { key: 'iot.server.uri', value: v.server_uri },
       { key: 'iot.endpoint',   value: v.endpoint },
       { key: 'iot.binding',    value: v.binding },
       { key: 'iot.lifetime',   value: v.lifetime },
       { key: 'iot.observable', value: v.observable },
-    ]).subscribe({
+    ];
+    // Only push the serial when the installer entered it (non-RPi). On RPi
+    // the client owns iot.serial and the field is read-only.
+    if (!this.serialAutoDetected && v.serial) {
+      pairs.push({ key: 'iot.serial', value: v.serial });
+    }
+    this.http.dbSet(pairs).subscribe({
       next: (r) => { this.saving = false; if(r.ok) this.toast.success('LwM2M config saved'); else this.toast.error(r.err||'Save failed'); },
       error: () => { this.saving = false; this.toast.error('Save failed'); }
+    });
+  }
+
+  /**
+   * Generate a 32-byte BS PSK in the browser (never leaves the device
+   * un-encrypted), show it once for the engineer to copy into cloud-ui,
+   * and store it write-only. Only available in dev-mode (commissioning),
+   * where the data-store bypasses the PSK ACLs so httpd can write it.
+   */
+  generateBsPsk(): void {
+    if (!this.devMode || !this.isAdmin) return;
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    this.generatedPsk = hex;
+    this.generatingPsk = true;
+    const serial = this.serverForm.value.serial || this.serverForm.value.endpoint;
+    this.http.dbSet([
+      { key: 'iot.bs.psk.key',      value: hex },
+      { key: 'iot.bs.psk.identity', value: serial },
+    ]).subscribe({
+      next: (r) => {
+        this.generatingPsk = false;
+        if (r.ok) this.toast.success('BS PSK generated — copy it into cloud-ui provisioning');
+        else this.toast.error(r.err || 'PSK store failed');
+      },
+      error: () => { this.generatingPsk = false; this.toast.error('PSK store failed'); }
     });
   }
 }

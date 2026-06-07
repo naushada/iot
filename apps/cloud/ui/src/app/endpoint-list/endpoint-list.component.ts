@@ -14,6 +14,32 @@ interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered
         <span></span>
       </div>
 
+      <!-- PSK provisioning (task O): paste serial + device-generated BS PSK
+           from device-ui. Backend forms rpi<serial>@cloud.local, mints the
+           DM PSK, and stores per-endpoint credentials. -->
+      <div class="card" *ngIf="isAdmin" style="margin-bottom:20px;">
+        <div class="card-header">Provision a device</div>
+        <div class="card-block">
+          <div class="prov-grid">
+            <clr-input-container>
+              <label>Serial Number</label>
+              <input clrInput [(ngModel)]="provSerial" placeholder="device serial (from device-ui)" />
+            </clr-input-container>
+            <clr-input-container>
+              <label>Bootstrap PSK (64 hex)</label>
+              <input clrInput [(ngModel)]="provBsPsk" placeholder="paste BS PSK from device-ui"
+                     style="width:30rem;font-family:monospace;" />
+            </clr-input-container>
+          </div>
+          <button class="btn btn-primary" [disabled]="provisioning" (click)="provision()">
+            {{ provisioning ? 'Provisioning…' : 'Provision' }}
+          </button>
+          <span *ngIf="!devMode" class="hint" style="margin-left:12px;">
+            Note: enable <code>cloud.dev.mode</code> to store credentials during commissioning.
+          </span>
+        </div>
+      </div>
+
       <clr-datagrid>
         <clr-dg-column>Endpoint</clr-dg-column>
         <clr-dg-column>State</clr-dg-column>
@@ -61,11 +87,44 @@ export class EndpointListComponent implements OnInit, OnDestroy {
   endpoints: EpInfo[] = [];
   windowHost = window.location.hostname;
   isAdmin = true; // TODO: from SessionService
+  // PSK provisioning (task O).
+  provSerial = ''; provBsPsk = ''; provisioning = false; devMode = false;
   private sub = new Subscription(); private active = true;
 
   constructor(private http: HttpsvcService, private toast: ToastService) {}
 
-  ngOnInit(): void { this.startLongPoll(); }
+  ngOnInit(): void {
+    this.startLongPoll();
+    this.http.dbGet(['cloud.dev.mode']).subscribe({
+      next: (r) => { if (r.ok && r.data) this.devMode = (r.data as Record<string, unknown>)['cloud.dev.mode'] === true; },
+      error: () => {}
+    });
+  }
+
+  /**
+   * Provision via plain db/set (no bespoke endpoint): write the carrier
+   * BS PSK + set cloud.provision.request = serial (the watched trigger).
+   * iot-cloudd formats the identity, mints the DM PSK, and stores the
+   * per-endpoint credentials.
+   */
+  provision(): void {
+    const serial = this.provSerial.trim();
+    const psk = this.provBsPsk.trim().toLowerCase();
+    if (!serial) { this.toast.error('Serial number required'); return; }
+    if (!/^[0-9a-f]{64}$/.test(psk)) { this.toast.error('BS PSK must be 64 hex chars'); return; }
+    this.provisioning = true;
+    this.http.dbSet([
+      { key: 'cloud.provision.bs.psk', value: psk },
+      { key: 'cloud.provision.request', value: serial },
+    ]).subscribe({
+      next: (r) => {
+        this.provisioning = false;
+        if (r.ok) { this.toast.success('Provisioning ' + serial); this.provSerial = ''; this.provBsPsk = ''; }
+        else this.toast.error(r.err || 'Provision failed');
+      },
+      error: () => { this.provisioning = false; this.toast.error('Provision failed'); }
+    });
+  }
 
   private startLongPoll(): void {
     const poll = (): void => {

@@ -20,6 +20,13 @@ namespace {
 constexpr const char* kKeyEndpoint  = "iot.endpoint";
 constexpr const char* kKeyServerUri = "iot.server.uri";
 constexpr const char* kKeyLifetime  = "iot.lifetime";
+// PSK provisioning keys (tasks E/F/G).
+constexpr const char* kKeySerial      = "iot.serial";
+constexpr const char* kKeyBsPskId     = "iot.bs.psk.identity";
+constexpr const char* kKeyBsPskKey    = "iot.bs.psk.key";
+constexpr const char* kKeyDmPskId     = "iot.dm.psk.identity";
+constexpr const char* kKeyDmPskKey    = "iot.dm.psk.key";
+constexpr const char* kKeyDevMode     = "iot.dev.mode";
 
 } // namespace
 
@@ -32,7 +39,34 @@ struct DsConfig::Impl {
     std::optional<std::string>          endpoint;
     std::optional<std::string>          server_uri;
     std::optional<std::uint32_t>        lifetime;
+    // PSK provisioning cache (tasks E/F/G).
+    std::optional<std::string>          serial;
+    std::optional<std::string>          bs_psk_identity;
+    std::optional<std::string>          bs_psk_key;
+    std::optional<std::string>          dm_psk_identity;
+    std::optional<std::string>          dm_psk_key;
+    bool                                dev_mode = false;
     ChangeCallback                      cb;
+
+    /// Update the cache for one key/value. Caller holds `mtx`. Returns
+    /// the matching DsConfig::Key (for change notification) or nullopt
+    /// when the key isn't one we track.
+    std::optional<Key> apply(const std::string& key,
+                             const data_store::Value& v) {
+        if (key == kKeyEndpoint)   { endpoint = data_store::to_string(v); return Key::Endpoint; }
+        if (key == kKeyServerUri)  { server_uri = data_store::to_string(v); return Key::ServerUri; }
+        if (key == kKeyLifetime)   { lifetime = data_store::to_uint32(v); return Key::Lifetime; }
+        if (key == kKeySerial)     { serial = data_store::to_string(v); return Key::Serial; }
+        if (key == kKeyBsPskId)    { bs_psk_identity = data_store::to_string(v); return Key::BsPskIdentity; }
+        if (key == kKeyBsPskKey)   { bs_psk_key = data_store::to_string(v); return Key::BsPskKey; }
+        if (key == kKeyDmPskId)    { dm_psk_identity = data_store::to_string(v); return Key::DmPskIdentity; }
+        if (key == kKeyDmPskKey)   { dm_psk_key = data_store::to_string(v); return Key::DmPskKey; }
+        if (key == kKeyDevMode)    {
+            if (auto b = data_store::to_bool(v)) dev_mode = *b;
+            return Key::DevMode;
+        }
+        return std::nullopt;
+    }
 };
 
 DsConfig::DsConfig(std::string socketPath)
@@ -52,44 +86,35 @@ DsConfig::DsConfig(std::string socketPath)
                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l data-store ready at %C\n"),
                m_path.c_str()));
 
-    // Prime the cache with one initial get for all three keys. Missing
-    // values stay nullopt and the caller's value_or() defaults apply.
+    // All keys this reader caches + watches.
+    const std::vector<std::string> kKeys = {
+        kKeyEndpoint, kKeyServerUri, kKeyLifetime,
+        kKeySerial, kKeyBsPskId, kKeyBsPskKey,
+        kKeyDmPskId, kKeyDmPskKey, kKeyDevMode,
+    };
+
+    // Prime the cache with one initial get for all keys. Missing values
+    // stay nullopt and the caller's value_or() defaults apply.
     std::vector<data_store::Client::GetResult> got;
-    auto gs = m_impl->client.get(
-        {kKeyEndpoint, kKeyServerUri, kKeyLifetime}, got);
+    auto gs = m_impl->client.get(kKeys, got);
     if (gs.ok) {
         std::lock_guard<std::mutex> g(m_impl->mtx);
         for (auto& r : got) {
             if (!r.has_value) continue;
-            if (r.key == kKeyEndpoint) {
-                m_impl->endpoint = data_store::to_string(r.value);
-            } else if (r.key == kKeyServerUri) {
-                m_impl->server_uri = data_store::to_string(r.value);
-            } else if (r.key == kKeyLifetime) {
-                m_impl->lifetime = data_store::to_uint32(r.value);
-            }
+            m_impl->apply(r.key, r.value);
         }
     }
 
-    // Watch the same three keys. The callback fires on the Client's
-    // listener thread; it updates the cache + invokes the user-side
-    // change callback so a long-lived process can react.
+    // Watch the same keys. The callback fires on the Client's listener
+    // thread; it updates the cache + invokes the user-side change
+    // callback so a long-lived process can react.
     auto ws = m_impl->client.watch(
-        {kKeyEndpoint, kKeyServerUri, kKeyLifetime},
+        kKeys,
         [this](const data_store::Client::Event& ev) {
             std::optional<Key> changed;
             {
                 std::lock_guard<std::mutex> g(m_impl->mtx);
-                if (ev.key == kKeyEndpoint) {
-                    m_impl->endpoint = data_store::to_string(ev.value);
-                    changed = Key::Endpoint;
-                } else if (ev.key == kKeyServerUri) {
-                    m_impl->server_uri = data_store::to_string(ev.value);
-                    changed = Key::ServerUri;
-                } else if (ev.key == kKeyLifetime) {
-                    m_impl->lifetime = data_store::to_uint32(ev.value);
-                    changed = Key::Lifetime;
-                }
+                changed = m_impl->apply(ev.key, ev.value);
             }
             if (!changed) return;
             ACE_DEBUG((LM_INFO,
@@ -142,6 +167,75 @@ std::optional<std::uint32_t> DsConfig::lifetime() const {
     if (!m_ok) return std::nullopt;
     std::lock_guard<std::mutex> g(m_impl->mtx);
     return m_impl->lifetime;
+}
+
+std::optional<std::string> DsConfig::serial() const {
+    if (!m_ok) return std::nullopt;
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->serial;
+}
+
+std::optional<std::string> DsConfig::bs_psk_identity() const {
+    if (!m_ok) return std::nullopt;
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->bs_psk_identity;
+}
+
+std::optional<std::string> DsConfig::bs_psk_key() const {
+    if (!m_ok) return std::nullopt;
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->bs_psk_key;
+}
+
+std::optional<std::string> DsConfig::dm_psk_identity() const {
+    if (!m_ok) return std::nullopt;
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->dm_psk_identity;
+}
+
+std::optional<std::string> DsConfig::dm_psk_key() const {
+    if (!m_ok) return std::nullopt;
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->dm_psk_key;
+}
+
+bool DsConfig::dev_mode() const {
+    if (!m_ok) return false;
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->dev_mode;
+}
+
+bool DsConfig::set_serial(const std::string& serial) {
+    if (!m_ok || !m_impl) return false;
+    // RPi auto-fill: the serial IS the endpoint and the BS PSK identity.
+    auto s = m_impl->client.set({
+        {kKeySerial,   data_store::Value{serial}},
+        {kKeyEndpoint, data_store::Value{serial}},
+        {kKeyBsPskId,  data_store::Value{serial}},
+    });
+    // Reflect locally so a subsequent self-write watch event is absorbed.
+    if (s.ok) {
+        std::lock_guard<std::mutex> g(m_impl->mtx);
+        m_impl->serial = serial;
+        m_impl->endpoint = serial;
+        m_impl->bs_psk_identity = serial;
+    }
+    return s.ok;
+}
+
+bool DsConfig::set_dm_credentials(const std::string& identity,
+                                  const std::string& key_hex) {
+    if (!m_ok || !m_impl) return false;
+    auto s = m_impl->client.set({
+        {kKeyDmPskId,  data_store::Value{identity}},
+        {kKeyDmPskKey, data_store::Value{key_hex}},
+    });
+    if (s.ok) {
+        std::lock_guard<std::mutex> g(m_impl->mtx);
+        m_impl->dm_psk_identity = identity;
+        m_impl->dm_psk_key = key_hex;
+    }
+    return s.ok;
 }
 
 void DsConfig::on_change(ChangeCallback cb) {

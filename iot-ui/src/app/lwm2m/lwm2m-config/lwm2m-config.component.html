@@ -4,6 +4,19 @@
   <form [formGroup]="serverForm" (ngSubmit)="save()" *ngIf="!loading">
     <div class="form-grid">
       <clr-input-container>
+        <label>Serial Number</label>
+        <input clrInput formControlName="serial"
+               [readonly]="serialAutoDetected"
+               [disabled]="!isAdmin"
+               placeholder="enter device serial number" />
+        <clr-control-helper *ngIf="serialAutoDetected">
+          Auto-detected (Raspberry Pi) — read-only
+        </clr-control-helper>
+        <clr-control-helper *ngIf="!serialAutoDetected">
+          Not a Raspberry Pi — enter the serial printed on the device
+        </clr-control-helper>
+      </clr-input-container>
+      <clr-input-container>
         <label>Server URI</label>
         <input clrInput [disabled]="!isAdmin" formControlName="server_uri" placeholder="coaps://lwm2m.example.com:5684" />
       </clr-input-container>
@@ -40,4 +53,27 @@
       <span *ngIf="msg" style="margin-left:12px;" [style.color]="msg==='Saved.'?'#2e7d32':'#c62828'">{{ msg }}</span>
     </div>
   </form>
+
+  <!-- PSK provisioning (task H): dev-mode only. Generate a 32-byte BS PSK,
+       show it once so the engineer can copy serial + PSK into cloud-ui. The
+       value is stored write-only; it is never read back from the store. -->
+  <div class="card" style="margin-top:32px;" *ngIf="!loading && devMode && isAdmin">
+    <div class="card-header">Bootstrap PSK (commissioning)</div>
+    <div class="card-block">
+      <p class="card-text">
+        Generate the 32-byte pre-shared key for the bootstrap handshake, then
+        copy the <strong>Serial Number</strong> and the generated key into the
+        cloud-ui provisioning page. The key is stored write-only and shown here
+        only once.
+      </p>
+      <button type="button" class="btn btn-outline"
+              [disabled]="generatingPsk" (click)="generateBsPsk()">
+        {{ generatingPsk ? 'Generating…' : 'Generate BS PSK' }}
+      </button>
+      <clr-input-container *ngIf="generatedPsk" style="margin-top:12px;">
+        <label>Generated BS PSK (copy now)</label>
+        <input clrInput readonly [value]="generatedPsk" style="width:34rem;font-family:monospace;" />
+      </clr-input-container>
+    </div>
+  </div>
 </div>

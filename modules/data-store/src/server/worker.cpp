@@ -219,6 +219,23 @@ void Worker::handle_process_request(WorkMsg* msg) {
         }
     }
 
+    // PSK provisioning (task C) — dev-mode bypass for read_acl. When the
+    // well-known dev-mode flag is set the read_acl checks on Get/Watch are
+    // skipped so an operator can read/inspect write-only secrets during
+    // commissioning. Device ds-server uses `iot.dev_mode`; cloud ds-server
+    // uses `cloud.dev_mode` — we honour whichever is present/true so the
+    // same worker serves both without extra configuration. Evaluated
+    // lazily (only on an actual ACL denial) to keep the hot path cheap.
+    auto dev_mode_on = [this]() -> bool {
+        for (const char* dk : {"iot.dev.mode", "cloud.dev.mode"}) {
+            auto v = m_store->get(dk);
+            if (v.has_value() && std::holds_alternative<bool>(*v) &&
+                std::get<bool>(*v))
+                return true;
+        }
+        return false;
+    };
+
     switch (op) {
         case proto::Op::Set: {
             // Each element is a single-key object `{"keyname": <typed-value>}`.
@@ -312,6 +329,20 @@ void Worker::handle_process_request(WorkMsg* msg) {
                     return;
                 }
                 const std::string k = e.get<std::string>();
+                // PSK provisioning (task C) — enforce read_acl. A denied
+                // key fails the WHOLE Get (the client fetches secrets in
+                // their own request, never mixed with config), unless
+                // dev-mode is on.
+                if (m_schema) {
+                    auto acl_err = m_schema->check_read_acl(
+                        k, s->peer_uid(), s->peer_gid());
+                    if (acl_err && !dev_mode_on()) {
+                        s->send(encode_error(op, h.reqID,
+                                             proto::Status::SchemaRejected,
+                                             *acl_err));
+                        return;
+                    }
+                }
                 auto v = m_store->get(k);
                 json item;
                 item["k"] = k;
@@ -341,6 +372,19 @@ void Worker::handle_process_request(WorkMsg* msg) {
                     return;
                 }
                 const std::string k = e.get<std::string>();
+                // PSK provisioning (task C) — a watch on a read-protected
+                // key would leak the value through change notifications;
+                // gate RegisterWatch the same way as Get.
+                if (m_schema) {
+                    auto acl_err = m_schema->check_read_acl(
+                        k, s->peer_uid(), s->peer_gid());
+                    if (acl_err && !dev_mode_on()) {
+                        s->send(encode_error(op, h.reqID,
+                                             proto::Status::SchemaRejected,
+                                             *acl_err));
+                        return;
+                    }
+                }
                 m_store->watch(s, k);
                 s->note_watch(k);
             }

@@ -11,11 +11,18 @@ Type=simple
 EnvironmentFile=/etc/iot/lwm2m-client.env
 ExecStart=/usr/bin/lwm2m $LWM2M_ARGS
 
-DynamicUser=yes
-RuntimeDirectory=iot
-RuntimeDirectoryMode=0755
+# PSK provisioning: static `engineer` account (NOT DynamicUser) so the
+# data-store read_acl/write_acl (gid:engineer) can match this client and
+# only this client can read the write-only PSK keys. `iot` (supplementary)
+# grants access to ds-server's 0660 socket. Accounts come from the
+# useradd class in iot_git.bb. See apps/docs/tdd-psk-provisioning.md.
+User=engineer
+Group=engineer
+SupplementaryGroups=iot
 
-Restart=on-failure
+# A PSK change in dev-mode makes the client self-exit; systemd relaunches
+# it with fresh credentials. Restart=always so a clean exit also restarts.
+Restart=always
 RestartSec=5s
 
 StandardOutput=journal

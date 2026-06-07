@@ -54,6 +54,13 @@ public:
         Endpoint,
         ServerUri,
         Lifetime,
+        // PSK provisioning (tasks E/F/G).
+        Serial,
+        BsPskIdentity,
+        BsPskKey,
+        DmPskIdentity,
+        DmPskKey,
+        DevMode,
     };
 
     using ChangeCallback = std::function<void(Key)>;
@@ -76,6 +83,25 @@ public:
     std::optional<std::string>   endpoint()   const;
     std::optional<std::string>   server_uri() const;
     std::optional<std::uint32_t> lifetime()   const;
+
+    // PSK provisioning accessors (task E/F/G). All return nullopt when
+    // !connected() or the key is unset. The client runs as `engineer`
+    // so the read_acl on the PSK keys is satisfied.
+    std::optional<std::string>   serial()           const;
+    std::optional<std::string>   bs_psk_identity()  const;
+    std::optional<std::string>   bs_psk_key()        const;
+    std::optional<std::string>   dm_psk_identity()  const;
+    std::optional<std::string>   dm_psk_key()        const;
+    bool                         dev_mode()         const;
+
+    // Writers (task E/F). Persist to the data-store; return false when
+    // !connected() or the set is rejected (e.g. ACL without dev-mode).
+    /// RPi auto-fill: persist serial → iot.serial + iot.endpoint +
+    /// iot.bs.psk.identity (all = raw serial).
+    bool set_serial(const std::string& serial);
+    /// Bootstrap delivered DM credentials → iot.dm.psk.identity / .key.
+    bool set_dm_credentials(const std::string& identity,
+                            const std::string& key_hex);
 
     /// Register a per-key change listener. The callback fires on the
     /// data_store::Client's listener thread — keep it short, don't

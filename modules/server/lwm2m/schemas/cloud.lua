@@ -141,6 +141,46 @@ return {
       default = "",
     },
 
+    -- ── PSK provisioning (serial-derived endpoint + per-endpoint PSK) ──
+    -- See apps/docs/tdd-psk-provisioning.md.
+    --
+    -- Per-endpoint credential array. The BS/DM servers load this live
+    -- (watch + add_credential) instead of the shared env-var PSK. The
+    -- engineer pastes (serial, BS PSK) from device-ui; the backend forms
+    -- the identity rpi<serial>@cloud.local and mints the DM PSK. JSON:
+    --   [ { "serial":"<raw>", "identity":"rpi<raw>@cloud.local",
+    --       "bs.psk.key":"<hex>", "dm.psk.id":"rpi<raw>@cloud.local",
+    --       "dm.psk.key":"<hex>" }, ... ]
+    -- Write-only / no ds-cli read (mirrors the device rule): only the
+    -- cloud-svc server processes may read; reveal via cloud.dev.mode.
+    ["cloud.endpoint.credentials"] = {
+        access    = "Admin",
+        type      = "string",
+        default   = "[]",
+        write_acl = {"gid:cloud-svc"},
+        read_acl  = {"gid:cloud-svc"},
+    },
+    -- Provision carrier: the engineer pastes the device-generated BS PSK
+    -- here, then sets cloud.provision.request = serial (the trigger).
+    -- iot-cloudd reads this, mints the DM PSK, upserts the credential
+    -- array, then clears this back to "". Write-only (cloud-svc) — the
+    -- cloud-httpd write succeeds under cloud.dev.mode (ACL bypass).
+    ["cloud.provision.bs.psk"] = {
+        access    = "Admin",
+        type      = "string",
+        default   = "",
+        write_acl = {"gid:cloud-svc"},
+        read_acl  = {"gid:cloud-svc"},
+    },
+    -- Commissioning flag: while true the ds-server bypasses the PSK ACLs
+    -- so an operator can inspect/edit credentials on the cloud.
+    ["cloud.dev.mode"] = {
+        access    = "Admin",
+        type      = "boolean",
+        default   = false,
+        write_acl = {"gid:cloud-svc"},
+    },
+
     -- VPN subnet for tunnel IP allocation.
     ["cloud.vpn.subnet"] = {
       type    = "string",

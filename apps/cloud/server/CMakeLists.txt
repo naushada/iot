@@ -26,6 +26,7 @@ add_executable(iot-cloudd
     src/main.cpp
     ../../../modules/server/lwm2m/src/endpoint_registry.cpp
     ../../../modules/server/lwm2m/src/bootstrap.cpp
+    ../../../modules/server/lwm2m/src/cloud_credentials.cpp
     ../../../modules/server/openvpn/src/vpn_registry.cpp
     ../../../modules/server/openvpn/src/openvpn_server.cpp)
 
