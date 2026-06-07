@@ -211,11 +211,10 @@ print_summary() {
         cat <<EOF
 
   ── Flash the SD card (Raspberry Pi 3B) ──────────────────────────────
-    # Find the SD device first (e.g. /dev/sdX on Linux, /dev/diskN on macOS).
-    # Fast + verified (recommended, needs bmaptool):
-    bmaptool copy "$rpi_img" /dev/sdX
-    # Or plain dd:
+    # Find the SD device first: lsblk (Linux, /dev/sdX) or
+    # diskutil list (macOS, /dev/diskN). Write the whole disk, not a partition.
     bzcat "$rpi_img" | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
+    # macOS: target the raw node /dev/rdiskN instead of /dev/diskN — much faster.
 
   ── First boot + ssh in ──────────────────────────────────────────────
     # The image runs sshd with debug-tweaks (empty root password).
