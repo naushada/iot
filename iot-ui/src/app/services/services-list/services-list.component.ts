@@ -14,6 +14,11 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
       <clr-datagrid>
         <clr-dg-column>Service</clr-dg-column>
         <clr-dg-column>State</clr-dg-column>
+        <clr-dg-column [style.text-align]="'right'"
+          title="Percent of one host CPU core (per container)">CPU %</clr-dg-column>
+        <clr-dg-column [style.text-align]="'right'">Memory</clr-dg-column>
+        <clr-dg-column [style.text-align]="'right'">FDs</clr-dg-column>
+        <clr-dg-column [style.text-align]="'right'">Threads</clr-dg-column>
         <clr-dg-column>Enabled</clr-dg-column>
         <clr-dg-column>Uptime</clr-dg-column>
         <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
@@ -21,6 +26,10 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
         <clr-dg-row *clrDgItems="let s of services">
           <clr-dg-cell><code>{{ s.label }}</code></clr-dg-cell>
           <clr-dg-cell><app-status-badge [label]="s.info.state||'unknown'" [state]="s.info.state||''"></app-status-badge></clr-dg-cell>
+          <clr-dg-cell class="num">{{ fmtCpu(s.info.cpu_permille) }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ fmtKb(s.info.mem_kb) }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ s.info.fd_count ?? '—' }}</clr-dg-cell>
+          <clr-dg-cell class="num">{{ s.info.threads ?? '—' }}</clr-dg-cell>
           <clr-dg-cell>
             <input type="checkbox" [checked]="s.info.enable" [disabled]="!isAdmin" (change)="toggleEnable(s)" />
           </clr-dg-cell>
@@ -41,7 +50,7 @@ interface SvcRow { key: string; label: string; info: ServiceInfo; restarting: bo
   `,
   styles: [`
     .page { padding: 24px; } h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
-    
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
     .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
     .hint { font-size: 12px; color: #757575; margin-top: 16px; }
   `]
@@ -60,6 +69,17 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     get isAdmin(): boolean { return this.session.isAdmin; }
 
   constructor(private http: HttpsvcService, private session: SessionService) {}
+
+  fmtCpu(permille?: number): string {
+    if (permille == null) return '—';
+    return (permille / 10).toFixed(1) + ' %';
+  }
+
+  fmtKb(kb?: number): string {
+    if (kb == null) return '—';
+    if (kb < 1024) return kb + ' KB';
+    return (kb / 1024).toFixed(1) + ' MB';
+  }
 
   private active = true;
 

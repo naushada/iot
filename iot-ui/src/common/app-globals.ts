@@ -51,6 +51,11 @@ export interface ServiceInfo {
   enable?: boolean;
   state?: string;
   uptime_sec?: number;
+  // L22 — per-container resource telemetry (cgroup + /proc/self/fd).
+  cpu_permille?: number;
+  mem_kb?: number;
+  fd_count?: number;
+  threads?: number;
   [key: string]: unknown;
 }
 
