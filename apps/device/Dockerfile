@@ -82,6 +82,7 @@ RUN cd /src/apps/3rdparty/tinydtls && \
     [ -f doc/Makefile.in ] || : > doc/Makefile.in && \
     [ -f doc/Doxyfile.in ] || : > doc/Doxyfile.in && \
     autoconf && autoheader && ./configure && \
+    rm -f libtinydtls.a *.o aes/*.o ecc/*.o sha2/*.o && \
     make libtinydtls.a -j$(nproc)
 
 # One cmake build of apps/ produces every device binary — apps/CMakeLists

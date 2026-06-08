@@ -1,0 +1,25 @@
+# Docker/podman build-context excludes. Unlike .gitignore (which the daemon
+# never reads), this keeps host build artifacts out of the COPY'd context so
+# they can't shadow an in-image rebuild — and shrinks the context.
+
+# VCS / tooling
+.git
+.gitignore
+
+# tinydtls is rebuilt inside the image (Dockerfile `make libtinydtls.a`).
+# A stale host-built archive/objects COPY'd in makes `make` skip the rebuild,
+# silently linking outdated DTLS code. Never ship them into the context.
+apps/3rdparty/tinydtls/libtinydtls.a
+apps/3rdparty/tinydtls/*.o
+apps/3rdparty/tinydtls/aes/*.o
+apps/3rdparty/tinydtls/ecc/*.o
+apps/3rdparty/tinydtls/sha2/*.o
+
+# Generic compiled artifacts — all binaries are built in-image.
+**/*.a
+**/*.o
+
+# Heavy/regenerated trees (the UI is built in the ui-builder stage).
+**/node_modules/
+**/dist/
+**/build/
