@@ -75,10 +75,8 @@ typedef struct {
 } dtls_handshake_parameters_ecdsa_t;
 
 /* This is the maximal supported length of the psk client identity and psk
- * server identity hint. Raised from the upstream default of 32 so our BS PSK
- * identity = sha256(endpoint) rendered as 64 hex chars fits (with headroom);
- * the DTLS wire format allows identities up to 2^16-1 bytes. */
-#define DTLS_PSK_MAX_CLIENT_IDENTITY_LEN   128
+ * server identity hint */
+#define DTLS_PSK_MAX_CLIENT_IDENTITY_LEN   32
 
 /* This is the maximal supported length of the pre-shared key. */
 #define DTLS_PSK_MAX_KEY_LEN DTLS_KEY_LENGTH

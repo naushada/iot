@@ -84,14 +84,15 @@ export class Lwm2mConfigComponent implements OnInit {
   }
 
   /**
-   * Generate a 32-byte BS PSK in the browser (never leaves the device
-   * un-encrypted), show it once for the engineer to copy into cloud-ui,
-   * and store it write-only. Only available in dev-mode (commissioning),
-   * where the data-store bypasses the PSK ACLs so httpd can write it.
+   * Generate a 16-byte (128-bit) BS PSK in the browser (never leaves the
+   * device un-encrypted), show it once for the engineer to copy into cloud-ui,
+   * and store it write-only. 128-bit matches tinydtls' AES-128-CCM PSK key
+   * length and the 128-bit derived identity. Only available in dev-mode
+   * (commissioning), where the data-store bypasses the PSK ACLs.
    */
   generateBsPsk(): void {
     if (!this.devMode || !this.isAdmin) return;
-    const bytes = new Uint8Array(32);
+    const bytes = new Uint8Array(16);
     crypto.getRandomValues(bytes);
     const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
     this.generatedPsk = hex;

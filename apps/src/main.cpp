@@ -691,7 +691,9 @@ int main(std::int32_t argc, char *argv[]) {
             // device and the cloud BS compute identity = sha256(endpoint), so
             // it is never stored/commissioned. Only the secret (iot.bs.psk.key)
             // is commissioned, with secret= CLI as a dev fallback.
-            identity = iot::sha256_hex(endpoint);
+            // 128-bit identity (first 32 hex chars of sha256) — same size as
+            // the 128-bit BS PSK, and fits tinydtls' 32-byte identity buffer.
+            identity = iot::sha256_hex(endpoint).substr(0, 32);
             if (dsKey && !dsKey->empty())            secret = *dsKey;
             else if (!argValueMap["secret"].empty()) secret = argValueMap["secret"];
             else {
