@@ -196,7 +196,7 @@ return {
     },
     ["cloud.vpn.proto"] = {
       type    = "string",
-      default = "udp",          -- "udp" | "tcp"
+      default = "tcp-server",   -- "tcp-server" | "udp"
     },
     ["cloud.vpn.cipher"] = {
       type    = "string",

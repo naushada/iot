@@ -167,9 +167,9 @@ COPY apps/config/ /etc/iot/config/
 
 RUN mkdir -p /var/run/iot /var/lib/iot
 
-# CoAP/DTLS (5683 DM, 5684 BS) and OpenVPN (1194) are UDP — make it explicit
-# (EXPOSE defaults to TCP). 8080 is the HTTP API (TCP).
-EXPOSE 8080 5683/udp 5684/udp 1194/udp
+# CoAP/DTLS (5683 DM, 5684 BS) are UDP — make it explicit (EXPOSE defaults to
+# TCP). 8080 HTTP API and 1194 OpenVPN are TCP.
+EXPOSE 8080 5683/udp 5684/udp 1194
 
 # Default: start ds-server then iot-httpd (single-container mode).
 # docker-compose overrides CMD per service.
