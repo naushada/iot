@@ -121,8 +121,10 @@ std::vector<CredPair> credentials_for_instance(const std::string& array_json,
             // BS DTLS identity = sha256(endpoint); endpoint == serial here.
             // The device derives the same, so it is never sent in the clear
             // as the readable serial.
+            // 128-bit identity: first 32 hex chars of sha256(serial),
+            // matching the device's iot::sha256_hex(endpoint).substr(0,32).
             if (!serial.empty() && !key.empty())
-                out.push_back({sha256_hex(serial), key});
+                out.push_back({sha256_hex(serial).substr(0, 32), key});
         } else {
             const std::string id  = e.value("dm.psk.id", "");
             const std::string key = e.value("dm.psk.key", "");

@@ -82,6 +82,7 @@ RUN cd /src/apps/3rdparty/tinydtls && \
     [ -f doc/Makefile.in ] || : > doc/Makefile.in && \
     [ -f doc/Doxyfile.in ] || : > doc/Doxyfile.in && \
     autoconf && autoheader && ./configure && \
+    rm -f libtinydtls.a *.o aes/*.o ecc/*.o sha2/*.o && \
     make libtinydtls.a -j$(nproc)
 
 # One cmake build of apps/ produces every device binary — apps/CMakeLists
@@ -168,7 +169,8 @@ RUN mkdir -p /run/iot /var/lib/iot && \
     chmod 0755 /run/iot && chmod 0755 /var/lib/iot
 
 # 8080 device UI/REST · 5683 DM (server role) · 5684 client local · 5685 BS
-EXPOSE 8080 5683 5684 5685
+# CoAP/DTLS ports are UDP (EXPOSE defaults to TCP); 8080 is the HTTP UI/API (TCP).
+EXPOSE 8080 5683/udp 5684/udp 5685/udp
 
 ENTRYPOINT ["/usr/local/bin/iot-entrypoint"]
 CMD []

@@ -691,7 +691,9 @@ int main(std::int32_t argc, char *argv[]) {
             // device and the cloud BS compute identity = sha256(endpoint), so
             // it is never stored/commissioned. Only the secret (iot.bs.psk.key)
             // is commissioned, with secret= CLI as a dev fallback.
-            identity = iot::sha256_hex(endpoint);
+            // 128-bit identity (first 32 hex chars of sha256) — same size as
+            // the 128-bit BS PSK, and fits tinydtls' 32-byte identity buffer.
+            identity = iot::sha256_hex(endpoint).substr(0, 32);
             if (dsKey && !dsKey->empty())            secret = *dsKey;
             else if (!argValueMap["secret"].empty()) secret = argValueMap["secret"];
             else {
@@ -764,7 +766,9 @@ int main(std::int32_t argc, char *argv[]) {
                 if (is_bs) {
                     const std::string serial = e.value("serial", std::string());
                     key = e.value("bs.psk.key", std::string());
-                    if (!serial.empty()) ident = iot::sha256_hex(serial);
+                    // 128-bit identity (first 32 hex chars), matching the
+                    // device's iot::sha256_hex(endpoint).substr(0,32).
+                    if (!serial.empty()) ident = iot::sha256_hex(serial).substr(0, 32);
                 } else {
                     ident = e.value("dm.psk.id", std::string());
                     key   = e.value("dm.psk.key", std::string());
@@ -901,32 +905,40 @@ int main(std::int32_t argc, char *argv[]) {
                        lwm2m_instance.c_str()));
         }
 
-        const std::string svc_name =
-            (UDPAdapter::CLIENT == role) ? "lwm2m.client" : "lwm2m.server";
-        svc_gate = std::make_unique<data_store::ServiceGate>(*cli, svc_name);
-        dep_watch = std::make_unique<data_store::DepWatch>(
-            *cli, std::vector<std::string>{"net.router"});
+        // The net.router dependency + service-enable gate is a DEVICE concern
+        // (the gateway's routing must be up first). The cloud BS/DM
+        // (lwm2m-instance set) are always-on, docker-compose-managed, and have
+        // no net-router — so skip the gate entirely. Otherwise they park on
+        // net.router forever and their reactor never reads the DTLS socket
+        // (so no client can ever bootstrap/register).
+        if (lwm2m_instance.empty()) {
+            const std::string svc_name =
+                (UDPAdapter::CLIENT == role) ? "lwm2m.client" : "lwm2m.server";
+            svc_gate = std::make_unique<data_store::ServiceGate>(*cli, svc_name);
+            dep_watch = std::make_unique<data_store::DepWatch>(
+                *cli, std::vector<std::string>{"net.router"});
 
-        // L17a/D4 — dep check before svc check (dep_down > disabled).
-        if (!dep_watch->healthy()) {
-            ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l dep %C unhealthy "
-                                "at startup; parking\n"),
-                       dep_watch->unhealthy_dep().c_str()));
-            svc_gate->publish_state("disabled");
-            dep_watch->wait();
-        }
+            // L17a/D4 — dep check before svc check (dep_down > disabled).
+            if (!dep_watch->healthy()) {
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l dep %C unhealthy "
+                                    "at startup; parking\n"),
+                           dep_watch->unhealthy_dep().c_str()));
+                svc_gate->publish_state("disabled");
+                dep_watch->wait();
+            }
 
-        if (!svc_gate->enabled()) {
-            ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l services.%C.enable=false "
-                                "at startup; parking until re-enabled\n"),
-                       svc_name.c_str()));
-            svc_gate->publish_state("disabled");
-            auto v = svc_gate->wait();
-            if (!v.has_value()) return 0;   // shutdown
+            if (!svc_gate->enabled()) {
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l services.%C.enable=false "
+                                    "at startup; parking until re-enabled\n"),
+                           svc_name.c_str()));
+                svc_gate->publish_state("disabled");
+                auto v = svc_gate->wait();
+                if (!v.has_value()) return 0;   // shutdown
+            }
+            svc_gate->publish_state("running");
         }
-        svc_gate->publish_state("running");
     }
 
     ClientPlumbing clientPlumbing;

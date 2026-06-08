@@ -82,6 +82,7 @@ RUN cd /src/apps/3rdparty/tinydtls && \
     [ -f doc/Makefile.in ] || : > doc/Makefile.in && \
     [ -f doc/Doxyfile.in ] || : > doc/Doxyfile.in && \
     autoconf && autoheader && ./configure && \
+    rm -f libtinydtls.a *.o aes/*.o ecc/*.o sha2/*.o && \
     make libtinydtls.a -j$(nproc)
 
 # Build LwM2M binary (reused in server role for BS + DM).
@@ -167,7 +168,9 @@ COPY apps/config/ /etc/iot/config/
 
 RUN mkdir -p /var/run/iot /var/lib/iot
 
-EXPOSE 8080 5683 5684 1194
+# CoAP/DTLS (5683 DM, 5684 BS) are UDP — make it explicit (EXPOSE defaults to
+# TCP). 8080 HTTP API and 1194 OpenVPN are TCP.
+EXPOSE 8080 5683/udp 5684/udp 1194
 
 # Default: start ds-server then iot-httpd (single-container mode).
 # docker-compose overrides CMD per service.

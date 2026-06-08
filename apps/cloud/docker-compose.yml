@@ -57,7 +57,7 @@ services:
     devices:
       - /dev/net/tun        # openvpn(8) server spawned by iot-cloudd
     ports:
-      - "1194:1194/udp"     # OpenVPN server
+      - "1194:1194/tcp"     # OpenVPN server (TCP)
     depends_on:
       ds-server:
         condition: service_healthy

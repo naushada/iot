@@ -175,7 +175,7 @@ int main(int argc, char** argv) {
     // ── OpenVPN server — spawn + supervise (config from cloud.vpn.*) ──
     server::openvpn::OpenVpnServerConfig ovpn_cfg;
     ovpn_cfg.subnet    = ds_str(ds, "cloud.vpn.subnet",     "10.9.0.0/24");
-    ovpn_cfg.proto     = ds_str(ds, "cloud.vpn.proto",      "udp");
+    ovpn_cfg.proto     = ds_str(ds, "cloud.vpn.proto",      "tcp-server");
     ovpn_cfg.ca_path   = ds_str(ds, "cloud.vpn.ca.crt",     "/etc/iot/vpn/ca/ca.crt");
     ovpn_cfg.cert_path = ds_str(ds, "cloud.vpn.server.crt", "/etc/iot/vpn/server.crt");
     ovpn_cfg.key_path  = ds_str(ds, "cloud.vpn.server.key", "/etc/iot/vpn/server.key");

@@ -3,7 +3,7 @@
 -- Read keys (operator configures via ds-cli):
 --   vpn.remote.host   - server hostname or IP (required)
 --   vpn.remote.port   - server port            (default 1194, 1..65535)
---   vpn.remote.proto  - "udp" or "tcp"         (default "udp")
+--   vpn.remote.proto  - "tcp-client" or "udp"  (default "tcp-client")
 --   vpn.cert.path     - client X.509 cert      (required, absolute path)
 --   vpn.key.path      - client X.509 priv key  (required, absolute path)
 --   vpn.ca.path       - server CA              (required, absolute path)
@@ -44,7 +44,7 @@ return {
         access  = "Admin", type = "integer", default = 1194,
                              min = 1, max = 65535 },
     ["vpn.remote.proto"] = {
-        access  = "Admin", type = "string",  default = "udp" },
+        access  = "Admin", type = "string",  default = "tcp-client" },
 
     ["vpn.cert.path"]    = {
         access  = "Admin", type = "string"  },
