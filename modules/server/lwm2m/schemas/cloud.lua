@@ -177,7 +177,7 @@ return {
     ["cloud.dev.mode"] = {
         access    = "Admin",
         type      = "boolean",
-        default   = false,
+        default   = true,   -- simple dev commissioning out of the box; set false to lock down
         write_acl = {"gid:cloud-svc"},
     },
 

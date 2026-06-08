@@ -5,11 +5,38 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+#include <openssl/evp.h>
 
 namespace server {
 namespace lwm2m {
 
 using nlohmann::json;
+
+namespace {
+// SHA-256 → lowercase hex. The BS DTLS PSK identity is derived as
+// sha256(endpoint) on BOTH the device and the cloud, so it is never stored.
+// (endpoint == serial in this model.) Must match apps iot::sha256_hex.
+std::string sha256_hex(const std::string& input) {
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int  dlen = 0;
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx) throw std::runtime_error("sha256_hex: EVP_MD_CTX_new failed");
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) != 1 ||
+        EVP_DigestUpdate(ctx, input.data(), input.size()) != 1 ||
+        EVP_DigestFinal_ex(ctx, digest, &dlen) != 1) {
+        EVP_MD_CTX_free(ctx);
+        throw std::runtime_error("sha256_hex: digest failed");
+    }
+    EVP_MD_CTX_free(ctx);
+    static const char* k = "0123456789abcdef";
+    std::string out; out.reserve(dlen * 2);
+    for (unsigned int i = 0; i < dlen; ++i) {
+        out.push_back(k[(digest[i] >> 4) & 0xF]);
+        out.push_back(k[digest[i] & 0xF]);
+    }
+    return out;
+}
+} // namespace
 
 std::string format_identity(const std::string& serial) {
     return "rpi" + serial + "@cloud.local";
@@ -91,8 +118,11 @@ std::vector<CredPair> credentials_for_instance(const std::string& array_json,
         if (is_bs) {
             const std::string serial = e.value("serial", "");
             const std::string key    = e.value("bs.psk.key", "");
+            // BS DTLS identity = sha256(endpoint); endpoint == serial here.
+            // The device derives the same, so it is never sent in the clear
+            // as the readable serial.
             if (!serial.empty() && !key.empty())
-                out.push_back({serial, key});
+                out.push_back({sha256_hex(serial), key});
         } else {
             const std::string id  = e.value("dm.psk.id", "");
             const std::string key = e.value("dm.psk.key", "");

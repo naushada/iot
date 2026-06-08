@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include <openssl/evp.h>
+
 namespace iot {
 
 namespace {
@@ -55,6 +57,21 @@ std::string generate_psk_hex(std::size_t nbytes) {
     if (!fill_random(buf.data(), nbytes))
         throw std::runtime_error("generate_psk_hex: no entropy source");
     return hex_encode(buf.data(), nbytes);
+}
+
+std::string sha256_hex(const std::string& input) {
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int  dlen = 0;
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx) throw std::runtime_error("sha256_hex: EVP_MD_CTX_new failed");
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) != 1 ||
+        EVP_DigestUpdate(ctx, input.data(), input.size()) != 1 ||
+        EVP_DigestFinal_ex(ctx, digest, &dlen) != 1) {
+        EVP_MD_CTX_free(ctx);
+        throw std::runtime_error("sha256_hex: digest failed");
+    }
+    EVP_MD_CTX_free(ctx);
+    return hex_encode(digest, dlen);
 }
 
 } // namespace iot

@@ -229,6 +229,10 @@ void Worker::handle_process_request(WorkMsg* msg) {
     auto dev_mode_on = [this]() -> bool {
         for (const char* dk : {"iot.dev.mode", "cloud.dev.mode"}) {
             auto v = m_store->get(dk);
+            // The raw store has no value for keys never written; honor the
+            // schema default (dev.mode defaults true) so commissioning works
+            // out of the box without first writing the flag.
+            if (!v.has_value() && m_schema) v = m_schema->default_for(dk);
             if (v.has_value() && std::holds_alternative<bool>(*v) &&
                 std::get<bool>(*v))
                 return true;

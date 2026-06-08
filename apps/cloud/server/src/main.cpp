@@ -99,9 +99,9 @@ int main(int argc, char** argv) {
         else if (a.rfind("vpn-subnet=", 0) == 0)
             vpn_subnet = a.substr(11);
         else if (a.rfind("proxy-start=", 0) == 0)
-            proxy_port_start = std::stoi(a.substr(13));
+            proxy_port_start = std::stoi(a.substr(12));   // "proxy-start=" = 12 chars
         else if (a.rfind("proxy-end=", 0) == 0)
-            proxy_port_end = std::stoi(a.substr(11));
+            proxy_port_end = std::stoi(a.substr(10));      // "proxy-end=" = 10 chars
         else if (a.rfind("sync-interval=", 0) == 0)
             sync_interval = std::stoi(a.substr(14));
     }

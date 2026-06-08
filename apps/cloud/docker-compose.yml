@@ -67,6 +67,9 @@ services:
   lwm2m-bs:
     image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}
     container_name: iot-lwm2m-bs
+    # Runs as cloud-svc so it can read cloud.endpoint.credentials
+    # (read_acl=gid:cloud-svc) to register per-device BS PSKs.
+    user: "cloud-svc:cloud-svc"
     command: >
       lwm2m
       role=server
@@ -91,6 +94,8 @@ services:
   lwm2m-dm:
     image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}
     container_name: iot-lwm2m-dm
+    # cloud-svc to read cloud.endpoint.credentials (per-device DM PSKs).
+    user: "cloud-svc:cloud-svc"
     command: >
       lwm2m
       role=server

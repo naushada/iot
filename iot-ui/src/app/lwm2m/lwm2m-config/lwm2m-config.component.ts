@@ -96,14 +96,14 @@ export class Lwm2mConfigComponent implements OnInit {
     const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
     this.generatedPsk = hex;
     this.generatingPsk = true;
-    const serial = this.serverForm.value.serial || this.serverForm.value.endpoint;
+    // Only the secret is commissioned. The BS PSK identity is DERIVED as
+    // sha256(endpoint) by both the device and the cloud, so we don't store it.
     this.http.dbSet([
-      { key: 'iot.bs.psk.key',      value: hex },
-      { key: 'iot.bs.psk.identity', value: serial },
+      { key: 'iot.bs.psk.key', value: hex },
     ]).subscribe({
       next: (r) => {
         this.generatingPsk = false;
-        if (r.ok) this.toast.success('BS PSK generated — copy it into cloud-ui provisioning');
+        if (r.ok) this.toast.success('BS PSK generated — copy serial + key into cloud-ui provisioning');
         else this.toast.error(r.err || 'PSK store failed');
       },
       error: () => { this.generatingPsk = false; this.toast.error('PSK store failed'); }

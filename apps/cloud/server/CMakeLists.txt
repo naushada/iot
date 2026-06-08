@@ -38,7 +38,7 @@ endif()
 
 target_link_options(iot-cloudd PRIVATE -L${ACE_ROOT}/lib)
 target_link_libraries(iot-cloudd
-    ${DS_LINK_LIB} ACE pthread)
+    ${DS_LINK_LIB} ACE pthread crypto)   # crypto: cloud_credentials sha256
 
 # ── Install ──────────────────────────────────────────────────────
 include(GNUInstallDirs)
