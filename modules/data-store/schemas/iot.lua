@@ -75,12 +75,12 @@ return {
     },
     -- Commissioning flag. While true the ds-server bypasses read_acl /
     -- write_acl on the PSK keys so an engineer can generate, read back
-    -- and provision credentials. Turn off after commissioning to lock
-    -- the secrets down.
+    -- and provision credentials. Defaults true for now (simple dev
+    -- commissioning out of the box); set false to lock the secrets down.
     ["iot.dev.mode"] = {
         access    = "Admin",
         type      = "boolean",
-        default   = false,
+        default   = true,
         write_acl = {"gid:engineer"},
     },
     -- Bootstrap (BS) PSK identity = raw serial (on the wire).
