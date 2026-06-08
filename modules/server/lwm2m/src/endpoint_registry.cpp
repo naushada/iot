@@ -37,6 +37,17 @@ bool EndpointRegistry::update_state(const std::string& ep, bool registered) {
     return true;
 }
 
+bool EndpointRegistry::update_state(const std::string& ep, bool registered,
+                                    std::int64_t last_seen_unix) {
+    std::lock_guard<std::mutex> lk(m_mutex);
+
+    auto it = m_by_ep.find(ep);
+    if (it == m_by_ep.end()) return false;
+    it->second.registered     = registered;
+    it->second.last_seen_unix = last_seen_unix;
+    return true;
+}
+
 const EndpointInfo* EndpointRegistry::lookup_by_ep(const std::string& ep) const {
     std::lock_guard<std::mutex> lk(m_mutex);
     auto it = m_by_ep.find(ep);

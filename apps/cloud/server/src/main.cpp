@@ -28,8 +28,10 @@
 #include "data_store/stats_publisher.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <csignal>
 #include <thread>
+#include <unordered_map>
 
 #include <nlohmann/json.hpp>
 
@@ -72,14 +74,61 @@ void sync_endpoints_to_ds(data_store::Client& ds,
     nlohmann::json arr = nlohmann::json::array();
     for (const auto& ep : reg.list_all()) {
         nlohmann::json item;
-        item["endpoint"]    = ep.ep;
-        item["state"]       = ep.registered ? "online" : "offline";
-        item["tun_ip"]      = ep.tun_ip;
-        item["proxy_port"]  = ep.proxy_port;
-        item["registered"]  = ep.registered;
+        item["endpoint"]      = ep.ep;
+        item["state"]         = ep.registered ? "online" : "offline";
+        item["tun_ip"]        = ep.tun_ip;
+        item["proxy_port"]    = ep.proxy_port;
+        item["registered"]    = ep.registered;
+        item["last_seen_unix"] = ep.last_seen_unix;
         arr.push_back(item);
     }
     ds.set("cloud.endpoints", data_store::Value{arr.dump()});
+}
+
+// Merge lwm2m-dm's registration status into the EndpointRegistry. lwm2m-dm
+// writes cloud.lwm2m.registrations = [{ endpoint, registered, last_seen_unix }]
+// (the set of currently-registered endpoints); we flip each provisioned
+// endpoint's `registered` flag to match so sync_endpoints_to_ds reports real
+// online/offline. Endpoints absent from the list are offline. Returns true if
+// any endpoint's state changed.
+bool reconcile_registrations(data_store::Client& ds,
+                             server::lwm2m::EndpointRegistry& reg) {
+    const std::string js = ds_str(ds, "cloud.lwm2m.registrations", "[]");
+    std::unordered_map<std::string, std::int64_t> online;  // ep → last_seen_unix
+    try {
+        auto arr = nlohmann::json::parse(js);
+        if (arr.is_array()) {
+            for (const auto& e : arr) {
+                if (!e.is_object()) continue;
+                if (!e.value("registered", false)) continue;
+                auto ep = e.value("endpoint", std::string());
+                if (ep.empty()) continue;
+                online[std::move(ep)] = e.value("last_seen_unix",
+                                                std::int64_t{0});
+            }
+        }
+    } catch (const std::exception& ex) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l "
+                            "cloud.lwm2m.registrations parse: %C\n"),
+                   ex.what()));
+        return false;
+    }
+    bool changed = false;
+    for (const auto& ep : reg.list_all()) {
+        auto it = online.find(ep.ep);
+        if (it != online.end()) {
+            // Online — refresh the registered flag + last-seen timestamp.
+            reg.update_state(ep.ep, true, it->second);
+            if (!ep.registered || ep.last_seen_unix != it->second)
+                changed = true;
+        } else if (ep.registered) {
+            // Offline — clear the flag but keep the last-seen value.
+            reg.update_state(ep.ep, false);
+            changed = true;
+        }
+    }
+    return changed;
 }
 
 } // namespace
@@ -153,6 +202,15 @@ int main(int argc, char** argv) {
         ACE_ERROR((LM_ERROR,
                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch log.level failed: %C\n"),
                    ws_loglevel.err.c_str()));
+    }
+    // Watch lwm2m-dm's registration status so online/offline transitions
+    // reach cloud.endpoints promptly (the periodic tick is a safety net).
+    auto ws_regs = ds.watch("cloud.lwm2m.registrations", 1000);
+    if (!ws_regs.ok) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch "
+                            "cloud.lwm2m.registrations failed: %C\n"),
+                   ws_regs.err.c_str()));
     }
 
     // Seed initial VPN config in ds
@@ -345,6 +403,10 @@ int main(int argc, char** argv) {
                 g_log.apply_level(ds);
                 ACE_DEBUG((LM_INFO,
                            ACE_TEXT("%D cloudd:thread:%t %M %N:%l log level changed\n")));
+            } else if (ev.key == "cloud.lwm2m.registrations") {
+                // lwm2m-dm published a registration change — fold online/
+                // offline into the endpoint registry before the sync below.
+                reconcile_registrations(ds, ep_reg);
             }
             // Sync after every event so the UI sees changes quickly
             sync_endpoints_to_ds(ds, ep_reg);
@@ -354,6 +416,8 @@ int main(int argc, char** argv) {
             supervise_ovpn();   // restart on crash / honor enable flips
             if (++sync_tick >= 3) {
                 sync_tick = 0;
+                // Safety-net reconcile in case a watch notification was missed.
+                reconcile_registrations(ds, ep_reg);
                 sync_endpoints_to_ds(ds, ep_reg);
                 ds.set("cloud.vpn.port.next",
                        data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});

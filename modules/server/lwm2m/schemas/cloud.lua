@@ -27,6 +27,17 @@ return {
       default = "[]",
     },
 
+    -- LwM2M registration status. Written by lwm2m-dm (SOLE writer) from its
+    -- ClientRegistry whenever a device registers / updates / deregisters or
+    -- a lifetime lapses; read by iot-cloudd to merge online/offline +
+    -- last_seen into cloud.endpoints (which it owns alongside tun_ip /
+    -- proxy_port). Separate key avoids a two-writer clobber. JSON array:
+    -- [{ endpoint, registered, last_seen_unix }].
+    ["cloud.lwm2m.registrations"] = {
+      type    = "string",
+      default = "[]",
+    },
+
     -- Bootstrap Server (L21/D3).  iot-cloudd reads these keys to
     -- configure the CoAP /bs endpoint and to build the Security +
     -- Server object TLV payloads that are pushed to devices during

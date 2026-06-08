@@ -206,18 +206,28 @@ Each registration carries a **lifetime timer**:
 | Lifetime elapsed (no Update) | `expire(now)` evicts where `now >= expiresAt` | **offline** |
 | Deregister `DELETE /rd/{loc}` | entry removed | **offline** |
 
-The registry primitives already exist (`lwm2m_registration.cpp`:
-`add` / `update` / `expire`; `ServerRegistration::expired`). The 1 Hz
-server tick (`wire_server` → `on_tick_server`) calls `registry->expire(now)`
-every second, so an Update *is* the timer restart and a missed Update lets the
-entry lapse.
+The registry primitives (`lwm2m_registration.cpp`: `add` / `update` /
+`expire`; `ServerRegistration::expired`) drive it. The 1 Hz server tick
+(`wire_server` → `on_tick_server`) calls `registry->expire(now)` every second,
+so an Update *is* the timer restart and a missed Update lets the entry lapse.
 
-**Publishing the state** (online/offline) to the cloud UI is the remaining
-piece: on Register publish the endpoint as online (`cloud.endpoints[].state =
-"online"`, `registered: true`, `last_seen_unix`), and on expire / deregister
-flip it to `"offline"`. The `cloud.endpoints` JSON array already carries
-`state` / `registered` / `last_seen_unix` (see `apps/cloud/CLAUDE.md`); today
-`expire()` only logs the eviction count.
+**Publishing the state** is wired (`wire_server`, DM instance only):
+
+1. lwm2m-dm is the **sole writer** of `cloud.lwm2m.registrations` — a JSON
+   array `[{ endpoint, registered, last_seen_unix }]` of the currently-
+   registered set. It is republished on every `RegistrationServer::on_event`
+   (Register / Update / Deregister) and whenever `registry->expire()` drops an
+   entry in the tick. Only the DM instance publishes (the BS never sees /rd),
+   so there is no empty-set clobber from the BS.
+2. **iot-cloudd** watches `cloud.lwm2m.registrations`, folds it into its
+   `EndpointRegistry` (`update_state(ep, online)`), and re-emits
+   `cloud.endpoints` with the corrected `state` / `registered`. A dedicated
+   key (rather than lwm2m-dm writing `cloud.endpoints` directly) avoids a
+   two-writer clobber on the `tun_ip` / `proxy_port` fields iot-cloudd owns.
+
+Endpoint identity is the raw serial on both sides (the device registers with
+`ep=<serial>`; iot-cloudd keys its registry by the provisioned serial), so the
+merge matches by exact endpoint string.
 
 > Spec nuance: clients send Update slightly *before* `lt` elapses, so a small
 > grace window beyond `expiresAt` avoids false "offline" flaps. Marking
@@ -235,6 +245,7 @@ flip it to `"offline"`. The `cloud.endpoints` JSON array already carries
 | Cloud-BS resolver wiring (data-store driven) | `apps/src/main.cpp` (`wire_server` resolver) |
 | Client object install | `apps/src/lwm2m_object_stubs.cpp` |
 | Registration server + registry (lifetime timer) | `apps/src/lwm2m_registration_server.cpp`, `apps/src/lwm2m_registration.cpp` |
+| Online/offline publish (lwm2m-dm) + merge (iot-cloudd) | `apps/src/main.cpp` (`wire_server`), `apps/cloud/server/src/main.cpp` (`reconcile_registrations`); key `cloud.lwm2m.registrations` |
 | Registration client (`/rd`, Update) | `apps/src/lwm2m_registration_client.cpp` |
 | PSK provisioning (mint DM PSK) | `apps/cloud/server/src/main.cpp`, `apps/src/psk_gen.cpp` |
 | Bootstrap/DM provisioning source | data-store: `cloud.endpoint.credentials`, `cloud.bs.uri`, `cloud.dm.uri/lifetime/binding` (no static lua) |

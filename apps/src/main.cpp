@@ -6,7 +6,9 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <cstdint>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <sstream>
 #include <unordered_map>
@@ -338,6 +340,64 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         ctx->coapAdapter()->registrationServer(regServer);
     }
 
+    // Online/offline endpoint state. Only the DM instance sees /rd traffic,
+    // so only it publishes. lwm2m-dm is the SOLE writer of
+    // cloud.lwm2m.registrations (the set of currently-registered endpoints);
+    // iot-cloudd reads it and merges online/offline + last_seen into
+    // cloud.endpoints (which it owns alongside tun_ip/proxy_port). A separate
+    // key avoids a two-writer clobber. The set is republished on every
+    // Register / Update / Deregister (via on_event) and on lifetime lapse
+    // (via registry->expire in the tick below). `publish_regs` stays null for
+    // non-DM instances, which skips publishing entirely.
+    std::shared_ptr<std::function<void()>> publish_regs;
+    if (lwm2mInstance == "dm") {
+        auto* dsClient = ds.client();
+        auto lastSeen =
+            std::make_shared<std::unordered_map<std::string, std::int64_t>>();
+        auto now_unix = []() {
+            return static_cast<std::int64_t>(
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count());
+        };
+        publish_regs = std::make_shared<std::function<void()>>(
+            [registry, dsClient, lastSeen, now_unix]() {
+                if (!dsClient) return;
+                const std::int64_t nowUnix = now_unix();
+                nlohmann::json arr = nlohmann::json::array();
+                std::unordered_map<std::string, std::int64_t> kept;
+                for (const auto& kv : registry->all()) {
+                    const auto& ep = kv.second.endpoint;
+                    if (ep.empty()) continue;
+                    auto it = lastSeen->find(ep);
+                    const std::int64_t ls =
+                        (it != lastSeen->end()) ? it->second : nowUnix;
+                    kept[ep] = ls;
+                    arr.push_back({{"endpoint", ep},
+                                   {"registered", true},
+                                   {"last_seen_unix", ls}});
+                }
+                *lastSeen = std::move(kept);
+                dsClient->set(std::string("cloud.lwm2m.registrations"),
+                              data_store::Value{arr.dump()});
+            });
+
+        regServer->on_event(
+            [lastSeen, publish_regs, now_unix]
+            (const ::lwm2m::RegistrationOutcome& o,
+             const ::lwm2m::ServerRegistration* snap) {
+                if (snap &&
+                    (o.kind == ::lwm2m::RegistrationOutcome::Created ||
+                     o.kind == ::lwm2m::RegistrationOutcome::Updated)) {
+                    (*lastSeen)[snap->endpoint] = now_unix();
+                }
+                (*publish_regs)();   // covers Created / Updated / Removed
+            });
+
+        // Seed an initial (empty) snapshot so iot-cloudd starts clean.
+        (*publish_regs)();
+    }
+
     // L9 stub 4 — periodic server-side DM driver. Once per
     // `kPollInterval`, walk the registry and issue a Read /3/0/0
     // (Manufacturer) against each registered client. This exercises
@@ -349,7 +409,8 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     auto last_poll = std::make_shared<Clock::time_point>(Clock::now());
     std::weak_ptr<App> wapp_srv = app;
 
-    app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll]() {
+    app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll,
+                                       publish_regs]() {
         // Local constexpr inside the lambda body — gcc 11 wouldn't let
         // us reference an outer-scope constexpr without an explicit
         // capture even though it's a constant expression.
@@ -364,8 +425,9 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
             ACE_DEBUG((LM_INFO,
                        ACE_TEXT("%D lwm2m:thread:%t %M %N:%l expired %u registration(s)\n"),
                        static_cast<unsigned>(expired.size())));
-            // L3 follow-up: forward expired locations to the RegistryMirror
-            // when the Mongo schema PR lands.
+            // Mark the now-lapsed endpoints offline by republishing the
+            // (shrunk) registered set. iot-cloudd reconciles cloud.endpoints.
+            if (publish_regs) (*publish_regs)();
         }
 
         if (now - *last_poll < kPollInterval) return;
