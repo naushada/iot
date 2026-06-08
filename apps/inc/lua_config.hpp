@@ -59,7 +59,7 @@ using ResourceMap = std::unordered_map<std::uint32_t, ResourceRecord>;
 /// whether an empty map is fatal.
 ResourceMap load_object_resources(const std::string& path);
 
-// ----- typed accessors (mirror the lambdas in main.cpp::load_provisioning_from_config) -----
+// ----- typed accessors (used by lwm2m_object_stubs.cpp object installers) -----
 
 /// Read the value of the entry at `rid` as a string. Returns `def`
 /// when the rid is absent, the entry's value isn't a string, or the

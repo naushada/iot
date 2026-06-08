@@ -126,7 +126,18 @@ Server::Result Server::handle(const CoAPAdapter::CoAPMessage& msg,
     }
     r.endpoint = ep;
 
-    const auto* acct = find(ep);
+    // Prefer the live resolver (cloud BS synthesises the DM account from
+    // cloud.endpoint.credentials per /bs); fall back to the statically
+    // provisioned add_account() map for the device-side / test path.
+    AccountProvisioning   resolved;
+    const AccountProvisioning* acct = nullptr;
+    if (m_resolver) {
+        if (auto a = m_resolver(ep)) {
+            resolved = std::move(*a);
+            acct = &resolved;
+        }
+    }
+    if (!acct) acct = find(ep);
     if (!acct) {
         r.handled = true;
         r.frames.push_back(build_ack(msg, /*4.04 Not Found*/ 0x84));

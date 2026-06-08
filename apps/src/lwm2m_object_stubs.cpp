@@ -125,45 +125,11 @@ int install_connstats(ObjectStore& store) {
     return 0;
 }
 
-int install_security(ObjectStore& store, const std::string& configDir) {
-    ObjectDescriptor d;
-    d.oid = 0; d.name = "LwM2M Security";
-    d.urn = "urn:oma:lwm2m:oma:0:1.1";
-    d.mandatory = true; d.multipleInstance = true;
-
-    // Mirror every securityObject/<iid>.lua under configDir. The two
-    // canonical files are 0.lua (bootstrap account) and 1.lua (DM).
-    for (std::uint16_t iid : {0, 1}) {
-        auto inst = instance_from_lua(
-            iid, join_path(configDir, "securityObject/" +
-                                       std::to_string(iid) + ".lua"));
-        if (!inst.resources.empty()) {
-            d.instances[iid] = std::move(inst);
-        }
-    }
-    if (d.instances.empty()) return 0;     // no file → don't advertise
-    store.add_object(std::move(d));
-    return 0;
-}
-
-int install_server(ObjectStore& store, const std::string& configDir) {
-    ObjectDescriptor d;
-    d.oid = 1; d.name = "LwM2M Server";
-    d.urn = "urn:oma:lwm2m:oma:1:1.1";
-    d.mandatory = true; d.multipleInstance = true;
-
-    for (std::uint16_t iid : {0, 1}) {
-        auto inst = instance_from_lua(
-            iid, join_path(configDir, "serverObject/" +
-                                       std::to_string(iid) + ".lua"));
-        if (!inst.resources.empty()) {
-            d.instances[iid] = std::move(inst);
-        }
-    }
-    if (d.instances.empty()) return 0;
-    store.add_object(std::move(d));
-    return 0;
-}
+// The Security (OID 0) and Server (OID 1) objects are NOT seeded from static
+// config — they are delivered entirely by the Bootstrap server at /bs and
+// created in the live store by the Bootstrap client's apply_commit (which
+// add_object()s OID 0 / OID 1 on demand). So there are no install_security /
+// install_server stubs: provisioning is 100% data-store driven.
 
 int install_access_control(ObjectStore& store, const std::string& configDir) {
     auto inst = instance_from_lua(
@@ -197,8 +163,6 @@ int install_canonical_objects(ObjectStore& store,
                               const std::string& configDir,
                               DeviceHooks deviceHooks) {
     int rc = 0;
-    rc |= install_security(store, configDir);
-    rc |= install_server(store, configDir);
     rc |= install_access_control(store, configDir);
     rc |= install_device(store, configDir, std::move(deviceHooks));
     rc |= install_connmon(store);

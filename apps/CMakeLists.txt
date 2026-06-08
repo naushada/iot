@@ -258,7 +258,9 @@ if(IOT_PACKAGING_INSTALL)
     # silently clobber edited config. Renaming has to be per-file
     # because cmake's install(FILES RENAME) only takes one source.
     set(IOT_CONFIG_DIR ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/config)
-    foreach(subdir securityObject serverObject deviceObject accessControlObject firmwareObject)
+    # securityObject / serverObject are no longer file-backed — the Security
+    # and Server objects are delivered via Bootstrap (data-store driven).
+    foreach(subdir deviceObject accessControlObject firmwareObject)
         file(GLOB _lua_files
              RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/config/${subdir}
              ${CMAKE_CURRENT_SOURCE_DIR}/config/${subdir}/*.lua)
