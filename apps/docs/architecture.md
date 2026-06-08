@@ -65,10 +65,10 @@ External:
 
 Config:
 
-- `apps/config/securityObject/{0,1,modified1}.lua` — Security Object (OID 0)
-  bootstrap payloads.
-- `apps/config/serverObject/{0,1}.lua` — Server Object (OID 1) bootstrap
-  payloads.
+- Security Object (OID 0) and Server Object (OID 1) are no longer file-backed
+  — the Bootstrap server synthesises the BS + DM accounts per `/bs` from the
+  data-store (`cloud.endpoint.credentials`, `cloud.{bs,dm}.*`), and the client
+  receives them via Bootstrap-Write. See `lwm2m-object-handling.md`.
 - `apps/config/deviceObject/0.lua` — Device Object (OID 3) per-RID
   overrides for the static metadata (Manufacturer, Model, Serial,
   Firmware Version, …). Compiled-in defaults apply per-RID when this

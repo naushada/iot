@@ -6,7 +6,9 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <cstdint>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <sstream>
 #include <unordered_map>
@@ -161,81 +163,6 @@ extern "C" void iot_dtls_log_sink(int /*level*/, const char* line) {
     if (!s.empty()) g_log.append("dtls: " + s + "\n");
 }
 
-/// Read the existing security/server-object JSON files under
-/// `apps/config/{securityObject,serverObject}/` and synthesise one
-/// AccountProvisioning per Security Object instance. Only instances
-/// flagged as DM accounts (`isBootstrapServer` = false in the rid=1
-/// override) get a paired Server Object.
-///
-/// The endpoint name is provided by the caller — typically passed via
-/// `ep=` on the server's CLI, or hard-coded for a known test client.
-::lwm2m::bootstrap::AccountProvisioning
-load_provisioning_from_config(const std::string& configDir,
-                              const std::string& endpoint,
-                              iot::DsConfig*     ds = nullptr) {
-    ::lwm2m::bootstrap::AccountProvisioning a;
-    a.endpoint = endpoint;
-
-    // ds-server overrides (when connected): iot.server.uri replaces the
-    // DM Security instance's URI; iot.lifetime replaces the Server
-    // instance's lifetime. iid 0 (Bootstrap) stays file-driven.
-    std::optional<std::string>   dsUri;
-    std::optional<std::uint32_t> dsLifetime;
-    if (ds && ds->connected()) {
-        dsUri      = ds->server_uri();
-        dsLifetime = ds->lifetime();
-    }
-
-    using iot::lua_config::bool_or;
-    using iot::lua_config::load_object_resources;
-    using iot::lua_config::string_or;
-    using iot::lua_config::uint_or;
-
-    // Security Object instances: file naming mirrors today's "0.lua",
-    // "1.lua" and the loaded order maps directly to the wire iid.
-    for (std::uint16_t iid : {0, 1}) {
-        auto m = load_object_resources(
-            configDir + "/securityObject/" + std::to_string(iid) + ".lua");
-        if (m.empty()) continue;
-
-        ::lwm2m::bootstrap::SecurityInstance s;
-        s.iid               = iid;
-        s.serverUri         = string_or(m, 0, "");
-        if (iid == 1 && dsUri) {
-            ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l DM server URI from "
-                                "data-store: %C\n"),
-                       dsUri->c_str()));
-            s.serverUri = *dsUri;
-        }
-        s.isBootstrapServer = bool_or(m, 1, iid == 0);
-        s.securityMode      = static_cast<std::uint8_t>(uint_or(m, 2, 3));
-        s.identity          = string_or(m, 3, "");
-        s.secretKey         = string_or(m, 5, "");
-        s.shortServerId     = static_cast<std::uint16_t>(uint_or(m, 10, iid + 1));
-        a.security.push_back(std::move(s));
-    }
-
-    // Server Object instance 0 is the canonical DM-server account.
-    auto srv = load_object_resources(configDir + "/serverObject/0.lua");
-    if (!srv.empty()) {
-        ::lwm2m::bootstrap::ServerInstance row;
-        row.iid           = 0;
-        row.shortServerId = static_cast<std::uint16_t>(uint_or(srv, 0, 1));
-        row.lifetime      = uint_or(srv, 1, 86400);
-        if (dsLifetime) {
-            ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l Server lifetime from "
-                                "data-store: %u\n"),
-                       static_cast<unsigned>(*dsLifetime)));
-            row.lifetime  = *dsLifetime;
-        }
-        row.binding       = string_or(srv, 7, "U");
-        a.server.push_back(std::move(row));
-    }
-    return a;
-}
-
 /// Attach BootstrapServer (on the Bootstrap port) + RegistrationServer +
 /// canonical ObjectStore (for Discover output) on the DeviceMgmtServer
 /// port. Install the 1 Hz tick to drive registry expiry.
@@ -245,16 +172,159 @@ struct ServerPlumbing {
 };
 
 ServerPlumbing wire_server(std::shared_ptr<App>& app,
-                           const std::string& configDir,
-                           iot::DsConfig& ds) {
+                           iot::DsConfig& ds,
+                           const std::string& lwm2mInstance) {
     auto registry = std::make_shared<::lwm2m::ClientRegistry>();
     auto bsServer = std::make_shared<::lwm2m::bootstrap::Server>();
 
-    // Provision one account for the well-known test endpoint. Real
-    // deployments would load multiple accounts from a registry file or
-    // the DB; the wiring point stays the same.
-    bsServer->add_account(
-        load_provisioning_from_config(configDir, "urn:dev:client-1", &ds));
+    // Bootstrap provisioning is 100% data-store driven — there is no static
+    // config account. The cloud BS resolver below synthesises the BS+DM
+    // accounts per /bs from cloud.endpoint.credentials + cloud.{bs,dm}.*.
+
+    // Cloud Bootstrap server (lwm2m-instance=bs): synthesise the DM account
+    // per /bs from the live data-store instead of a static config file.
+    //
+    // The DM PSK is minted ONCE by iot-cloudd at provisioning time and
+    // stored in cloud.endpoint.credentials (keyed by serial / formatted
+    // identity); lwm2m-dm loads those same creds at startup and validates
+    // the client's DTLS handshake against them. So the BS must hand the
+    // client the SAME credential — not a freshly-generated one — otherwise
+    // the post-bootstrap DTLS to the DM would fail. We look the record up
+    // by endpoint and build two Security instances + the DM Server object:
+    //   Security/0 (BS): RID0=cloud.bs.uri, RID1=true, RID2=0 (PSK),
+    //                    RID3=sha256(ep)[:32], RID5=bs.psk.key, RID10=0 (ignored)
+    //   Security/1 (DM): RID0=cloud.dm.uri, RID1=false, RID2=0 (PSK),
+    //                    RID3=dm.psk.id, RID5=dm.psk.key (hex), RID10=1
+    //   Server/0:        SSID=1, lifetime=cloud.dm.lifetime, binding=cloud.dm.binding
+    // The /rd registration location is assigned by the DM at Register and
+    // used by the client for periodic Update — it is not minted here.
+    if (lwm2mInstance == "bs") {
+        bsServer->provisioning_resolver(
+            [&ds](const std::string& ep)
+                -> std::optional<::lwm2m::bootstrap::AccountProvisioning> {
+            auto* cli = ds.client();
+            if (!cli) return std::nullopt;
+
+            std::vector<data_store::Client::GetResult> got;
+            auto rs = cli->get({std::string("cloud.endpoint.credentials"),
+                                std::string("cloud.dm.uri"),
+                                std::string("cloud.dm.lifetime"),
+                                std::string("cloud.dm.binding"),
+                                std::string("cloud.bs.uri")}, got);
+            if (!rs.ok || got.size() < 5) return std::nullopt;
+
+            auto str_at = [&](std::size_t i) -> std::string {
+                return (i < got.size() && got[i].has_value)
+                           ? data_store::to_string(got[i].value).value_or("")
+                           : std::string();
+            };
+            const std::string credsJson = str_at(0);
+            const std::string dmUri     = str_at(1);
+            std::uint32_t     lifetime  = 86400;
+            if (auto s = str_at(2); !s.empty()) {
+                try { lifetime = static_cast<std::uint32_t>(std::stoul(s)); }
+                catch (...) {}
+            }
+            std::string binding = str_at(3);
+            if (binding.empty()) binding = "U";
+            const std::string bsUri = str_at(4);
+
+            if (dmUri.empty()) {
+                ACE_ERROR((LM_WARNING,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: "
+                                    "cloud.dm.uri unset — cannot provision DM "
+                                    "account\n"),
+                           ep.c_str()));
+                return std::nullopt;
+            }
+            if (credsJson.empty()) return std::nullopt;
+
+            std::string dmId, dmKey, bsKey;
+            try {
+                auto arr = nlohmann::json::parse(credsJson);
+                if (!arr.is_array()) return std::nullopt;
+                for (auto& e : arr) {
+                    if (!e.is_object()) continue;
+                    const std::string serial   = e.value("serial",   std::string());
+                    const std::string identity = e.value("identity", std::string());
+                    if (serial == ep || identity == ep) {
+                        dmId  = e.value("dm.psk.id",  std::string());
+                        dmKey = e.value("dm.psk.key", std::string());
+                        bsKey = e.value("bs.psk.key", std::string());
+                        break;
+                    }
+                }
+            } catch (const std::exception& ex) {
+                ACE_ERROR((LM_ERROR,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: "
+                                    "cloud.endpoint.credentials parse: %C\n"),
+                           ep.c_str(), ex.what()));
+                return std::nullopt;
+            }
+            if (dmId.empty() || dmKey.empty()) {
+                ACE_ERROR((LM_WARNING,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: no "
+                                    "provisioned DM credential found\n"),
+                           ep.c_str()));
+                return std::nullopt;
+            }
+
+            ::lwm2m::bootstrap::AccountProvisioning a;
+            a.endpoint = ep;
+
+            // Security /0/0 — the Bootstrap-Server's own account (Is
+            // Bootstrap=true, SSID 0 is ignored for a BS account). PSK over
+            // coaps, matching how the device actually reaches lwm2m-bs. The
+            // BS DTLS identity is derived: sha256(endpoint)[:32], same as the
+            // device + register_endpoint_creds compute. Written only when the
+            // BS URI is known.
+            if (!bsUri.empty()) {
+                ::lwm2m::bootstrap::SecurityInstance bs;
+                bs.iid               = 0;
+                bs.serverUri         = bsUri;
+                bs.isBootstrapServer = true;
+                bs.securityMode      = 0;       // PSK
+                bs.identity          = iot::sha256_hex(ep).substr(0, 32);
+                bs.secretKey         = bsKey;   // hex (omitted by encoder if empty)
+                bs.shortServerId     = 0;       // ignored for a BS account
+                a.security.push_back(std::move(bs));
+            }
+
+            // DM Short Server ID (1..65534). The Security RID 10 and the
+            // Server Object instance are both keyed by it, so /0/1/10 links
+            // directly to /1/<ssid>. v1 is single-DM-server, so one SSID.
+            const std::uint16_t dmSsid = 101;
+
+            // Security /0/1 — the DM-Server account (Is Bootstrap=false).
+            ::lwm2m::bootstrap::SecurityInstance dm;
+            dm.iid               = 1;
+            dm.serverUri         = dmUri;
+            dm.isBootstrapServer = false;
+            dm.securityMode      = 0;           // PSK
+            dm.identity          = dmId;        // distinct DM identity
+            dm.secretKey         = dmKey;       // hex; client + DM both hex-decode
+            dm.shortServerId     = dmSsid;
+            a.security.push_back(std::move(dm));
+
+            // Server /1/<ssid> — the DM server object, instance id == SSID so
+            // it links directly to the Security RID 10 above (/0/1 → /1/101).
+            ::lwm2m::bootstrap::ServerInstance srv;
+            srv.iid           = dmSsid;
+            srv.shortServerId = dmSsid;
+            srv.lifetime      = lifetime;
+            srv.binding       = binding;
+            a.server.push_back(std::move(srv));
+
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: "
+                                "provisioning BS(/0/0)+DM(/0/1) accounts "
+                                "(bs=%C, dm=%C, ssid=%u, lifetime=%u)\n"),
+                       ep.c_str(), bsUri.c_str(), dmUri.c_str(),
+                       static_cast<unsigned>(dmSsid),
+                       static_cast<unsigned>(lifetime)));
+            return a;
+        });
+    }
 
     // L9 / FUP-3: attach BOTH handlers to EVERY server-side service
     // context. processRequest's URI dispatch routes /bs → bsServer,
@@ -270,6 +340,64 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         ctx->coapAdapter()->registrationServer(regServer);
     }
 
+    // Online/offline endpoint state. Only the DM instance sees /rd traffic,
+    // so only it publishes. lwm2m-dm is the SOLE writer of
+    // cloud.lwm2m.registrations (the set of currently-registered endpoints);
+    // iot-cloudd reads it and merges online/offline + last_seen into
+    // cloud.endpoints (which it owns alongside tun_ip/proxy_port). A separate
+    // key avoids a two-writer clobber. The set is republished on every
+    // Register / Update / Deregister (via on_event) and on lifetime lapse
+    // (via registry->expire in the tick below). `publish_regs` stays null for
+    // non-DM instances, which skips publishing entirely.
+    std::shared_ptr<std::function<void()>> publish_regs;
+    if (lwm2mInstance == "dm") {
+        auto* dsClient = ds.client();
+        auto lastSeen =
+            std::make_shared<std::unordered_map<std::string, std::int64_t>>();
+        auto now_unix = []() {
+            return static_cast<std::int64_t>(
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count());
+        };
+        publish_regs = std::make_shared<std::function<void()>>(
+            [registry, dsClient, lastSeen, now_unix]() {
+                if (!dsClient) return;
+                const std::int64_t nowUnix = now_unix();
+                nlohmann::json arr = nlohmann::json::array();
+                std::unordered_map<std::string, std::int64_t> kept;
+                for (const auto& kv : registry->all()) {
+                    const auto& ep = kv.second.endpoint;
+                    if (ep.empty()) continue;
+                    auto it = lastSeen->find(ep);
+                    const std::int64_t ls =
+                        (it != lastSeen->end()) ? it->second : nowUnix;
+                    kept[ep] = ls;
+                    arr.push_back({{"endpoint", ep},
+                                   {"registered", true},
+                                   {"last_seen_unix", ls}});
+                }
+                *lastSeen = std::move(kept);
+                dsClient->set(std::string("cloud.lwm2m.registrations"),
+                              data_store::Value{arr.dump()});
+            });
+
+        regServer->on_event(
+            [lastSeen, publish_regs, now_unix]
+            (const ::lwm2m::RegistrationOutcome& o,
+             const ::lwm2m::ServerRegistration* snap) {
+                if (snap &&
+                    (o.kind == ::lwm2m::RegistrationOutcome::Created ||
+                     o.kind == ::lwm2m::RegistrationOutcome::Updated)) {
+                    (*lastSeen)[snap->endpoint] = now_unix();
+                }
+                (*publish_regs)();   // covers Created / Updated / Removed
+            });
+
+        // Seed an initial (empty) snapshot so iot-cloudd starts clean.
+        (*publish_regs)();
+    }
+
     // L9 stub 4 — periodic server-side DM driver. Once per
     // `kPollInterval`, walk the registry and issue a Read /3/0/0
     // (Manufacturer) against each registered client. This exercises
@@ -281,7 +409,8 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     auto last_poll = std::make_shared<Clock::time_point>(Clock::now());
     std::weak_ptr<App> wapp_srv = app;
 
-    app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll]() {
+    app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll,
+                                       publish_regs]() {
         // Local constexpr inside the lambda body — gcc 11 wouldn't let
         // us reference an outer-scope constexpr without an explicit
         // capture even though it's a constant expression.
@@ -296,8 +425,9 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
             ACE_DEBUG((LM_INFO,
                        ACE_TEXT("%D lwm2m:thread:%t %M %N:%l expired %u registration(s)\n"),
                        static_cast<unsigned>(expired.size())));
-            // L3 follow-up: forward expired locations to the RegistryMirror
-            // when the Mongo schema PR lands.
+            // Mark the now-lapsed endpoints offline by republishing the
+            // (shrunk) registered set. iot-cloudd reconciles cloud.endpoints.
+            if (publish_regs) (*publish_regs)();
         }
 
         if (now - *last_poll < kPollInterval) return;
@@ -946,7 +1076,7 @@ int main(std::int32_t argc, char *argv[]) {
     if (UDPAdapter::CLIENT == role) {
         clientPlumbing = wire_client(app, endpoint, configDir, bsHost, bsPort, ds);
     } else {
-        serverPlumbing = wire_server(app, configDir, ds);
+        serverPlumbing = wire_server(app, ds, lwm2m_instance);
     }
 
     // L16/D5b — watcher thread for mid-session services.lwm2m.*.enable

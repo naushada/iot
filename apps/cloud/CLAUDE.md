@@ -389,6 +389,13 @@ cloud.endpoints          → JSON array of provisioned endpoints
     "registered":    true,
     "last_seen_unix": 1718123456
   }]
+cloud.lwm2m.registrations → JSON array of currently-registered endpoints.
+                            SOLE writer = lwm2m-dm (from its ClientRegistry on
+                            Register/Update/Deregister + lifetime expiry).
+                            iot-cloudd watches it and merges online/offline +
+                            last_seen into cloud.endpoints (separate key avoids
+                            a two-writer clobber on tun_ip/proxy_port).
+  [{ "endpoint": "100000abcd", "registered": true, "last_seen_unix": 1718123456 }]
 ```
 
 ### VPN Server (cloud.vpn.*)

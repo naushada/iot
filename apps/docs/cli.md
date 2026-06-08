@@ -584,9 +584,11 @@ Callers today:
 
 - `apps/src/lwm2m_object_3_device.cpp::load_overrides` — reads
   `deviceObject/0.lua` for per-RID Device Object overrides.
-- `apps/src/main.cpp::load_provisioning_from_config` — reads
-  `securityObject/{0,1}.lua` and `serverObject/0.lua` to build the
-  bootstrap `AccountProvisioning`.
+
+The Security (OID 0) and Server (OID 1) objects are no longer file-backed —
+they are delivered via the Bootstrap interface and built from the data-store
+(`cloud.endpoint.credentials`, `cloud.{bs,dm}.*`); see
+`lwm2m-object-handling.md`.
 
 The legacy `.json` files were removed on 2026-05-30 — the Lua
 loader has been smoke-confirmed (`log/L9/cli-smoke.pcap`) and the

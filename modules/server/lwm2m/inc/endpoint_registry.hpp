@@ -21,6 +21,7 @@ struct EndpointInfo {
     std::string tun_ip;      // "10.9.0.12"
     std::uint16_t proxy_port = 0;  // 5001+
     bool registered = false;       // LwM2M registration active
+    std::int64_t last_seen_unix = 0;  // last Register/Update, 0 = never
 
     EndpointInfo() = default;
     EndpointInfo(std::string ep_, std::string tun_ip_,
@@ -41,8 +42,14 @@ public:
     bool remove(const std::string& ep);
 
     /// Update the LwM2M registration flag.  Returns false when the
-    /// endpoint is not in the registry.
+    /// endpoint is not in the registry. `last_seen_unix` is preserved.
     bool update_state(const std::string& ep, bool registered);
+
+    /// Update the registration flag and the last-seen timestamp together
+    /// (used when an endpoint registers / updates). Returns false when the
+    /// endpoint is not in the registry.
+    bool update_state(const std::string& ep, bool registered,
+                      std::int64_t last_seen_unix);
 
     /// Lookup by endpoint name.  Returns nullptr when not found.
     const EndpointInfo* lookup_by_ep(const std::string& ep) const;

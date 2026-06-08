@@ -1,7 +1,9 @@
 #ifndef __lwm2m_bootstrap_server_hpp__
 #define __lwm2m_bootstrap_server_hpp__
 
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -46,6 +48,21 @@ public:
 
     Server() = default;
 
+    /// Resolve a provisioning record for an endpoint at /bs time.
+    ///
+    /// The cloud Bootstrap server uses this to synthesise the DM account
+    /// live from `cloud.endpoint.credentials` (the per-endpoint DM PSK that
+    /// iot-cloudd minted at provisioning time and that lwm2m-dm already
+    /// trusts) instead of from a static config file. Returning nullopt
+    /// falls back to the statically provisioned `add_account()` map, so the
+    /// device-side / test path is unchanged.
+    using ProvisioningResolver =
+        std::function<std::optional<AccountProvisioning>(
+            const std::string& endpoint)>;
+    void provisioning_resolver(ProvisioningResolver r) {
+        m_resolver = std::move(r);
+    }
+
     /// Register one provisioning record.
     void add_account(AccountProvisioning a);
 
@@ -58,6 +75,7 @@ public:
 
 private:
     std::unordered_map<std::string, AccountProvisioning> m_accounts;
+    ProvisioningResolver                                 m_resolver;
 };
 
 }} // namespace lwm2m::bootstrap
