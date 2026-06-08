@@ -27,6 +27,12 @@ std::string hex_encode(const unsigned char* data, std::size_t len);
 /// non-hex character (case-insensitive input accepted).
 std::string hex_decode(const std::string& hex);
 
+/// SHA-256 of `input`, lowercase hex (64 chars). Used to derive the BS DTLS
+/// PSK identity from the endpoint: identity = sha256_hex(endpoint). Both the
+/// device client and the cloud BS compute this identically, so the identity
+/// never has to be stored/commissioned — only the endpoint + secret.
+std::string sha256_hex(const std::string& input);
+
 } // namespace iot
 
 #endif /* __iot_psk_gen_hpp__ */

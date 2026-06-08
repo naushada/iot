@@ -15,6 +15,8 @@
 #include <ace/OS_NS_unistd.h>   // ACE_OS::sleep
 #include <ace/Time_Value.h>
 
+#include <nlohmann/json.hpp>
+
 #include "data_store/log_buffer.hpp"
 #include "data_store/stats_publisher.hpp"
 
@@ -644,10 +646,11 @@ int main(std::int32_t argc, char *argv[]) {
         bool logged_wait = false;
         for (;;) {
             bsUri = ds.bs_uri().value_or(argValueMap["bs"]);
-            auto pid  = ds.bs_psk_identity();
+            // BS PSK identity is DERIVED from the endpoint (sha256), so only
+            // the secret (iot.bs.psk.key) is commissioned — not the identity.
             auto pkey = ds.bs_psk_key();
             const bool have_psk =
-                (pid && !pid->empty() && pkey && !pkey->empty()) ||
+                (pkey && !pkey->empty()) ||
                 (!argValueMap["identity"].empty() && !argValueMap["secret"].empty());
             if (!bsUri.empty() && have_psk) break;
             if (!logged_wait) {
@@ -677,18 +680,24 @@ int main(std::int32_t argc, char *argv[]) {
 
     std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");
     if(scheme == UDPAdapter::Scheme_t::CoAPs) {
-        // Prefer data-store BS credentials: identity = raw serial,
-        // secret = iot.bs.psk.key (provisioned by device-ui). The CLI
-        // identity=/secret= args remain a fallback (dev / server role).
-        auto dsId  = ds.bs_psk_identity();
         auto dsKey = ds.bs_psk_key();
-        if (UDPAdapter::Role_t::CLIENT == role &&
-            dsId && !dsId->empty() && dsKey && !dsKey->empty()) {
-            identity = *dsId;
-            secret   = *dsKey;
+        if (UDPAdapter::Role_t::CLIENT == role) {
+            // BS DTLS PSK: identity is DERIVED from the endpoint — both the
+            // device and the cloud BS compute identity = sha256(endpoint), so
+            // it is never stored/commissioned. Only the secret (iot.bs.psk.key)
+            // is commissioned, with secret= CLI as a dev fallback.
+            identity = iot::sha256_hex(endpoint);
+            if (dsKey && !dsKey->empty())            secret = *dsKey;
+            else if (!argValueMap["secret"].empty()) secret = argValueMap["secret"];
+            else {
+                ACE_ERROR((LM_ERROR,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK secret missing "
+                                    "(provision iot.bs.psk.key or pass secret=)\n")));
+                return(-2);
+            }
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK from data-store "
-                                "(identity=%C)\n"), identity.c_str()));
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK identity=sha256(endpoint)=%C\n"),
+                       identity.c_str()));
         } else if (!argValueMap["identity"].empty() &&
                    !argValueMap["secret"].empty()) {
             identity.assign(argValueMap["identity"]);
@@ -727,6 +736,46 @@ int main(std::int32_t argc, char *argv[]) {
         }
     }
 
+    // Server role: (re)register per-device BS/DM PSKs from the cloud's
+    // cloud.endpoint.credentials array. BS identity = sha256(serial) — exactly
+    // what the device derives from its endpoint — and DM identity = dm.psk.id.
+    // add_credential() is a keyed store, so this is additive + idempotent.
+    // Reading the array requires gid:cloud-svc (the BS runs as cloud-svc).
+    auto register_endpoint_creds = [&](auto* dtls) {
+        if (!dtls || UDPAdapter::Role_t::SERVER != role || !ds.client()) return;
+        const bool is_bs = argValueMap["lwm2m-instance"] == "bs";
+        std::vector<data_store::Client::GetResult> got;
+        auto rs = ds.client()->get({std::string("cloud.endpoint.credentials")}, got);
+        if (!rs.ok || got.empty() || !got[0].has_value) return;
+        auto s = data_store::to_string(got[0].value);
+        if (!s || s->empty()) return;
+        try {
+            auto arr = nlohmann::json::parse(*s);
+            if (!arr.is_array()) return;
+            int n = 0;
+            for (auto& e : arr) {
+                if (!e.is_object()) continue;
+                std::string ident, key;
+                if (is_bs) {
+                    const std::string serial = e.value("serial", std::string());
+                    key = e.value("bs.psk.key", std::string());
+                    if (!serial.empty()) ident = iot::sha256_hex(serial);
+                } else {
+                    ident = e.value("dm.psk.id", std::string());
+                    key   = e.value("dm.psk.key", std::string());
+                }
+                if (!ident.empty() && !key.empty()) { dtls->add_credential(ident, key); ++n; }
+            }
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l registered %d per-endpoint %C PSK(s)\n"),
+                       n, is_bs ? "BS" : "DM"));
+        } catch (const std::exception& ex) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l cloud.endpoint.credentials parse: %C\n"),
+                       ex.what()));
+        }
+    };
+
     if(UDPAdapter::Scheme_t::CoAPs == scheme) {
         auto it = std::find_if(app->udpAdapter()->services().begin(), app->udpAdapter()->services().end(),[&](auto& ent) -> bool {
             return(service == ent.second->service());
@@ -735,6 +784,7 @@ int main(std::int32_t argc, char *argv[]) {
         if(it != app->udpAdapter()->services().end()) {
             auto& ent = *it;
             ent.second->dtlsAdapter()->add_credential(identity, secret);
+            register_endpoint_creds(ent.second->dtlsAdapter());
         }
     }
 
