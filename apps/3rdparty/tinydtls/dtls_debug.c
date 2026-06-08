@@ -210,16 +210,16 @@ dsrv_print_addr(const session_t *addr, char *buf, size_t len) {
 
 #endif /* NDEBUG */
 
-/*SWISTART*/
-#ifdef HAVE_VPRINTF
-#ifndef WITH_CONTIKI
-/*Macro-ed in dtls_debug.h in order to use the platform's standard debug output*/
-/*SWISTART*/
+/*SWISTART: log sink — defined UNCONDITIONALLY (outside HAVE_VPRINTF) so it
+  always links; the real dsrv_log that invokes it is guarded below. */
 static void (*g_dtls_log_sink)(int level, const char *line) = NULL;
 void dtls_set_log_sink(void (*sink)(int level, const char *line)) {
   g_dtls_log_sink = sink;
 }
 /*SWISTOP*/
+#ifdef HAVE_VPRINTF
+#ifndef WITH_CONTIKI
+/*Macro-ed in dtls_debug.h in order to use the platform's standard debug output*/
 #ifndef __RTOS__
 void
 dsrv_log(log_t level, char *format, ...) {
