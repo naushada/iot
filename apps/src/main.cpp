@@ -678,6 +678,11 @@ int main(std::int32_t argc, char *argv[]) {
         }
     }
 
+    // Endpoint (CLI ep= / data-store serial / RPi auto-detect). Declared here
+    // because the BS PSK identity is sha256(endpoint) below.
+    std::string endpoint = epres.ready ? epres.endpoint
+                                       : std::string("urn:dev:client-1");
+
     std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");
     if(scheme == UDPAdapter::Scheme_t::CoAPs) {
         auto dsKey = ds.bs_psk_key();
@@ -741,7 +746,7 @@ int main(std::int32_t argc, char *argv[]) {
     // what the device derives from its endpoint — and DM identity = dm.psk.id.
     // add_credential() is a keyed store, so this is additive + idempotent.
     // Reading the array requires gid:cloud-svc (the BS runs as cloud-svc).
-    auto register_endpoint_creds = [&](auto* dtls) {
+    auto register_endpoint_creds = [&](auto dtls) {   // dtls: shared_ptr<DTLSAdapter>
         if (!dtls || UDPAdapter::Role_t::SERVER != role || !ds.client()) return;
         const bool is_bs = argValueMap["lwm2m-instance"] == "bs";
         std::vector<data_store::Client::GetResult> got;
@@ -800,8 +805,7 @@ int main(std::int32_t argc, char *argv[]) {
     // epres.ready is false → fall back to the legacy placeholder so the
     // binary still comes up; registration effectively waits for the
     // installer to enter a serial via device-ui (which re-fires the watch).
-    std::string endpoint = epres.ready ? epres.endpoint
-                                       : std::string("urn:dev:client-1");
+    // (endpoint resolved above, before the BS PSK identity block.)
 
     // ds-server config-plane: `ds` connected above. `iot.endpoint` /
     // `iot.lifetime` / `iot.server.uri` continue to override file
