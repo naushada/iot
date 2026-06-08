@@ -766,7 +766,9 @@ int main(std::int32_t argc, char *argv[]) {
                 if (is_bs) {
                     const std::string serial = e.value("serial", std::string());
                     key = e.value("bs.psk.key", std::string());
-                    if (!serial.empty()) ident = iot::sha256_hex(serial);
+                    // 128-bit identity (first 32 hex chars), matching the
+                    // device's iot::sha256_hex(endpoint).substr(0,32).
+                    if (!serial.empty()) ident = iot::sha256_hex(serial).substr(0, 32);
                 } else {
                     ident = e.value("dm.psk.id", std::string());
                     key   = e.value("dm.psk.key", std::string());
