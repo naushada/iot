@@ -3,10 +3,15 @@ name: Build & Push Cloud Image
 on:
   push:
     branches: [main]
+    # NOTE: GitHub Actions forbids combining `paths` + `paths-ignore` on one
+    # event, so docs are excluded with a trailing negated pattern instead.
+    # A push touching only *.md under apps/**|modules/** is skipped (the image
+    # content is unchanged); a push that also touches code still builds.
     paths:
       - 'apps/**'
       - 'modules/**'
       - '.github/workflows/cloud-image.yml'
+      - '!**/*.md'
   workflow_dispatch:  # manual trigger
 
 env:
