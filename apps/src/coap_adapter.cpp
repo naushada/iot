@@ -1049,6 +1049,17 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
     std::string rsp;
     auto ret = parseRequest(in, coapmessage);
 
+    // Server-side response sink. A DM server originates GET/Reads (the cert-
+    // status poll /2048/0/4); the device's reply carries a response-class
+    // code (class >= 2: 2.xx/4.xx/5.xx) while requests are class 0
+    // (GET/PUT/POST/DELETE). Route responses to the handler and never
+    // dispatch them as requests. Covers ACK-piggybacked and separate
+    // responses alike.
+    if (!isAmIClient && (coapmessage.coapheader.code >> 5) != 0) {
+        if (m_dmRspHandler) m_dmRspHandler(coapmessage);
+        return 0;
+    }
+
     // L9 / FUP-2 — Acknowledgement-typed frames are responses to one of
     // *our* outbound CON requests (Register, Update, Deregister, …).
     // Forward them to the RegistrationClient FSM if one is attached so
@@ -1266,6 +1277,14 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
     ACE_DEBUG((LM_DEBUG,
                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l processRequest with session cf.length: %d\n"),
                static_cast<int>(cf.length())));
+
+    // Server-side response sink (DTLS path). Same as the no-session overload:
+    // a response-class code (>= class 2) is the device's reply to one of our
+    // server-initiated Reads (cert-status poll), not a request to dispatch.
+    if (!isAmIClient && (coapmessage.coapheader.code >> 5) != 0) {
+        if (m_dmRspHandler) m_dmRspHandler(coapmessage);
+        return 0;
+    }
 
     // L9 / FUP-2 — Acknowledgement short-circuit + dispatch to
     // RegistrationClient FSM. Same shape as the no-DTLS overload above.

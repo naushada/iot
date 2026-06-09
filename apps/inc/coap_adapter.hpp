@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <fstream>
+#include <functional>
 
 #include <ace/Log_Msg.h>
 
@@ -360,6 +361,18 @@ class CoAPAdapter {
             return m_regClient;
         }
 
+        /// Server-side response sink. A DM server sends its own GET/Read
+        /// requests (e.g. the cert-status poll /2048/0/4); the device's
+        /// 2.xx response would otherwise be dropped. When set, processRequest
+        /// routes any response-class inbound (code class >= 2) to this handler
+        /// for the server role instead of dispatching it as a request. The
+        /// caller correlates by token (CoAPMessage.tokens) and reads the value
+        /// from CoAPMessage.payload. nullptr → responses dropped (prior
+        /// behaviour).
+        void dmResponseHandler(std::function<void(const CoAPMessage&)> h) {
+            m_dmRspHandler = std::move(h);
+        }
+
         std::vector<std::string> handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid,
                                                     std::uint32_t oiid, std::uint32_t rid, std::uint32_t riid);
 
@@ -369,6 +382,7 @@ class CoAPAdapter {
         std::shared_ptr<lwm2m::DmClient>              m_dmClient;
         std::shared_ptr<lwm2m::bootstrap::Client>     m_bsClient;
         std::shared_ptr<lwm2m::RegistrationClient>    m_regClient;
+        std::function<void(const CoAPMessage&)>       m_dmRspHandler;
 
         std::unordered_map<std::uint32_t, std::string> OptionNumber;
         std::unordered_map<std::uint32_t, std::string> ContentFormat;
