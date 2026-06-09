@@ -31,11 +31,20 @@
  *   RID 2  Hash               String  W    lowercase hex SHA-256 of RID 1
  *   RID 3  Apply              ----    E    commit staged artifacts + reload
  *                                          (present on instance 0 only)
+ *   RID 4  Applied            String  R    fingerprint of the last committed
+ *                                          family, "" if none (instance 0 only)
  *
  * Write semantics: WRITEs to RID 1/2 stage the bytes in memory. EXECUTE on
- * /2048/0/3 atomically commits every staged artifact via store_artifact()
- * then calls apply(). Staging-then-commit avoids a half-written cert family
- * if the push is interrupted between WRITEs.
+ * /2048/0/3 commits the staged family via store_artifact() then calls
+ * apply(). With `require_complete` (the default), Apply commits ONLY when all
+ * three artifacts (ca+cert+key) are staged — an interrupted push leaves the
+ * partial set staged (not written to disk) and a later Apply, once the
+ * missing artifact arrives, commits the whole family. This makes the
+ * server's re-push loss-tolerant and never half-provisions openvpn.
+ *
+ * After a successful commit, RID 4 reports a stable fingerprint (FNV-1a over
+ * the committed PEM bytes) of the applied family, so a server can READ it to
+ * confirm delivery + detect a re-mint without re-pushing blindly.
  *
  * Note: this carries the private key down the wire (under DTLS). A
  * device-generated keypair + CSR-up enrolment is the stronger model and a
@@ -75,10 +84,13 @@ struct CertHooks {
 /// Install OID 2048 (instances 0/1/2) into `store`. `certDir` is the
 /// directory the default store_artifact writes the cert family into
 /// (e.g. "/etc/iot/vpn"); ignored when a store_artifact hook is supplied.
-/// Returns 0 on success.
+/// `require_complete` (default true): Apply commits only when ca+cert+key are
+/// all staged — set false to commit whatever is staged (e.g. for tests that
+/// exercise a single artifact). Returns 0 on success.
 int install_cert(ObjectStore& store,
                  const std::string& certDir,
-                 CertHooks hooks = {});
+                 CertHooks hooks = {},
+                 bool require_complete = true);
 
 }} // namespace lwm2m::objects
 
