@@ -168,6 +168,12 @@ RUN chmod +x /usr/local/bin/iot-entrypoint
 RUN mkdir -p /run/iot /var/lib/iot && \
     chmod 0755 /run/iot && chmod 0755 /var/lib/iot
 
+# VPN cert family (ca.crt/client.crt/client.key) is written here by the
+# lwm2m client (LwM2M Object 2048) and read by openvpn-client. The client
+# runs as `engineer`, so make the dir engineer-writable; a fresh
+# dev-vpn-certs volume mounted at this path inherits the ownership.
+RUN mkdir -p /etc/iot/vpn && chown engineer:iot /etc/iot/vpn && chmod 0775 /etc/iot/vpn
+
 # 8080 device UI/REST · 5683 DM (server role) · 5684 client local · 5685 BS
 # CoAP/DTLS ports are UDP (EXPOSE defaults to TCP); 8080 is the HTTP UI/API (TCP).
 EXPOSE 8080 5683/udp 5684/udp 5685/udp

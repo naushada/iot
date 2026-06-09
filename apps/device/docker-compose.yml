@@ -74,6 +74,10 @@ services:
     volumes:
       - dev-run:/run/iot
       - dev-etc:/etc/iot
+      # The lwm2m client materialises the cloud-pushed cert family (LwM2M
+      # Object 2048) into this shared volume, which openvpn-client reads and
+      # cert-watcher watches. Mounted rw here, ro on openvpn-client.
+      - dev-vpn-certs:/etc/iot/vpn
     depends_on:
       ds-server:
         condition: service_healthy
