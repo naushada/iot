@@ -303,20 +303,23 @@ std::int32_t DTLSAdapter::tx_peer(std::string& in) {
 }
 
 std::int32_t DTLSAdapter::tx(std::string& in, std::string peerIP, std::uint16_t peerPort) {
-    std::int32_t ret = -1;
-    struct sockaddr_in addr;
-
-    addr.sin_addr.s_addr = inet_addr(peerIP.c_str());
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(peerPort);
-    ::memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
-
+    // Build the peer session EXACTLY as session() / the inbound rx path do:
+    // zero the whole struct first (so ifindex — which dtls_session_equals
+    // compares — is 0, not garbage) and fill addr.sin + size =
+    // sizeof(sockaddr_in). Without the memset the stale ifindex makes
+    // dtls_write fail to match the established inbound peer and instead kick
+    // off a NEW handshake — so a server-initiated send (cert push, liveness
+    // poll) never reaches the already-connected device.
     session_t peersession;
-    peersession.addr.sa = *((struct  sockaddr *)&addr);
-    peersession.size = sizeof(peersession.addr.sa);
-    
-    ret = dtls_write(dtls_ctx(), &peersession, (std::uint8_t *)&in.at(0), in.size());
-    return(ret);
+    ::memset(&peersession, 0, sizeof(peersession));
+    peersession.addr.sin.sin_family      = AF_INET;
+    peersession.addr.sin.sin_addr.s_addr = inet_addr(peerIP.c_str());
+    peersession.addr.sin.sin_port        = htons(peerPort);
+    ::memset(peersession.addr.sin.sin_zero, 0, sizeof(peersession.addr.sin.sin_zero));
+    peersession.size = sizeof(struct sockaddr_in);
+
+    return dtls_write(dtls_ctx(), &peersession,
+                      (std::uint8_t *)&in.at(0), in.size());
 }
 
 
