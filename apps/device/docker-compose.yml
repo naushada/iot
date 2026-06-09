@@ -79,6 +79,95 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── VPN config seed (one-shot, declarative) ───────────────────
+  # Replaces the old ad-hoc "seed keys by hand" shell step. Sets the
+  # vpn.* config + opens the gate, then exits. In production these come
+  # from provisioning/net-router; here they're env-driven so the compose
+  # is self-contained. cert.path/key.path/ca.path point at the shared
+  # dev-vpn-certs volume the cert-watcher populates.
+  vpn-config:
+    image: ${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}
+    container_name: iot-dev-vpn-config
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        S=--socket=/run/iot/data_store.sock
+        set -e
+        ds-cli $$S set vpn.remote.host  '"'"${VPN_REMOTE_HOST:-host.docker.internal}"'"'
+        ds-cli $$S set vpn.remote.port  ${VPN_REMOTE_PORT:-1194}
+        ds-cli $$S set vpn.remote.proto '"tcp-client"'
+        ds-cli $$S set vpn.cert.path    '"/etc/iot/vpn/client.crt"'
+        ds-cli $$S set vpn.key.path     '"/etc/iot/vpn/client.key"'
+        ds-cli $$S set vpn.ca.path      '"/etc/iot/vpn/ca.crt"'
+        ds-cli $$S set vpn.cipher       '"AES-256-GCM"'
+        # Gate: in production net-router publishes these; seed for dev so
+        # the WAN/dep gate opens. Add a net-router service to own them live.
+        ds-cli $$S set services.net.router.state '"running"'
+        ds-cli $$S set net.iface.active '"eth0"'
+        echo "vpn-config: seeded vpn.* + opened gate"
+    volumes:
+      - dev-run:/run/iot
+    depends_on:
+      ds-server:
+        condition: service_healthy
+    restart: "no"
+
+  # ── OpenVPN client (peer daemon; spawns + supervises openvpn(8)) ─
+  # Not managed by lwm2m — a sibling daemon coordinating only via ds.
+  # IOT_ROLE=ovpn → iot-entrypoint runs openvpn-client with
+  # OPENVPN_CLIENT_ARGS from /etc/iot/openvpn-client.env. Reads cert
+  # files from the dev-vpn-certs volume (rotated by cert-watcher).
+  openvpn-client:
+    image: ${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}
+    container_name: iot-dev-ovpn
+    environment:
+      - IOT_ROLE=ovpn
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - dev-run:/run/iot
+      - dev-vpn-certs:/etc/iot/vpn:ro
+    depends_on:
+      ds-server:
+        condition: service_healthy
+      vpn-config:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ── Cert sidecar (xpmile pattern, iot-native reload) ───────────
+  # Watches the shared cert volume; on any change to the VPN cert family
+  # it flips services.openvpn.client.enable false->true via ds-cli, and
+  # the openvpn-client Supervisor's ServiceGate reaps + respawns
+  # openvpn(8) so it re-reads the rotated certs — same "rotate by reload"
+  # intent as xpmile's wsdbagent watcher, but over pure ds coordination
+  # (no container-engine socket needed). Uses the device image for ds-cli
+  # + busybox find/md5sum. The cert SOURCE is external: iot-cloudd mints a
+  # per-device VPN client cert and the provisioning/ds delivery writes it
+  # into dev-vpn-certs, which trips this watcher. (Set RELOAD_MODE=restart
+  # + mount the engine socket for the xpmile container-restart variant on
+  # Linux device hosts.)
+  cert-watcher:
+    image: ${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}
+    container_name: iot-dev-cert-watcher
+    entrypoint: ["sh", "/cert-watcher.sh"]
+    environment:
+      - WATCH_DIR=/watch
+      - RELOAD_MODE=gate
+      - DS_SOCK=/run/iot/data_store.sock
+      - SVC_NAME=openvpn.client
+      - POLL_SECONDS=5
+    volumes:
+      - dev-vpn-certs:/watch
+      - dev-run:/run/iot
+      - ./cert-watcher.sh:/cert-watcher.sh:ro
+    depends_on:
+      - openvpn-client
+    restart: unless-stopped
+
   # ── HTTP Server (device REST API + device UI) ──────────────────
   iot-httpd:
     image: ${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}
@@ -100,6 +189,8 @@ services:
 
 # ── Shared volumes ──────────────────────────────────────────────
 volumes:
-  dev-run:    # Unix socket (ds-server ↔ all daemons)
-  dev-etc:    # Schemas, env files, LwM2M object config
-  dev-lib:    # Persisted data store
+  dev-run:       # Unix socket (ds-server ↔ all daemons)
+  dev-etc:       # Schemas, env files, LwM2M object config
+  dev-lib:       # Persisted data store
+  dev-vpn-certs: # VPN client cert family (ca.crt/client.crt/client.key);
+                 # populated by cert-watcher / provisioning, read by openvpn-client
