@@ -324,7 +324,9 @@ TEST(CertObject, apply_invokes_reload_hook_and_runs_verify) {
                    const std::string&) { ++verified; return hash == "good" ? 0 : -1; };
 
     ObjectStore store;
-    objects::install_cert(store, "/unused", std::move(h));
+    // require_complete=false so the single-artifact apply commits (this test
+    // exercises the hook + verify path, not the family-completeness gate).
+    objects::install_cert(store, "/unused", std::move(h), /*require_complete*/false);
 
     store.find(2048, 1, 1)->write("cert-bytes");
     store.find(2048, 1, 2)->write("good");          // hash → verify runs, passes
@@ -337,4 +339,55 @@ TEST(CertObject, apply_invokes_reload_hook_and_runs_verify) {
     store.find(2048, 2, 2)->write("bad");
     EXPECT_NE(0, store.find(2048, 0, 3)->execute(""));
     EXPECT_EQ(1, applied);                            // unchanged
+}
+
+TEST(CertObject, apply_deferred_until_family_complete_then_self_heals) {
+    char tmpl[64];
+    char* dir = make_temp_dir(tmpl, sizeof(tmpl));
+    if (!dir) GTEST_SKIP() << "no writable scratch dir";
+    std::string certDir(dir);
+
+    ObjectStore store;
+    objects::install_cert(store, certDir);   // require_complete = true (default)
+
+    // First push lost the key WRITE: only ca + cert staged.
+    store.find(2048, 0, 1)->write("CA");
+    store.find(2048, 1, 1)->write("CERT");
+    EXPECT_NE(0, store.find(2048, 0, 3)->execute(""));   // deferred, not applied
+    struct stat st;
+    EXPECT_NE(0, ::stat((certDir + "/ca.crt").c_str(), &st));   // nothing written
+    EXPECT_EQ("", store.find(2048, 0, 4)->read());             // Applied still empty
+
+    // Re-push fills the missing key; the retained ca+cert + new key now apply.
+    store.find(2048, 2, 1)->write("KEY");
+    EXPECT_EQ(0, store.find(2048, 0, 3)->execute(""));
+    EXPECT_EQ("CA",   slurp(certDir + "/ca.crt"));
+    EXPECT_EQ("CERT", slurp(certDir + "/client.crt"));
+    EXPECT_EQ("KEY",  slurp(certDir + "/client.key"));
+
+    // RID 4 now reports a stable 16-hex fingerprint of the committed family.
+    const std::string fp = store.find(2048, 0, 4)->read();
+    EXPECT_EQ(16u, fp.size());
+    EXPECT_NE("", fp);
+
+    for (auto* f : {"/ca.crt", "/client.crt", "/client.key"})
+        std::remove((certDir + f).c_str());
+    std::remove(certDir.c_str());
+}
+
+TEST(CertObject, applied_fingerprint_is_deterministic_for_same_family) {
+    objects::CertHooks h;
+    h.store_artifact = [](const std::string&, const std::string&) { return 0; };
+    auto fp_of = [&](const std::string& ca, const std::string& c,
+                     const std::string& k) {
+        ObjectStore store;
+        objects::install_cert(store, "/unused", h);
+        store.find(2048, 0, 1)->write(ca);
+        store.find(2048, 1, 1)->write(c);
+        store.find(2048, 2, 1)->write(k);
+        EXPECT_EQ(0, store.find(2048, 0, 3)->execute(""));
+        return store.find(2048, 0, 4)->read();
+    };
+    EXPECT_EQ(fp_of("A", "B", "C"), fp_of("A", "B", "C"));   // stable
+    EXPECT_NE(fp_of("A", "B", "C"), fp_of("A", "B", "X"));   // sensitive to key
 }

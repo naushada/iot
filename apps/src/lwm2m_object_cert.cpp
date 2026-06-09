@@ -1,6 +1,8 @@
 #include "lwm2m_object_cert.hpp"
 
 #include <cerrno>
+#include <cstdint>
+#include <cstdio>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -86,15 +88,33 @@ int default_store(const std::string& certDir,
     return 0;
 }
 
+/// Artifact types that make a complete VPN credential family, in the order
+/// the fingerprint concatenates them.
+const char* const kFamilyTypes[3] = {"ca", "cert", "key"};
+
+/// Stable 64-bit FNV-1a over `s`, lowercase 16-hex. Deterministic across
+/// processes (unlike std::hash) so a server can compute the same fingerprint
+/// of the family it pushed and compare against RID 4.
+std::string fnv1a_hex(const std::string& s) {
+    std::uint64_t h = 1469598103934665603ull;
+    for (unsigned char c : s) { h ^= c; h *= 1099511628211ull; }
+    char buf[17];
+    std::snprintf(buf, sizeof(buf), "%016llx",
+                  static_cast<unsigned long long>(h));
+    return std::string(buf);
+}
+
 /// Build one credential instance. RID 0 reports the fixed type; RID 1 stages
-/// the PEM; RID 2 stages the hash. The Apply trigger (RID 3) lives only on
-/// the instance flagged `withApply`.
+/// the PEM; RID 2 stages the hash. The Apply trigger (RID 3) + the Applied
+/// fingerprint (RID 4) live only on the instance flagged `withApply`.
 ObjectInstance make_instance(std::uint32_t iid,
                              const std::string& type,
                              std::shared_ptr<Staging> staging,
                              bool withApply,
                              const std::string& certDir,
-                             std::shared_ptr<CertHooks> hooks) {
+                             std::shared_ptr<CertHooks> hooks,
+                             bool require_complete,
+                             std::shared_ptr<std::string> applied) {
     ObjectInstance inst;
     inst.iid = iid;
 
@@ -137,8 +157,27 @@ ObjectInstance make_instance(std::uint32_t iid,
         Resource r;
         r.rid = 3; r.name = "Apply";
         r.type = ResourceType::None; r.ops = Operations::E;
-        r.execute = [staging, certDir, hooks](const std::string& /*args*/) -> int {
+        r.execute = [staging, certDir, hooks, require_complete, applied]
+                    (const std::string& /*args*/) -> int {
+            // Completeness gate: don't half-provision. If we require a full
+            // family, hold the commit until ca+cert+key are all staged. The
+            // partial set stays staged so a later Apply (after the missing
+            // WRITE is re-pushed) commits the whole family — making the
+            // server's re-push loss-tolerant.
+            if (require_complete) {
+                for (auto* t : kFamilyTypes) {
+                    auto it = staging->find(t);
+                    if (it == staging->end() || !it->second.present) {
+                        ACE_DEBUG((LM_INFO,
+                            ACE_TEXT("%D [cert-obj] %M %N:%l apply deferred: '%C' "
+                                     "not staged yet; retaining partial family\n"),
+                            t));
+                        return -1;   // not applied (server will re-push)
+                    }
+                }
+            }
             int committed = 0;
+            std::string fpInput;     // FNV-1a input: PEMs in ca,cert,key order
             for (auto& [type, s] : *staging) {
                 if (!s.present) continue;
                 if (hooks->verify && !s.hash.empty()) {
@@ -152,6 +191,7 @@ ObjectInstance make_instance(std::uint32_t iid,
                        ? hooks->store_artifact(type, s.pem)
                        : default_store(certDir, type, s.pem);
                 if (rc != 0) return -1;
+                fpInput += s.pem;    // map is sorted → ca, cert, key
                 ++committed;
             }
             if (committed == 0) {
@@ -160,13 +200,24 @@ ObjectInstance make_instance(std::uint32_t iid,
             }
             // Clear staging so a later partial push can't re-commit stale bytes.
             staging->clear();
+            if (applied) *applied = fnv1a_hex(fpInput);
             int rc = hooks->apply ? hooks->apply() : 0;
             ACE_DEBUG((LM_INFO,
-                ACE_TEXT("%D [cert-obj] %M %N:%l applied %d artifact(s), reload rc=%d\n"),
-                committed, rc));
+                ACE_TEXT("%D [cert-obj] %M %N:%l applied %d artifact(s) fp=%C, "
+                         "reload rc=%d\n"),
+                committed, applied ? applied->c_str() : "", rc));
             return rc;
         };
         inst.resources[3] = std::move(r);
+
+        // RID 4 — Applied: stable fingerprint of the last committed family
+        // (empty until the first successful Apply). A server READs this to
+        // confirm delivery + detect a re-mint.
+        Resource st;
+        st.rid = 4; st.name = "Applied";
+        st.type = ResourceType::String; st.ops = Operations::R;
+        st.read = [applied]() { return applied ? *applied : std::string(); };
+        inst.resources[4] = std::move(st);
     }
     return inst;
 }
@@ -175,9 +226,11 @@ ObjectInstance make_instance(std::uint32_t iid,
 
 int install_cert(ObjectStore& store,
                  const std::string& certDir,
-                 CertHooks hooks) {
+                 CertHooks hooks,
+                 bool require_complete) {
     auto staging = std::make_shared<Staging>();
     auto hooksp  = std::make_shared<CertHooks>(std::move(hooks));
+    auto applied = std::make_shared<std::string>();   // RID 4 fingerprint
 
     ObjectDescriptor desc;
     desc.oid              = kCertObjectOid;
@@ -186,11 +239,12 @@ int install_cert(ObjectStore& store,
     desc.multipleInstance = true;
     desc.mandatory        = false;
 
-    // Apply trigger lives on instance 0 (the CA instance) so the server has
-    // a single, well-known commit point: EXECUTE /2048/0/3.
-    desc.instances[0] = make_instance(0, "ca",   staging, /*withApply*/true,  certDir, hooksp);
-    desc.instances[1] = make_instance(1, "cert", staging, /*withApply*/false, certDir, hooksp);
-    desc.instances[2] = make_instance(2, "key",  staging, /*withApply*/false, certDir, hooksp);
+    // Apply trigger + Applied status live on instance 0 (the CA instance) so
+    // the server has a single, well-known commit point: EXECUTE /2048/0/3,
+    // READ /2048/0/4.
+    desc.instances[0] = make_instance(0, "ca",   staging, /*withApply*/true,  certDir, hooksp, require_complete, applied);
+    desc.instances[1] = make_instance(1, "cert", staging, /*withApply*/false, certDir, hooksp, require_complete, applied);
+    desc.instances[2] = make_instance(2, "key",  staging, /*withApply*/false, certDir, hooksp, require_complete, applied);
 
     store.add_object(std::move(desc));
     return 0;
