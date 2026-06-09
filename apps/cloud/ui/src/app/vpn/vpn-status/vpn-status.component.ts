@@ -16,7 +16,11 @@ import { VpnStatus } from '../../../common/app-globals';
           <clr-dg-cell>{{ row.key }}</clr-dg-cell>
           <clr-dg-cell>
             <app-status-badge *ngIf="row.isBadge" [label]="row.value" [state]="v.state||''"></app-status-badge>
-            <span *ngIf="!row.isBadge">{{ row.value }}</span>
+            <ng-container *ngIf="row.isDns">
+              <span *ngFor="let d of dnsList" class="dns-item">{{ d }}</span>
+              <span *ngIf="!dnsList.length">—</span>
+            </ng-container>
+            <span *ngIf="!row.isBadge && !row.isDns">{{ row.value }}</span>
           </clr-dg-cell>
         </clr-dg-row>
 
@@ -28,6 +32,8 @@ import { VpnStatus } from '../../../common/app-globals';
   styles: [`
     .page { padding: 24px; }
     h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
+    .dns-item { display: inline-block; margin-right: 6px; padding: 1px 8px;
+                background: #eef2f7; border-radius: 10px; font-size: 12px; }
   `]
 })
 export class VpnStatusComponent implements OnInit, OnDestroy {
@@ -36,18 +42,24 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
   private sub = new Subscription();
   private active = true;
 
-  get rows(): { key: string; value: string; isBadge: boolean }[] {
+  get rows(): { key: string; value: string; isBadge: boolean; isDns?: boolean }[] {
     return [
       { key: 'State',           value: this.v.state || 'unknown', isBadge: true },
       { key: 'Assigned IP',     value: this.v.ip || '—',          isBadge: false },
       { key: 'Gateway',         value: this.v.gateway || '—',     isBadge: false },
       { key: 'Netmask',         value: this.v.netmask || '—',     isBadge: false },
-      { key: 'DNS',             value: this.v.dns || '—',         isBadge: false },
+      { key: 'DNS',             value: this.v.dns || '—',         isBadge: false, isDns: true },
       { key: 'PID',             value: String(this.v.pid || '—'), isBadge: false },
       { key: 'Exit Code',       value: this.v.exit_code != null ? String(this.v.exit_code) : '—', isBadge: false },
       { key: 'Gate Reason',     value: this.v.gate_reason || '—', isBadge: false },
       { key: 'Bound Interface', value: this.v.bound_iface || '—', isBadge: false },
     ];
+  }
+
+  /// VPN servers can push several DNS resolvers; the daemon stores them
+  /// comma/space-joined in vpn.assigned.dns. Split for per-entry display.
+  get dnsList(): string[] {
+    return (this.v.dns || '').split(/[\s,]+/).filter(Boolean);
   }
 
   constructor(private http: HttpsvcService) {}

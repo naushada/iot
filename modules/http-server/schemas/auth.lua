@@ -32,6 +32,18 @@ return {
       default = "Admin",
     },
 
+    -- Additional (non-admin) user accounts. The "auth" namespace is
+    -- schema-claimed, so per-user keys cannot be created dynamically;
+    -- all extra users live in this single JSON-array key instead
+    -- (mirrors the cloud.endpoints JSON-blob pattern). Shape:
+    --   [{ "id": "alice", "hash": "<sha256 hex>", "access": "Viewer" }]
+    -- Managed via /api/v1/users (GET/POST/DELETE). Passwords are
+    -- SHA-256-hashed server-side; plaintext is never stored.
+    ["auth.users.accounts"] = {
+      type    = "string",
+      default = "[]",
+    },
+
     -- Enable / disable session-auth for the REST API.  When true
     -- (default), all /api/v1/* routes except /api/v1/auth/* require a
     -- valid session cookie.  Hot-reloaded ~every 60s.

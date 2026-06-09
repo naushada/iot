@@ -4,6 +4,7 @@ import { HttpsvcService } from '../../common/httpsvc.service';
 import { SessionService } from '../../common/session.service';
 import { PubSubService } from '../../common/pubsubsvc.service';
 import { ThemeService } from '../../common/theme.service';
+import { DataStoreService } from '../../common/datastore.service';
 import { StatusSnapshot } from '../../common/app-globals';
 
 @Component({
@@ -35,6 +36,7 @@ export class MainComponent {
     { id: 'services',  label: 'Services',  svg: 'assets/icons/services.svg',
       children: [{id:'list',label:'All Services'}] },
     { id: 'logs',      label: 'Logs',      svg: 'assets/icons/logs.svg', children: [] as {id:string,label:string}[] },
+    { id: 'users',     label: 'Users',     svg: 'assets/icons/services.svg', children: [] as {id:string,label:string}[] },
   ];
 
   expandedMenu: string | null = null;  // which menu is expanded in sidebar
@@ -46,12 +48,17 @@ export class MainComponent {
     private session: SessionService,
     private router: Router,
     private pubsub: PubSubService,
-    public theme: ThemeService
+    public theme: ThemeService,
+    private ds: DataStoreService
   ) {
     this.theme.init();
   }
 
   ngOnInit(): void {
+    // Authenticated shell: warm the shared data-store cache once so every
+    // config page paints instantly, and start watching for live changes.
+    this.ds.prefetchAll();
+    this.ds.startWatch();
     this.refreshStatus();
   }
 
@@ -93,6 +100,7 @@ export class MainComponent {
   }
 
   onLogout(): void {
+    this.ds.stop();
     this.http.logout().subscribe({
       next: () => {
         this.session.clear();

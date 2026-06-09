@@ -3,6 +3,7 @@ import { FormBuilder, FormGroup } from '@angular/forms';
 import { HttpsvcService } from '../../common/httpsvc.service';
 import { SessionService } from '../../common/session.service';
 import { ToastService } from '../../common/toast.service';
+import { DataStoreService } from '../../common/datastore.service';
 
 @Component({
   selector: 'app-http-config',
@@ -110,7 +111,8 @@ export class HttpConfigComponent implements OnInit {
     private http: HttpsvcService,
     fb: FormBuilder,
     private session: SessionService,
-    private toast: ToastService
+    private toast: ToastService,
+    private ds: DataStoreService
   ) {
     this.form = fb.group({
       ip:      ['0.0.0.0'],
@@ -124,30 +126,33 @@ export class HttpConfigComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    // Instant paint from the prefetched cache, then refresh from the wire.
+    if (this.ds.has('http.listen.ip')) { this.applyData(this.ds.snapshot()); this.loading = false; }
     this.http.dbGet([
       'http.listen.ip', 'http.listen.port', 'http.listen.scheme',
       'http.workers', 'http.tls.cert', 'http.tls.key', 'http.tls.ca',
       'http.auth.enabled'
     ]).subscribe({
       next: (r) => {
-        if (r.ok && r.data) {
-          const d = r.data as Record<string, unknown>;
-          this.form.patchValue({
-            ip:      d['http.listen.ip']     || '0.0.0.0',
-            port:    d['http.listen.port']   || 8080,
-            scheme:  d['http.listen.scheme']  || 'http',
-            workers: d['http.workers']       || 0,
-            cert:    d['http.tls.cert']      || '',
-            key:     d['http.tls.key']       || '',
-            ca:      d['http.tls.ca']        || '',
-          });
-          const ae = d['http.auth.enabled'];
-          this.authEnabled = typeof ae === 'boolean' ? ae : true;
-        }
+        if (r.ok && r.data) this.applyData(r.data as Record<string, unknown>);
         this.loading = false;
       },
       error: () => { this.loading = false; }
     });
+  }
+
+  private applyData(d: Record<string, unknown>): void {
+    this.form.patchValue({
+      ip:      d['http.listen.ip']     ?? this.form.value.ip,
+      port:    d['http.listen.port']   ?? this.form.value.port,
+      scheme:  d['http.listen.scheme'] ?? this.form.value.scheme,
+      workers: d['http.workers']       ?? this.form.value.workers,
+      cert:    d['http.tls.cert']      ?? this.form.value.cert,
+      key:     d['http.tls.key']       ?? this.form.value.key,
+      ca:      d['http.tls.ca']        ?? this.form.value.ca,
+    });
+    const ae = d['http.auth.enabled'];
+    if (typeof ae === 'boolean') this.authEnabled = ae;
   }
 
   toggleAuth(v: boolean): void {

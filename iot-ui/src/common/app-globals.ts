@@ -88,6 +88,31 @@ export interface SessionInfo {
   access: string;    // "Admin" | "Viewer"
 }
 
+// ── User accounts (managed via /api/v1/users) ───────────────────────
+
+export interface UserAccount {
+  id: string;
+  access: string;    // "Admin" | "Viewer"
+}
+
+export interface UserListResponse {
+  ok: boolean;
+  users?: UserAccount[];
+  err?: string;
+}
+
+export interface UserCreateRequest {
+  id: string;
+  password: string;
+  access: string;    // "Admin" | "Viewer"
+}
+
+export interface UserMutateResponse {
+  ok: boolean;
+  id?: string;
+  err?: string;
+}
+
 // ── Db types ────────────────────────────────────────────────────────
 
 export interface DbGetRequest {

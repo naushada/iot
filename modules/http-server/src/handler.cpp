@@ -51,6 +51,32 @@ json parse_body(const std::string& body) {
     }
 }
 
+/// Load auth.users.accounts as a JSON array (empty array on any error).
+/// Extra (non-admin) users are stored here as a single JSON blob because
+/// the schema-claimed "auth" namespace rejects undeclared per-user keys.
+json load_accounts(data_store::Client* ds) {
+    json arr = json::array();
+    if (!ds) return arr;
+    std::vector<data_store::Client::GetResult> got;
+    auto rs = ds->get({"auth.users.accounts"}, got);
+    if (rs.ok && !got.empty() && got[0].has_value) {
+        if (auto s = data_store::to_string(got[0].value)) {
+            try {
+                auto parsed = json::parse(*s);
+                if (parsed.is_array()) arr = parsed;
+            } catch (const std::exception&) { /* return [] */ }
+        }
+    }
+    return arr;
+}
+
+/// Persist the accounts array back to auth.users.accounts.
+bool save_accounts(data_store::Client* ds, const json& arr) {
+    if (!ds) return false;
+    auto sr = ds->set("auth.users.accounts", data_store::Value{arr.dump()});
+    return sr.ok;
+}
+
 } // namespace
 
 void install_handlers(Router& router,
@@ -285,30 +311,46 @@ void install_handlers(Router& router,
                 r.body = R"({"ok":false,"err":"id and password required"})";
                 return r;
             }
-            // v1: single admin user
-            if (id != "admin") {
-                r.status = 401;
-                r.body = R"({"ok":false,"err":"invalid credentials"})";
-                return r;
-            }
-            // Load the stored SHA-256 hash, fall back to compiled-in default
-            std::string stored_hash = CredentialStore::kDefaultHash;
-            if (ds) {
-                stored_hash = CredentialStore::load_admin_password_hash(*ds);
+            // Resolve credentials. The built-in "admin" lives in its own
+            // ds keys; any other id is looked up in auth.users.accounts
+            // (the schema-claimed "auth" namespace can't hold dynamic
+            // per-user keys, so extra users share one JSON-blob key).
+            std::string stored_hash;
+            std::string access = "Admin";
+            std::string role   = "admin";
+            if (id == "admin") {
+                stored_hash = ds ? CredentialStore::load_admin_password_hash(*ds)
+                                 : CredentialStore::kDefaultHash;
+                if (ds) access = CredentialStore::load_user_access(*ds, id);
+            } else {
+                role = "user";
+                bool found = false;
+                if (ds) {
+                    for (const auto& u : load_accounts(ds)) {
+                        if (u.value("id", "") == id) {
+                            stored_hash = u.value("hash", "");
+                            access      = u.value("access", "Viewer");
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) {
+                    r.status = 401;
+                    r.body = R"({"ok":false,"err":"invalid credentials"})";
+                    return r;
+                }
             }
             if (!CredentialStore::verify(password, stored_hash)) {
                 r.status = 401;
                 r.body = R"({"ok":false,"err":"invalid credentials"})";
                 return r;
             }
-            // Load user's access level
-            std::string access = "Admin";
-            if (ds) access = CredentialStore::load_user_access(*ds, id);
             std::string token;
-            if (auth) token = auth->create_session(id, "admin", access);
+            if (auth) token = auth->create_session(id, role, access);
             json resp;
             resp["ok"]     = true;
-            resp["role"]   = "admin";
+            resp["role"]   = role;
             resp["access"] = access;
             r.body = resp.dump();
             if (!token.empty()) {
@@ -789,6 +831,166 @@ void install_handlers(Router& router,
             if (!sr.ok) {
                 resp["err"] = sr.err;
                 r.status = 500;
+            }
+            r.body = resp.dump();
+            return r;
+        });
+
+    // ── GET /api/v1/users ────────────────────────────────────────
+    // List user accounts (id + access only — never the password hash).
+    // The built-in admin is always present. Any authenticated session
+    // may list; create/delete are Admin-gated below.
+    router.add("GET", "/api/v1/users",
+        [ds](const HttpParser::Request& /*req*/) -> HttpResponse {
+            HttpResponse r;
+            if (!ds) {
+                r.status = 500;
+                r.body = R"({"ok":false,"err":"data store not connected"})";
+                return r;
+            }
+            json users = json::array();
+            json admin;
+            admin["id"]     = "admin";
+            admin["access"] = CredentialStore::load_user_access(*ds, "admin");
+            users.push_back(admin);
+            for (const auto& u : load_accounts(ds)) {
+                json e;
+                e["id"]     = u.value("id", "");
+                e["access"] = u.value("access", "Viewer");
+                users.push_back(e);
+            }
+            json resp;
+            resp["ok"]    = true;
+            resp["users"] = users;
+            r.body = resp.dump();
+            return r;
+        });
+
+    // ── POST /api/v1/users  { id, password, access } ─────────────
+    // Create or update a non-admin user. Admin-gated. The password is
+    // SHA-256-hashed server-side; plaintext is never stored.
+    router.add("POST", "/api/v1/users",
+        [ds, auth](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            if (!ds) {
+                r.status = 500;
+                r.body = R"({"ok":false,"err":"data store not connected"})";
+                return r;
+            }
+            // Access control (mirrors db/set): Viewer is forbidden.
+            std::string access_level = "Admin";
+            if (auth && auth->enabled()) {
+                std::string token = extract_session_cookie(req.headers);
+                if (!token.empty()) {
+                    const auto* session = auth->validate(token);
+                    if (session) access_level = session->access;
+                }
+            }
+            if (!can_write(access_level, "")) {
+                r.status = 403;
+                r.body = R"({"ok":false,"err":"forbidden: read-only access"})";
+                return r;
+            }
+            auto doc = parse_body(req.body);
+            std::string uid      = doc.value("id", "");
+            std::string password = doc.value("password", "");
+            std::string uaccess  = doc.value("access", "Viewer");
+            if (uid.empty() || password.empty()) {
+                r.status = 400;
+                r.body = R"({"ok":false,"err":"id and password required"})";
+                return r;
+            }
+            if (uid == "admin") {
+                r.status = 400;
+                r.body = R"({"ok":false,"err":"built-in admin is managed separately"})";
+                return r;
+            }
+            if (uaccess != "Admin" && uaccess != "Viewer") uaccess = "Viewer";
+
+            auto accounts = load_accounts(ds);
+            std::string hash = sha256_hex(password);
+            bool updated = false;
+            for (auto& u : accounts) {
+                if (u.value("id", "") == uid) {
+                    u["hash"]   = hash;
+                    u["access"] = uaccess;
+                    updated = true;
+                    break;
+                }
+            }
+            if (!updated) {
+                json e;
+                e["id"]     = uid;
+                e["hash"]   = hash;
+                e["access"] = uaccess;
+                accounts.push_back(e);
+            }
+            json resp;
+            if (!save_accounts(ds, accounts)) {
+                r.status = 500;
+                resp["ok"]  = false;
+                resp["err"] = "failed to persist accounts";
+            } else {
+                resp["ok"] = true;
+                resp["id"] = uid;
+            }
+            r.body = resp.dump();
+            return r;
+        });
+
+    // ── DELETE /api/v1/users?id=<id> ─────────────────────────────
+    router.add("DELETE", "/api/v1/users",
+        [ds, auth](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            if (!ds) {
+                r.status = 500;
+                r.body = R"({"ok":false,"err":"data store not connected"})";
+                return r;
+            }
+            std::string access_level = "Admin";
+            if (auth && auth->enabled()) {
+                std::string token = extract_session_cookie(req.headers);
+                if (!token.empty()) {
+                    const auto* session = auth->validate(token);
+                    if (session) access_level = session->access;
+                }
+            }
+            if (!can_write(access_level, "")) {
+                r.status = 403;
+                r.body = R"({"ok":false,"err":"forbidden: read-only access"})";
+                return r;
+            }
+            auto it = req.query.find("id");
+            if (it == req.query.end()) {
+                r.status = 400;
+                r.body = R"({"ok":false,"err":"missing 'id' query param"})";
+                return r;
+            }
+            std::string uid = it->second;
+            if (uid == "admin") {
+                r.status = 400;
+                r.body = R"({"ok":false,"err":"cannot delete built-in admin"})";
+                return r;
+            }
+            auto accounts = load_accounts(ds);
+            json kept = json::array();
+            bool removed = false;
+            for (const auto& u : accounts) {
+                if (u.value("id", "") == uid) { removed = true; continue; }
+                kept.push_back(u);
+            }
+            json resp;
+            if (!removed) {
+                r.status = 404;
+                resp["ok"]  = false;
+                resp["err"] = "user not found";
+            } else if (!save_accounts(ds, kept)) {
+                r.status = 500;
+                resp["ok"]  = false;
+                resp["err"] = "failed to persist accounts";
+            } else {
+                resp["ok"] = true;
+                resp["id"] = uid;
             }
             r.body = resp.dump();
             return r;

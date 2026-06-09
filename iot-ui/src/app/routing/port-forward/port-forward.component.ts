@@ -4,6 +4,7 @@ import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
 import { PubSubService } from '../../../common/pubsubsvc.service';
 import { ToastService } from '../../../common/toast.service';
+import { DataStoreService } from '../../../common/datastore.service';
 
 @Component({
   selector: 'app-port-forward',
@@ -72,24 +73,28 @@ export class PortForwardComponent implements OnInit, OnDestroy {
   get isAdmin(): boolean { return this.session.isAdmin; }
 
   constructor(private http: HttpsvcService, private session: SessionService,
-              private toast: ToastService, private pubsub: PubSubService) {}
+              private toast: ToastService, private pubsub: PubSubService,
+              private ds: DataStoreService) {}
 
   ngOnInit(): void {
+    // Instant paint from the prefetched cache, then refresh from the wire.
+    this.applyData(this.ds.snapshot());
     this.http.dbGet(['net.lwm2m.target.ip', 'net.lwm2m.target.port', 'net.forward.ports',
       'net.state', 'net.rules.applied.count', 'net.last.apply.unix']).subscribe({
-      next: (r) => {
-        if (r.ok && r.data) {
-          const d = r.data as Record<string, unknown>;
-          this.targetIp   = (d['net.lwm2m.target.ip'] as string) || '';
-          this.targetPort = (d['net.lwm2m.target.port'] as number) || 5684;
-          this.forwardPorts    = (d['net.forward.ports'] as string) || '80,443,5684';
-          this.routeState      = (d['net.state'] as string) || '';
-          this.rulesApplied    = (d['net.rules.applied.count'] as number) || 0;
-          const lu = d['net.last.apply.unix'] as number;
-          this.lastApply = lu ? new Date((lu as number)*1000).toLocaleString() : '';
-        }
-      }
+      next: (r) => { if (r.ok && r.data) this.applyData(r.data as Record<string, unknown>); }
     });
+  }
+
+  private applyData(d: Record<string, unknown>): void {
+    if (d['net.lwm2m.target.ip'] != null)      this.targetIp     = String(d['net.lwm2m.target.ip']);
+    if (d['net.lwm2m.target.port'] != null)    this.targetPort   = Number(d['net.lwm2m.target.port']) || 5684;
+    if (d['net.forward.ports'] != null)        this.forwardPorts = String(d['net.forward.ports']);
+    if (d['net.state'] != null)                this.routeState   = String(d['net.state']);
+    if (d['net.rules.applied.count'] != null)  this.rulesApplied = Number(d['net.rules.applied.count']) || 0;
+    if (d['net.last.apply.unix'] != null) {
+      const lu = Number(d['net.last.apply.unix']);
+      this.lastApply = lu ? new Date(lu * 1000).toLocaleString() : '';
+    }
   }
 
   saveDnat(): void {

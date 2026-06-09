@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
+import { DataStoreService } from '../../../common/datastore.service';
 
 @Component({
   selector: 'app-iface-priority',
@@ -60,23 +61,25 @@ export class IfacePriorityComponent implements OnInit {
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, private session: SessionService, private toast: ToastService) {}
+  constructor(private http: HttpsvcService, private session: SessionService,
+              private toast: ToastService, private ds: DataStoreService) {}
 
   ngOnInit(): void {
+    // Instant paint from the prefetched cache, then refresh from the wire.
+    this.applyData(this.ds.snapshot());
     this.http.dbGet(['net.iface.priority', 'net.iface.eth.name', 'net.iface.wifi.name',
       'net.iface.cellular.name', 'net.poll.interval.sec', 'net.iface.active']).subscribe({
-      next: (r) => {
-        if (r.ok && r.data) {
-          const d = r.data as Record<string, unknown>;
-          this.priority = (d['net.iface.priority'] as string) || 'eth,wifi,cellular';
-          this.ethName = (d['net.iface.eth.name'] as string) || 'eth0';
-          this.wifiName = (d['net.iface.wifi.name'] as string) || 'wlan0';
-          this.cellName = (d['net.iface.cellular.name'] as string) || 'wwan0';
-          this.pollInterval = (d['net.poll.interval.sec'] as number) || 5;
-          this.activeIface = (d['net.iface.active'] as string) || '';
-        }
-      }
+      next: (r) => { if (r.ok && r.data) this.applyData(r.data as Record<string, unknown>); }
     });
+  }
+
+  private applyData(d: Record<string, unknown>): void {
+    if (d['net.iface.priority'] != null)      this.priority     = String(d['net.iface.priority']);
+    if (d['net.iface.eth.name'] != null)      this.ethName      = String(d['net.iface.eth.name']);
+    if (d['net.iface.wifi.name'] != null)     this.wifiName     = String(d['net.iface.wifi.name']);
+    if (d['net.iface.cellular.name'] != null) this.cellName     = String(d['net.iface.cellular.name']);
+    if (d['net.poll.interval.sec'] != null)   this.pollInterval = Number(d['net.poll.interval.sec']) || 5;
+    if (d['net.iface.active'] != null)        this.activeIface  = String(d['net.iface.active']);
   }
 
   save(): void {

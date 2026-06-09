@@ -9,7 +9,8 @@ import {
   DbGetRequest, DbGetResponse,
   DbSetRequest, DbSetResponse,
   ServiceRestartRequest, ServiceRestartResponse,
-  WifiScanResponse
+  WifiScanResponse,
+  UserListResponse, UserCreateRequest, UserMutateResponse
 } from './app-globals';
 
 @Injectable({ providedIn: 'root' })
@@ -112,6 +113,25 @@ export class HttpsvcService {
   deprovisionEndpoint(ep: string): Observable<{ok:boolean;err?:string}> {
     return this.http.delete<{ok:boolean;err?:string}>(
       `${this.api}/api/v1/cloud/endpoints?ep=${encodeURIComponent(ep)}`,
+      { withCredentials: true });
+  }
+
+  // ── User management ───────────────────────────────────────────────
+
+  listUsers(): Observable<UserListResponse> {
+    return this.http.get<UserListResponse>(
+      `${this.api}/api/v1/users`, { withCredentials: true });
+  }
+
+  createUser(body: UserCreateRequest): Observable<UserMutateResponse> {
+    return this.http.post<UserMutateResponse>(
+      `${this.api}/api/v1/users`, body,
+      { headers: this.jsonHeaders(), withCredentials: true });
+  }
+
+  deleteUser(id: string): Observable<UserMutateResponse> {
+    return this.http.delete<UserMutateResponse>(
+      `${this.api}/api/v1/users?id=${encodeURIComponent(id)}`,
       { withCredentials: true });
   }
 }

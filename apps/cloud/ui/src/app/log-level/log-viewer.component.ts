@@ -71,6 +71,8 @@ import { environment } from '../../environments/environment';
       <h4 style="margin-top:32px;">Output</h4>
       <div class="log-toolbar">
         <button class="btn btn-sm" (click)="refresh()">Refresh</button>
+        <button class="btn btn-sm" (click)="exportLog()" [disabled]="!logText">Export</button>
+        <button class="btn btn-sm" (click)="clearLog()" [disabled]="!logText">Clear</button>
         <label class="auto-refresh">
           <input type="checkbox" [checked]="autoRefresh" (change)="toggleAuto()" />
           auto
@@ -95,7 +97,7 @@ import { environment } from '../../environments/environment';
       flex: 1; width: 100%; background: #0d1117; color: #c9d1d9;
       border: 1px solid #30363d; border-radius: 6px; padding: 12px;
       font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-      font-size: 12px; line-height: 1.5; resize: none;
+      font-size: 12px; line-height: 1.5; resize: none; overflow-y: scroll;
       white-space: pre; tab-size: 2; min-height: 300px;
     }
     .log-textarea:focus { outline: none; border-color: #2e7d32; }
@@ -209,6 +211,20 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   }
 
   toggleAuto(): void { this.autoRefresh = !this.autoRefresh; }
+
+  /// Download the current log text as a timestamped .txt file (client-side).
+  exportLog(): void {
+    const blob = new Blob([this.logText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `iot-log-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /// Clear the textarea view. The next refresh / auto-poll repopulates it.
+  clearLog(): void { this.logText = ''; }
 
   private fetchLog() {
     return this.http.get(`${this.api}/api/v1/log`, {
