@@ -56,6 +56,7 @@ DEPENDS = "\
     zlib \
     readline \
     nlohmann-json \
+    nodejs-native \
 "
 
 # ── PACKAGECONFIG ──────────────────────────────────────────────────
@@ -132,6 +133,34 @@ EXTRA_OECMAKE = "\
     -DMONGOCXX_LIBRARY=${STAGING_LIBDIR}/libmongocxx.so \
     -DCMAKE_INSTALL_PREFIX=/usr \
 "
+
+# ── Device UI (Angular SPA) ─────────────────────────────────────────
+# modules/http-server/CMakeLists.txt stages iot-ui/dist/iot-ui →
+# /usr/share/iot/www, but ONLY if the dist exists at *configure* time.
+# Yocto clones the repo without a prebuilt dist (iot-ui/dist is .gitignore'd),
+# so build the SPA here with nodejs-native BEFORE do_configure runs.
+#
+# `npm` needs network — granted via the do_build_ui[network] flag below.
+# For a fully offline/reproducible build, replace this with the `npm`
+# bbclass + an npmsw:// SRC_URI (fetched at do_fetch). nodejs-native must
+# satisfy the Angular CLI engine requirement (Angular 14 → Node 18/20).
+do_build_ui() {
+    cd ${S}/iot-ui
+    # Angular 14's webpack chokes on Node 17+ OpenSSL3 (ERR_OSSL_EVP_UNSUPPORTED);
+    # the device/cloud Dockerfiles avoid it by pinning node:18. Scarthgap's
+    # nodejs-native is newer, so opt into the legacy provider and relax the
+    # CLI engine check rather than failing the build.
+    export NODE_OPTIONS="--openssl-legacy-provider"
+    export npm_config_engine_strict=false
+    # Reproducible, lockfile-pinned install; fall back if no cache.
+    npm ci --no-audit --no-fund --prefer-offline || \
+        npm install --no-audit --no-fund
+    # angular.json already sets outputPath=dist/iot-ui
+    npx --no-install ng build --configuration production --progress=false
+}
+addtask build_ui after do_patch do_prepare_recipe_sysroot before do_configure
+do_build_ui[network] = "1"
+do_build_ui[depends] += "nodejs-native:do_populate_sysroot"
 
 # ── Sub-module cmake already uses GNUInstallDirs. Systemd + env files
 # are overridden below from our WORKDIR copies so ExecStart uses /usr/bin
@@ -272,9 +301,12 @@ RRECOMMENDS:${PN}-wifi-client = "\
 "
 
 # httpd — HTTP REST API server fronting ds-server (L18)
+# Ships the Angular device UI (SPA) under ${datadir}/iot/www — served by
+# iot-httpd via www-dir. Built by do_build_ui above.
 FILES:${PN}-httpd = "\
     ${bindir}/iot-httpd \
     ${systemd_system_unitdir}/iot-httpd.service \
+    ${datadir}/iot/www \
 "
 RDEPENDS:${PN}-httpd = "ace-tao"
 RRECOMMENDS:${PN}-httpd = "\
