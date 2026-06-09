@@ -441,7 +441,11 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     // idLo}, payload = the applied fingerprint. Map the id back to its
     // endpoint and record what the device reports.
     for (auto& [type, ctx] : services) {
-        if (type != ::UDPAdapter::ServiceType_t::DeviceMgmtServer) continue;
+        // The DM instance's listening context is typed BootstrapServer (the
+        // server-role default in App), while its DeviceMgmtServer context
+        // loses the bind race on the shared 5683 — so accept any server
+        // context, not strictly DeviceMgmtServer. (Client contexts are skipped.)
+        if (type == ::UDPAdapter::ServiceType_t::LwM2MClient) continue;
         ctx->coapAdapter()->dmResponseHandler(
             [reportedFp, idEp](const CoAPAdapter::CoAPMessage& m) {
                 if (m.tokens.size() < 3 || m.tokens[0] != 0x05) return;
@@ -509,7 +513,7 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         // its send_async takes an explicit peer so one outbound socket
         // serves every registered client.
         for (auto& kv : a->udpAdapter()->services()) {
-            if (kv.first != ::UDPAdapter::ServiceType_t::DeviceMgmtServer) continue;
+            if (kv.first == ::UDPAdapter::ServiceType_t::LwM2MClient) continue;
             auto& ctx = kv.second;
             for (const auto& reg_kv : registry->all()) {
                 const auto& reg = reg_kv.second;

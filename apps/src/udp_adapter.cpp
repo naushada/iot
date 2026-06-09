@@ -169,17 +169,25 @@ void ServiceContext_t::drain_tx_queue() {
         }
 
         if (m_scheme == Scheme_t::CoAPs && m_dtlsAdapter) {
-            if (m_dtlsAdapter->clientState() != "connected") {
-                m_dtlsAdapter->connect(host, port);
-            }
-            if (m_dtlsAdapter->clientState() == "connected") {
+            if (frame.haveExplicitPeer) {
+                // Server-initiated send to a specific registered peer (the DM
+                // liveness Read + the Object-2048 cert push). There is no
+                // client-side connect here — encrypt with that peer's existing
+                // inbound tinydtls session via dtls_write to its address.
+                m_dtlsAdapter->tx(frame.payload, host, port);
+            } else if (m_dtlsAdapter->clientState() == "connected") {
                 // tx_peer (not tx) so our request goes to the pinned connect
                 // target, even if an inbound packet from another peer just
                 // overwrote m_session (Bootstrap retransmit vs the DM).
                 m_dtlsAdapter->tx_peer(frame.payload);
             } else {
-                ACE_DEBUG((LM_DEBUG,
-                           ACE_TEXT("%D [UdpSvc:%t] %M %N:%l DTLS not connected, dropping tx\n")));
+                m_dtlsAdapter->connect(host, port);
+                if (m_dtlsAdapter->clientState() == "connected") {
+                    m_dtlsAdapter->tx_peer(frame.payload);
+                } else {
+                    ACE_DEBUG((LM_DEBUG,
+                               ACE_TEXT("%D [UdpSvc:%t] %M %N:%l DTLS not connected, dropping tx\n")));
+                }
             }
         } else {
             ACE_INET_Addr to(port, host.c_str());
