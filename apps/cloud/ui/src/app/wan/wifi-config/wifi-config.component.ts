@@ -3,6 +3,7 @@ import { FormBuilder, FormGroup } from '@angular/forms';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
+import { DataStoreService } from '../../../common/datastore.service';
 import { WifiNetwork } from '../../../common/app-globals';
 
 @Component({
@@ -17,7 +18,8 @@ export class WifiConfigComponent implements OnInit {
 
     get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, fb: FormBuilder, private session: SessionService, private toast: ToastService) {
+  constructor(private http: HttpsvcService, fb: FormBuilder, private session: SessionService,
+              private toast: ToastService, private ds: DataStoreService) {
     this.form = fb.group({
       iface:            ['wlan0'],
       wpa_path:         ['/usr/sbin/wpa_supplicant'],
@@ -30,30 +32,33 @@ export class WifiConfigComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    // Instant paint from the prefetched cache, then refresh from the wire.
+    if (this.ds.has('wifi.iface')) { this.applyData(this.ds.snapshot()); this.loading = false; }
     this.http.dbGet([
       'wifi.iface', 'wifi.wpa.path', 'wifi.ctrl.dir',
       'wifi.scan.interval.sec', 'wifi.scan.max.results',
       'wifi.dhcp.client', 'wifi.networks'
     ]).subscribe({
       next: (r) => {
-        if (r.ok && r.data) {
-          const d = r.data as Record<string, unknown>;
-          this.form.patchValue({
-            iface: d['wifi.iface'] || 'wlan0',
-            wpa_path: d['wifi.wpa.path'] || '/usr/sbin/wpa_supplicant',
-            ctrl_dir: d['wifi.ctrl.dir'] || '/run/wpa_supplicant',
-            scan_interval: d['wifi.scan.interval.sec'] || 60,
-            scan_max_results: d['wifi.scan.max.results'] || 20,
-            dhcp_client: d['wifi.dhcp.client'] || 'auto',
-            networks_json: d['wifi.networks'] || '[]',
-          });
-          try { this.networks = JSON.parse(this.form.get('networks_json')!.value || '[]'); }
-          catch { this.networks = []; }
-        }
+        if (r.ok && r.data) this.applyData(r.data as Record<string, unknown>);
         this.loading = false;
       },
       error: () => { this.loading = false; }
     });
+  }
+
+  private applyData(d: Record<string, unknown>): void {
+    this.form.patchValue({
+      iface:            d['wifi.iface']             ?? this.form.value.iface,
+      wpa_path:         d['wifi.wpa.path']          ?? this.form.value.wpa_path,
+      ctrl_dir:         d['wifi.ctrl.dir']          ?? this.form.value.ctrl_dir,
+      scan_interval:    d['wifi.scan.interval.sec'] ?? this.form.value.scan_interval,
+      scan_max_results: d['wifi.scan.max.results']  ?? this.form.value.scan_max_results,
+      dhcp_client:      d['wifi.dhcp.client']       ?? this.form.value.dhcp_client,
+      networks_json:    d['wifi.networks']          ?? this.form.value.networks_json,
+    });
+    try { this.networks = JSON.parse(this.form.get('networks_json')!.value || '[]'); }
+    catch { this.networks = []; }
   }
 
   addNetwork(): void {

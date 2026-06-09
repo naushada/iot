@@ -49,6 +49,7 @@
         <app-routing-submenu (nav)="onSubNavSelect($event)"></app-routing-submenu>
         <div class="content-area">
           <app-port-forward *ngIf="!selectedSubNav || selectedSubNav==='ports' || selectedSubNav==='dnat'"></app-port-forward>
+          <app-custom-rules *ngIf="selectedSubNav==='rules'"></app-custom-rules>
         </div>
       </ng-container>
 
@@ -70,6 +71,9 @@
       </ng-container>
 
       <app-log-viewer *ngIf="selectedMenu==='logs'"></app-log-viewer>
+
+      <!-- Users -->
+      <app-users *ngIf="selectedMenu==='users'"></app-users>
     </div>
   </div>
 </div>

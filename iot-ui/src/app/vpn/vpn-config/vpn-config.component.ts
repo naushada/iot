@@ -3,6 +3,7 @@ import { FormBuilder, FormGroup } from '@angular/forms';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
+import { DataStoreService } from '../../../common/datastore.service';
 
 @Component({
   selector: 'app-vpn-config',
@@ -17,7 +18,8 @@ export class VpnConfigComponent implements OnInit {
   msg = '';
 
   constructor(private http: HttpsvcService, fb: FormBuilder,
-    private session: SessionService, private toast: ToastService) {
+    private session: SessionService, private toast: ToastService,
+    private ds: DataStoreService) {
     this.form = fb.group({
       remote_host:  [''],
       remote_port:  [1194],
@@ -32,29 +34,32 @@ export class VpnConfigComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    // Instant paint from the prefetched cache, then refresh from the wire.
+    if (this.ds.has('vpn.remote.host')) { this.applyData(this.ds.snapshot()); this.loading = false; }
     this.http.dbGet([
       'vpn.remote.host', 'vpn.remote.port', 'vpn.remote.proto',
       'vpn.cert.path', 'vpn.key.path', 'vpn.ca.path',
       'vpn.cipher', 'vpn.dev', 'vpn.mgmt.port'
     ]).subscribe({
       next: (r) => {
-        if (r.ok && r.data) {
-          const d = r.data as Record<string, unknown>;
-          this.form.patchValue({
-            remote_host:  d['vpn.remote.host']  || '',
-            remote_port:  d['vpn.remote.port']  || 1194,
-            remote_proto: d['vpn.remote.proto'] || 'udp',
-            cert_path:    d['vpn.cert.path']    || '',
-            key_path:     d['vpn.key.path']     || '',
-            ca_path:      d['vpn.ca.path']      || '',
-            cipher:       d['vpn.cipher']       || 'AES-256-GCM',
-            dev:          d['vpn.dev']          || 'tun',
-            mgmt_port:    d['vpn.mgmt.port']    || 7505,
-          });
-        }
+        if (r.ok && r.data) this.applyData(r.data as Record<string, unknown>);
         this.loading = false;
       },
       error: () => { this.loading = false; }
+    });
+  }
+
+  private applyData(d: Record<string, unknown>): void {
+    this.form.patchValue({
+      remote_host:  d['vpn.remote.host']  ?? this.form.value.remote_host,
+      remote_port:  d['vpn.remote.port']  ?? this.form.value.remote_port,
+      remote_proto: d['vpn.remote.proto'] ?? this.form.value.remote_proto,
+      cert_path:    d['vpn.cert.path']    ?? this.form.value.cert_path,
+      key_path:     d['vpn.key.path']     ?? this.form.value.key_path,
+      ca_path:      d['vpn.ca.path']      ?? this.form.value.ca_path,
+      cipher:       d['vpn.cipher']       ?? this.form.value.cipher,
+      dev:          d['vpn.dev']          ?? this.form.value.dev,
+      mgmt_port:    d['vpn.mgmt.port']    ?? this.form.value.mgmt_port,
     });
   }
 
