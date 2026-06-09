@@ -412,3 +412,54 @@ TEST(CertPush, server_push_materializes_family_on_device) {
         std::remove((certDir + f).c_str());
     std::remove(certDir.c_str());
 }
+
+// Server-side confirmation: after the device applies a family, the DM server
+// READs /2048/0/4 (status) and must CONSUME the device's 2.05 response — the
+// payload (applied fingerprint) routed to the dmResponseHandler, the token
+// (endpoint id) preserved, and NOT dispatched as a request.
+TEST(CertConfirm, server_consumes_status_read_response) {
+    char tmpl[] = "/tmp/iot-confirm-XXXXXX";
+    char* dir = ::mkdtemp(tmpl);
+    if (!dir) GTEST_SKIP() << "no writable scratch dir";
+    const std::string certDir(dir);
+
+    auto store = std::make_shared<ObjectStore>();
+    ::lwm2m::objects::install_cert(*store, certDir);
+    store->find(2048, 0, 1)->write("CA");
+    store->find(2048, 1, 1)->write("CERT");
+    store->find(2048, 2, 1)->write("KEY");
+    ASSERT_EQ(0, store->find(2048, 0, 3)->execute(""));
+    const std::string fp = store->find(2048, 0, 4)->read();
+    ASSERT_FALSE(fp.empty());
+
+    // Device answers the server's status Read.
+    DmClient dm(store);
+    CoAPAdapter devCoap;
+    std::string tok;                       // {0x05, idHi=0x00, idLo=0x07}
+    tok.push_back(static_cast<char>(0x05));
+    tok.push_back(static_cast<char>(0x00));
+    tok.push_back(static_cast<char>(0x07));
+    auto rd = dmsrv::build_read(0x321, tok, 2048, 0, 4, /*accept*/ -1);
+    CoAPAdapter::CoAPMessage parsed; devCoap.parseRequest(rd, parsed);
+    auto out = dm.handle(parsed, devCoap);
+    ASSERT_EQ(DmOutcome::Read, out.kind);
+
+    // Server consumes the response via the handler (not the request path).
+    CoAPAdapter srv;
+    std::string gotPayload; std::vector<std::uint8_t> gotTok;
+    srv.dmResponseHandler([&](const CoAPAdapter::CoAPMessage& m) {
+        gotPayload = m.payload; gotTok = m.tokens;
+    });
+    std::vector<std::string> sout;
+    srv.processRequest(/*isAmIClient*/ false, out.response, sout);
+
+    EXPECT_EQ(fp, gotPayload);              // device's applied fingerprint
+    ASSERT_GE(gotTok.size(), 3u);
+    EXPECT_EQ(0x05, gotTok[0]);             // our status-token marker
+    EXPECT_EQ(0x07, gotTok[2]);             // endpoint id echoed back
+    EXPECT_TRUE(sout.empty());             // consumed, not dispatched as request
+
+    for (auto* f : {"/ca.crt", "/client.crt", "/client.key"})
+        std::remove((certDir + f).c_str());
+    std::remove(certDir.c_str());
+}

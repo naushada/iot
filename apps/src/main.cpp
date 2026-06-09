@@ -138,6 +138,19 @@ namespace {
 std::atomic<std::uint16_t> g_next_msgid{0x1000};
 inline std::uint16_t next_msgid() { return ++g_next_msgid; }
 
+/// Stable 64-bit FNV-1a → lowercase 16-hex. MUST match
+/// lwm2m::objects (lwm2m_object_cert.cpp) so the DM server can compute the
+/// fingerprint of the family it pushes and compare it against the device's
+/// Object-2048 RID 4 "Applied" value to confirm delivery.
+inline std::string fnv1a_hex(const std::string& s) {
+    std::uint64_t h = 1469598103934665603ull;
+    for (unsigned char c : s) { h ^= c; h *= 1099511628211ull; }
+    char buf[17];
+    std::snprintf(buf, sizeof(buf), "%016llx",
+                  static_cast<unsigned long long>(h));
+    return std::string(buf);
+}
+
 /// Convenience tx wrapper — UDPAdapter::tx takes non-const lvalue refs
 /// for historical reasons, so callers need locals.
 inline void tx_via(App& app,
@@ -409,16 +422,39 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     auto last_poll = std::make_shared<Clock::time_point>(Clock::now());
     std::weak_ptr<App> wapp_srv = app;
 
-    // Phase 3 — VPN cert delivery. Per-endpoint push state: {hash of the
-    // pushed cert family, attempts}. Push on first registration + on cert
-    // change, with a small bounded re-push for loss tolerance (v1 has no CoAP
-    // ACK matching — see follow-up).
+    // VPN cert delivery over Object 2048, with device-confirmed stop.
+    //   reportedFp : endpoint → fingerprint the device last reported applied
+    //                (Object 2048 RID 4), filled by the response handler below
+    //   epId/idEp  : endpoint ↔ small id stashed in the status-Read token so
+    //                the response can be attributed back to its endpoint
+    // Each tick the DM server READs /2048/0/4 and pushes the family only while
+    // the device's reported fingerprint != the family we want — i.e. until the
+    // device confirms it applied THIS cert. No blind re-push cap: delivery
+    // recovers from loss and self-limits once confirmed.
     auto* dsCertPush = ds.client();
-    auto certPushed = std::make_shared<
-        std::unordered_map<std::string, std::pair<std::size_t, int>>>();
+    auto reportedFp = std::make_shared<std::unordered_map<std::string, std::string>>();
+    auto epId       = std::make_shared<std::unordered_map<std::string, std::uint16_t>>();
+    auto idEp       = std::make_shared<std::unordered_map<std::uint16_t, std::string>>();
+    auto nextId     = std::make_shared<std::uint16_t>(1);
+
+    // Consume the device's response to our status Read: token = {0x05, idHi,
+    // idLo}, payload = the applied fingerprint. Map the id back to its
+    // endpoint and record what the device reports.
+    for (auto& [type, ctx] : services) {
+        if (type != ::UDPAdapter::ServiceType_t::DeviceMgmtServer) continue;
+        ctx->coapAdapter()->dmResponseHandler(
+            [reportedFp, idEp](const CoAPAdapter::CoAPMessage& m) {
+                if (m.tokens.size() < 3 || m.tokens[0] != 0x05) return;
+                std::uint16_t id = (static_cast<std::uint16_t>(m.tokens[1]) << 8)
+                                 | static_cast<std::uint16_t>(m.tokens[2]);
+                auto it = idEp->find(id);
+                if (it != idEp->end()) (*reportedFp)[it->second] = m.payload;
+            });
+    }
 
     app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll,
-                                       publish_regs, dsCertPush, certPushed]() {
+                                       publish_regs, dsCertPush,
+                                       reportedFp, epId, idEp, nextId]() {
         // Local constexpr inside the lambda body — gcc 11 wouldn't let
         // us reference an outer-scope constexpr without an explicit
         // capture even though it's a constant expression.
@@ -487,28 +523,50 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                     /*accept*/ -1);
                 ctx->send_async(req, reg.peerHost, reg.peerPort);
 
-                // Phase 3: push the VPN cert family over Object 2048 on first
-                // registration + on cert change; bounded re-push for loss
-                // tolerance. The device stages each WRITE and the Apply EXECUTE
+                // VPN cert delivery over Object 2048 with device-confirmed
+                // stop. Poll the device's applied fingerprint (RID 4) with a
+                // per-endpoint token so the response handler can attribute the
+                // reply; push the family only while the device hasn't confirmed
+                // THIS cert. The device stages each WRITE and the Apply EXECUTE
                 // materialises the family; its cert sidecar reloads openvpn.
                 std::string ca, cert, key;
                 if (vpn_family(reg.endpoint, ca, cert, key)) {
-                    const std::size_t h = std::hash<std::string>{}(ca + cert + key);
-                    auto& st = (*certPushed)[reg.endpoint];
-                    if (st.first != h) st = {h, 0};       // new/changed → reset
-                    constexpr int kMaxCertPush = 3;
-                    if (st.second < kMaxCertPush) {
+                    std::uint16_t id;
+                    auto idit = epId->find(reg.endpoint);
+                    if (idit == epId->end()) {
+                        id = (*nextId)++;
+                        (*epId)[reg.endpoint] = id;
+                        (*idEp)[id] = reg.endpoint;
+                    } else {
+                        id = idit->second;
+                    }
+
+                    // Status poll: Read /2048/0/4 (token carries the id).
+                    std::string stok;
+                    stok.push_back(static_cast<char>(0x05));
+                    stok.push_back(static_cast<char>((id >> 8) & 0xFF));
+                    stok.push_back(static_cast<char>(id & 0xFF));
+                    ctx->send_async(::lwm2m::dmsrv::build_read(
+                                        next_msgid(), stok, 2048, 0, 4, -1),
+                                    reg.peerHost, reg.peerPort);
+
+                    const std::string want = fnv1a_hex(ca + cert + key);
+                    auto rf = reportedFp->find(reg.endpoint);
+                    const bool confirmed =
+                        (rf != reportedFp->end() && rf->second == want);
+                    if (!confirmed) {
                         std::string ctok{static_cast<char>(0x04)};
                         const std::uint16_t m0 = next_msgid();
                         next_msgid(); next_msgid(); next_msgid();  // reserve 4 ids
                         for (auto& fr : ::lwm2m::dmsrv::build_cert_push(
                                  m0, ctok, ca, cert, key))
                             ctx->send_async(fr, reg.peerHost, reg.peerPort);
-                        ++st.second;
                         ACE_DEBUG((LM_INFO,
                             ACE_TEXT("%D lwm2m:thread:%t %M %N:%l pushed VPN cert "
-                                     "family to %C (attempt %d/%d) peer=%C:%u\n"),
-                            reg.endpoint.c_str(), st.second, kMaxCertPush,
+                                     "to %C (want=%C reported=%C) peer=%C:%u\n"),
+                            reg.endpoint.c_str(), want.c_str(),
+                            (rf != reportedFp->end() ? rf->second.c_str()
+                                                     : "<none>"),
                             reg.peerHost.c_str(),
                             static_cast<unsigned>(reg.peerPort)));
                     }
