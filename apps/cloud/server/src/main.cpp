@@ -16,6 +16,7 @@
 #include "endpoint_registry.hpp"
 #include "vpn_registry.hpp"
 #include "openvpn_server.hpp"
+#include "cert_authority.hpp"
 #include "bootstrap.hpp"
 #include "cloud_credentials.hpp"
 
@@ -255,6 +256,29 @@ int main(int argc, char** argv) {
         {"cloud.vpn.mgmt.port",   data_store::Value{static_cast<std::int32_t>(ovpn_cfg.mgmt_port)}},
         {"cloud.vpn.verb",        data_store::Value{static_cast<std::int32_t>(ovpn_cfg.verb)}},
     });
+    // ── Runtime VPN PKI (Phase 2) ─────────────────────────────────
+    // The cloud image generates a CA + server cert at build time but PURGES
+    // the CA key, so the shipped image can't sign new client certs. Generate
+    // and persist a runtime CA (+ a server cert signed by it) before openvpn
+    // starts; the same CA signs the per-device client certs minted at
+    // provision time, so the server trusts them.
+    server::openvpn::CaPaths capaths;
+    capaths.ca_crt  = ovpn_cfg.ca_path;
+    capaths.srv_crt = ovpn_cfg.cert_path;
+    capaths.srv_key = ovpn_cfg.key_path;
+    {
+        auto slash = ovpn_cfg.ca_path.find_last_of('/');
+        capaths.ca_key = (slash == std::string::npos)
+                       ? std::string("ca.key")
+                       : ovpn_cfg.ca_path.substr(0, slash + 1) + "ca.key";
+    }
+    server::openvpn::CertAuthority cert_ca(capaths);
+    if (!cert_ca.ensure()) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l runtime CA ensure() "
+                            "failed — per-device client certs won't be mintable\n")));
+    }
+
     server::openvpn::OpenVpnServer ovpn(ovpn_cfg);
 
     // Bring openvpn to the operator-desired state and publish it. Runs on
@@ -377,6 +401,35 @@ int main(int argc, char** argv) {
                                        ACE_TEXT("%D cloudd:thread:%t %M %N:%l credential "
                                                 "provisioning for %C failed: %C\n"),
                                        ep->c_str(), e.what()));
+                        }
+                    }
+
+                    // Mint a per-device VPN client cert (Phase 2) signed by
+                    // the runtime CA and stash it in the credential record for
+                    // LwM2M Object-2048 delivery (Phase 3). CN = the cloud
+                    // formatted identity, for traceability.
+                    if (cert_ca.have_ca()) {
+                        const std::string cn =
+                            server::lwm2m::format_identity(*ep);
+                        if (auto mc = cert_ca.mint_client(cn)) {
+                            try {
+                                const std::string cur =
+                                    ds_str(ds, "cloud.endpoint.credentials", "[]");
+                                const std::string next =
+                                    server::lwm2m::upsert_vpn_cert(
+                                        cur, *ep, mc->client_crt, mc->client_key);
+                                ds.set("cloud.endpoint.credentials",
+                                       data_store::Value{next});
+                                ACE_DEBUG((LM_INFO,
+                                           ACE_TEXT("%D cloudd:thread:%t %M %N:%l "
+                                                    "minted+stored VPN client cert "
+                                                    "for %C\n"), ep->c_str()));
+                            } catch (const std::exception& e) {
+                                ACE_ERROR((LM_ERROR,
+                                           ACE_TEXT("%D cloudd:thread:%t %M %N:%l "
+                                                    "store VPN cert for %C failed: "
+                                                    "%C\n"), ep->c_str(), e.what()));
+                            }
                         }
                     }
 

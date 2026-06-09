@@ -48,6 +48,17 @@ std::string upsert_credential(const std::string& array_json,
 std::string remove_credential(const std::string& array_json,
                               const std::string& serial);
 
+/// Merge a minted VPN client credential (PEM) into the record for `serial`,
+/// adding/updating the "vpn.client.cert" + "vpn.client.key" fields. Creates a
+/// minimal record (serial + identity) if none exists yet. Phase-3 delivery
+/// reads these and pushes them to the device over LwM2M Object 2048; the
+/// BS/DM PSK loaders ignore the extra fields. Returns the updated array.
+/// Throws std::runtime_error if `array_json` is not a JSON array.
+std::string upsert_vpn_cert(const std::string& array_json,
+                            const std::string& serial,
+                            const std::string& client_cert_pem,
+                            const std::string& client_key_pem);
+
 /// Task N — turn the credential array into the (identity → key) pairs a
 /// server instance must register with its DTLS adapter:
 ///   * BS server (is_bs=true): identity = RAW serial (what the device puts

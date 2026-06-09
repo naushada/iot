@@ -14,10 +14,12 @@ include_directories(${OVPN_SERVER_DIR}/inc ${ACE_ROOT}/include)
 
 add_library(server_openvpn STATIC
     src/vpn_registry.cpp
-    src/openvpn_server.cpp)
+    src/openvpn_server.cpp
+    src/cert_authority.cpp)
 
 target_include_directories(server_openvpn PUBLIC inc ${ACE_ROOT}/include)
-target_link_libraries(server_openvpn PUBLIC pthread)
+target_link_directories(server_openvpn PUBLIC ${ACE_ROOT}/lib)
+target_link_libraries(server_openvpn PUBLIC ACE pthread)
 
 option(BUILD_SERVER_OPENVPN_TESTS "Build server/openvpn gtest suite" OFF)
 if(BUILD_SERVER_OPENVPN_TESTS)
@@ -45,4 +47,16 @@ if(BUILD_SERVER_OPENVPN_TESTS)
     target_link_libraries(openvpn-server-tests
         GTest::gtest_main GTest::gtest ACE pthread)
     add_test(NAME openvpn-server-tests COMMAND openvpn-server-tests)
+
+    # CertAuthority: sanitize_cn is pure; ensure()/mint_client() shell out to
+    # openssl and SKIP at runtime if the CLI is absent.
+    add_executable(cert-authority-tests
+        test/cert_authority_test.cpp
+        src/cert_authority.cpp)
+    target_include_directories(cert-authority-tests
+        PRIVATE ${OVPN_SERVER_DIR}/inc ${ACE_ROOT}/include)
+    target_link_directories(cert-authority-tests PRIVATE ${ACE_ROOT}/lib)
+    target_link_libraries(cert-authority-tests
+        GTest::gtest_main GTest::gtest ACE pthread)
+    add_test(NAME cert-authority-tests COMMAND cert-authority-tests)
 endif()

@@ -98,6 +98,30 @@ std::string upsert_credential(const std::string& array_json,
     return arr.dump();
 }
 
+std::string upsert_vpn_cert(const std::string& array_json,
+                            const std::string& serial,
+                            const std::string& client_cert_pem,
+                            const std::string& client_key_pem) {
+    json arr = parse_array(array_json);
+    for (auto& e : arr) {
+        if (e.is_object() && e.value("serial", "") == serial) {
+            e["vpn.client.cert"] = client_cert_pem;
+            e["vpn.client.key"]  = client_key_pem;
+            return arr.dump();
+        }
+    }
+    // No PSK record yet (cert minted before/without PSK provisioning) — create
+    // a minimal record so the cert isn't lost.
+    json rec = {
+        {"serial",          serial},
+        {"identity",        format_identity(serial)},
+        {"vpn.client.cert", client_cert_pem},
+        {"vpn.client.key",  client_key_pem},
+    };
+    arr.push_back(rec);
+    return arr.dump();
+}
+
 std::string remove_credential(const std::string& array_json,
                               const std::string& serial) {
     json arr = parse_array(array_json);
