@@ -145,6 +145,13 @@ class DTLSAdapter {
         std::int32_t rx(std::int32_t fd);
         std::int32_t tx(std::string& in);
         std::int32_t tx(std::string& in, std::string peerIP, std::uint16_t peerPort);
+        /// Send to the dedicated client-outbound peer session (the last
+        /// connect() target), NOT m_session — which dtlsReadCb overwrites
+        /// with whichever peer last sent us a packet. A client that talks to
+        /// two servers (Bootstrap, then DM) must keep sending Register/Update
+        /// to the DM even while stray Bootstrap retransmits arrive, so its
+        /// own requests use this fixed peer session.
+        std::int32_t tx_peer(std::string& in);
         void connect(const std::string& ip, const std::uint16_t& port);
 
         /**
@@ -293,12 +300,27 @@ class DTLSAdapter {
         }
 
         std::string identity() {
+            // Once more than one credential is installed (e.g. the BS
+            // identity at startup + the DM identity after bootstrap), the
+            // map order is non-deterministic, so the active identity pins
+            // which one the client presents for the current peer. Empty =
+            // fall back to the first (single-credential) entry.
+            if(!m_activeIdentity.empty()) {
+                return(m_activeIdentity);
+            }
             if(isClient() && !device_credentials.empty()) {
                 for(auto ent: device_credentials) {
                     return(ent.first);
                 }
             }
             return(std::string());
+        }
+
+        /// Pin the PSK identity the client presents on the next handshake.
+        /// Used to switch from the BS identity to the bootstrap-delivered DM
+        /// identity before reconnecting to the DM server.
+        void active_identity(const std::string& id) {
+            m_activeIdentity = id;
         }
 
         auto& clients() {
@@ -312,10 +334,12 @@ class DTLSAdapter {
         std::int32_t dtlsFd;
         std::shared_ptr<CoAPAdapter> m_coapAdapter;
         session_t m_session;
+        session_t m_peerSession{};   ///< fixed client-outbound peer (connect target)
         std::string m_data;
         std::vector<std::string> m_responses;
         bool m_isClient;
         std::string m_clientState;
+        std::string m_activeIdentity;
         std::vector<ClientDetails> m_clients;
 };
 

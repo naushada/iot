@@ -217,6 +217,10 @@ DTLSAdapter::~DTLSAdapter() {
 
 void DTLSAdapter::connect(const std::string& ip, const std::uint16_t& port) {
     session(ip, port);
+    // Pin the connect target as the client's outbound peer. m_session is
+    // overwritten on every inbound packet (dtlsReadCb), so client-initiated
+    // requests (Register/Update) must use this stable copy instead.
+    m_peerSession = m_session;
     isClient(true);
 
     auto ret = dtls_connect(dtls_ctx(), &m_session);
@@ -261,9 +265,16 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
             
             if(!ret) {
                 dtls_debug("Message is deciphered successfully\n");
+                // Reply to the peer this datagram CAME FROM (the captured
+                // `session`), not m_session. Handling the message may have
+                // switched m_session to a different peer — e.g. a
+                // Bootstrap-Finish triggers the client to connect() to the DM
+                // mid-handling — and replying to m_session would then leak the
+                // Bootstrap ACK onto the freshly-opened DM session.
                 for(auto rsp: responses()) {
                     dtls_debug("Sending response to peer\n");
-                    tx(rsp);
+                    dtls_write(dtls_ctx(), &session,
+                               (std::uint8_t *)&rsp.at(0), rsp.size());
                 }
             }
             return(ret);
@@ -281,6 +292,14 @@ std::int32_t DTLSAdapter::tx(std::string& in) {
     std::int32_t ret = -1;
     ret = dtls_write(dtls_ctx(), &m_session, (std::uint8_t *)&in.at(0), in.size());
     return(ret);
+}
+
+std::int32_t DTLSAdapter::tx_peer(std::string& in) {
+    // Client-initiated send to the pinned connect target (m_peerSession),
+    // immune to m_session being overwritten by inbound packets from another
+    // peer (e.g. lingering Bootstrap retransmits after switching to the DM).
+    return dtls_write(dtls_ctx(), &m_peerSession,
+                      (std::uint8_t *)&in.at(0), in.size());
 }
 
 std::int32_t DTLSAdapter::tx(std::string& in, std::string peerIP, std::uint16_t peerPort) {

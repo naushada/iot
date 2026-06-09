@@ -26,6 +26,13 @@ ServiceContext_t::ServiceContext_t(Scheme_t scheme,
         // callbacks ::sendto/::recvfrom on it directly. The fd is filled
         // in inside open() once the socket is actually bound.
         m_dtlsAdapter = std::make_shared<DTLSAdapter>(ACE_INVALID_HANDLE, DTLS_LOG_DEBUG);
+        // Share THIS context's CoAPAdapter with the DTLS read path. The
+        // DTLSAdapter's dtlsReadCb dispatches deciphered datagrams via its
+        // own coapAdapter(); without this it would use a private, unwired
+        // CoAPAdapter and every LwM2M handler attached here (bsServer /
+        // regServer / dmClient / bsClient / regClient) would be invisible
+        // over coaps, silently falling through to the legacy path.
+        m_dtlsAdapter->coapAdapter() = m_coapAdapter;
     }
 }
 
@@ -166,7 +173,10 @@ void ServiceContext_t::drain_tx_queue() {
                 m_dtlsAdapter->connect(host, port);
             }
             if (m_dtlsAdapter->clientState() == "connected") {
-                m_dtlsAdapter->tx(frame.payload);
+                // tx_peer (not tx) so our request goes to the pinned connect
+                // target, even if an inbound packet from another peer just
+                // overwrote m_session (Bootstrap retransmit vs the DM).
+                m_dtlsAdapter->tx_peer(frame.payload);
             } else {
                 ACE_DEBUG((LM_DEBUG,
                            ACE_TEXT("%D [UdpSvc:%t] %M %N:%l DTLS not connected, dropping tx\n")));

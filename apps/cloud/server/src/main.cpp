@@ -351,8 +351,13 @@ int main(int argc, char** argv) {
                         ds_str(ds, "cloud.provision.bs.psk", "");
                     if (!bs_psk.empty()) {
                         try {
+                            // 128-bit (16-byte) DM PSK. tinydtls'
+                            // TLS_PSK_WITH_AES_128_CCM_8 key buffer is 16 bytes,
+                            // so a 32-byte PSK overflows it ("PSK exceeds caller
+                            // buffer") and the DM handshake fails. Matches the
+                            // 128-bit BS PSK.
                             const std::string dm_psk =
-                                server::lwm2m::generate_psk_hex();
+                                server::lwm2m::generate_psk_hex(16);
                             const std::string cur =
                                 ds_str(ds, "cloud.endpoint.credentials", "[]");
                             const std::string next =

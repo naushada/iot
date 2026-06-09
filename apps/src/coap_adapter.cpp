@@ -1057,6 +1057,17 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
     // the ACK back to whoever sent it and trigger an exception trace
     // in Leshan.
     if (!RequestType[coapmessage.coapheader.type].compare("Acknowledgement")) {
+        // A 2.04 ACK to our POST /bs is the Bootstrap server's response, not
+        // a Register/Update ACK. While the bootstrap client is awaiting it,
+        // route the ACK there so its FSM advances to WaitForBSWrites — else
+        // the later Bootstrap-Finish is rejected and bootstrap stalls.
+        if (isAmIClient && m_bsClient &&
+            m_bsClient->state() ==
+                ::lwm2m::bootstrap::ClientState::AwaitingBSAck) {
+            auto rsp = m_bsClient->handle_bs_traffic(coapmessage, *this);
+            if (!rsp.empty()) out.push_back(std::move(rsp));
+            return static_cast<std::int32_t>(out.size());
+        }
         if (isAmIClient && m_regClient) {
             m_regClient->on_response(coapmessage, *this);
         }
@@ -1084,8 +1095,16 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
         }
     }
 
+    // While bootstrapping, inbound /{oid}/{iid} frames are Bootstrap-Writes,
+    // not DM Writes — let the bootstrap client (below) claim them instead of
+    // the DM Write handler, which would otherwise answer 2.01 and swallow the
+    // Security/Server objects.
+    const bool bootstrapping = isAmIClient && m_bsClient &&
+        (m_bsClient->state() == ::lwm2m::bootstrap::ClientState::AwaitingBSAck ||
+         m_bsClient->state() == ::lwm2m::bootstrap::ClientState::WaitForBSWrites);
+
     // L5 hot path: client-side DM dispatcher (no DTLS variant).
-    if (isAmIClient && m_dmClient) {
+    if (isAmIClient && m_dmClient && !bootstrapping) {
         auto dmOut = m_dmClient->handle(coapmessage, *this);
         if (dmOut.kind != ::lwm2m::DmOutcome::None) {
             if (!dmOut.response.empty()) out.push_back(std::move(dmOut.response));
@@ -1251,6 +1270,17 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
     // L9 / FUP-2 — Acknowledgement short-circuit + dispatch to
     // RegistrationClient FSM. Same shape as the no-DTLS overload above.
     if (!RequestType[coapmessage.coapheader.type].compare("Acknowledgement")) {
+        // A 2.04 ACK to our POST /bs is the Bootstrap server's response, not
+        // a Register/Update ACK. While the bootstrap client is awaiting it,
+        // route the ACK there so its FSM advances to WaitForBSWrites — else
+        // the later Bootstrap-Finish is rejected and bootstrap stalls.
+        if (isAmIClient && m_bsClient &&
+            m_bsClient->state() ==
+                ::lwm2m::bootstrap::ClientState::AwaitingBSAck) {
+            auto rsp = m_bsClient->handle_bs_traffic(coapmessage, *this);
+            if (!rsp.empty()) out.push_back(std::move(rsp));
+            return static_cast<std::int32_t>(out.size());
+        }
         if (isAmIClient && m_regClient) {
             m_regClient->on_response(coapmessage, *this);
         }
@@ -1280,10 +1310,18 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
         }
     }
 
+    // While bootstrapping, inbound /{oid}/{iid} frames are Bootstrap-Writes,
+    // not DM Writes — let the bootstrap client (below) claim them instead of
+    // the DM Write handler, which would otherwise answer 2.01 and swallow the
+    // Security/Server objects.
+    const bool bootstrapping = isAmIClient && m_bsClient &&
+        (m_bsClient->state() == ::lwm2m::bootstrap::ClientState::AwaitingBSAck ||
+         m_bsClient->state() == ::lwm2m::bootstrap::ClientState::WaitForBSWrites);
+
     // L5 hot path: client-side DM dispatcher. Handles /{oid}[/...] coming
     // from the registered LwM2M Server. Returns kind==None when the URI
     // isn't a numeric DM path.
-    if (isAmIClient && m_dmClient) {
+    if (isAmIClient && m_dmClient && !bootstrapping) {
         auto dmOut = m_dmClient->handle(coapmessage, *this);
         if (dmOut.kind != ::lwm2m::DmOutcome::None) {
             if (!dmOut.response.empty()) out.push_back(std::move(dmOut.response));
