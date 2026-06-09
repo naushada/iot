@@ -198,6 +198,14 @@ return {
       default = "10.9.0.0/24",
     },
 
+    -- JSON array of device serials with a live VPN tunnel right now, written
+    -- by iot-cloudd from the openvpn management interface. lwm2m-dm reads it to
+    -- stop pushing the cert once the device's tunnel is up.
+    ["cloud.vpn.connected"] = {
+      type    = "string",
+      default = "[]",
+    },
+
     -- OpenVPN server listen socket (iot-cloudd spawns openvpn(8) here).
     ["cloud.vpn.listen.port"] = {
       type    = "integer",

@@ -24,6 +24,9 @@
 #include "data_store/value.hpp"
 
 #include <ace/Log_Msg.h>
+#include <ace/INET_Addr.h>
+#include <ace/SOCK_Connector.h>
+#include <ace/SOCK_Stream.h>
 
 #include "data_store/log_buffer.hpp"
 #include "data_store/stats_publisher.hpp"
@@ -31,6 +34,7 @@
 #include <atomic>
 #include <cstdint>
 #include <csignal>
+#include <set>
 #include <thread>
 #include <unordered_map>
 
@@ -130,6 +134,47 @@ bool reconcile_registrations(data_store::Client& ds,
         }
     }
     return changed;
+}
+
+// Poll the openvpn server's management interface (127.0.0.1:mgmt_port) for
+// connected clients and return their device serials. The minted client CN is
+// rpi<serial>@cloud.local, so a connected client's CN appears in the `status`
+// output; we scan for that pattern and extract the serial. Best-effort —
+// returns empty on any connect/IO failure (e.g. openvpn not up yet).
+std::vector<std::string> poll_vpn_connected(std::uint16_t mgmt_port) {
+    std::vector<std::string> out;
+    ACE_INET_Addr addr(mgmt_port, "127.0.0.1");
+    ACE_SOCK_Connector conn;
+    ACE_SOCK_Stream stream;
+    ACE_Time_Value to(1, 0);
+    if (conn.connect(stream, addr, &to) != 0) return out;
+    const char cmd[] = "status\n";
+    stream.send_n(cmd, sizeof(cmd) - 1);
+    std::string resp;
+    char buf[2048];
+    for (;;) {
+        ACE_Time_Value rto(1, 0);
+        ssize_t n = stream.recv(buf, sizeof(buf), &rto);
+        if (n <= 0) break;
+        resp.append(buf, static_cast<std::size_t>(n));
+        if (resp.find("\nEND") != std::string::npos || resp.size() > 65536) break;
+    }
+    stream.close();
+
+    const std::string suffix = "@cloud.local";
+    std::set<std::string> seen;
+    for (std::size_t pos = 0; (pos = resp.find("rpi", pos)) != std::string::npos; ) {
+        std::size_t at = resp.find(suffix, pos);
+        if (at == std::string::npos) break;
+        std::string serial = resp.substr(pos + 3, at - (pos + 3));
+        pos = at + suffix.size();
+        if (!serial.empty() &&
+            serial.find_first_of(",\n\r ") == std::string::npos &&
+            seen.insert(serial).second) {
+            out.push_back(std::move(serial));
+        }
+    }
+    return out;
 }
 
 } // namespace
@@ -473,6 +518,17 @@ int main(int argc, char** argv) {
         } else {
             // recv_event timed out — periodic housekeeping
             supervise_ovpn();   // restart on crash / honor enable flips
+
+            // Publish which devices have a live VPN tunnel (from the openvpn
+            // management interface). lwm2m-dm reads this and stops pushing the
+            // cert once the device's tunnel is up — the end-goal "done" signal,
+            // and it needs no server→device request.
+            {
+                nlohmann::json arr = nlohmann::json::array();
+                for (auto& s : poll_vpn_connected(ovpn_cfg.mgmt_port)) arr.push_back(s);
+                ds.set("cloud.vpn.connected", data_store::Value{arr.dump()});
+            }
+
             if (++sync_tick >= 3) {
                 sync_tick = 0;
                 // Safety-net reconcile in case a watch notification was missed.
