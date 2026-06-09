@@ -174,6 +174,24 @@ bool Supervisor::serve_one_session(const std::string& iface) {
         return false;
     }
 
+    // Subscribe to real-time state notifications. Real openvpn keeps the
+    // management interface silent after the `>INFO:` banner until a client
+    // asks for them; `state on` makes it emit the CURRENT state immediately
+    // (covers the case where openvpn reached CONNECTED before we attached)
+    // AND every subsequent transition as a `>STATE:` event the Lifecycle
+    // consumes. Without this, vpn.state never advances past "connecting"
+    // against real openvpn — the L12/L14 fake openvpn masked the gap by
+    // pushing STATE/PUSH_REPLY lines unsolicited.
+    {
+        static const char kStateOn[] = "state on\r\n";
+        if (stream.send_n(kStateOn, sizeof(kStateOn) - 1) < 0) {
+            ACE_ERROR((LM_WARNING,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l mgmt 'state on' send "
+                                "failed errno=%d; vpn.state may stall\n"),
+                       errno));
+        }
+    }
+
     Lifecycle::Sinks sinks;
     sinks.set_state            = [this](const std::string& s) { m_ds.set_state(s); };
     sinks.set_assigned_ip      = [this](const std::string& s) { m_ds.set_assigned_ip(s); };
