@@ -3,11 +3,13 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <sys/stat.h>
 #include <sys/types.h>
 
 #include "lwm2m_object_3_device.hpp"
+#include "lwm2m_object_cert.hpp"
 #include "lwm2m_object_store.hpp"
 #include "lwm2m_object_stubs.hpp"
 
@@ -236,4 +238,103 @@ TEST(Objects, REQ_OBJ_005_install_canonical_objects_installs_all_four) {
     EXPECT_TRUE(store.has(4));
     EXPECT_TRUE(store.has(6));
     EXPECT_TRUE(store.has(7));
+    EXPECT_TRUE(store.has(objects::kCertObjectOid));   // OID 2048 cert object
+}
+
+/* ───────────────────── Custom OID 2048 credential object ─────────────── */
+
+namespace {
+std::string slurp(const std::string& path) {
+    std::ifstream ifs(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(ifs)),
+                       std::istreambuf_iterator<char>());
+}
+} // namespace
+
+TEST(CertObject, registers_three_artifact_instances_with_layout) {
+    ObjectStore store;
+    objects::install_cert(store, "/no-such-dir");
+
+    auto* desc = store.find(objects::kCertObjectOid);
+    ASSERT_NE(nullptr, desc);
+    EXPECT_TRUE(desc->multipleInstance);
+
+    // Instance per artifact, RID 0 reports the type.
+    ASSERT_TRUE(store.has(2048, 0, 0)); EXPECT_EQ("ca",   store.find(2048,0,0)->read());
+    ASSERT_TRUE(store.has(2048, 1, 0)); EXPECT_EQ("cert", store.find(2048,1,0)->read());
+    ASSERT_TRUE(store.has(2048, 2, 0)); EXPECT_EQ("key",  store.find(2048,2,0)->read());
+
+    // RID 1 (data) is opaque write-only on every instance.
+    for (auto iid : {0u, 1u, 2u}) {
+        auto* data = store.find(2048, iid, 1);
+        ASSERT_NE(nullptr, data) << "iid " << iid;
+        EXPECT_EQ(ResourceType::Opaque, data->type);
+        EXPECT_TRUE(has_op(data->ops, Operations::W));
+        EXPECT_TRUE(static_cast<bool>(data->write));
+    }
+    // Apply (RID 3, execute) lives only on instance 0.
+    auto* apply = store.find(2048, 0, 3);
+    ASSERT_NE(nullptr, apply);
+    EXPECT_TRUE(has_op(apply->ops, Operations::E));
+    EXPECT_FALSE(store.has(2048, 1, 3));
+    EXPECT_FALSE(store.has(2048, 2, 3));
+}
+
+TEST(CertObject, write_then_apply_materializes_cert_family) {
+    char tmpl[64];
+    char* dir = make_temp_dir(tmpl, sizeof(tmpl));
+    if (!dir) GTEST_SKIP() << "no writable scratch dir";
+    std::string certDir(dir);
+
+    ObjectStore store;
+    objects::install_cert(store, certDir);
+
+    // Server WRITEs each artifact's opaque data (staged, not yet on disk).
+    EXPECT_EQ(0, store.find(2048, 0, 1)->write("-----CA PEM-----\n"));
+    EXPECT_EQ(0, store.find(2048, 1, 1)->write("-----CERT PEM-----\n"));
+    EXPECT_EQ(0, store.find(2048, 2, 1)->write("-----KEY PEM-----\n"));
+    // Nothing on disk until the apply trigger fires.
+    struct stat stbuf;
+    EXPECT_NE(0, ::stat((certDir + "/ca.crt").c_str(), &stbuf));
+
+    // EXECUTE /2048/0/3 commits the whole family atomically.
+    ASSERT_EQ(0, store.find(2048, 0, 3)->execute(""));
+
+    EXPECT_EQ("-----CA PEM-----\n",   slurp(certDir + "/ca.crt"));
+    EXPECT_EQ("-----CERT PEM-----\n", slurp(certDir + "/client.crt"));
+    EXPECT_EQ("-----KEY PEM-----\n",  slurp(certDir + "/client.key"));
+
+    // Private key must be 0600; cert/CA world-readable.
+    ASSERT_EQ(0, ::stat((certDir + "/client.key").c_str(), &stbuf));
+    EXPECT_EQ(0600, stbuf.st_mode & 0777);
+    ASSERT_EQ(0, ::stat((certDir + "/client.crt").c_str(), &stbuf));
+    EXPECT_EQ(0644, stbuf.st_mode & 0777);
+
+    for (auto* f : {"/ca.crt", "/client.crt", "/client.key"})
+        std::remove((certDir + f).c_str());
+    std::remove(certDir.c_str());
+}
+
+TEST(CertObject, apply_invokes_reload_hook_and_runs_verify) {
+    int applied = 0, verified = 0;
+    objects::CertHooks h;
+    h.store_artifact = [](const std::string&, const std::string&) { return 0; };
+    h.apply  = [&]() { ++applied; return 0; };
+    h.verify = [&](const std::string&, const std::string& hash,
+                   const std::string&) { ++verified; return hash == "good" ? 0 : -1; };
+
+    ObjectStore store;
+    objects::install_cert(store, "/unused", std::move(h));
+
+    store.find(2048, 1, 1)->write("cert-bytes");
+    store.find(2048, 1, 2)->write("good");          // hash → verify runs, passes
+    EXPECT_EQ(0, store.find(2048, 0, 3)->execute(""));
+    EXPECT_EQ(1, applied);
+    EXPECT_EQ(1, verified);
+
+    // A bad hash aborts the apply (reload hook not re-invoked).
+    store.find(2048, 2, 1)->write("key-bytes");
+    store.find(2048, 2, 2)->write("bad");
+    EXPECT_NE(0, store.find(2048, 0, 3)->execute(""));
+    EXPECT_EQ(1, applied);                            // unchanged
 }
