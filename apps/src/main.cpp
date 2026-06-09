@@ -477,6 +477,12 @@ struct ClientPlumbing {
     std::shared_ptr<Rebind>                          rebind;
 };
 
+/// Client bootstrap progress. The client sends POST /bs first; once the
+/// Bootstrap-Server delivers + the client commits the DM account, on_done
+/// switches the DTLS peer/identity to the DM and the tick registers there.
+/// Skipped is the plain-DM / no-BS fallback (or a bootstrap timeout).
+enum class BootPhase { NotStarted, InProgress, Done, Skipped };
+
 ClientPlumbing wire_client(std::shared_ptr<App>& app,
                            const std::string& endpoint,
                            const std::string& configDir,
@@ -506,14 +512,12 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
 
     ::lwm2m::ClientConfig cfg;
     cfg.endpoint     = endpoint;
-    auto dsLifetime  = ds.lifetime();
-    cfg.lifetime     = dsLifetime.value_or(86400);
-    if (dsLifetime) {
-        ACE_DEBUG((LM_INFO,
-                   ACE_TEXT("%D lwm2m:thread:%t %M %N:%l Registration lifetime from "
-                            "data-store: %u\n"),
-                   static_cast<unsigned>(cfg.lifetime)));
-    }
+    // The authoritative registration lifetime is delivered by the Bootstrap
+    // server in the Server Object (RID 1) — which the BS reads from
+    // cloud.dm.lifetime. The client does NOT read its own data-store for it;
+    // this is only the pre-bootstrap default (used if bootstrap is skipped).
+    // on_done applies the bootstrap-delivered value below.
+    cfg.lifetime     = 86400;
     cfg.binding      = "U";
     cfg.lwm2mVersion = "1.1";
     plumb.reg = std::make_shared<::lwm2m::RegistrationClient>(cfg, *plumb.store);
@@ -529,21 +533,29 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         ctx->coapAdapter()->registrationClient(plumb.reg);
     }
 
-    // L9 stub 1 — Register POST after bootstrap commit. Runs on the
-    // reactor thread (handle_bs_traffic invoked it); the tx itself
-    // queues via send_async + notify so we don't recurse into the I/O
-    // path inside the callback.
+    // Bootstrap progress, shared between on_done (writer) and the reactor
+    // tick (reader/driver). Both run on the reactor thread, so no lock.
+    auto bootPhase    = std::make_shared<BootPhase>(BootPhase::NotStarted);
+    auto bootDeadline =
+        std::make_shared<std::chrono::steady_clock::time_point>();
+
+    // After the Bootstrap commit, switch the LwM2MClient peer + DTLS identity
+    // to the DM and (re)connect; the tick sends Register once the DM
+    // handshake completes. Runs on the reactor thread (apply_commit invoked
+    // it); we only mutate state + kick the handshake, no recursion into tx.
     std::weak_ptr<App>                          wapp_bs = app;
     std::weak_ptr<::lwm2m::RegistrationClient>  wreg_bs = plumb.reg;
-    plumb.bs->on_done([wapp_bs, wreg_bs, &ds]
+    plumb.bs->on_done([wapp_bs, wreg_bs, &ds, dtls, bootPhase]
                       (const ::lwm2m::bootstrap::StagingBuffer& committed) {
-        // Task F — persist the bootstrap-delivered DM credentials to the
-        // data-store (write-only). The DM security instance is the
-        // non-bootstrap PSK entry; its secretKey is raw bytes, so we hex-
-        // encode to match how PSK keys are stored + consumed elsewhere.
+        // Pull the bootstrap-delivered DM account (the non-BS PSK instance):
+        // server URI (RID 0) + identity (RID 3). Persist its key (RID 5) to
+        // the data-store (write-only) for visibility.
+        std::string dmUri, dmIdentity;
         for (const auto& s : committed.security) {
             if (s.isBootstrapServer || s.securityMode != 0 /*PSK*/) continue;
             if (s.identity.empty() || s.secretKey.empty()) continue;
+            dmUri      = s.serverUri;
+            dmIdentity = s.identity;
             const std::string key_hex = iot::hex_encode(
                 reinterpret_cast<const unsigned char*>(s.secretKey.data()),
                 s.secretKey.size());
@@ -556,14 +568,49 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
             break;
         }
         auto a = wapp_bs.lock();
-        auto r = wreg_bs.lock();
-        if (!a || !r) return;
+        if (!a) return;
+        UDPAdapter::Scheme_t sc{};
+        std::string   dmHost;
+        std::uint16_t dmPort = 0;
+        if (!dmUri.empty()) parsePeerOption(dmUri, sc, dmHost, dmPort);
+        if (dmHost.empty() || dmPort == 0) {
+            ACE_ERROR((LM_WARNING,
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l bootstrap commit but "
+                                "no usable DM URI — falling back to direct "
+                                "Register\n")));
+            *bootPhase = BootPhase::Skipped;
+            return;
+        }
+        // Point the LwM2MClient peer at the DM, pin the DM PSK identity, and
+        // force a fresh DTLS handshake against the DM.
+        for (auto& [type, ctx] : a->udpAdapter()->services()) {
+            if (type != ::UDPAdapter::ServiceType_t::LwM2MClient) continue;
+            ctx->peerHost(dmHost);
+            ctx->peerPort(dmPort);
+        }
+        if (dtls) {
+            dtls->active_identity(dmIdentity);
+            dtls->clientState("");            // drop the BS session state
+            dtls->connect(dmHost, dmPort);    // start the DM handshake now
+        }
+        // Apply the bootstrap-delivered registration lifetime (Server Object
+        // RID 1) — the client uses this, sourced by the BS from
+        // cloud.dm.lifetime, rather than its own data-store.
+        if (auto r = wreg_bs.lock(); r && !committed.server.empty()) {
+            const std::uint32_t lt = committed.server.front().lifetime;
+            r->set_lifetime(lt);
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l applied bootstrap "
+                                "lifetime=%u (Server Object RID 1)\n"),
+                       static_cast<unsigned>(lt)));
+        }
+        *bootPhase = BootPhase::Done;
         ACE_DEBUG((LM_INFO,
                    ACE_TEXT("%D lwm2m:thread:%t %M %N:%l bootstrap commit done; "
-                            "sending Register\n")));
-        auto payload = r->build_register_request(next_msgid(),
-                                                 std::string{static_cast<char>(0x01)});
-        tx_via(*a, payload, ::UDPAdapter::ServiceType_t::LwM2MClient);
+                            "switching to DM %C:%u (identity=%C) — Register on "
+                            "next connected tick\n"),
+                   dmHost.c_str(), static_cast<unsigned>(dmPort),
+                   dmIdentity.c_str()));
     });
 
     // FUP-DS-11 — DM server URI rebind mailbox. Listener thread fills
@@ -585,7 +632,8 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     auto reboot_after =
         std::make_shared<std::chrono::steady_clock::time_point>();
     app->udpAdapter()->on_tick_client([wreg, wdm, wapp, rebind, wbs,
-                                       reboot_after]() {
+                                       reboot_after, bootPhase, bootDeadline,
+                                       dtls]() {
         auto reg = wreg.lock();
         auto dm  = wdm.lock();
         auto a   = wapp.lock();
@@ -615,26 +663,62 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
             }
         }
 
-        // L9 fallback (Leshan interop) — if we never went through
-        // Bootstrap (e.g. the server is a plain LwM2M DM server with no
-        // BS account for us), fire the initial Register on the first
-        // tick after startup. Also the second leg of FUP-DS-10/11:
-        // after a triggered Deregister completes, state returns to
-        // Unregistered and this branch sends a fresh Register with
-        // the new endpoint (via RegistrationClient::endpoint()) and/or
-        // to the freshly-swapped peer above.
+        // Bootstrap-first startup. While Unregistered we:
+        //   1. send POST /bs once (NotStarted → InProgress);
+        //   2. wait for on_done to commit + switch us to the DM (→ Done),
+        //      or time out and fall back to direct Register (→ Skipped);
+        //   3. Register once ready — for Done that means the DM DTLS
+        //      handshake (kicked in on_done) has completed.
+        // The branch fires every tick while Unregistered, so step 3 retries
+        // until the handshake is up; after a later Deregister it re-registers
+        // without re-bootstrapping (bootPhase stays Done).
         if (reg->state() == ::lwm2m::RegistrationState::Unregistered &&
             !reg->is_disabled()) {
-            ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l no bootstrap; "
-                                "sending Register directly\n")));
-            auto payload = reg->build_register_request(
-                next_msgid(),
-                std::string{static_cast<char>(0x10)});
-            tx_via(*a, payload, svc);
-            // Endpoint change is naturally satisfied by this Register;
-            // clear the flag so we don't double-act on it later.
-            reg->clear_pending_reregister();
+            auto bs = wbs.lock();
+            // True once the DTLS session to the *current* peer is up — the BS
+            // while NotStarted, the DM once on_done switched us over. Gating
+            // both the single-shot /bs and Register on it avoids sending into
+            // a half-open handshake (the frame would be dropped, not retried).
+            const bool dtlsReady = !dtls || dtls->clientState() == "connected";
+
+            if (*bootPhase == BootPhase::NotStarted) {
+                if (!bs) {
+                    *bootPhase = BootPhase::Skipped;        // plain-DM / no BS
+                } else if (dtlsReady) {
+                    ACE_DEBUG((LM_INFO,
+                               ACE_TEXT("%D lwm2m:thread:%t %M %N:%l initiating "
+                                        "bootstrap: POST /bs\n")));
+                    auto payload = bs->build_bs_request(
+                        next_msgid(), std::string{static_cast<char>(0x40)});
+                    tx_via(*a, payload, svc);
+                    *bootPhase    = BootPhase::InProgress;
+                    *bootDeadline = now + std::chrono::seconds(15);
+                }
+                // else: wait for the BS handshake, retry next tick.
+            } else if (*bootPhase == BootPhase::InProgress &&
+                       now >= *bootDeadline) {
+                ACE_ERROR((LM_WARNING,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l bootstrap did "
+                                    "not complete in time — registering "
+                                    "directly\n")));
+                *bootPhase = BootPhase::Skipped;
+            }
+
+            // Register when ready: bootstrap committed + the DM DTLS session
+            // is up, or bootstrap skipped (peer connected at startup).
+            if ((*bootPhase == BootPhase::Done && dtlsReady) ||
+                *bootPhase == BootPhase::Skipped) {
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l sending "
+                                    "Register\n")));
+                auto payload = reg->build_register_request(
+                    next_msgid(),
+                    std::string{static_cast<char>(0x10)});
+                tx_via(*a, payload, svc);
+                // Endpoint change is naturally satisfied by this Register;
+                // clear the flag so we don't double-act on it later.
+                reg->clear_pending_reregister();
+            }
         }
 
         // FUP-DS-10 — endpoint hot-reload kicks the re-register cycle.
