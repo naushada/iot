@@ -10,6 +10,8 @@ using server::lwm2m::format_identity;
 using server::lwm2m::upsert_credential;
 using server::lwm2m::remove_credential;
 using server::lwm2m::credentials_for_instance;
+using server::lwm2m::upsert_vpn_cert;
+using server::lwm2m::vpn_cert_for;
 using nlohmann::json;
 
 TEST(CloudCredentials, FormatsIdentity) {
@@ -93,4 +95,33 @@ TEST(CloudCredentials, InstanceSkipsRecordsMissingKey) {
     EXPECT_TRUE(bs.empty());
     auto dm = credentials_for_instance(arr.dump(), false);
     EXPECT_EQ(1u, dm.size());
+}
+
+/* ─────────────────────── VPN cert family (Phase 2/3) ──────────────────── */
+
+TEST(CloudCredentials, UpsertVpnCertMergesIntoExistingRecord) {
+    auto arr = upsert_credential("[]", "SER1", "bbbb", "dddd");   // PSK record first
+    arr = upsert_vpn_cert(arr, "SER1", "CA-PEM", "CERT-PEM", "KEY-PEM");
+    auto fam = vpn_cert_for(arr, "SER1");
+    ASSERT_TRUE(fam.has_value());
+    EXPECT_EQ("CA-PEM",   fam->ca);
+    EXPECT_EQ("CERT-PEM", fam->cert);
+    EXPECT_EQ("KEY-PEM",  fam->key);
+    // PSK fields survive the merge.
+    auto pairs = credentials_for_instance(arr, /*is_bs*/true);
+    ASSERT_EQ(1u, pairs.size());
+    EXPECT_EQ("bbbb", pairs[0].key_hex);
+}
+
+TEST(CloudCredentials, UpsertVpnCertCreatesRecordWhenAbsent) {
+    auto arr = upsert_vpn_cert("[]", "SER9", "CA", "CRT", "KEY");
+    auto fam = vpn_cert_for(arr, "SER9");
+    ASSERT_TRUE(fam.has_value());
+    EXPECT_EQ("CRT", fam->cert);
+}
+
+TEST(CloudCredentials, VpnCertForNulloptWhenIncompleteOrMissing) {
+    EXPECT_FALSE(vpn_cert_for("[]", "NOPE").has_value());
+    auto arr = upsert_credential("[]", "SER1", "bbbb", "dddd");   // PSK only
+    EXPECT_FALSE(vpn_cert_for(arr, "SER1").has_value());
 }

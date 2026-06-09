@@ -134,4 +134,27 @@ std::string build_write_attributes(std::uint16_t messageId,
     return ss.str();
 }
 
+std::vector<std::string> build_cert_push(std::uint16_t msgid0,
+                                         const std::string& token,
+                                         const std::string& ca_pem,
+                                         const std::string& cert_pem,
+                                         const std::string& key_pem) {
+    std::vector<std::string> f;
+    f.reserve(4);
+    // WRITEs are opaque (CF_OctetStream); the device stages each, then Apply
+    // commits the family. PUT (partial=false) targets the single data RID.
+    f.push_back(build_write(static_cast<std::uint16_t>(msgid0 + 0), token,
+                            kCredObjectOid, kCredInstCa,   kCredRidData,
+                            CF_OctetStream, ca_pem,   /*partial*/false));
+    f.push_back(build_write(static_cast<std::uint16_t>(msgid0 + 1), token,
+                            kCredObjectOid, kCredInstCert, kCredRidData,
+                            CF_OctetStream, cert_pem, /*partial*/false));
+    f.push_back(build_write(static_cast<std::uint16_t>(msgid0 + 2), token,
+                            kCredObjectOid, kCredInstKey,  kCredRidData,
+                            CF_OctetStream, key_pem,  /*partial*/false));
+    f.push_back(build_execute(static_cast<std::uint16_t>(msgid0 + 3), token,
+                              kCredObjectOid, kCredInstCa, kCredRidApply, ""));
+    return f;
+}
+
 }} // namespace lwm2m::dmsrv

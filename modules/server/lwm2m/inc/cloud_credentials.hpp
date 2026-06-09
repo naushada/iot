@@ -12,6 +12,7 @@
 /// See apps/docs/tdd-psk-provisioning.md.
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -48,16 +49,30 @@ std::string upsert_credential(const std::string& array_json,
 std::string remove_credential(const std::string& array_json,
                               const std::string& serial);
 
-/// Merge a minted VPN client credential (PEM) into the record for `serial`,
-/// adding/updating the "vpn.client.cert" + "vpn.client.key" fields. Creates a
-/// minimal record (serial + identity) if none exists yet. Phase-3 delivery
-/// reads these and pushes them to the device over LwM2M Object 2048; the
-/// BS/DM PSK loaders ignore the extra fields. Returns the updated array.
-/// Throws std::runtime_error if `array_json` is not a JSON array.
+/// Merge a minted VPN client credential family (PEM) into the record for
+/// `serial`, adding/updating the "vpn.ca.cert" + "vpn.client.cert" +
+/// "vpn.client.key" fields. Creates a minimal record (serial + identity) if
+/// none exists yet. Phase-3 delivery reads these and pushes them to the
+/// device over LwM2M Object 2048; the BS/DM PSK loaders ignore the extra
+/// fields. Returns the updated array. Throws if `array_json` is not an array.
 std::string upsert_vpn_cert(const std::string& array_json,
                             const std::string& serial,
+                            const std::string& ca_cert_pem,
                             const std::string& client_cert_pem,
                             const std::string& client_key_pem);
+
+/// The VPN client credential family stored for one endpoint.
+struct VpnCertFamily {
+    std::string ca;     ///< CA chain PEM
+    std::string cert;   ///< client cert PEM
+    std::string key;    ///< client key PEM
+};
+
+/// Look up the VPN cert family for `serial` in the credential array. Returns
+/// nullopt if there is no record, or the record lacks all three PEM fields
+/// (i.e. no cert was minted yet). Throws if `array_json` is not an array.
+std::optional<VpnCertFamily> vpn_cert_for(const std::string& array_json,
+                                          const std::string& serial);
 
 /// Task N — turn the credential array into the (identity → key) pairs a
 /// server instance must register with its DTLS adapter:

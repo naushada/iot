@@ -409,8 +409,16 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     auto last_poll = std::make_shared<Clock::time_point>(Clock::now());
     std::weak_ptr<App> wapp_srv = app;
 
+    // Phase 3 — VPN cert delivery. Per-endpoint push state: {hash of the
+    // pushed cert family, attempts}. Push on first registration + on cert
+    // change, with a small bounded re-push for loss tolerance (v1 has no CoAP
+    // ACK matching — see follow-up).
+    auto* dsCertPush = ds.client();
+    auto certPushed = std::make_shared<
+        std::unordered_map<std::string, std::pair<std::size_t, int>>>();
+
     app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll,
-                                       publish_regs]() {
+                                       publish_regs, dsCertPush, certPushed]() {
         // Local constexpr inside the lambda body — gcc 11 wouldn't let
         // us reference an outer-scope constexpr without an explicit
         // capture even though it's a constant expression.
@@ -433,6 +441,34 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         if (now - *last_poll < kPollInterval) return;
         *last_poll = now;
 
+        // Read the credential array once per tick. lwm2m-dm runs as cloud-svc
+        // so the read_acl on cloud.endpoint.credentials lets it in.
+        std::string credsJson;
+        if (dsCertPush) {
+            std::vector<data_store::Client::GetResult> got;
+            if (dsCertPush->get({std::string("cloud.endpoint.credentials")}, got).ok
+                && !got.empty() && got[0].has_value) {
+                if (auto s = data_store::to_string(got[0].value)) credsJson = *s;
+            }
+        }
+        // Pull one endpoint's complete VPN cert family out of the array.
+        auto vpn_family = [&credsJson](const std::string& ep, std::string& ca,
+                                       std::string& cert, std::string& key) -> bool {
+            if (credsJson.empty()) return false;
+            try {
+                auto arr = nlohmann::json::parse(credsJson);
+                if (!arr.is_array()) return false;
+                for (const auto& e : arr) {
+                    if (!e.is_object() || e.value("serial", "") != ep) continue;
+                    ca   = e.value("vpn.ca.cert",     "");
+                    cert = e.value("vpn.client.cert", "");
+                    key  = e.value("vpn.client.key",  "");
+                    return !ca.empty() && !cert.empty() && !key.empty();
+                }
+            } catch (const std::exception&) {}
+            return false;
+        };
+
         // Walk services to find the DeviceMgmtServer ServiceContext;
         // its send_async takes an explicit peer so one outbound socket
         // serves every registered client.
@@ -442,12 +478,41 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
             for (const auto& reg_kv : registry->all()) {
                 const auto& reg = reg_kv.second;
                 if (reg.peerHost.empty()) continue;
+
+                // L9 liveness poll: Read /3/0/0.
                 std::string token{static_cast<char>(0x03)};
                 auto req = ::lwm2m::dmsrv::build_read(
                     next_msgid(), token,
                     /*oid*/ 3, /*iid*/ 0, /*rid*/ 0,
                     /*accept*/ -1);
                 ctx->send_async(req, reg.peerHost, reg.peerPort);
+
+                // Phase 3: push the VPN cert family over Object 2048 on first
+                // registration + on cert change; bounded re-push for loss
+                // tolerance. The device stages each WRITE and the Apply EXECUTE
+                // materialises the family; its cert sidecar reloads openvpn.
+                std::string ca, cert, key;
+                if (vpn_family(reg.endpoint, ca, cert, key)) {
+                    const std::size_t h = std::hash<std::string>{}(ca + cert + key);
+                    auto& st = (*certPushed)[reg.endpoint];
+                    if (st.first != h) st = {h, 0};       // new/changed → reset
+                    constexpr int kMaxCertPush = 3;
+                    if (st.second < kMaxCertPush) {
+                        std::string ctok{static_cast<char>(0x04)};
+                        const std::uint16_t m0 = next_msgid();
+                        next_msgid(); next_msgid(); next_msgid();  // reserve 4 ids
+                        for (auto& fr : ::lwm2m::dmsrv::build_cert_push(
+                                 m0, ctok, ca, cert, key))
+                            ctx->send_async(fr, reg.peerHost, reg.peerPort);
+                        ++st.second;
+                        ACE_DEBUG((LM_INFO,
+                            ACE_TEXT("%D lwm2m:thread:%t %M %N:%l pushed VPN cert "
+                                     "family to %C (attempt %d/%d) peer=%C:%u\n"),
+                            reg.endpoint.c_str(), st.second, kMaxCertPush,
+                            reg.peerHost.c_str(),
+                            static_cast<unsigned>(reg.peerPort)));
+                    }
+                }
             }
         }
     });

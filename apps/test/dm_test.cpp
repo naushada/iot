@@ -7,7 +7,14 @@
 #include "lwm2m_codec_tlv.hpp"
 #include "lwm2m_dm_client.hpp"
 #include "lwm2m_dm_server.hpp"
+#include "lwm2m_object_cert.hpp"
 #include "lwm2m_object_store.hpp"
+
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <iterator>
+#include <sys/stat.h>
 
 using ::lwm2m::DmClient;
 using ::lwm2m::DmOutcome;
@@ -344,4 +351,64 @@ TEST(DmServer, read_request_round_trips_through_parseRequest) {
     coap.parseRequest(bytes, parsed);
     EXPECT_EQ(0xABCD, parsed.coapheader.msgid);
     EXPECT_EQ(1u, parsed.coapheader.code);    // GET
+}
+
+/* ───── Phase 3: server→device VPN cert push over Object 2048 (loopback) ── */
+
+namespace {
+std::string slurp_file(const std::string& p) {
+    std::ifstream ifs(p, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(ifs)),
+                       std::istreambuf_iterator<char>());
+}
+} // namespace
+
+// Drives the exact bytes build_cert_push() emits through a device that has
+// Object 2048 installed: three opaque WRITEs (CA/cert/key) then the Apply
+// EXECUTE. Asserts each frame is accepted (2.04) and the family lands on disk.
+TEST(CertPush, server_push_materializes_family_on_device) {
+    char tmpl[] = "/tmp/iot-certpush-XXXXXX";
+    char* dir = ::mkdtemp(tmpl);
+    if (!dir) GTEST_SKIP() << "no writable scratch dir";
+    const std::string certDir(dir);
+
+    auto store = std::make_shared<ObjectStore>();
+    ::lwm2m::objects::install_cert(*store, certDir);
+    DmClient dm(store);
+    CoAPAdapter coap;
+
+    const std::string ca   = "-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----\n";
+    const std::string cert = "-----BEGIN CERTIFICATE-----\nCLIENT\n-----END CERTIFICATE-----\n";
+    const std::string key  = "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n";
+
+    auto frames = dmsrv::build_cert_push(/*msgid0*/ 0x2000,
+                                         std::string{static_cast<char>(0x04)},
+                                         ca, cert, key);
+    ASSERT_EQ(4u, frames.size());
+
+    // First three WRITEs stage; nothing on disk yet.
+    for (std::size_t i = 0; i < 3; ++i) {
+        CoAPAdapter::CoAPMessage parsed; coap.parseRequest(frames[i], parsed);
+        auto out = dm.handle(parsed, coap);
+        EXPECT_EQ(DmOutcome::Write, out.kind) << "frame " << i;
+        EXPECT_EQ(0x44, code_of(out.response)) << "frame " << i;   // 2.04
+    }
+    struct stat st;
+    EXPECT_NE(0, ::stat((certDir + "/ca.crt").c_str(), &st));      // not yet
+
+    // Apply EXECUTE commits the family.
+    CoAPAdapter::CoAPMessage applyMsg; coap.parseRequest(frames[3], applyMsg);
+    auto out = dm.handle(applyMsg, coap);
+    EXPECT_EQ(DmOutcome::Execute, out.kind);
+    EXPECT_EQ(0x44, code_of(out.response));                        // 2.04
+
+    EXPECT_EQ(ca,   slurp_file(certDir + "/ca.crt"));
+    EXPECT_EQ(cert, slurp_file(certDir + "/client.crt"));
+    EXPECT_EQ(key,  slurp_file(certDir + "/client.key"));
+    ASSERT_EQ(0, ::stat((certDir + "/client.key").c_str(), &st));
+    EXPECT_EQ(0600, st.st_mode & 0777);                            // key private
+
+    for (auto* f : {"/ca.crt", "/client.crt", "/client.key"})
+        std::remove((certDir + f).c_str());
+    std::remove(certDir.c_str());
 }
