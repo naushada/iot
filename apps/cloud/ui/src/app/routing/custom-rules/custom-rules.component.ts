@@ -21,108 +21,106 @@ interface CustomRule {
   selector: 'app-custom-rules',
   template: `
     <div class="page">
-      <h3>Firewall &amp; Forwarding Rules</h3>
+      <div class="header-row">
+        <h3>Firewall &amp; Forwarding Rules</h3>
+        <app-status-badge [label]="'router ' + (routeState||'unknown')" [state]="routeState||''"></app-status-badge>
+      </div>
+      <p *ngIf="routeState==='bad_custom_rules'" class="bad">
+        Malformed rules JSON — the daemon kept the previous ruleset.
+      </p>
 
-      <table class="table table-compact table-borderless" style="margin-bottom:20px;">
-        <tbody>
-          <tr><td class="label-col">Router State</td>
-            <td><app-status-badge [label]="routeState||'unknown'" [state]="routeState||''"></app-status-badge>
-              <span *ngIf="routeState==='bad_custom_rules'" class="bad">malformed rules JSON — daemon kept the previous ruleset</span>
-            </td></tr>
-        </tbody>
-      </table>
-
-      <!-- Firewall (custom) rules -->
-      <h4>Firewall Rules <span class="hint">(net.custom.rules)</span></h4>
-      <table class="table table-compact">
-        <thead>
-          <tr><th class="left">Action</th><th class="left">Proto</th><th>Dest Port</th>
-              <th>Src Port</th><th class="left">Forward To</th><th></th></tr>
-        </thead>
-        <tbody>
-          <tr *ngIf="!rules.length"><td colspan="6" class="muted">No firewall rules.</td></tr>
-          <tr *ngFor="let r of rules; let i = index">
-            <td class="left"><span class="pill" [class.drop]="r.action==='drop'">{{ r.action }}</span></td>
-            <td class="left">{{ r.proto }}</td>
-            <td>{{ r.dport != null ? r.dport : '—' }}</td>
-            <td>{{ r.sport != null ? r.sport : '—' }}</td>
-            <td class="left">{{ r.action==='forward' ? (r.to_ip + (r.to_port!=null ? ':'+r.to_port : '')) : '—' }}</td>
-            <td class="right">
-              <button class="btn btn-sm btn-danger-outline" *ngIf="isAdmin" (click)="removeRule(i)" [disabled]="saving">Delete</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <!-- Add-rule form -->
-      <div *ngIf="isAdmin" class="add-form">
-        <h4>Add Firewall Rule</h4>
-        <div class="form-grid" style="align-items:end;">
-          <clr-select-container>
-            <label>Action</label>
-            <select clrSelect [(ngModel)]="nAction">
-              <option *ngFor="let a of actions" [value]="a">{{ a }}</option>
-            </select>
-          </clr-select-container>
-          <clr-select-container>
-            <label>Protocol</label>
-            <select clrSelect [(ngModel)]="nProto">
-              <option *ngFor="let p of protos" [value]="p">{{ p }}</option>
-            </select>
-          </clr-select-container>
-          <clr-input-container>
-            <label>Dest Port</label>
-            <input clrInput type="number" [(ngModel)]="nDport" placeholder="optional" />
-          </clr-input-container>
-          <clr-input-container>
-            <label>Src Port</label>
-            <input clrInput type="number" [(ngModel)]="nSport" placeholder="optional" />
-          </clr-input-container>
-          <clr-input-container *ngIf="nAction==='forward'">
-            <label>Forward To IP</label>
-            <input clrInput [(ngModel)]="nToIp" placeholder="10.9.0.12" />
-          </clr-input-container>
-          <clr-input-container *ngIf="nAction==='forward'">
-            <label>Forward To Port</label>
-            <input clrInput type="number" [(ngModel)]="nToPort" placeholder="5684" />
-          </clr-input-container>
-          <div class="btn-cell">
-            <button class="btn btn-primary" (click)="addRule()" [disabled]="saving">
-              {{ saving ? 'Saving…' : 'Add Rule' }}
-            </button>
+      <!-- Add rule (admin) -->
+      <div class="card" *ngIf="isAdmin" style="margin-bottom:20px;">
+        <div class="card-header">Add Firewall Rule</div>
+        <div class="card-block">
+          <div class="form-grid" style="align-items:end;">
+            <clr-select-container>
+              <label>Action</label>
+              <select clrSelect [(ngModel)]="nAction">
+                <option *ngFor="let a of actions" [value]="a">{{ a }}</option>
+              </select>
+            </clr-select-container>
+            <clr-select-container>
+              <label>Protocol</label>
+              <select clrSelect [(ngModel)]="nProto">
+                <option *ngFor="let p of protos" [value]="p">{{ p }}</option>
+              </select>
+            </clr-select-container>
+            <clr-input-container>
+              <label>Dest Port</label>
+              <input clrInput type="number" [(ngModel)]="nDport" placeholder="optional" />
+            </clr-input-container>
+            <clr-input-container>
+              <label>Src Port</label>
+              <input clrInput type="number" [(ngModel)]="nSport" placeholder="optional" />
+            </clr-input-container>
+            <clr-input-container *ngIf="nAction==='forward'">
+              <label>Forward To IP</label>
+              <input clrInput [(ngModel)]="nToIp" placeholder="10.9.0.12" />
+            </clr-input-container>
+            <clr-input-container *ngIf="nAction==='forward'">
+              <label>Forward To Port</label>
+              <input clrInput type="number" [(ngModel)]="nToPort" placeholder="5684" />
+            </clr-input-container>
+            <!-- pad the forward row to a full 4 columns -->
+            <div *ngIf="nAction==='forward'"></div>
+            <div *ngIf="nAction==='forward'"></div>
           </div>
+          <button class="btn btn-primary" (click)="addRule()" [disabled]="saving">
+            {{ saving ? 'Saving…' : 'Add Rule' }}
+          </button>
         </div>
       </div>
 
+      <!-- Firewall (custom) rules -->
+      <h4>Firewall Rules <span class="hint">(net.custom.rules)</span></h4>
+      <clr-datagrid>
+        <clr-dg-column>Action</clr-dg-column>
+        <clr-dg-column>Protocol</clr-dg-column>
+        <clr-dg-column>Dest Port</clr-dg-column>
+        <clr-dg-column>Src Port</clr-dg-column>
+        <clr-dg-column>Forward To</clr-dg-column>
+        <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
+
+        <clr-dg-row *clrDgItems="let r of rules">
+          <clr-dg-cell>
+            <app-status-badge [label]="r.action"
+              [state]="r.action==='drop' ? 'exited' : 'connected'"></app-status-badge>
+          </clr-dg-cell>
+          <clr-dg-cell>{{ r.proto }}</clr-dg-cell>
+          <clr-dg-cell>{{ r.dport != null ? r.dport : '—' }}</clr-dg-cell>
+          <clr-dg-cell>{{ r.sport != null ? r.sport : '—' }}</clr-dg-cell>
+          <clr-dg-cell>{{ r.action==='forward' ? (r.to_ip + (r.to_port!=null ? ':'+r.to_port : '')) : '—' }}</clr-dg-cell>
+          <clr-dg-cell *ngIf="isAdmin">
+            <button class="btn btn-sm btn-danger" (click)="removeRule(r)" [disabled]="saving">Delete</button>
+          </clr-dg-cell>
+        </clr-dg-row>
+
+        <clr-dg-footer>{{ rules.length }} rule{{ rules.length===1?'':'s' }}</clr-dg-footer>
+      </clr-datagrid>
+
       <!-- Forwarding rules (derived, read-only) -->
       <h4 style="margin-top:28px;">Port Forwarding <span class="hint">(net.forward.ports → DNAT target)</span></h4>
-      <table class="table table-compact">
-        <thead><tr><th class="left">Port</th><th class="left">DNAT To</th></tr></thead>
-        <tbody>
-          <tr *ngIf="!forwardPorts.length"><td colspan="2" class="muted">No forwarded ports.</td></tr>
-          <tr *ngFor="let p of forwardPorts">
-            <td class="left">{{ p }}</td>
-            <td class="left">{{ targetIp || 'target IP' }}:{{ targetPort }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <clr-datagrid>
+        <clr-dg-column>Port</clr-dg-column>
+        <clr-dg-column>DNAT To</clr-dg-column>
+
+        <clr-dg-row *clrDgItems="let p of forwardPorts">
+          <clr-dg-cell>{{ p }}</clr-dg-cell>
+          <clr-dg-cell>{{ (targetIp || 'target IP') + ':' + targetPort }}</clr-dg-cell>
+        </clr-dg-row>
+
+        <clr-dg-footer>{{ forwardPorts.length }} port{{ forwardPorts.length===1?'':'s' }}</clr-dg-footer>
+      </clr-datagrid>
     </div>
   `,
   styles: [`
     .page { padding: 24px; }
-    h3 { color: #333; margin: 0 0 16px 0; font-size: 16px; font-weight: 600; }
+    .header-row { display: flex; align-items: center; gap: 12px; margin: 0 0 16px 0; }
+    h3 { color: #333; margin: 0; font-size: 16px; font-weight: 600; }
     h4 { color: #555; margin: 18px 0 10px 0; font-size: 13px; font-weight: 600; }
     .hint { color: #888; font-weight: normal; font-size: 11px; }
-    .muted { color: #999; }
-    .bad { color: #c62828; font-size: 12px; margin-left: 8px; }
-    table { width: 100%; }
-    th.left, td.left { text-align: left; }
-    td.right, th:last-child { text-align: right; }
-    .pill { background: #e3f2e8; color: #2e7d32; padding: 1px 8px; border-radius: 10px; font-size: 11px; text-transform: uppercase; }
-    .pill.drop { background: #fdecea; color: #c62828; }
-    .add-form { margin-top: 16px; }
-    .btn-cell { display: flex; align-items: flex-end; }
-    .btn-cell .btn-primary { white-space: nowrap; }
+    .bad { color: #c62828; font-size: 12px; margin: 0 0 12px 0; }
   `]
 })
 export class CustomRulesComponent implements OnInit {
@@ -183,9 +181,8 @@ export class CustomRulesComponent implements OnInit {
     this.persist([...this.rules, rule], 'Rule added');
   }
 
-  removeRule(i: number): void {
-    const next = this.rules.slice();
-    next.splice(i, 1);
+  removeRule(rule: CustomRule): void {
+    const next = this.rules.filter(r => r !== rule);
     this.persist(next, 'Rule deleted');
   }
 

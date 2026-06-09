@@ -47,13 +47,22 @@ import { DataStoreService } from '../../../common/datastore.service';
         </div>
       </ng-container>
 
-      <table class="table table-compact table-borderless" style="margin-top:24px;">
-        <tbody>
-          <tr><td class="label-col">State</td><td><app-status-badge [label]="routeState||'unknown'" [state]="routeState||''"></app-status-badge></td></tr>
-          <tr><td class="label-col">Rules Applied</td><td>{{ rulesApplied }}</td></tr>
-          <tr><td class="label-col">Last Apply</td><td>{{ lastApply || '—' }}</td></tr>
-        </tbody>
-      </table>
+      <clr-datagrid style="margin-top:24px;">
+        <clr-dg-column>Property</clr-dg-column>
+        <clr-dg-column>Value</clr-dg-column>
+        <clr-dg-row>
+          <clr-dg-cell>State</clr-dg-cell>
+          <clr-dg-cell><app-status-badge [label]="routeState||'unknown'" [state]="routeState||''"></app-status-badge></clr-dg-cell>
+        </clr-dg-row>
+        <clr-dg-row>
+          <clr-dg-cell>Rules Applied</clr-dg-cell>
+          <clr-dg-cell>{{ rulesApplied }}</clr-dg-cell>
+        </clr-dg-row>
+        <clr-dg-row>
+          <clr-dg-cell>Last Apply</clr-dg-cell>
+          <clr-dg-cell>{{ lastApply || '—' }}</clr-dg-cell>
+        </clr-dg-row>
+      </clr-datagrid>
     </div>
   `,
   styles: [`

@@ -16,11 +16,22 @@ import { ToastService } from '../../common/toast.service';
       </div>
       <div *ngIf="result" style="margin-top:24px;padding:16px;background:#e8f5e9;border-radius:6px;">
         <h4 style="margin:0 0 12px 0;color:#2e7d32;">Provisioned Successfully</h4>
-        <table class="table table-compact table-borderless">
-          <tr><td class="label-col">Endpoint</td><td><code>{{result.endpoint}}</code></td></tr>
-          <tr><td class="label-col">Tunnel IP</td><td>{{result.tun_ip}}</td></tr>
-          <tr><td class="label-col">Proxy Port</td><td>{{result.proxy_port}}</td></tr>
-        </table>
+        <clr-datagrid>
+          <clr-dg-column>Property</clr-dg-column>
+          <clr-dg-column>Value</clr-dg-column>
+          <clr-dg-row>
+            <clr-dg-cell>Endpoint</clr-dg-cell>
+            <clr-dg-cell><code>{{result.endpoint}}</code></clr-dg-cell>
+          </clr-dg-row>
+          <clr-dg-row>
+            <clr-dg-cell>Tunnel IP</clr-dg-cell>
+            <clr-dg-cell>{{result.tun_ip}}</clr-dg-cell>
+          </clr-dg-row>
+          <clr-dg-row>
+            <clr-dg-cell>Proxy Port</clr-dg-cell>
+            <clr-dg-cell>{{result.proxy_port}}</clr-dg-cell>
+          </clr-dg-row>
+        </clr-datagrid>
       </div>
     </div>
   `,

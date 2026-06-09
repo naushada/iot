@@ -36,24 +36,24 @@ import { UserAccount } from '../../common/app-globals';
         <p class="hint">Existing ID updates that user's password &amp; access. The built-in <code>admin</code> can't be created or deleted here.</p>
 
         <!-- User list -->
-        <table class="table table-compact" style="margin-top:20px;">
-          <thead>
-            <tr><th class="left">User ID</th><th class="left">Access</th><th></th></tr>
-          </thead>
-          <tbody>
-            <tr *ngIf="loading"><td colspan="3">Loading…</td></tr>
-            <tr *ngFor="let u of users">
-              <td class="left">{{ u.id }}</td>
-              <td class="left">
-                <app-status-badge [label]="u.access" [state]="u.access==='Admin' ? 'connected' : 'idle'"></app-status-badge>
-              </td>
-              <td class="right">
-                <button class="btn btn-sm btn-danger-outline" *ngIf="u.id !== 'admin'" (click)="remove(u.id)">Delete</button>
-                <span *ngIf="u.id === 'admin'" class="hint">built-in</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <clr-datagrid [clrDgLoading]="loading" style="margin-top:20px;">
+          <clr-dg-column>User ID</clr-dg-column>
+          <clr-dg-column>Access</clr-dg-column>
+          <clr-dg-column>Actions</clr-dg-column>
+
+          <clr-dg-row *clrDgItems="let u of users">
+            <clr-dg-cell>{{ u.id }}</clr-dg-cell>
+            <clr-dg-cell>
+              <app-status-badge [label]="u.access" [state]="u.access==='Admin' ? 'connected' : 'idle'"></app-status-badge>
+            </clr-dg-cell>
+            <clr-dg-cell>
+              <button class="btn btn-sm btn-danger" *ngIf="u.id !== 'admin'" (click)="remove(u.id)">Delete</button>
+              <span *ngIf="u.id === 'admin'" class="hint">built-in</span>
+            </clr-dg-cell>
+          </clr-dg-row>
+
+          <clr-dg-footer>{{ users.length }} user{{ users.length===1?'':'s' }}</clr-dg-footer>
+        </clr-datagrid>
       </ng-container>
 
       <ng-template #noAccess>
@@ -67,9 +67,6 @@ import { UserAccount } from '../../common/app-globals';
     .hint { color: #888; font-size: 12px; margin-top: 8px; }
     .btn-cell { display: flex; align-items: flex-end; }
     .btn-cell .btn-primary { white-space: nowrap; }
-    table { width: 100%; }
-    th.left, td.left { text-align: left; }
-    td.right, th:last-child { text-align: right; }
   `]
 })
 export class UsersComponent implements OnInit {
