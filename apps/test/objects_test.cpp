@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include "lwm2m_cert_chunk.hpp"
 #include "lwm2m_object_3_device.hpp"
 #include "lwm2m_object_cert.hpp"
 #include "lwm2m_object_store.hpp"
@@ -19,6 +20,15 @@ using ::lwm2m::Resource;
 using ::lwm2m::ResourceType;
 using ::lwm2m::has_op;
 namespace objects = ::lwm2m::objects;
+
+// RID 1 of Object 2048 now carries chunk-framed payloads (zip + chunk codec);
+// feed a full artifact PEM through the codec. Returns the last write rc.
+static int cwrite(ObjectStore& store, std::uint32_t iid, const std::string& pem) {
+    int rc = 0;
+    for (auto& c : ::lwm2m::certchunk::encode(pem))
+        rc = store.find(2048, iid, 1)->write(c);
+    return rc;
+}
 
 namespace {
 
@@ -290,9 +300,9 @@ TEST(CertObject, write_then_apply_materializes_cert_family) {
     objects::install_cert(store, certDir);
 
     // Server WRITEs each artifact's opaque data (staged, not yet on disk).
-    EXPECT_EQ(0, store.find(2048, 0, 1)->write("-----CA PEM-----\n"));
-    EXPECT_EQ(0, store.find(2048, 1, 1)->write("-----CERT PEM-----\n"));
-    EXPECT_EQ(0, store.find(2048, 2, 1)->write("-----KEY PEM-----\n"));
+    EXPECT_EQ(0, cwrite(store, 0, "-----CA PEM-----\n"));
+    EXPECT_EQ(0, cwrite(store, 1, "-----CERT PEM-----\n"));
+    EXPECT_EQ(0, cwrite(store, 2, "-----KEY PEM-----\n"));
     // Nothing on disk until the apply trigger fires.
     struct stat stbuf;
     EXPECT_NE(0, ::stat((certDir + "/ca.crt").c_str(), &stbuf));
@@ -328,14 +338,14 @@ TEST(CertObject, apply_invokes_reload_hook_and_runs_verify) {
     // exercises the hook + verify path, not the family-completeness gate).
     objects::install_cert(store, "/unused", std::move(h), /*require_complete*/false);
 
-    store.find(2048, 1, 1)->write("cert-bytes");
+    cwrite(store, 1, "cert-bytes");
     store.find(2048, 1, 2)->write("good");          // hash → verify runs, passes
     EXPECT_EQ(0, store.find(2048, 0, 3)->execute(""));
     EXPECT_EQ(1, applied);
     EXPECT_EQ(1, verified);
 
     // A bad hash aborts the apply (reload hook not re-invoked).
-    store.find(2048, 2, 1)->write("key-bytes");
+    cwrite(store, 2, "key-bytes");
     store.find(2048, 2, 2)->write("bad");
     EXPECT_NE(0, store.find(2048, 0, 3)->execute(""));
     EXPECT_EQ(1, applied);                            // unchanged
@@ -351,15 +361,15 @@ TEST(CertObject, apply_deferred_until_family_complete_then_self_heals) {
     objects::install_cert(store, certDir);   // require_complete = true (default)
 
     // First push lost the key WRITE: only ca + cert staged.
-    store.find(2048, 0, 1)->write("CA");
-    store.find(2048, 1, 1)->write("CERT");
+    cwrite(store, 0, "CA");
+    cwrite(store, 1, "CERT");
     EXPECT_NE(0, store.find(2048, 0, 3)->execute(""));   // deferred, not applied
     struct stat st;
     EXPECT_NE(0, ::stat((certDir + "/ca.crt").c_str(), &st));   // nothing written
     EXPECT_EQ("", store.find(2048, 0, 4)->read());             // Applied still empty
 
     // Re-push fills the missing key; the retained ca+cert + new key now apply.
-    store.find(2048, 2, 1)->write("KEY");
+    cwrite(store, 2, "KEY");
     EXPECT_EQ(0, store.find(2048, 0, 3)->execute(""));
     EXPECT_EQ("CA",   slurp(certDir + "/ca.crt"));
     EXPECT_EQ("CERT", slurp(certDir + "/client.crt"));
@@ -382,9 +392,9 @@ TEST(CertObject, applied_fingerprint_is_deterministic_for_same_family) {
                      const std::string& k) {
         ObjectStore store;
         objects::install_cert(store, "/unused", h);
-        store.find(2048, 0, 1)->write(ca);
-        store.find(2048, 1, 1)->write(c);
-        store.find(2048, 2, 1)->write(k);
+        cwrite(store, 0, ca);
+        cwrite(store, 1, c);
+        cwrite(store, 2, k);
         EXPECT_EQ(0, store.find(2048, 0, 3)->execute(""));
         return store.find(2048, 0, 4)->read();
     };

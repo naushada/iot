@@ -1,4 +1,5 @@
 #include "lwm2m_object_cert.hpp"
+#include "lwm2m_cert_chunk.hpp"
 
 #include <cerrno>
 #include <cstdint>
@@ -126,17 +127,33 @@ ObjectInstance make_instance(std::uint32_t iid,
         r.read = [type]() { return type; };
         inst.resources[0] = std::move(r);
     }
-    // RID 1 — Certificate Data (opaque, write-only; staged).
+    // RID 1 — Certificate Data (opaque, write-only). The server zips + chunks
+    // each artifact (large PEMs exceed a DTLS record), so each WRITE is one
+    // chunk; reassemble + inflate per instance, then stage the full PEM.
     {
+        auto reasm = std::make_shared<::lwm2m::certchunk::Reassembler>();
         Resource r;
         r.rid = 1; r.name = "Certificate Data";
         r.type = ResourceType::Opaque; r.ops = Operations::W;
-        r.write = [staging, type](const std::string& v) {
+        r.write = [staging, type, reasm](const std::string& v) -> int {
+            std::string pem;
+            int rc = reasm->feed(v, pem);
+            if (rc < 0) {
+                ACE_ERROR_RETURN((LM_ERROR,
+                    ACE_TEXT("%D [cert-obj] %M %N:%l malformed %C chunk\n"),
+                    type.c_str()), -1);
+            }
+            if (rc == 0) {
+                ACE_DEBUG((LM_INFO,
+                    ACE_TEXT("%D [cert-obj] %M %N:%l buffered %C chunk (waiting "
+                             "for more)\n"), type.c_str()));
+                return 0;   // more chunks to come
+            }
             auto& s = (*staging)[type];
-            s.pem = v; s.present = true;
+            s.pem = std::move(pem); s.present = true;
             ACE_DEBUG((LM_INFO,
-                ACE_TEXT("%D [cert-obj] %M %N:%l staged %C data (%d bytes)\n"),
-                type.c_str(), static_cast<int>(v.size())));
+                ACE_TEXT("%D [cert-obj] %M %N:%l reassembled %C (%d bytes)\n"),
+                type.c_str(), static_cast<int>(s.pem.size())));
             return 0;
         };
         inst.resources[1] = std::move(r);

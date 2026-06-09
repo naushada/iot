@@ -2,6 +2,7 @@
 #define __lwm2m_dm_server_hpp__
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -99,11 +100,13 @@ constexpr std::uint32_t kCredRidData   = 1;   ///< RID 1 Certificate Data (opaqu
 constexpr std::uint32_t kCredRidApply  = 3;   ///< RID 3 Apply (Execute)
 
 /// Build the server→device push sequence for a VPN cert family over Object
-/// 2048: three opaque WRITEs (CA/cert/key) to /2048/{0,1,2}/1 then an EXECUTE
-/// of Apply /2048/0/3. The four frames use message ids msgid0..msgid0+3 and
-/// the same token; ship them to the registered client's peer in order via
-/// UDPAdapter::send_async. Returns the frames in send order.
-std::vector<std::string> build_cert_push(std::uint16_t msgid0,
+/// 2048. Each artifact (CA/cert/key) is zipped + chunked (see
+/// lwm2m_cert_chunk.hpp) into one or more opaque WRITEs to /2048/{0,1,2}/1 —
+/// large PEMs exceed a single DTLS record, so they cannot be sent whole — then
+/// an EXECUTE of Apply /2048/0/3 commits the family. Every frame draws a fresh
+/// id from `next_msgid` and carries `token`; ship them to the client's peer in
+/// order via UDPAdapter::send_async. Returns the frames in send order.
+std::vector<std::string> build_cert_push(const std::function<std::uint16_t()>& next_msgid,
                                          const std::string& token,
                                          const std::string& ca_pem,
                                          const std::string& cert_pem,

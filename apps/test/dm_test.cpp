@@ -5,6 +5,7 @@
 #include "lwm2m_codec_plaintext.hpp"
 #include "lwm2m_codec_registry.hpp"      // CF_PlainText
 #include "lwm2m_codec_tlv.hpp"
+#include "lwm2m_cert_chunk.hpp"
 #include "lwm2m_dm_client.hpp"
 #include "lwm2m_dm_server.hpp"
 #include "lwm2m_object_cert.hpp"
@@ -381,9 +382,11 @@ TEST(CertPush, server_push_materializes_family_on_device) {
     const std::string cert = "-----BEGIN CERTIFICATE-----\nCLIENT\n-----END CERTIFICATE-----\n";
     const std::string key  = "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n";
 
-    auto frames = dmsrv::build_cert_push(/*msgid0*/ 0x2000,
+    std::uint16_t mid = 0x2000;
+    auto frames = dmsrv::build_cert_push([&mid] { return mid++; },
                                          std::string{static_cast<char>(0x04)},
                                          ca, cert, key);
+    // Small PEMs → 1 chunk each → 3 WRITEs + 1 EXECUTE.
     ASSERT_EQ(4u, frames.size());
 
     // First three WRITEs stage; nothing on disk yet.
@@ -413,6 +416,53 @@ TEST(CertPush, server_push_materializes_family_on_device) {
     std::remove(certDir.c_str());
 }
 
+/* ─────────────── zip + chunk codec for large cert payloads ─────────────── */
+
+TEST(CertChunk, small_payload_single_unzipped_chunk) {
+    auto frames = ::lwm2m::certchunk::encode("hello", /*maxChunkData*/ 1019);
+    ASSERT_EQ(1u, frames.size());
+    EXPECT_EQ(0, frames[0][0] & 1);        // not zipped
+    ::lwm2m::certchunk::Reassembler r;
+    std::string out;
+    EXPECT_EQ(1, r.feed(frames[0], out));
+    EXPECT_EQ("hello", out);
+}
+
+TEST(CertChunk, large_payload_zipped_and_chunked_roundtrips) {
+    // ~4 KB of PEM-ish text (compresses, then exceeds one chunk).
+    std::string big;
+    for (int i = 0; i < 120; ++i)
+        big += "-----CERT LINE " + std::to_string(i) + " AAAAAAAAAAAAAAAAAAAA-----\n";
+    ASSERT_GT(big.size(), 1024u);
+
+    auto frames = ::lwm2m::certchunk::encode(big, /*maxChunkData*/ 200);
+    ASSERT_GT(frames.size(), 1u);          // multiple chunks
+    EXPECT_EQ(1, frames[0][0] & 1);        // zipped
+    for (auto& f : frames) EXPECT_LE(f.size(), 200u + ::lwm2m::certchunk::kHeader);
+
+    // Reassemble in order.
+    ::lwm2m::certchunk::Reassembler r;
+    std::string out; int rc = 0;
+    for (auto& f : frames) { rc = r.feed(f, out); }
+    EXPECT_EQ(1, rc);
+    EXPECT_EQ(big, out);
+
+    // Out-of-order + duplicate delivery still reassembles.
+    ::lwm2m::certchunk::Reassembler r2;
+    std::string out2; rc = 0;
+    rc = r2.feed(frames.back(), out2);     EXPECT_EQ(0, rc);
+    rc = r2.feed(frames.back(), out2);     EXPECT_EQ(0, rc);   // dup ignored
+    for (std::size_t i = 0; i + 1 < frames.size(); ++i) rc = r2.feed(frames[i], out2);
+    EXPECT_EQ(1, rc);
+    EXPECT_EQ(big, out2);
+}
+
+TEST(CertChunk, malformed_chunk_rejected) {
+    ::lwm2m::certchunk::Reassembler r;
+    std::string out;
+    EXPECT_EQ(-1, r.feed("xy", out));       // shorter than the header
+}
+
 // Server-side confirmation: after the device applies a family, the DM server
 // READs /2048/0/4 (status) and must CONSUME the device's 2.05 response — the
 // payload (applied fingerprint) routed to the dmResponseHandler, the token
@@ -425,9 +475,12 @@ TEST(CertConfirm, server_consumes_status_read_response) {
 
     auto store = std::make_shared<ObjectStore>();
     ::lwm2m::objects::install_cert(*store, certDir);
-    store->find(2048, 0, 1)->write("CA");
-    store->find(2048, 1, 1)->write("CERT");
-    store->find(2048, 2, 1)->write("KEY");
+    // RID 1 now carries chunk-framed payloads — feed via the codec.
+    auto feed = [&](std::uint32_t iid, const std::string& pem) {
+        for (auto& c : ::lwm2m::certchunk::encode(pem))
+            store->find(2048, iid, 1)->write(c);
+    };
+    feed(0, "CA"); feed(1, "CERT"); feed(2, "KEY");
     ASSERT_EQ(0, store->find(2048, 0, 3)->execute(""));
     const std::string fp = store->find(2048, 0, 4)->read();
     ASSERT_FALSE(fp.empty());

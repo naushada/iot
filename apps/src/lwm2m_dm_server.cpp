@@ -4,6 +4,7 @@
 
 #include "lwm2m_coap_builder.hpp"
 #include "lwm2m_codec_registry.hpp"   // ContentFormat enum: CF_LinkFormat, CF_LwM2MTlv
+#include "lwm2m_cert_chunk.hpp"       // zip + chunk codec for large cert WRITEs
 
 namespace lwm2m { namespace dmsrv {
 
@@ -134,25 +135,26 @@ std::string build_write_attributes(std::uint16_t messageId,
     return ss.str();
 }
 
-std::vector<std::string> build_cert_push(std::uint16_t msgid0,
+std::vector<std::string> build_cert_push(const std::function<std::uint16_t()>& next_msgid,
                                          const std::string& token,
                                          const std::string& ca_pem,
                                          const std::string& cert_pem,
                                          const std::string& key_pem) {
     std::vector<std::string> f;
-    f.reserve(4);
-    // WRITEs are opaque (CF_OctetStream); the device stages each, then Apply
+    // Each artifact: zip+chunk into opaque WRITEs (CF_OctetStream) to its
+    // instance's data RID. The device reassembles + inflates, then Apply
     // commits the family. PUT (partial=false) targets the single data RID.
-    f.push_back(build_write(static_cast<std::uint16_t>(msgid0 + 0), token,
-                            kCredObjectOid, kCredInstCa,   kCredRidData,
-                            CF_OctetStream, ca_pem,   /*partial*/false));
-    f.push_back(build_write(static_cast<std::uint16_t>(msgid0 + 1), token,
-                            kCredObjectOid, kCredInstCert, kCredRidData,
-                            CF_OctetStream, cert_pem, /*partial*/false));
-    f.push_back(build_write(static_cast<std::uint16_t>(msgid0 + 2), token,
-                            kCredObjectOid, kCredInstKey,  kCredRidData,
-                            CF_OctetStream, key_pem,  /*partial*/false));
-    f.push_back(build_execute(static_cast<std::uint16_t>(msgid0 + 3), token,
+    auto push_artifact = [&](std::uint32_t iid, const std::string& pem) {
+        for (auto& chunk : ::lwm2m::certchunk::encode(pem)) {
+            f.push_back(build_write(next_msgid(), token, kCredObjectOid, iid,
+                                    kCredRidData, CF_OctetStream, chunk,
+                                    /*partial*/false));
+        }
+    };
+    push_artifact(kCredInstCa,   ca_pem);
+    push_artifact(kCredInstCert, cert_pem);
+    push_artifact(kCredInstKey,  key_pem);
+    f.push_back(build_execute(next_msgid(), token,
                               kCredObjectOid, kCredInstCa, kCredRidApply, ""));
     return f;
 }
