@@ -4,6 +4,7 @@
 #include <variant>
 
 #include "lua_config.hpp"
+#include "lwm2m_object_cert.hpp"
 
 namespace lwm2m { namespace objects {
 
@@ -169,6 +170,10 @@ int install_canonical_objects(ObjectStore& store,
     rc |= install_firmware(store, configDir);
     rc |= install_location(store);
     rc |= install_connstats(store);
+    // Custom OID 2048 — cloud-pushed VPN/TLS credential family. Default
+    // store writes the cert family under /etc/iot/vpn (= vpn.{ca,cert,key}.path
+    // defaults); a cert sidecar reloads openvpn-client on the change.
+    rc |= install_cert(store, "/etc/iot/vpn");
     return rc;
 }
 
