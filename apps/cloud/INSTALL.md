@@ -28,7 +28,7 @@ Both start the same multi-container stack via `docker compose`.
   docker compose version            # verify the compose plugin is present
   ```
 - **git** (to clone the repo for `run.sh` + compose file).
-- **Open ports** on the host (defaults; configurable, see §5):
+- **Open ports** on the host (defaults; configurable, see §6):
 
   | Port | Proto | Purpose |
   |------|-------|---------|
@@ -51,6 +51,18 @@ cd iot/apps/cloud
 
 `run.sh` and `docker-compose.yml` live here in `apps/cloud/`. Run all commands
 below from this directory.
+
+**Minimal — no full clone.** The image is self-contained (binaries + schemas +
+UI), so the host only needs `run.sh` + `docker-compose.yml`. Instead of cloning
+you can fetch just those two (keep them together in one directory):
+
+```bash
+mkdir -p iot-cloud && cd iot-cloud
+curl -fsSLO https://raw.githubusercontent.com/naushada/iot/main/apps/cloud/run.sh
+curl -fsSLO https://raw.githubusercontent.com/naushada/iot/main/apps/cloud/docker-compose.yml
+chmod +x run.sh
+./run.sh
+```
 
 ---
 
@@ -100,7 +112,39 @@ Memory / FDs / Threads.
 
 ---
 
-## 5. Configuration (env vars)
+## 5. Production hardening
+
+Before exposing the host to the network, lock down the defaults:
+
+1. **Change the admin password.** Use the **Users** page in the UI, or set it
+   directly (SHA-256, hashed server-side — there is no plaintext path):
+   ```bash
+   HASH=$(printf '%s' 'YOUR_NEW_PASSWORD' | sha256sum | cut -d' ' -f1)
+   docker exec iot-ds-server ds-cli --socket=/var/run/iot/data_store.sock \
+     set auth.users.admin.password.hash "\"$HASH\""
+   ```
+2. **Add per-operator users** (optional) on the **Users** page — each is
+   `Admin` (read/write) or `Viewer` (read-only). They're stored hashed in the
+   `auth.users.accounts` key; the built-in `admin` cannot be deleted.
+3. **Enable HTTPS.** iot-httpd terminates TLS itself (no reverse proxy needed);
+   changes hot-reload in ~2s:
+   ```bash
+   DS(){ docker exec iot-ds-server ds-cli --socket=/var/run/iot/data_store.sock "$@"; }
+   DS set http.listen.scheme '"https"'
+   DS set http.tls.cert '"/etc/iot/tls/server.crt"'
+   DS set http.tls.key  '"/etc/iot/tls/server.key"'
+   DS set http.tls.ca   '"/etc/iot/tls/clients-ca.crt"'   # optional: enables mutual TLS
+   ```
+   Make the cert/key paths resolve inside the container (bind-mount them or
+   drop them in the `iot-etc` volume under `/etc/iot/tls`).
+4. **Keep auth enabled** — `http.auth.enabled=true` is the default. Only disable
+   it for local debugging: `DS set http.auth.enabled false`.
+
+See `DEPLOY.md` for TLS/PKI and OpenVPN server-certificate details.
+
+---
+
+## 6. Configuration (env vars)
 
 Override on the command line — they pass through to `docker-compose.yml`:
 
@@ -113,7 +157,7 @@ Override on the command line — they pass through to `docker-compose.yml`:
 | `CLOUD_IMAGE` | `docker.io/naushada/iot-cloud:latest` | Image to run |
 | `PULL` | `1` | Pull the image on start. `0` = use a local `./run.sh build` as-is |
 | `PLATFORM` | auto (`uname -m`) | Image arch to pull. The published image is multi-arch (`linux/amd64` + `linux/arm64`), so the host arch is selected automatically; override e.g. `linux/amd64` |
-| `RESET_CONFIG` | `1` | Reload schema/config from the image on each start (see §7). `0` keeps manual `/etc/iot` edits |
+| `RESET_CONFIG` | `1` | Reload schema/config from the image on each start (see §8). `0` keeps manual `/etc/iot` edits |
 
 Example:
 
@@ -123,7 +167,7 @@ HTTP_PORT=8443 VPN_SUBNET=10.8.0.0/24 ./run.sh
 
 ---
 
-## 6. Day-to-day commands
+## 7. Day-to-day commands
 
 ```bash
 ./run.sh            # start (pulls image if missing)
@@ -136,7 +180,7 @@ HTTP_PORT=8443 VPN_SUBNET=10.8.0.0/24 ./run.sh
 
 ---
 
-## 7. Updating to a new version
+## 8. Updating to a new version
 
 ```bash
 git pull                                   # latest run.sh / compose / schemas
@@ -153,7 +197,7 @@ volumes and are preserved across updates. Set `RESET_CONFIG=0` to opt out.
 
 ---
 
-## 8. Persistence & volumes
+## 9. Persistence & volumes
 
 | Volume | Mount | Content | Reset on start? |
 |--------|-------|---------|-----------------|
@@ -173,7 +217,7 @@ docker volume rm cloud_iot-etc cloud_iot-lib cloud_iot-run cloud_iot-vpn cloud_i
 
 ---
 
-## 9. Uninstall
+## 10. Uninstall
 
 ```bash
 ./run.sh stop
@@ -183,7 +227,7 @@ docker rmi docker.io/naushada/iot-cloud:latest
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 - **Metrics blank for some services** — stale config volume with an old
   schema. The default `RESET_CONFIG=1` fixes this on the next `./run.sh`; or
