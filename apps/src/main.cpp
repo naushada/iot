@@ -516,10 +516,8 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                 std::string ca, cert, key;
                 if (vpn_family(reg.endpoint, ca, cert, key)) {
                     std::string ctok{static_cast<char>(0x04)};
-                    const std::uint16_t m0 = next_msgid();
-                    next_msgid(); next_msgid(); next_msgid();   // reserve 4 ids
                     for (auto& fr : ::lwm2m::dmsrv::build_cert_push(
-                             m0, ctok, ca, cert, key))
+                             next_msgid, ctok, ca, cert, key))
                         ctx->send_async(fr, reg.peerHost, reg.peerPort);
                     ACE_DEBUG((LM_INFO,
                         ACE_TEXT("%D lwm2m:thread:%t %M %N:%l pushed VPN cert to "
