@@ -417,7 +417,8 @@ int main(int argc, char** argv) {
                                     ds_str(ds, "cloud.endpoint.credentials", "[]");
                                 const std::string next =
                                     server::lwm2m::upsert_vpn_cert(
-                                        cur, *ep, mc->client_crt, mc->client_key);
+                                        cur, *ep, mc->ca_crt,
+                                        mc->client_crt, mc->client_key);
                                 ds.set("cloud.endpoint.credentials",
                                        data_store::Value{next});
                                 ACE_DEBUG((LM_INFO,

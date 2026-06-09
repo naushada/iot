@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 /**
  * @file lwm2m_dm_server.hpp
@@ -85,6 +86,28 @@ std::string build_write_attributes(std::uint16_t messageId,
                                    std::int32_t iid,
                                    std::int32_t rid,
                                    const AttributeUpdate& upd);
+
+// ── Custom credential-provisioning object (OID 2048) ────────────────────
+// The cloud pushes the VPN client cert family to the device's Object 2048
+// (apps/src/lwm2m_object_cert.cpp): one instance per artifact, RID 1 the
+// opaque data, RID 3 (instance 0) the Apply execute.
+constexpr std::uint32_t kCredObjectOid = 2048;
+constexpr std::uint32_t kCredInstCa    = 0;   ///< instance 0, Type="ca"
+constexpr std::uint32_t kCredInstCert  = 1;   ///< instance 1, Type="cert"
+constexpr std::uint32_t kCredInstKey   = 2;   ///< instance 2, Type="key"
+constexpr std::uint32_t kCredRidData   = 1;   ///< RID 1 Certificate Data (opaque, W)
+constexpr std::uint32_t kCredRidApply  = 3;   ///< RID 3 Apply (Execute)
+
+/// Build the server→device push sequence for a VPN cert family over Object
+/// 2048: three opaque WRITEs (CA/cert/key) to /2048/{0,1,2}/1 then an EXECUTE
+/// of Apply /2048/0/3. The four frames use message ids msgid0..msgid0+3 and
+/// the same token; ship them to the registered client's peer in order via
+/// UDPAdapter::send_async. Returns the frames in send order.
+std::vector<std::string> build_cert_push(std::uint16_t msgid0,
+                                         const std::string& token,
+                                         const std::string& ca_pem,
+                                         const std::string& cert_pem,
+                                         const std::string& key_pem);
 
 }} // namespace lwm2m::dmsrv
 

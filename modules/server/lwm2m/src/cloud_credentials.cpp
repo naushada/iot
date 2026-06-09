@@ -100,11 +100,13 @@ std::string upsert_credential(const std::string& array_json,
 
 std::string upsert_vpn_cert(const std::string& array_json,
                             const std::string& serial,
+                            const std::string& ca_cert_pem,
                             const std::string& client_cert_pem,
                             const std::string& client_key_pem) {
     json arr = parse_array(array_json);
     for (auto& e : arr) {
         if (e.is_object() && e.value("serial", "") == serial) {
+            e["vpn.ca.cert"]     = ca_cert_pem;
             e["vpn.client.cert"] = client_cert_pem;
             e["vpn.client.key"]  = client_key_pem;
             return arr.dump();
@@ -115,11 +117,28 @@ std::string upsert_vpn_cert(const std::string& array_json,
     json rec = {
         {"serial",          serial},
         {"identity",        format_identity(serial)},
+        {"vpn.ca.cert",     ca_cert_pem},
         {"vpn.client.cert", client_cert_pem},
         {"vpn.client.key",  client_key_pem},
     };
     arr.push_back(rec);
     return arr.dump();
+}
+
+std::optional<VpnCertFamily> vpn_cert_for(const std::string& array_json,
+                                          const std::string& serial) {
+    json arr = parse_array(array_json);
+    for (const auto& e : arr) {
+        if (!e.is_object() || e.value("serial", "") != serial) continue;
+        VpnCertFamily fam;
+        fam.ca   = e.value("vpn.ca.cert",     "");
+        fam.cert = e.value("vpn.client.cert", "");
+        fam.key  = e.value("vpn.client.key",  "");
+        if (fam.ca.empty() || fam.cert.empty() || fam.key.empty())
+            return std::nullopt;   // no (complete) cert minted yet
+        return fam;
+    }
+    return std::nullopt;
 }
 
 std::string remove_credential(const std::string& array_json,
