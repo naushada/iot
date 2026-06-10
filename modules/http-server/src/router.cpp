@@ -75,6 +75,11 @@ void Router::set_static_dir(std::string dir) {
     m_static_dir = std::move(dir);
 }
 
+void Router::set_firmware_dir(std::string url_prefix, std::string dir) {
+    m_fw_prefix = std::move(url_prefix);
+    m_fw_dir = std::move(dir);
+}
+
 HttpResponse Router::route(const HttpParser::Request& req) const {
     auto it = m_routes.find({req.method, req.path});
     if (it != m_routes.end()) {
@@ -88,6 +93,33 @@ HttpResponse Router::route(const HttpParser::Request& req) const {
             r.body = R"({"ok":false,"err":"method not allowed"})";
             return r;
         }
+    }
+
+    // ── Firmware feed (OTA .ipk) ───────────────────────────────
+    // Served under a URL prefix with NO SPA fallback: a missing file is a
+    // real 404, and any '..' in the path is rejected (no traversal).
+    if (!m_fw_dir.empty() && !m_fw_prefix.empty() && req.method == "GET" &&
+        req.path.rfind(m_fw_prefix, 0) == 0) {
+        if (req.path.find("..") != std::string::npos) {
+            HttpResponse r;
+            r.status = 400;
+            r.body = R"({"ok":false,"err":"bad path"})";
+            return r;
+        }
+        std::string rel = req.path.substr(m_fw_prefix.size());
+        std::string fpath = m_fw_dir;
+        if (!fpath.empty() && fpath.back() != '/') fpath += '/';
+        fpath += rel;
+        HttpResponse r;
+        if (file_exists(fpath)) {
+            r.status = 200;
+            r.content_type = mime_type(fpath);
+            r.body = read_file(fpath);
+        } else {
+            r.status = 404;
+            r.body = R"({"ok":false,"err":"firmware not found"})";
+        }
+        return r;
     }
 
     // ── Static file serving ───────────────────────────────────

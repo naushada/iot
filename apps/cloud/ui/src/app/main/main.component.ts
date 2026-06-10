@@ -24,6 +24,7 @@ export class MainComponent implements OnInit {
     { id: 'services',  label: 'Services',  svg: 'assets/icons/services.svg' },
     { id: 'logs',      label: 'Logs',      svg: 'assets/icons/logs.svg' },
     { id: 'users',     label: 'Users',     svg: 'assets/icons/services.svg' },
+    { id: 'software',  label: 'Software',  svg: 'assets/icons/services.svg' },
   ];
 
   get isAdmin(): boolean { return this.session.isAdmin; }

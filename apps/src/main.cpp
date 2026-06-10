@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>   // std::system (OTA apply launcher)
 #include <fstream>
 #include <functional>
 #include <memory>
@@ -419,8 +420,13 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     // tunnel, which resumes the push.
     auto* dsCertPush = ds.client();
 
+    // OTA: endpoints we've already pushed an update to this run (keyed by
+    // endpoint+version) so we send the Object-5 write+execute at-most-once —
+    // re-running opkg every tick would be wrong.
+    auto otaSent = std::make_shared<std::set<std::string>>();
+
     app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll,
-                                       publish_regs, dsCertPush]() {
+                                       publish_regs, dsCertPush, otaSent]() {
         // Local constexpr inside the lambda body — gcc 11 wouldn't let
         // us reference an outer-scope constexpr without an explicit
         // capture even though it's a constant expression.
@@ -507,6 +513,64 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                     /*accept*/ -1);
                 ctx->send_async(req, reg.peerHost, reg.peerPort);
 
+                // OTA: push a pending firmware update over Object 5 (Package
+                // URI WRITE /5/0/1 then Update EXECUTE /5/0/2), at-most-once
+                // per endpoint+version. The device pulls the .ipk from the
+                // cloud feed and applies it via opkg. Runs before the cert
+                // continue so it reaches already-connected devices.
+                if (dsCertPush) {
+                    std::vector<data_store::Client::GetResult> pg;
+                    if (dsCertPush->get({std::string("cloud.update.pending")}, pg).ok
+                        && !pg.empty() && pg[0].has_value) {
+                        if (auto s = data_store::to_string(pg[0].value)) {
+                            try {
+                                auto arr = nlohmann::json::parse(*s);
+                                if (arr.is_array()) for (const auto& job : arr) {
+                                    if (job.value("endpoint", "") != reg.endpoint) continue;
+                                    std::string url = job.value("url", "");
+                                    std::string ver = job.value("version", "");
+                                    std::string key = reg.endpoint + "@" + ver;
+                                    if (url.empty() || otaSent->count(key)) break;
+                                    std::string utok{static_cast<char>(0x05)};
+                                    auto w = ::lwm2m::dmsrv::build_write(
+                                        next_msgid(), utok, /*oid*/5, /*iid*/0,
+                                        /*rid*/1, /*cf text/plain*/0, url, false);
+                                    ctx->send_async(w, reg.peerHost, reg.peerPort);
+                                    auto ex = ::lwm2m::dmsrv::build_execute(
+                                        next_msgid(), utok, 5, 0, 2, "");
+                                    ctx->send_async(ex, reg.peerHost, reg.peerPort);
+                                    otaSent->insert(key);
+                                    ACE_DEBUG((LM_INFO,
+                                        ACE_TEXT("%D lwm2m:thread:%t %M %N:%l pushed OTA "
+                                                 "update to %C ver=%C peer=%C:%u\n"),
+                                        reg.endpoint.c_str(), ver.c_str(),
+                                        reg.peerHost.c_str(),
+                                        static_cast<unsigned>(reg.peerPort)));
+                                    // Reflect "updating" in cloud.update.status.
+                                    std::vector<data_store::Client::GetResult> sg;
+                                    nlohmann::json st = nlohmann::json::array();
+                                    if (dsCertPush->get({std::string("cloud.update.status")}, sg).ok
+                                        && !sg.empty() && sg[0].has_value)
+                                        if (auto ss = data_store::to_string(sg[0].value))
+                                            try { auto p = nlohmann::json::parse(*ss);
+                                                  if (p.is_array()) st = p; }
+                                            catch (const std::exception&) {}
+                                    bool found = false;
+                                    for (auto& row : st)
+                                        if (row.value("serial", "") == reg.endpoint) {
+                                            row["state"] = 3; found = true; break;
+                                        }
+                                    if (!found) st.push_back({{"serial", reg.endpoint},
+                                        {"state", 3}, {"result", 0}, {"version", ver}, {"ts", 0}});
+                                    dsCertPush->set("cloud.update.status",
+                                                    data_store::Value{st.dump()});
+                                    break;
+                                }
+                            } catch (const std::exception&) {}
+                        }
+                    }
+                }
+
                 // Push the VPN cert family over Object 2048 until the device's
                 // tunnel is up. The device stages each WRITE and the Apply
                 // EXECUTE materialises the family; its cert sidecar reloads
@@ -560,6 +624,33 @@ struct ClientPlumbing {
 /// Skipped is the plain-DM / no-BS fallback (or a bootstrap timeout).
 enum class BootPhase { NotStarted, InProgress, Done, Skipped };
 
+/// Single-quote a string for safe inclusion in a /bin/sh command.
+static std::string ota_shquote(const std::string& s) {
+    std::string out = "'";
+    for (char c : s) { if (c == '\'') out += "'\\''"; else out += c; }
+    out += "'";
+    return out;
+}
+
+/// Launch the detached OTA apply for `uri` as a systemd transient unit so
+/// the opkg install (which may replace the running `lwm2m` binary) and the
+/// unit restart survive — never a child of this daemon. Returns 0 on launch.
+static int ota_launch_apply(const std::string& uri) {
+    if (uri.empty()) return -1;
+    std::string cmd =
+        "systemd-run --unit=iot-ota-apply --collect /usr/bin/iot-ota-apply "
+        + ota_shquote(uri);
+    int rc = std::system(cmd.c_str());
+    if (rc != 0) {
+        ACE_ERROR((LM_ERROR,
+            ACE_TEXT("%D [ota] %M %N:%l launch failed rc=%d cmd=%C\n"),
+            rc, cmd.c_str()));
+        return -1;
+    }
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ota] %M %N:%l launched iot-ota-apply\n")));
+    return 0;
+}
+
 ClientPlumbing wire_client(std::shared_ptr<App>& app,
                            const std::string& endpoint,
                            const std::string& configDir,
@@ -568,7 +659,44 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                            iot::DsConfig& ds) {
     ClientPlumbing plumb;
     plumb.store = std::make_shared<::lwm2m::ObjectStore>();
-    ::lwm2m::objects::install_canonical_objects(*plumb.store, configDir);
+
+    // ── OTA (LwM2M Object 5) apply hooks ──────────────────────────────
+    // RID 3/5/7 read the live apply progress from ds (iot.update.*, written
+    // by the detached iot-ota-apply); RID 2 launches that detached apply.
+    data_store::Client* dsc = ds.client();
+    ::lwm2m::objects::FwHooks fwHooks;
+    fwHooks.launch = [](const std::string& uri) { return ota_launch_apply(uri); };
+    fwHooks.read_state = [dsc]() -> long long {
+        std::vector<data_store::Client::GetResult> got;
+        if (dsc && dsc->get({"iot.update.state"}, got).ok && !got.empty() && got[0].has_value)
+            if (auto n = data_store::to_int32(got[0].value)) return *n;
+        return 0;
+    };
+    fwHooks.read_result = [dsc]() -> long long {
+        std::vector<data_store::Client::GetResult> got;
+        if (dsc && dsc->get({"iot.update.result"}, got).ok && !got.empty() && got[0].has_value)
+            if (auto n = data_store::to_int32(got[0].value)) return *n;
+        return 0;
+    };
+    fwHooks.read_version = [dsc]() -> std::string {
+        std::vector<data_store::Client::GetResult> got;
+        if (dsc && dsc->get({"iot.update.version"}, got).ok && !got.empty() && got[0].has_value)
+            if (auto s = data_store::to_string(got[0].value)) return *s;
+        return {};
+    };
+    ::lwm2m::objects::install_canonical_objects(*plumb.store, configDir, {}, std::move(fwHooks));
+
+    // device-ui self-update: a write to iot.update.request launches the same
+    // detached apply locally (no CoAP round-trip).
+    if (dsc) {
+        data_store::Client::WatchHandle wh = data_store::Client::kInvalidHandle;
+        dsc->watch("iot.update.request",
+            [](const data_store::Client::Event& e) {
+                if (auto s = data_store::to_string(e.value)) {
+                    if (!s->empty()) ota_launch_apply(*s);
+                }
+            }, &wh);
+    }
 
     plumb.dm = std::make_shared<::lwm2m::DmClient>(plumb.store);
     plumb.dm->calling_peer(bsHost + ":" + std::to_string(bsPort));

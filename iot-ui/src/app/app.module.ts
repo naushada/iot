@@ -33,6 +33,7 @@ import { LogLevelComponent } from './log-level/log-level.component';
 import { LogViewerComponent } from './log-level/log-viewer.component';
 import { ToastComponent } from './common/toast/toast.component';
 import { UsersComponent } from './users/users.component';
+import { SoftwareUpdateComponent } from './software-update/software-update.component';
 
 import { SsoAuthInterceptor } from '../common/sso-auth.interceptor';
 import { SessionService, initSession } from '../common/session.service';
@@ -50,7 +51,7 @@ import { SessionService, initSession } from '../common/session.service';
     Lwm2mSubmenuComponent, Lwm2mConfigComponent,
     ServicesSubmenuComponent, ServicesListComponent,
     LogLevelComponent, LogViewerComponent, ToastComponent,
-    UsersComponent,
+    UsersComponent, SoftwareUpdateComponent,
   ],
   imports: [
     BrowserModule,

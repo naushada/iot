@@ -39,6 +39,12 @@ public:
     /// serving (API-only mode, the default).
     void set_static_dir(std::string dir);
 
+    /// Serve files under `dir` for GET requests whose path starts with
+    /// `url_prefix` (e.g. "/firmware/"). Unlike set_static_dir there is
+    /// NO SPA fallback (a missing file returns 404) and `..` path
+    /// traversal is rejected. Used for the OTA .ipk firmware feed.
+    void set_firmware_dir(std::string url_prefix, std::string dir);
+
     /// Dispatch a request. Returns 404 if no handler matches.
     HttpResponse route(const HttpParser::Request& req) const;
 
@@ -46,6 +52,8 @@ private:
     using Key = std::pair<std::string, std::string>;  // (method, path)
     std::map<Key, HandlerFn> m_routes;
     std::string m_static_dir;
+    std::string m_fw_prefix;
+    std::string m_fw_dir;
 };
 
 } // namespace http_server

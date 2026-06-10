@@ -117,6 +117,33 @@ return {
         read_acl  = {"gid:engineer"},
     },
 
+    -- ── OTA software update (mirrors LwM2M Object 5 onto ds) ──────────
+    -- Self-update trigger: device-ui (or the Object-5 RID2 apply) sets the
+    -- .ipk URL here; the lwm2m client watches it and runs iot-ota-apply.
+    ["iot.update.request"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
+    -- Apply progress, written by iot-ota-apply, read by device-ui and
+    -- mirrored into Object 5 (/5/0/3, /5/0/5) on client (re)start so a
+    -- post-restart server readback reflects the outcome.
+    ["iot.update.state"] = {        -- 0 idle,1 downloading,2 downloaded,3 updating
+        access  = "Admin",
+        type    = "integer",
+        default = 0,
+    },
+    ["iot.update.result"] = {       -- 0 initial,1 success,5 integrity,8 uri,9 install
+        access  = "Admin",
+        type    = "integer",
+        default = 0,
+    },
+    ["iot.update.version"] = {      -- installed package version after apply
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
+
     -- Log level for all iot daemons.  Each daemon reads this key
     -- and adjusts its ACE_Log_Msg priority mask at startup and on
     -- change (hot-reload).  Valid values (case-insensitive):

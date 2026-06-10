@@ -222,9 +222,15 @@ int main(int argc, char** argv) {
         wwwDir = "/usr/share/iot/www";
     }
 
+    // ── Firmware feed (OTA .ipk) ──────────────────────────────
+    // Optional: serve a firmware directory at /firmware/ so devices can
+    // pull .ipk packages over the VPN tunnel (cloud role). Off by default.
+    std::string fwDir = arg_value(argc, argv, "firmware-dir");
+
     // ── Router + handlers ─────────────────────────────────────
     http_server::Router router;
     if (!wwwDir.empty()) router.set_static_dir(wwwDir);
+    if (!fwDir.empty()) router.set_firmware_dir("/firmware/", fwDir);
     http_server::install_handlers(router, &ds, &auth_store);
 
     // ── Handler thread pool (FUP-L18-1) ───────────────────────

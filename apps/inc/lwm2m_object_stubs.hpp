@@ -4,6 +4,7 @@
 #include <string>
 
 #include "lwm2m_object_3_device.hpp"
+#include "lwm2m_object_firmware.hpp"
 #include "lwm2m_object_store.hpp"
 
 /**
@@ -43,16 +44,18 @@ int install_connstats(ObjectStore& store);
 /// apps/config/accessControlObject/0.lua.
 int install_access_control(ObjectStore& store, const std::string& configDir);
 
-/// Firmware Update (OID 5) — read-only state/version stubs from
-/// apps/config/firmwareObject/0.lua. Package-pull / apply hooks are
-/// a follow-up.
+/// Firmware Update (OID 5) — OTA .ipk via Object 5 (pull). Read-only when
+/// no apply hooks are passed; the client supplies ds-backed FwHooks. See
+/// lwm2m_object_firmware.hpp.
 int install_firmware(ObjectStore& store, const std::string& configDir);
 
 /// Aggregator: installs every canonical OMA Object (0, 1, 2, 3, 4, 5,
-/// 6, 7). Returns the bitwise-OR of installer failures (0 on success).
+/// 6, 7). `fwHooks` wires the Object-5 OTA apply (empty → read-only).
+/// Returns the bitwise-OR of installer failures (0 on success).
 int install_canonical_objects(ObjectStore& store,
                               const std::string& configDir,
-                              DeviceHooks deviceHooks = {});
+                              DeviceHooks deviceHooks = {},
+                              FwHooks fwHooks = {});
 
 }} // namespace lwm2m::objects
 

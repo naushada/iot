@@ -258,6 +258,15 @@ int main(int argc, char** argv) {
                             "cloud.lwm2m.registrations failed: %C\n"),
                    ws_regs.err.c_str()));
     }
+    // OTA: cloud-ui writes cloud.update.request; validate it into per-endpoint
+    // jobs (cloud.update.pending) that the lwm2m-dm push tick consumes.
+    auto ws_update = ds.watch("cloud.update.request", 1000);
+    if (!ws_update.ok) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch "
+                            "cloud.update.request failed: %C\n"),
+                   ws_update.err.c_str()));
+    }
 
     // Seed initial VPN config in ds
     ds.set("cloud.vpn.subnet", data_store::Value{vpn_subnet});
@@ -511,6 +520,72 @@ int main(int argc, char** argv) {
                 // lwm2m-dm published a registration change — fold online/
                 // offline into the endpoint registry before the sync below.
                 reconcile_registrations(ds, ep_reg);
+            } else if (ev.key == "cloud.update.request") {
+                // OTA: validate the request against the firmware manifest +
+                // known endpoints, then emit per-endpoint jobs for lwm2m-dm.
+                std::string reqJson;
+                if (auto s = data_store::to_string(ev.value)) reqJson = *s;
+                if (!reqJson.empty()) {
+                    try {
+                        auto req     = nlohmann::json::parse(reqJson);
+                        auto serials = req.value("serials", nlohmann::json::array());
+                        std::string url = req.value("url", "");
+                        std::string sha = req.value("sha256", "");
+                        std::string ver = req.value("version", "");
+                        // Validate url against the manifest (and fill sha/ver).
+                        bool known = false;
+                        auto man = nlohmann::json::parse(
+                            ds_str(ds, "cloud.firmware.manifest", "[]"));
+                        if (man.is_array()) for (const auto& m : man) {
+                            if (m.value("ipk_url", "") == url) {
+                                known = true;
+                                if (sha.empty()) sha = m.value("sha256",  "");
+                                if (ver.empty()) ver = m.value("version", "");
+                                break;
+                            }
+                        }
+                        if (known && serials.is_array() && !url.empty()) {
+                            auto epj = nlohmann::json::parse(
+                                ds_str(ds, "cloud.endpoints", "[]"));
+                            auto ep_known = [&epj](const std::string& s) {
+                                if (epj.is_array()) for (const auto& e : epj)
+                                    if (e.value("endpoint", "") == s) return true;
+                                return false;
+                            };
+                            std::string fullUrl = url +
+                                (url.find('?') == std::string::npos ? "?" : "&") +
+                                "sha256=" + sha + "&version=" + ver;
+                            nlohmann::json pending = nlohmann::json::array();
+                            nlohmann::json status  = nlohmann::json::array();
+                            for (const auto& s : serials) {
+                                if (!s.is_string()) continue;
+                                std::string serial = s.get<std::string>();
+                                if (!ep_known(serial)) continue;
+                                pending.push_back({{"endpoint", serial},
+                                    {"url", fullUrl}, {"sha256", sha}, {"version", ver}});
+                                status.push_back({{"serial", serial}, {"state", 1},
+                                    {"result", 0}, {"version", ver}, {"ts", 0}});
+                            }
+                            ds.set("cloud.update.pending",
+                                   data_store::Value{pending.dump()});
+                            ds.set("cloud.update.status",
+                                   data_store::Value{status.dump()});
+                            ACE_DEBUG((LM_INFO,
+                                ACE_TEXT("%D cloudd:thread:%t %M %N:%l queued %u OTA "
+                                         "job(s) ver=%C\n"),
+                                static_cast<unsigned>(pending.size()), ver.c_str()));
+                        } else {
+                            ACE_ERROR((LM_ERROR,
+                                ACE_TEXT("%D cloudd:thread:%t %M %N:%l OTA request "
+                                         "rejected (unknown url or bad shape)\n")));
+                        }
+                    } catch (const std::exception& e) {
+                        ACE_ERROR((LM_ERROR,
+                            ACE_TEXT("%D cloudd:thread:%t %M %N:%l OTA request parse "
+                                     "failed: %C\n"), e.what()));
+                    }
+                    ds.set("cloud.update.request", data_store::Value{std::string()});
+                }
             }
             // Sync after every event so the UI sees changes quickly
             sync_endpoints_to_ds(ds, ep_reg);

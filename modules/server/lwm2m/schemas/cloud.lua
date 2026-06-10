@@ -152,6 +152,45 @@ return {
       default = "",
     },
 
+    -- ── OTA software update (LwM2M Firmware Update Object 5) ──────────
+    -- Operator-curated catalogue of .ipk packages available in the
+    -- cloud firmware feed (served by iot-httpd at /firmware/...). JSON:
+    --   [ { "pkg":"iot", "version":"0.2.0", "arch":"aarch64",
+    --       "ipk_url":"/firmware/iot_0.2.0_aarch64.ipk", "sha256":"<hex>" } ]
+    ["cloud.firmware.manifest"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "[]",
+    },
+    -- Update request from cloud-ui (carrier — iot-cloudd clears to ""):
+    --   { "serials":["100000abcd",...], "pkg":"iot", "version":"0.2.0",
+    --     "url":"/firmware/iot_0.2.0_aarch64.ipk", "sha256":"<hex>" }
+    ["cloud.update.request"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
+    -- Validated per-endpoint update jobs: written by iot-cloudd, consumed
+    -- by the lwm2m-dm push tick. cloud-svc-only (mirrors the credentials
+    -- two-writer-avoidance pattern). JSON array of
+    --   { "endpoint":"100000abcd", "url":"...", "sha256":"...", "version":"..." }
+    ["cloud.update.pending"] = {
+        access    = "Admin",
+        type      = "string",
+        default   = "[]",
+        write_acl = {"gid:cloud-svc"},
+        read_acl  = {"gid:cloud-svc"},
+    },
+    -- Per-endpoint update status (Object-5 readback), written by lwm2m-dm,
+    -- read by cloud-ui. JSON array of
+    --   { "serial":"...", "state":<0..3>, "result":<0..9>,
+    --     "version":"0.2.0", "ts":<unix> }
+    ["cloud.update.status"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "[]",
+    },
+
     -- ── PSK provisioning (serial-derived endpoint + per-endpoint PSK) ──
     -- See apps/docs/tdd-psk-provisioning.md.
     --

@@ -33,6 +33,7 @@ import { ServicesSubmenuComponent } from './services/services-submenu/services-s
 import { ServicesListComponent } from './services/services-list/services-list.component';
 import { HttpConfigComponent } from './http-config/http-config.component';
 import { UsersComponent } from './users/users.component';
+import { SoftwareUpdateComponent } from './software-update/software-update.component';
 
 import { SsoAuthInterceptor } from '../common/sso-auth.interceptor';
 import { SessionService, initSession } from '../common/session.service';
@@ -46,7 +47,7 @@ import { SessionService, initSession } from '../common/session.service';
     RoutingSubmenuComponent, PortForwardComponent, CustomRulesComponent,
     Lwm2mSubmenuComponent, Lwm2mConfigComponent, BsConfigComponent,
     ServicesSubmenuComponent, ServicesListComponent, HttpConfigComponent,
-    UsersComponent,
+    UsersComponent, SoftwareUpdateComponent,
   ],
   imports: [
     BrowserModule, AppRoutingModule, BrowserAnimationsModule,

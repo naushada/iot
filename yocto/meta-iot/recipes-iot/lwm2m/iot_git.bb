@@ -33,6 +33,7 @@ SRC_URI = "\
     file://net-router.env \
     file://wifi-client.env \
     file://httpd.env \
+    file://iot-ota-apply \
 "
 SRCREV = "${AUTOREV}"
 
@@ -168,6 +169,10 @@ do_build_ui[depends] += "nodejs-native:do_populate_sysroot"
 do_install() {
     cmake_do_install
 
+    # OTA apply helper (run detached via systemd-run by the lwm2m client).
+    install -d ${D}${bindir}
+    install -m 0755 ${WORKDIR}/iot-ota-apply ${D}${bindir}/iot-ota-apply
+
     # ── systemd units (overwrite cmake-installed copies) ──────────
     if ${@bb.utils.contains('PACKAGECONFIG', 'systemd', 'true', 'false', d)}; then
         install -d ${D}${systemd_system_unitdir}
@@ -240,6 +245,7 @@ RDEPENDS:${PN}-ds-cli = "ace-tao"
 # lwm2m — combined LwM2M client + server binary (role selected at CLI)
 FILES:${PN}-lwm2m = "\
     ${bindir}/lwm2m \
+    ${bindir}/iot-ota-apply \
     ${systemd_system_unitdir}/iot-lwm2m-client.service \
     ${systemd_system_unitdir}/iot-lwm2m-server.service \
 "

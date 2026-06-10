@@ -5,6 +5,7 @@
 
 #include "lua_config.hpp"
 #include "lwm2m_object_cert.hpp"
+#include "lwm2m_object_firmware.hpp"
 
 namespace lwm2m { namespace objects {
 
@@ -147,27 +148,20 @@ int install_access_control(ObjectStore& store, const std::string& configDir) {
 }
 
 int install_firmware(ObjectStore& store, const std::string& configDir) {
-    auto inst = instance_from_lua(
-        0, join_path(configDir, "firmwareObject/0.lua"));
-    if (inst.resources.empty()) return 0;
-
-    ObjectDescriptor d;
-    d.oid = 5; d.name = "Firmware Update";
-    d.urn = "urn:oma:lwm2m:oma:5:1.0";
-    d.mandatory = false; d.multipleInstance = false;
-    d.instances[0] = std::move(inst);
-    store.add_object(std::move(d));
-    return 0;
+    // OID 5 with W/E wired (read-only when no apply hooks are supplied —
+    // server / Discover use). See lwm2m_object_firmware.cpp.
+    return install_firmware_apply(store, configDir, {});
 }
 
 int install_canonical_objects(ObjectStore& store,
                               const std::string& configDir,
-                              DeviceHooks deviceHooks) {
+                              DeviceHooks deviceHooks,
+                              FwHooks fwHooks) {
     int rc = 0;
     rc |= install_access_control(store, configDir);
     rc |= install_device(store, configDir, std::move(deviceHooks));
     rc |= install_connmon(store);
-    rc |= install_firmware(store, configDir);
+    rc |= install_firmware_apply(store, configDir, std::move(fwHooks));
     rc |= install_location(store);
     rc |= install_connstats(store);
     // Custom OID 2048 — cloud-pushed VPN/TLS credential family. Default
