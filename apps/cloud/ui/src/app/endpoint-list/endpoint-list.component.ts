@@ -21,16 +21,18 @@ interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered
         <div class="card-header">Provision a device</div>
         <div class="card-block">
           <div class="form-grid">
-            <clr-input-container style="grid-column: span 2;">
+            <clr-input-container>
               <label>Serial Number</label>
               <input clrInput [(ngModel)]="provSerial" style="width:100%;"
                      placeholder="device serial (from device-ui)" />
             </clr-input-container>
-            <clr-input-container style="grid-column: span 2;">
-              <label>Bootstrap PSK (64 hex)</label>
+            <clr-input-container>
+              <label>Bootstrap PSK (32 hex)</label>
               <input clrInput [(ngModel)]="provBsPsk" style="width:100%;font-family:monospace;"
                      placeholder="paste BS PSK from device-ui" />
             </clr-input-container>
+            <div></div>
+            <div></div>
           </div>
           <button class="btn btn-primary" [disabled]="provisioning" (click)="provision()">
             {{ provisioning ? 'Provisioning…' : 'Provision' }}
@@ -112,7 +114,7 @@ export class EndpointListComponent implements OnInit, OnDestroy {
     const serial = this.provSerial.trim();
     const psk = this.provBsPsk.trim().toLowerCase();
     if (!serial) { this.toast.error('Serial number required'); return; }
-    if (!/^[0-9a-f]{64}$/.test(psk)) { this.toast.error('BS PSK must be 64 hex chars'); return; }
+    if (!/^[0-9a-f]{32}$/.test(psk)) { this.toast.error('BS PSK must be 32 hex chars'); return; }
     this.provisioning = true;
     this.http.dbSet([
       { key: 'cloud.provision.bs.psk', value: psk },
