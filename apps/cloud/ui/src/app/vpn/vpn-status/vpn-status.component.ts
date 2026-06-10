@@ -41,6 +41,7 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
   loading = true;
   private sub = new Subscription();
   private active = true;
+  private pollSub?: Subscription;   // in-flight long-poll, cancelled on destroy
 
   get rows(): { key: string; value: string; isBadge: boolean; isDns?: boolean }[] {
     return [
@@ -73,7 +74,7 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
   private startLongPoll(): void {
     const poll = (): void => {
       if (!this.active) return;
-      this.http.getStatusLongPoll(30).subscribe({
+      this.pollSub = this.http.getStatusLongPoll(30).subscribe({
         next: (s) => {
           this.v = s.vpn || {};
           this.loading = false;
@@ -94,5 +95,5 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
     poll();
   }
 
-  ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
+  ngOnDestroy(): void { this.active = false; this.pollSub?.unsubscribe(); this.sub.unsubscribe(); }
 }

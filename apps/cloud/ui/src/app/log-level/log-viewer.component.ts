@@ -118,6 +118,7 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   daemonLevels: string[] = ['', 'DEBUG', 'INFO', 'WARNING', 'ERROR'];
   private active = true;
   private sub = new Subscription();
+  private pollSub?: Subscription;   // the in-flight long-poll, cancelled on destroy
   private api = environment.apiUrl;
 
   get isAdmin(): boolean { return this.session.isAdmin; }
@@ -160,7 +161,9 @@ export class LogViewerComponent implements OnInit, OnDestroy {
     if (!this.active) return;
     // Long-poll a single key (log.version) that every daemon bumps on
     // flush. When it changes, re-fetch the full merged log + levels.
-    this.httpSvc.dbGetLongPoll('log.version', 30).subscribe({
+    // Keep the handle so ngOnDestroy can abort the open request on page
+    // switch (otherwise the 30s request lingers and ties up a server worker).
+    this.pollSub = this.httpSvc.dbGetLongPoll('log.version', 30).subscribe({
       next: () => {
         if (this.autoRefresh) {
           this.reloadLevels();
@@ -259,5 +262,11 @@ export class LogViewerComponent implements OnInit, OnDestroy {
     }, 50);
   }
 
-  ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
+  ngOnDestroy(): void {
+    // Stop polling on page switch: flip the guard so no new poll starts,
+    // and cancel the in-flight long-poll so its open request is aborted.
+    this.active = false;
+    this.pollSub?.unsubscribe();
+    this.sub.unsubscribe();
+  }
 }

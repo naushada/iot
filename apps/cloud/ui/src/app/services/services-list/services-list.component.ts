@@ -1,4 +1,5 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
@@ -98,6 +99,7 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     { key: 'lwm2m.dm',       label: 'lwm2m-dm',          desc: 'LwM2M Device Management (CoAPs 5683).',           enable_key: '', state: 'stopped', enabled: true, restarting: false, state_key: 'services.cloud.lwm2m.dm.state' },
   ];
   private active = true;
+  private pollSub?: Subscription;   // in-flight long-poll, cancelled on destroy
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
@@ -190,7 +192,7 @@ export class ServicesListComponent implements OnInit, OnDestroy {
   /// changes), so one wake refreshes all rows (state + enable + telemetry).
   private scheduleLongPoll(): void {
     if (!this.active) return;
-    this.http.dbGetLongPoll('services.stats.version', 30).subscribe({
+    this.pollSub = this.http.dbGetLongPoll('services.stats.version', 30).subscribe({
       next: () => this.fetchAll(),
       error: () => { if (this.active) setTimeout(() => this.fetchAll(), 5000); }
     });
@@ -222,5 +224,5 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     });
   }
 
-  ngOnDestroy(): void { this.active = false; }
+  ngOnDestroy(): void { this.active = false; this.pollSub?.unsubscribe(); }
 }

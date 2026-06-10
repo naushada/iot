@@ -62,6 +62,7 @@ export class WifiScanComponent implements OnInit, OnDestroy {
   constructor(private http: HttpsvcService) {}
 
   private active = true;
+  private pollSub?: Subscription;   // in-flight long-poll, cancelled on destroy
 
   ngOnInit(): void {
     this.startLongPoll();
@@ -70,7 +71,7 @@ export class WifiScanComponent implements OnInit, OnDestroy {
   private startLongPoll(): void {
     const poll = (): void => {
       if (!this.active) return;
-      this.http.getStatusLongPoll(30).subscribe({
+      this.pollSub = this.http.getStatusLongPoll(30).subscribe({
         next: (s) => {
           this.status = s.wifi || {};
           this.tryParseScan();
@@ -120,5 +121,5 @@ export class WifiScanComponent implements OnInit, OnDestroy {
     });
   }
 
-  ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
+  ngOnDestroy(): void { this.active = false; this.pollSub?.unsubscribe(); this.sub.unsubscribe(); }
 }
