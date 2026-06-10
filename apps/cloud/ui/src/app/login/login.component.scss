@@ -4,3 +4,18 @@
 .title { color:#333; font-size:22px; font-weight:600; margin:0 0 4px 0; }
 .subtitle { color:#666; font-size:14px; margin:0 0 32px 0; }
 .login-form { text-align:left; }
+
+/* Icon + input rows: a leading icon and an equal-width input on each line. */
+.field { display:flex; align-items:center; gap:10px; width:100%; margin-top:18px; }
+.field-icon { flex:0 0 auto; color:#666; }
+
+/* Make both fields the SAME width: the Clarity container fills the row, and
+   its inner wrappers/input stretch to 100% so the User ID and Password
+   underlines line up (the password reveal toggle sits inside that width). */
+.field clr-input-container,
+.field clr-password-container { flex:1 1 auto; width:100%; margin:0; }
+.field ::ng-deep .clr-control-container,
+.field ::ng-deep .clr-input-wrapper,
+.field ::ng-deep .clr-input-group,
+.field ::ng-deep input[clrInput],
+.field ::ng-deep input[clrPassword] { width:100%; }

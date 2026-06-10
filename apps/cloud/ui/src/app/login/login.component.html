@@ -4,14 +4,20 @@
     <h2 class="title">IoT Cloud</h2>
     <p class="subtitle">Multi-Tenant Gateway Management</p>
     <form (ngSubmit)="onLogin()" class="login-form">
-      <clr-input-container>
-        <label class="clr-sr-only">User ID</label>
-        <input clrInput type="text" name="id" placeholder="User ID" [(ngModel)]="id" required />
-      </clr-input-container>
-      <clr-password-container>
-        <label class="clr-sr-only">Password</label>
-        <input clrPassword type="password" name="password" placeholder="Password" [(ngModel)]="password" required />
-      </clr-password-container>
+      <div class="field">
+        <clr-icon shape="user" size="20" class="field-icon"></clr-icon>
+        <clr-input-container>
+          <label class="clr-sr-only">User ID</label>
+          <input clrInput type="text" name="id" placeholder="User ID" [(ngModel)]="id" required />
+        </clr-input-container>
+      </div>
+      <div class="field">
+        <clr-icon shape="lock" size="20" class="field-icon"></clr-icon>
+        <clr-password-container>
+          <label class="clr-sr-only">Password</label>
+          <input clrPassword type="password" name="password" placeholder="Password" [(ngModel)]="password" required />
+        </clr-password-container>
+      </div>
       <div *ngIf="error" class="alert alert-danger" style="margin-top:12px;">
         <div class="alert-items"><div class="alert-item static"><span class="alert-text">{{error}}</span></div></div>
       </div>
