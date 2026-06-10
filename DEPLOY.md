@@ -251,7 +251,40 @@ systemctl enable --now iot-lwm2m-client iot-httpd
 ds-cli --socket=/run/iot/data_store.sock get iot.endpoint
 ```
 
-### 4. Push app updates over ssh (the `.ipk` feed)
+### 4. Point the device at your cloud
+
+The device only needs the **bootstrap** server address — the DM server
+URI and credentials come down during bootstrap. Set it live via ds-cli;
+it hot-reloads into the running client, no reflash:
+
+```sh
+ds-cli --socket=/run/iot/data_store.sock set iot.bs.uri '"coaps://217.217.253.235:5684"'
+ds-cli --socket=/run/iot/data_store.sock get iot.bs.uri
+```
+
+Registration also needs the bootstrap PSK to match the cloud's
+`cloud.bs.psk.*` (the commissioning step — see `apps/cloud/CLAUDE.md`).
+If these are empty the DTLS handshake to the BS server fails and the
+client sits in `AwaitingRegisterAck`:
+
+```sh
+ds-cli --socket=/run/iot/data_store.sock get iot.endpoint        # endpoint name (auto-filled from serial on RPi)
+ds-cli --socket=/run/iot/data_store.sock get iot.bs.psk.identity # must match cloud cloud.bs.psk.id
+ds-cli --socket=/run/iot/data_store.sock get iot.bs.psk.key      # 64-hex PSK, must match cloud cloud.bs.psk.key
+```
+
+Watch the full flow — bootstrap finish → register to DM → registration ACK:
+
+```sh
+journalctl -u iot-lwm2m-client -f
+# look for an ACK from 217.217.253.235:5683 (the DM server)
+```
+
+> The cloud must advertise a **reachable** DM URI (`cloud.dm.uri`), not the
+> default `coaps://0.0.0.0:5683`, or the device bootstraps but can't find
+> the DM server afterwards. See [`apps/cloud/INSTALL.md`](apps/cloud/INSTALL.md) §6.
+
+### 5. Push app updates over ssh (the `.ipk` feed)
 
 After the device is up, ship new daemon builds without reflashing —
 `opkg` and the feed config are baked into the image:

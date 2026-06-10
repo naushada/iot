@@ -144,7 +144,9 @@ See `DEPLOY.md` for TLS/PKI and OpenVPN server-certificate details.
 
 ---
 
-## 6. Configuration (env vars)
+## 6. Configuration
+
+### Environment variables
 
 Override on the command line — they pass through to `docker-compose.yml`:
 
@@ -164,6 +166,28 @@ Example:
 ```bash
 HTTP_PORT=8443 VPN_SUBNET=10.8.0.0/24 ./run.sh
 ```
+
+### LwM2M server URIs — devices must reach these
+
+By default the bootstrap and DM servers advertise themselves as
+`coaps://0.0.0.0:5684` / `coaps://0.0.0.0:5683`. That works for a
+local smoke test, but a real device bootstraps fine and then tries to
+register against `0.0.0.0` and fails. Set both to **this host's public
+IP or DNS name** so the URI handed to devices is reachable:
+
+```bash
+DS(){ docker exec iot-ds-server ds-cli --socket=/var/run/iot/data_store.sock "$@"; }
+DS set cloud.bs.uri '"coaps://217.217.253.235:5684"'   # bootstrap entry point
+DS set cloud.dm.uri '"coaps://217.217.253.235:5683"'   # DM URI pushed to devices (Server Object)
+```
+
+`cloud.dm.uri` is the one that bites: it's stamped into each device's
+Server Object during bootstrap, so if it stays `0.0.0.0` the device
+bootstraps but can never find the DM server. Both are also editable in
+the UI under **LwM2M → Bootstrap Config**; changes hot-reload.
+
+On the device side, point it at this host's bootstrap server — see
+[`DEPLOY.md`](../../DEPLOY.md) Path C, step 4.
 
 ---
 
