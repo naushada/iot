@@ -40,8 +40,9 @@ DEVICE_BS_URI="${DEVICE_BS_URI:-coaps://host.docker.internal:5684}"
 RESET_CONFIG="${RESET_CONFIG:-1}"
 # Compose project name → deterministic volume names (device_dev-etc, …).
 PROJECT="${COMPOSE_PROJECT_NAME:-device}"
-# Image is local-only by default; don't try to pull it.
-PULL="${PULL:-0}"
+# Published to Docker Hub by CI (device-image.yml) — pull by default.
+# PULL=0 uses a local `./run.sh build` instead.
+PULL="${PULL:-1}"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 log_section() { echo -e "\n${GREEN}=== $1 ===${NC}"; }
@@ -75,12 +76,12 @@ case "${1:-start}" in
         ;;
 
     start|up)
-        if [ "$PULL" = "1" ]; then
+        if [ "$PULL" = "1" ] || ! $CR image inspect "$IMAGE" >/dev/null 2>&1; then
             log_info "Pulling $IMAGE..."
             $CR pull "$IMAGE" || log_info "pull failed — using local image if present"
         fi
         if ! $CR image inspect "$IMAGE" >/dev/null 2>&1; then
-            echo "ERROR: image '$IMAGE' not found — build it first: ./run.sh build" >&2
+            echo "ERROR: image '$IMAGE' not found — pull failed and no local image. Build it: ./run.sh build" >&2
             exit 1
         fi
 
