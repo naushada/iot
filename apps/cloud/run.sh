@@ -34,7 +34,14 @@
 
 set -euo pipefail
 
-IMAGE="${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}"
+# AUTODEPLOY=1 runs the released :stable tag (watched by Watchtower for
+# auto-deploy on git-tag releases); default is the rolling :latest.
+AUTODEPLOY="${AUTODEPLOY:-0}"
+if [ "$AUTODEPLOY" = "1" ]; then
+    IMAGE="${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:stable}"
+else
+    IMAGE="${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}"
+fi
 # HTTPS=1 → iot-httpd terminates TLS on 443 with a self-signed cert
 # (auto-generated below), and a redirect container bounces :80 → :443.
 # Default (HTTPS=0) is plain http on port 80.
@@ -106,7 +113,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # iot-httpd, persists across restarts) and switch on the redirect
 # service. Browsers warn on a self-signed cert for a bare IP — expected.
 if [ "$HTTPS" = "1" ]; then
-    export COMPOSE_PROFILES="https"
     TLS_DIR="$SCRIPT_DIR/tls"
     mkdir -p "$TLS_DIR"
     if [ ! -s "$TLS_DIR/server.crt" ] || [ ! -s "$TLS_DIR/server.key" ]; then
@@ -129,6 +135,12 @@ if [ "$HTTPS" = "1" ]; then
         fi
     fi
 fi
+
+# Compose profiles (additive): https redirect + autodeploy watchtower.
+COMPOSE_PROFILES=""
+[ "$HTTPS" = "1" ]      && COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}https"
+[ "$AUTODEPLOY" = "1" ] && COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}autodeploy"
+[ -n "$COMPOSE_PROFILES" ] && export COMPOSE_PROFILES
 
 # Export env vars so docker-compose.yml can reference them
 export CLOUD_IMAGE="$IMAGE"

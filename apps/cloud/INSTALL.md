@@ -247,6 +247,32 @@ prior run keeps the old schema and newly added keys are silently rejected
 (`/var/lib/iot`) and the VPN PKI (`/etc/iot/vpn`, CA key) live in **separate**
 volumes and are preserved across updates. Set `RESET_CONFIG=0` to opt out.
 
+### Auto-deploy on release (Watchtower)
+
+To have the host **auto-deploy on every release** (not every commit), run it on
+the `:stable` tag with Watchtower watching it:
+
+```bash
+AUTODEPLOY=1 ./run.sh          # runs :stable + starts the watchtower container
+# combine with https: AUTODEPLOY=1 HTTPS=1 ./run.sh
+```
+
+How it works:
+- Everyday commits to `main` rebuild and push **`:latest`** (`cloud-image.yml`) —
+  Watchtower watches `:stable`, so these do **not** deploy.
+- Cutting a release publishes **`:stable`** (`release-image.yml`):
+  ```bash
+  git tag v1.2.0 && git push origin v1.2.0
+  ```
+  Within `WATCHTOWER_INTERVAL` seconds (default 300) the host pulls the new
+  `:stable` and recreates the cloud containers automatically.
+
+⚠️ **Caveat:** Watchtower recreates containers but does **not** run `run.sh`, so it
+does not refresh the `iot-etc` config volume. A release that changes ds **schemas**
+still needs a manual `git pull && ./run.sh` on the host. Code/UI-only releases
+deploy cleanly. (httpd's ds-connect retry tolerates Watchtower recreating
+containers out of dependency order.)
+
 ---
 
 ## 9. Persistence & volumes

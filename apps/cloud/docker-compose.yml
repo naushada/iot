@@ -164,6 +164,26 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── Auto-deploy (only under the `autodeploy` profile) ─────────
+  # Watchtower watches the cloud containers and redeploys them when a new
+  # image is published to the tag they run. Run the stack on :stable
+  # (CI updates :stable only on git-tag releases — see release-image.yml),
+  # so this deploys RELEASES, not every commit. Enable with:
+  #     AUTODEPLOY=1 ./run.sh         (run.sh defaults the image to :stable)
+  # The httpd ds-connect retry tolerates Watchtower recreating containers
+  # out of dependency order.
+  # CAVEAT: Watchtower recreates containers but does NOT refresh the
+  # iot-etc config volume, so a release that changes ds *schemas* still
+  # needs a manual `./run.sh` on the host. Code/UI-only releases are fine.
+  watchtower:
+    image: containrrr/watchtower
+    container_name: iot-watchtower
+    profiles: ["autodeploy"]
+    command: --interval ${WATCHTOWER_INTERVAL:-300} --cleanup iot-ds-server iot-cloudd iot-httpd iot-lwm2m-bs iot-lwm2m-dm
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
 # ── Shared volumes ──────────────────────────────────────────────
 volumes:
   iot-run:    # Unix socket (ds-server ↔ all daemons)
