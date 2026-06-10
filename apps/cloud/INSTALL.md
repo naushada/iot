@@ -32,7 +32,7 @@ Both start the same multi-container stack via `docker compose`.
 
   | Port | Proto | Purpose |
   |------|-------|---------|
-  | 8080 | tcp | Cloud UI + REST API |
+  | 80 | tcp | Cloud UI + REST API |
   | 5684 | udp | LwM2M Bootstrap (CoAPs) |
   | 5683 | udp | LwM2M Device Management (CoAPs) |
   | 1194 | udp | OpenVPN (device tunnels, served by iot-cloudd) |
@@ -104,7 +104,7 @@ first build takes several minutes.
 
 Then open the dashboard:
 
-- **Cloud UI:** http://<host-ip>:8080
+- **Cloud UI:** http://<host-ip>
 - **Login:** `admin` / `admin`
 
 The **Services** page shows each daemon's state plus live CPU % / #CPU /
@@ -152,7 +152,7 @@ Override on the command line — they pass through to `docker-compose.yml`:
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `HTTP_PORT` | `8080` | Cloud UI / REST port |
+| `HTTP_PORT` | `80` | Cloud UI / REST port |
 | `VPN_SUBNET` | `10.9.0.0/24` | OpenVPN tunnel subnet |
 | `PROXY_START` / `PROXY_END` | `5001` / `6000` | Device-UI reverse-proxy port pool |
 | `HTTP_WORKERS` | `4` | iot-httpd handler threads |
@@ -258,7 +258,7 @@ docker rmi docker.io/naushada/iot-cloud:latest
   manually: `./run.sh stop && docker volume rm cloud_iot-etc && ./run.sh`.
   (`openvpn-server` shows blank by design — it runs inside iot-cloudd's
   container, so its usage is folded into cloudd's totals.)
-- **UI not reachable** — check `./run.sh ps`, confirm port 8080 is open in any
+- **UI not reachable** — check `./run.sh ps`, confirm port 80 is open in any
   host firewall / cloud security group, and that `HTTP_PORT` matches.
 - **`docker compose` not found** — install the Compose v2 plugin (it ships
   with Docker Desktop; on servers `apt-get install docker-compose-plugin`).

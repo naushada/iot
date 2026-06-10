@@ -13,7 +13,7 @@
 #   RESET_CONFIG=0  keep manual /etc/iot edits across restarts
 #
 # Usage:
-#   ./run.sh                    # start all services on http://localhost:8080
+#   ./run.sh                    # start all services on http://localhost
 #   ./run.sh stop               # stop all services
 #   ./run.sh logs [service]     # tail logs (default: all services)
 #   ./run.sh build              # rebuild the image
@@ -35,7 +35,7 @@
 set -euo pipefail
 
 IMAGE="${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}"
-HTTP_PORT="${HTTP_PORT:-8080}"
+HTTP_PORT="${HTTP_PORT:-80}"
 VPN_SUBNET="${VPN_SUBNET:-10.9.0.0/24}"
 PROXY_START="${PROXY_START:-5001}"
 PROXY_END="${PROXY_END:-6000}"

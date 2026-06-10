@@ -123,12 +123,12 @@ services:
     command: >
       iot-httpd
       ds-socket=/var/run/iot/data_store.sock
-      http-port=${HTTP_PORT:-8080}
+      http-port=${HTTP_PORT:-80}
       www-dir=/usr/share/iot/cloud-www
       firmware-dir=/var/lib/iot/firmware
       http-workers=${HTTP_WORKERS:-4}
     ports:
-      - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
+      - "${HTTP_PORT:-80}:${HTTP_PORT:-80}"
     volumes:
       - iot-run:/var/run/iot
       - iot-firmware:/var/lib/iot/firmware:ro   # OTA .ipk feed (served at /firmware/)

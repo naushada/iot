@@ -180,7 +180,7 @@ reset.
 Service ports:
 | Port | Service |
 |------|---------|
-| 8080 | Cloud UI + REST API |
+| 80 | Cloud UI + REST API |
 | 5683 | LwM2M DM (CoAPs) |
 | 5684 | LwM2M Bootstrap (CoAPs) |
 | 1194 | OpenVPN (UDP) |
