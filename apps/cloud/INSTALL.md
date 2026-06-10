@@ -218,10 +218,13 @@ On the device side, point it at this host's bootstrap server — see
 ## 8. Updating to a new version
 
 ```bash
-git pull                                   # latest run.sh / compose / schemas
-docker pull docker.io/naushada/iot-cloud:latest   # or: ./run.sh build
-./run.sh
+git pull && ./run.sh
 ```
+
+`git pull` updates `run.sh` / compose / schemas; `run.sh` then pulls the
+latest image (`PULL=1` by default) and recreates the containers — no manual
+`docker pull`, stop, or `docker rmi` needed. To use a locally-built image
+instead, run `./run.sh build` first and start with `PULL=0 ./run.sh`.
 
 On start, `run.sh` **refreshes the `iot-etc` config volume** from the image so
 new data-store schemas always take effect. Without this, a named volume from a
