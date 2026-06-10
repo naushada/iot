@@ -137,8 +137,22 @@ Before exposing the host to the network, lock down the defaults:
 2. **Add per-operator users** (optional) on the **Users** page — each is
    `Admin` (read/write) or `Viewer` (read-only). They're stored hashed in the
    `auth.users.accounts` key; the built-in `admin` cannot be deleted.
-3. **Enable HTTPS.** iot-httpd terminates TLS itself (no reverse proxy needed);
-   changes hot-reload in ~2s:
+3. **Enable HTTPS (turnkey).** Just start with `HTTPS=1`:
+   ```bash
+   HTTPS=1 ./run.sh
+   ```
+   This generates a **self-signed cert** into `./tls/` (override the cert
+   subject with `TLS_HOST=<ip-or-domain>`, default = the host's primary IP),
+   serves the UI over **https on 443**, and runs a small redirector on **80**
+   that 301s `http://` → `https://`. Browsers warn on the self-signed cert
+   for a bare IP — that's expected; click through, or drop your own
+   `tls/server.crt` + `tls/server.key` in before starting to avoid it.
+
+   Open ports change to **443/tcp** (UI) and **80/tcp** (redirect) — allow
+   both in your firewall.
+
+   *Manual / advanced:* iot-httpd terminates TLS itself, so you can also drive
+   it via ds-cli (hot-reloads in ~2s) instead of `HTTPS=1`:
    ```bash
    DS(){ docker exec iot-ds-server ds-cli --socket=/var/run/iot/data_store.sock "$@"; }
    DS set http.listen.scheme '"https"'
@@ -146,8 +160,6 @@ Before exposing the host to the network, lock down the defaults:
    DS set http.tls.key  '"/etc/iot/tls/server.key"'
    DS set http.tls.ca   '"/etc/iot/tls/clients-ca.crt"'   # optional: enables mutual TLS
    ```
-   Make the cert/key paths resolve inside the container (bind-mount them or
-   drop them in the `iot-etc` volume under `/etc/iot/tls`).
 4. **Keep auth enabled** — `http.auth.enabled=true` is the default. Only disable
    it for local debugging: `DS set http.auth.enabled false`.
 
@@ -163,7 +175,9 @@ Override on the command line — they pass through to `docker-compose.yml`:
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `HTTP_PORT` | `80` | Cloud UI / REST port |
+| `HTTPS` | `0` | `1` = serve https on 443 (self-signed cert auto-generated) + redirect 80→443 (see §5) |
+| `TLS_HOST` | host primary IP | Cert subject/SAN when `HTTPS=1` (set to your IP or domain) |
+| `HTTP_PORT` | `80` (`443` if `HTTPS=1`) | Cloud UI / REST port |
 | `VPN_SUBNET` | `10.9.0.0/24` | OpenVPN tunnel subnet |
 | `PROXY_START` / `PROXY_END` | `5001` / `6000` | Device-UI reverse-proxy port pool |
 | `HTTP_WORKERS` | `4` | iot-httpd handler threads |

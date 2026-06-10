@@ -45,6 +45,12 @@ public:
     /// traversal is rejected. Used for the OTA .ipk firmware feed.
     void set_firmware_dir(std::string url_prefix, std::string dir);
 
+    /// Enable HTTPS-redirect mode. When `https_port > 0`, EVERY request
+    /// is answered with a 301 to `https://<Host>:<https_port><path>`,
+    /// taking precedence over all other routing. Used to run a plain-http
+    /// listener on :80 that bounces clients to the https listener (:443).
+    void set_https_redirect(int https_port);
+
     /// Dispatch a request. Returns 404 if no handler matches.
     HttpResponse route(const HttpParser::Request& req) const;
 
@@ -54,6 +60,7 @@ private:
     std::string m_static_dir;
     std::string m_fw_prefix;
     std::string m_fw_dir;
+    int         m_https_redirect = 0;  // 0 = off; else the https port
 };
 
 } // namespace http_server

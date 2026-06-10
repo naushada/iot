@@ -259,6 +259,18 @@ int main(int argc, char** argv) {
     if (!fwDir.empty()) router.set_firmware_dir("/firmware/", fwDir);
     http_server::install_handlers(router, &ds, &auth_store);
 
+    // Optional HTTPS-redirect mode: when redirect-https-port is set, this
+    // (plain-http) instance 301-redirects every request to https://<host>:
+    // <port>. Used by the :80 redirector container that bounces clients to
+    // the :443 https server.
+    {
+        std::string rport = arg_value(argc, argv, "redirect-https-port");
+        if (!rport.empty()) {
+            int p = std::atoi(rport.c_str());
+            if (p > 0) router.set_https_redirect(p);
+        }
+    }
+
     // ── Handler thread pool (FUP-L18-1) ───────────────────────
     // 0 workers → handlers run inline on the reactor thread (default).
     http_server::WorkerPool pool(static_cast<std::size_t>(httpWorkers));

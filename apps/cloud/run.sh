@@ -35,7 +35,18 @@
 set -euo pipefail
 
 IMAGE="${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}"
-HTTP_PORT="${HTTP_PORT:-80}"
+# HTTPS=1 → iot-httpd terminates TLS on 443 with a self-signed cert
+# (auto-generated below), and a redirect container bounces :80 → :443.
+# Default (HTTPS=0) is plain http on port 80.
+HTTPS="${HTTPS:-0}"
+if [ "$HTTPS" = "1" ]; then
+    HTTP_SCHEME="https"
+    HTTP_PORT="${HTTP_PORT:-443}"
+else
+    HTTP_SCHEME="http"
+    HTTP_PORT="${HTTP_PORT:-80}"
+fi
+HTTPS_PORT="$HTTP_PORT"
 VPN_SUBNET="${VPN_SUBNET:-10.9.0.0/24}"
 PROXY_START="${PROXY_START:-5001}"
 PROXY_END="${PROXY_END:-6000}"
@@ -90,9 +101,38 @@ if [ -z "$COMPOSE" ]; then
 fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# ── HTTPS: self-signed cert + redirect profile ────────────────────
+# Generate a self-signed cert once into ./tls (bind-mounted into
+# iot-httpd, persists across restarts) and switch on the redirect
+# service. Browsers warn on a self-signed cert for a bare IP — expected.
+if [ "$HTTPS" = "1" ]; then
+    export COMPOSE_PROFILES="https"
+    TLS_DIR="$SCRIPT_DIR/tls"
+    mkdir -p "$TLS_DIR"
+    if [ ! -s "$TLS_DIR/server.crt" ] || [ ! -s "$TLS_DIR/server.key" ]; then
+        TLS_HOST="${TLS_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+        TLS_HOST="${TLS_HOST:-localhost}"
+        if echo "$TLS_HOST" | grep -qE '^[0-9]+(\.[0-9]+){3}$'; then
+            SAN="IP:$TLS_HOST"
+        else
+            SAN="DNS:$TLS_HOST"
+        fi
+        if command -v openssl >/dev/null 2>&1; then
+            log_info "Generating self-signed TLS cert (CN=$TLS_HOST, SAN=$SAN) → $TLS_DIR"
+            openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
+                -keyout "$TLS_DIR/server.key" -out "$TLS_DIR/server.crt" \
+                -subj "/CN=$TLS_HOST" -addext "subjectAltName=$SAN" 2>/dev/null \
+              && log_info "TLS cert ready (override by setting TLS_HOST=<ip|host>, or drop your own server.crt+server.key into $TLS_DIR)" \
+              || log_info "openssl cert generation failed — provide $TLS_DIR/server.crt + server.key yourself"
+        else
+            log_info "openssl not found — install it or drop server.crt + server.key into $TLS_DIR"
+        fi
+    fi
+fi
+
 # Export env vars so docker-compose.yml can reference them
 export CLOUD_IMAGE="$IMAGE"
-export HTTP_PORT HTTP_WORKERS
+export HTTP_PORT HTTP_WORKERS HTTP_SCHEME HTTPS_PORT
 export VPN_SUBNET PROXY_START PROXY_END
 export COMPOSE_PROJECT_NAME="$PROJECT"
 
@@ -150,7 +190,7 @@ case "${1:-start}" in
 
         sleep 3
         echo ""
-        echo -e "  ${GREEN}Cloud UI:${NC}    http://localhost:$HTTP_PORT"
+        echo -e "  ${GREEN}Cloud UI:${NC}    ${HTTP_SCHEME}://localhost:$HTTP_PORT"
         echo -e "  ${GREEN}Login:${NC}       admin / admin"
         echo -e "  ${GREEN}LwM2M BS:${NC}   coaps://localhost:5684"
         echo -e "  ${GREEN}LwM2M DM:${NC}   coaps://localhost:5683"

@@ -26,7 +26,8 @@ set -euo pipefail
 # Edit this list to match your deployment.
 RULES=(
   "tcp  22   SSH — keep this or you lose remote access"
-  "tcp  80   Cloud UI + REST API"
+  "tcp  80   Cloud UI + REST API (http, or https-redirect)"
+  "tcp  443  Cloud UI + REST API (https, when HTTPS=1)"
   "udp  5684 LwM2M Bootstrap server"
   "udp  5683 LwM2M Device Management server"
   "tcp  1194 OpenVPN tunnel server (cloud.vpn.proto=tcp-server)"

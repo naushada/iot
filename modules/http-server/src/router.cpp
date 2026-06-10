@@ -82,7 +82,31 @@ void Router::set_firmware_dir(std::string url_prefix, std::string dir) {
     m_fw_dir = std::move(dir);
 }
 
+void Router::set_https_redirect(int https_port) {
+    m_https_redirect = https_port;
+}
+
 HttpResponse Router::route(const HttpParser::Request& req) const {
+    // HTTPS-redirect mode: bounce every request to the https listener.
+    // Runs before all other routing so a plain-http :80 instance is a pure
+    // redirector to https://<Host>:<port><path>.
+    if (m_https_redirect > 0) {
+        std::string host;
+        auto h = req.headers.find("host");
+        if (h != req.headers.end()) host = h->second;
+        auto colon = host.rfind(':');           // strip any :port from Host
+        if (colon != std::string::npos) host = host.substr(0, colon);
+        if (host.empty()) host = "localhost";
+        std::string loc = "https://" + host;
+        if (m_https_redirect != 443) loc += ":" + std::to_string(m_https_redirect);
+        loc += req.path;
+        HttpResponse r;
+        r.status = 301;
+        r.content_type = "text/plain";
+        r.headers["Location"] = loc;
+        return r;
+    }
+
     auto it = m_routes.find({req.method, req.path});
     if (it != m_routes.end()) {
         return it->second(req);

@@ -124,6 +124,9 @@ services:
       iot-httpd
       ds-socket=/var/run/iot/data_store.sock
       http-port=${HTTP_PORT:-80}
+      http-scheme=${HTTP_SCHEME:-http}
+      http-cert=/etc/iot/tls/server.crt
+      http-key=/etc/iot/tls/server.key
       www-dir=/usr/share/iot/cloud-www
       firmware-dir=/var/lib/iot/firmware
       http-workers=${HTTP_WORKERS:-4}
@@ -132,6 +135,30 @@ services:
     volumes:
       - iot-run:/var/run/iot
       - iot-firmware:/var/lib/iot/firmware:ro   # OTA .ipk feed (served at /firmware/)
+      - ./tls:/etc/iot/tls:ro                   # TLS cert/key (https; ignored in http mode)
+    depends_on:
+      ds-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── HTTPS → HTTP redirect (only under the `https` profile) ─────
+  # A plain-http listener on :80 that 301-redirects everything to https.
+  # run.sh enables it (COMPOSE_PROFILES=https) when started with HTTPS=1,
+  # so users who type http:// land on https://. Off by default.
+  iot-httpd-redirect:
+    image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}
+    container_name: iot-httpd-redirect
+    profiles: ["https"]
+    command: >
+      iot-httpd
+      ds-socket=/var/run/iot/data_store.sock
+      http-port=80
+      redirect-https-port=${HTTPS_PORT:-443}
+      www-dir=/usr/share/iot/cloud-www
+    ports:
+      - "80:80"
+    volumes:
+      - iot-run:/var/run/iot
     depends_on:
       ds-server:
         condition: service_healthy
