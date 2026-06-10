@@ -231,14 +231,27 @@ On the device side, point it at this host's bootstrap server — see
 
 ## 8. Updating to a new version
 
+**If you cloned the repo:**
 ```bash
 git pull && ./run.sh
 ```
 
-`git pull` updates `run.sh` / compose / schemas; `run.sh` then pulls the
-latest image (`PULL=1` by default) and recreates the containers — no manual
-`docker pull`, stop, or `docker rmi` needed. To use a locally-built image
-instead, run `./run.sh build` first and start with `PULL=0 ./run.sh`.
+**If you used the no-clone install** (curl'd `run.sh` + `docker-compose.yml`,
+not a git checkout — `git pull` fails with "not a git repository"): re-download
+the two files, then run:
+```bash
+cd ~/iot-cloud   # wherever run.sh lives
+BR=main          # or pin to a release tag, e.g. v1.0.0
+curl -fsSLO https://raw.githubusercontent.com/naushada/iot/$BR/apps/cloud/run.sh
+curl -fsSLO https://raw.githubusercontent.com/naushada/iot/$BR/apps/cloud/docker-compose.yml
+chmod +x run.sh && ./run.sh
+```
+
+Either way, `run.sh` then pulls the latest image (`PULL=1` by default) and
+recreates the containers — no manual `docker pull`, stop, or `docker rmi`
+needed. To use a locally-built image instead, run `./run.sh build` first and
+start with `PULL=0 ./run.sh`. (Refreshing `run.sh`/compose only matters when
+those files changed; an image-only update is just `./run.sh`.)
 
 On start, `run.sh` **refreshes the `iot-etc` config volume** from the image so
 new data-store schemas always take effect. Without this, a named volume from a
