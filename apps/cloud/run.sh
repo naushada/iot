@@ -68,7 +68,26 @@ detect_runtime() {
 }
 
 CR=$(detect_runtime)
-COMPOSE="$CR compose"
+
+# Resolve a Compose command that actually works on this host. The v2
+# plugin ("docker compose") is preferred, but many hosts only ship the
+# standalone v1 binary ("docker-compose"), or run podman. Probing here
+# avoids assuming "$CR compose" exists — when it doesn't, the bare "-f"
+# lands on plain docker and you get the cryptic:
+#     unknown shorthand flag: 'f' in -f
+detect_compose() {
+    if $CR compose version &>/dev/null; then echo "$CR compose"
+    elif command -v docker-compose &>/dev/null && docker-compose version &>/dev/null; then echo "docker-compose"
+    elif [ "$CR" != "podman" ] && command -v podman &>/dev/null && podman compose version &>/dev/null; then echo "podman compose"
+    fi
+}
+COMPOSE=$(detect_compose)
+if [ -z "$COMPOSE" ]; then
+    echo -e "${RED}ERROR: no working Compose found for '$CR'.${NC}" >&2
+    echo "Install the Compose v2 plugin (e.g. 'apt-get install docker-compose-plugin')" >&2
+    echo "or the standalone 'docker-compose' binary, then re-run." >&2
+    exit 1
+fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Export env vars so docker-compose.yml can reference them
