@@ -35,7 +35,7 @@ Both start the same multi-container stack via `docker compose`.
   | 80 | tcp | Cloud UI + REST API |
   | 5684 | udp | LwM2M Bootstrap (CoAPs) |
   | 5683 | udp | LwM2M Device Management (CoAPs) |
-  | 1194 | udp | OpenVPN (device tunnels, served by iot-cloudd) |
+  | 1194 | tcp | OpenVPN (device tunnels, served by iot-cloudd; `cloud.vpn.proto=tcp-server`) |
 
   On the host you can open these in one shot with the bundled helper
   (idempotent, persists across reboot):

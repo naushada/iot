@@ -29,7 +29,7 @@ RULES=(
   "tcp  80   Cloud UI + REST API"
   "udp  5684 LwM2M Bootstrap server"
   "udp  5683 LwM2M Device Management server"
-  # "udp 1194 OpenVPN tunnel — uncomment if used; match cloud.vpn.proto (tcp/udp)"
+  "tcp  1194 OpenVPN tunnel server (cloud.vpn.proto=tcp-server)"
 )
 
 require_root() {
