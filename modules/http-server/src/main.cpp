@@ -37,6 +37,7 @@
 
 #include "data_store/log_buffer.hpp"
 #include "data_store/stats_publisher.hpp"
+#include <ace/OS_NS_unistd.h>
 #include <ace/Reactor.h>
 #include <ace/SOCK_Acceptor.h>
 #include <ace/Time_Value.h>
@@ -132,14 +133,39 @@ int main(int argc, char** argv) {
     // Register ACE log callback now that ACE is initialised
     g_log.start();
 
+    // Retry the ds-server connect instead of exiting immediately. On a
+    // host/daemon restart (where compose `depends_on` ordering is NOT
+    // honored) httpd can come up before ds-server's socket exists; rather
+    // than crash-restart-looping, wait for it. After ~60s of failures we
+    // give up with exit 1 so Docker's restart policy surfaces a genuinely
+    // dead ds-server.
     data_store::Client ds;
-    auto cs = ds.connect(dsPath);
-    if (!cs.ok) {
-        ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D httpd:thread:%t %M %N:%l ds-server connect to %C "
-                            "failed: %C\n"),
-                   dsPath.c_str(), cs.err.c_str()));
-        return 1;
+    {
+        constexpr int kMaxAttempts = 60;  // ~60 × 1s
+        int attempt = 0;
+        for (;;) {
+            auto cs = ds.connect(dsPath);
+            if (cs.ok) {
+                if (attempt > 0)
+                    ACE_DEBUG((LM_INFO,
+                               ACE_TEXT("%D httpd:thread:%t %M %N:%l ds-server "
+                                        "connected after %d retr%C\n"),
+                               attempt, attempt == 1 ? "y" : "ies"));
+                break;
+            }
+            if (++attempt >= kMaxAttempts) {
+                ACE_ERROR((LM_ERROR,
+                           ACE_TEXT("%D httpd:thread:%t %M %N:%l ds-server connect "
+                                    "to %C failed after %d attempts: %C\n"),
+                           dsPath.c_str(), attempt, cs.err.c_str()));
+                return 1;
+            }
+            ACE_DEBUG((LM_WARNING,
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l ds-server connect to %C "
+                                "not ready (%C); retry %d/%d in 1s\n"),
+                       dsPath.c_str(), cs.err.c_str(), attempt, kMaxAttempts));
+            ACE_OS::sleep(ACE_Time_Value(1));
+        }
     }
 
     // Read http.* from data store (schema defaults apply if unset).

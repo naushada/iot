@@ -46,6 +46,8 @@ std::string HttpResponse::to_string(bool keep_alive) const {
     const char* reason = "OK";
     switch (status) {
         case 200: reason = "OK"; break;
+        case 301: reason = "Moved Permanently"; break;
+        case 302: reason = "Found"; break;
         case 400: reason = "Bad Request"; break;
         case 401: reason = "Unauthorized"; break;
         case 404: reason = "Not Found"; break;
@@ -143,11 +145,15 @@ HttpResponse Router::route(const HttpParser::Request& req) const {
                     found = true;
                     break;
                 }
-                // Walk up one directory level
+                // Stop once the root ("/") has been checked — otherwise the
+                // walk-up below would substr "/" back to "/" forever, hanging
+                // the handler thread (a request to "/" with no root index.html
+                // is exactly that case).
+                if (dir == "/" || dir.empty()) break;
+                // Walk up one directory level.
                 auto pos = dir.rfind('/');
                 if (pos == std::string::npos) break;
-                dir = dir.substr(0, pos > 0 ? pos : 1);  // "" → "/"
-                if (dir.empty()) dir = "/";
+                dir = (pos == 0) ? std::string("/") : dir.substr(0, pos);
             }
             if (!found) {
                 file_path = m_static_dir + "/index.html";

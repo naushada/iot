@@ -82,6 +82,20 @@ bool save_accounts(data_store::Client* ds, const json& arr) {
 void install_handlers(Router& router,
                       data_store::Client* ds,
                       SessionStore* auth) {
+    // ─── GET / → redirect to the SPA login ───────────────────
+    // The UI lives under /webui/; hitting the bare host (e.g. just the
+    // IP) should land on the login page instead of a 404, so users can
+    // reach it with or without the /webui/login path.
+    router.add("GET", "/",
+        [](const HttpParser::Request&) -> HttpResponse {
+            HttpResponse r;
+            r.status = 302;
+            r.content_type = "text/plain";
+            r.headers["Location"] = "/webui/login";
+            r.body = "";
+            return r;
+        });
+
     // ─── POST /api/v1/db/get ─────────────────────────────────
     router.add("POST", "/api/v1/db/get",
         [ds](const HttpParser::Request& req) -> HttpResponse {
