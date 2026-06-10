@@ -37,6 +37,17 @@ Both start the same multi-container stack via `docker compose`.
   | 5683 | udp | LwM2M Device Management (CoAPs) |
   | 1194 | udp | OpenVPN (device tunnels, served by iot-cloudd) |
 
+  On the host you can open these in one shot with the bundled helper
+  (idempotent, persists across reboot):
+
+  ```bash
+  sudo ./host-firewall.sh
+  ```
+
+  Note: on a VPS the **cloud-provider firewall** (Contabo Cloud Firewall,
+  AWS security group, etc.) must allow these too — it's usually what
+  blocks you, not host iptables.
+
 ---
 
 ## 2. Clone the repo
