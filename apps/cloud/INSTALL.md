@@ -141,12 +141,14 @@ Before exposing the host to the network, lock down the defaults:
    ```bash
    HTTPS=1 ./run.sh
    ```
-   This generates a **self-signed cert** into `./tls/` (override the cert
-   subject with `TLS_HOST=<ip-or-domain>`, default = the host's primary IP),
-   serves the UI over **https on 443**, and runs a small redirector on **80**
-   that 301s `http://` → `https://`. Browsers warn on the self-signed cert
-   for a bare IP — that's expected; click through, or drop your own
-   `tls/server.crt` + `tls/server.key` in before starting to avoid it.
+   The **image self-provisions a self-signed cert** at startup (its own
+   `openssl`, into the `iot-tls` volume) — no host `openssl`, no cert files
+   to manage. It serves the UI over **https on 443** and runs a small
+   redirector on **80** that 301s `http://` → `https://`. The cert is issued
+   for the host's primary IP; override with `TLS_HOST=<ip-or-domain> HTTPS=1
+   ./run.sh`. Browsers warn on a self-signed cert for a bare IP — expected;
+   click through. To use your own cert instead, drop `server.crt`+`server.key`
+   into the `iot-tls` volume (`/etc/iot/tls/`) before starting.
 
    Open ports change to **443/tcp** (UI) and **80/tcp** (redirect) — allow
    both in your firewall.

@@ -135,7 +135,9 @@ services:
     volumes:
       - iot-run:/var/run/iot
       - iot-firmware:/var/lib/iot/firmware:ro   # OTA .ipk feed (served at /firmware/)
-      - ./tls:/etc/iot/tls:ro                   # TLS cert/key (https; ignored in http mode)
+      - iot-tls:/etc/iot/tls                    # self-signed cert — auto-provisioned by the image entrypoint
+    environment:
+      - TLS_HOST=${TLS_HOST:-}                  # cert CN/SAN for https (run.sh passes the host IP)
     depends_on:
       ds-server:
         condition: service_healthy
@@ -192,3 +194,4 @@ volumes:
   iot-vpn:    # VPN PKI (server certs)
   iot-ca-key: # CA private key (secret — auto-generated on first run)
   iot-firmware: # OTA .ipk packages (seeded by operator; served by iot-httpd)
+  iot-tls:    # self-signed https cert (auto-provisioned by the image entrypoint)

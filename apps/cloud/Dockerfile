@@ -117,7 +117,7 @@ FROM docker.io/library/ubuntu:22.04 AS runtime
 
 RUN apt-get -o Acquire::Check-Date=false update && \
     apt-get install -y --no-install-recommends \
-    libssl3 zlib1g libreadline8 liblua5.3-0 iptables openvpn ca-certificates \
+    libssl3 openssl zlib1g libreadline8 liblua5.3-0 iptables openvpn ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # PSK provisioning (task P): shared cloud service account/group. The cloud
@@ -167,6 +167,14 @@ COPY modules/wan/wifi/client/schemas/wifi.lua /etc/iot/ds-schemas/
 COPY apps/config/ /etc/iot/config/
 
 RUN mkdir -p /var/run/iot /var/lib/iot
+
+# Entrypoint: self-provisions a self-signed TLS cert for the https iot-httpd
+# (using the image's own openssl) when none exists, then exec's the service.
+# Every other service passes straight through. Makes HTTPS self-contained —
+# no host openssl, no run.sh cert step.
+COPY apps/cloud/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # CoAP/DTLS (5683 DM, 5684 BS) are UDP — make it explicit (EXPOSE defaults to
 # TCP). 8080 HTTP API and 1194 OpenVPN are TCP.
