@@ -199,7 +199,10 @@ case "${1:-start}" in
 
     stop|down)
         log_section "Stopping IoT Cloud"
-        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" down
+        # --remove-orphans also tears down the profile-gated services
+        # (watchtower, https redirect) — otherwise they linger attached to
+        # cloud_default and block the network removal ("network ... in use").
+        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" down --remove-orphans
         ;;
 
     logs)
