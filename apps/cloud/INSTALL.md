@@ -322,6 +322,10 @@ docker rmi docker.io/naushada/iot-cloud:latest
 
 ## 11. Troubleshooting
 
+> See [`troubleshoot.md`](troubleshoot.md) for the `DS` ds-cli helper and
+> deeper recipes — device bootstrap / DTLS handshake failures, PSK
+> provisioning, `lwm2m-dm` 5683 bind errors, HTTPS/cert, and firewall.
+
 - **Metrics blank for some services** — stale config volume with an old
   schema. The default `RESET_CONFIG=1` fixes this on the next `./run.sh`; or
   manually: `./run.sh stop && docker volume rm cloud_iot-etc && ./run.sh`.
