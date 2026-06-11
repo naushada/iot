@@ -508,6 +508,27 @@ int main(int argc, char** argv) {
                                ACE_TEXT("%D cloudd:thread:%t %M %N:%l deprovision request '%C'\n"),
                                ep->c_str()));
                     bool ok = provisioner.deprovision(*ep);
+                    // Also drop the per-endpoint credential record so the BS/DM
+                    // stop accepting it and the row disappears from
+                    // cloud.endpoint.credentials. Done independently of the
+                    // registry result so a stale credential-only entry can
+                    // still be cleaned (counts as a successful removal).
+                    try {
+                        const std::string cur =
+                            ds_str(ds, "cloud.endpoint.credentials", "[]");
+                        const std::string next =
+                            server::lwm2m::remove_credential(cur, *ep);
+                        if (next != cur) {
+                            ds.set("cloud.endpoint.credentials",
+                                   data_store::Value{next});
+                            ok = true;
+                        }
+                    } catch (const std::exception& e) {
+                        ACE_ERROR((LM_ERROR,
+                                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l remove "
+                                            "credential for %C failed: %C\n"),
+                                   ep->c_str(), e.what()));
+                    }
                     ACE_DEBUG((LM_INFO,
                                ACE_TEXT("%D cloudd:thread:%t %M %N:%l deprovision %C '%C'\n"),
                                (ok ? "ok" : "failed (not found)"), ep->c_str()));
