@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/co
 import { Subscription } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
 import { HttpsvcService } from '../../common/httpsvc.service';
+import { DataStoreService } from '../../common/datastore.service';
 import { SessionService } from '../../common/session.service';
 import { ToastService } from '../../common/toast.service';
 import { environment } from '../../environments/environment';
@@ -116,9 +117,7 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   logLevelDtls = '';
   levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR'];
   daemonLevels: string[] = ['', 'DEBUG', 'INFO', 'WARNING', 'ERROR'];
-  private active = true;
   private sub = new Subscription();
-  private pollSub?: Subscription;   // the in-flight long-poll, cancelled on destroy
   private api = environment.apiUrl;
 
   get isAdmin(): boolean { return this.session.isAdmin; }
@@ -126,55 +125,33 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   constructor(
     private http: HttpClient,
     private httpSvc: HttpsvcService,
+    private ds: DataStoreService,
     private session: SessionService,
     private toast: ToastService
   ) {}
 
   ngOnInit(): void {
-    // Load current log levels (global + per-daemon)
-    const lvlKeys = ['log.level', 'log.level.cloudd', 'log.level.httpd',
-      'log.level.lwm2m.bs', 'log.level.lwm2m.dm', 'log.level.vpn', 'log.level.dtls'];
-    this.httpSvc.dbGet(lvlKeys).subscribe({
-      next: (r) => {
-        if (r.ok && r.data) {
-          const d = r.data as Record<string, unknown>;
-          const g = (d['log.level'] as string || 'INFO').toUpperCase();
-          if (this.levels.includes(g)) this.logLevel = g;
-          this.logLevelCloudd = this.pickLevel(d['log.level.cloudd']);
-          this.logLevelHttpd = this.pickLevel(d['log.level.httpd']);
-          this.logLevelLwm2mBs = this.pickLevel(d['log.level.lwm2m.bs']);
-          this.logLevelLwm2mDm = this.pickLevel(d['log.level.lwm2m.dm']);
-          this.logLevelVpn = this.pickLevel(d['log.level.vpn']);
-          this.logLevelDtls = this.pickLevel(d['log.level.dtls']);
-        }
-      }
-    });
-    // Load log text then start long-poll loop
+    // Log levels paint instantly from the prefetched cache (config keys,
+    // changed only via this UI).
+    this.applyLevels(this.ds.snapshot());
+    // Load log text once, then refresh whenever the shared /status long-poll
+    // pushes a log.version bump — no per-page long-poll (worker starvation fix).
     this.refresh();
-    this.pollLog();
+    this.sub.add(this.ds.observe('log.version').subscribe(() => {
+      if (this.autoRefresh) this.fetchAndShow();
+    }));
   }
 
-  /// Long-poll log.text and log.cloudd.text alternately. When either
-  /// changes, re-fetch the full merged log from /api/v1/log.
-  /// Timeout (30s) → re-fetch and poll the next key.
-  private pollLog(): void {
-    if (!this.active) return;
-    // Long-poll a single key (log.version) that every daemon bumps on
-    // flush. When it changes, re-fetch the full merged log + levels.
-    // Keep the handle so ngOnDestroy can abort the open request on page
-    // switch (otherwise the 30s request lingers and ties up a server worker).
-    this.pollSub = this.httpSvc.dbGetLongPoll('log.version', 30).subscribe({
-      next: () => {
-        if (this.autoRefresh) {
-          this.reloadLevels();
-          this.fetchAndShow();
-        }
-        this.pollLog();
-      },
-      error: () => {
-        this.pollLog();
-      }
-    });
+  /// Apply log levels from a flat ds-key record (the DataStore snapshot).
+  private applyLevels(d: Record<string, unknown>): void {
+    const g = (d['log.level'] as string || 'INFO').toUpperCase();
+    if (this.levels.includes(g)) this.logLevel = g;
+    this.logLevelCloudd = this.pickLevel(d['log.level.cloudd']);
+    this.logLevelHttpd = this.pickLevel(d['log.level.httpd']);
+    this.logLevelLwm2mBs = this.pickLevel(d['log.level.lwm2m.bs']);
+    this.logLevelLwm2mDm = this.pickLevel(d['log.level.lwm2m.dm']);
+    this.logLevelVpn = this.pickLevel(d['log.level.vpn']);
+    this.logLevelDtls = this.pickLevel(d['log.level.dtls']);
   }
 
   private fetchAndShow(): void {
@@ -235,26 +212,6 @@ export class LogViewerComponent implements OnInit, OnDestroy {
     });
   }
 
-  private reloadLevels(): void {
-    const lvlKeys = ['log.level', 'log.level.cloudd', 'log.level.httpd',
-      'log.level.lwm2m.bs', 'log.level.lwm2m.dm', 'log.level.vpn', 'log.level.dtls'];
-    this.httpSvc.dbGet(lvlKeys).subscribe({
-      next: (r) => {
-        if (r.ok && r.data) {
-          const d = r.data as Record<string, unknown>;
-          const g = (d['log.level'] as string || 'INFO').toUpperCase();
-          if (this.levels.includes(g)) this.logLevel = g;
-          this.logLevelCloudd = this.pickLevel(d['log.level.cloudd']);
-          this.logLevelHttpd = this.pickLevel(d['log.level.httpd']);
-          this.logLevelLwm2mBs = this.pickLevel(d['log.level.lwm2m.bs']);
-          this.logLevelLwm2mDm = this.pickLevel(d['log.level.lwm2m.dm']);
-          this.logLevelVpn = this.pickLevel(d['log.level.vpn']);
-          this.logLevelDtls = this.pickLevel(d['log.level.dtls']);
-        }
-      }
-    });
-  }
-
   private scrollBottom(): void {
     setTimeout(() => {
       const el = this.ta?.nativeElement;
@@ -263,10 +220,7 @@ export class LogViewerComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    // Stop polling on page switch: flip the guard so no new poll starts,
-    // and cancel the in-flight long-poll so its open request is aborted.
-    this.active = false;
-    this.pollSub?.unsubscribe();
+    // Cache observer only — nothing to abort server-side.
     this.sub.unsubscribe();
   }
 }

@@ -43,6 +43,32 @@ export class DataStoreService {
     // Log levels
     'log.level', 'log.level.cloudd', 'log.level.httpd',
     'log.level.lwm2m.bs', 'log.level.lwm2m.dm', 'log.level.vpn', 'log.level.dtls',
+    // Cloud Service rows (state/enable + L22 telemetry). Seeded here for an
+    // instant first paint; kept fresh by the shared /status long-poll, which
+    // now wakes on services.stats.version. The Services page reads these from
+    // the cache instead of opening its own long-poll (worker starvation fix).
+    'services.ds.state',
+    'services.cloud.iot.cloudd.enable', 'services.cloud.iot.cloudd.state',
+    'services.cloud.iot.httpd.enable', 'services.cloud.iot.httpd.state',
+    'services.cloud.openvpn.server.enable', 'services.cloud.openvpn.server.state',
+    'services.cloud.lwm2m.bs.state', 'services.cloud.lwm2m.dm.state',
+    'services.ds.cpu.permille', 'services.ds.cpu.count', 'services.ds.mem.rss.kb',
+    'services.ds.fd.count', 'services.ds.threads',
+    'services.cloud.iot.cloudd.cpu.permille', 'services.cloud.iot.cloudd.cpu.count',
+    'services.cloud.iot.cloudd.mem.rss.kb', 'services.cloud.iot.cloudd.fd.count',
+    'services.cloud.iot.cloudd.threads',
+    'services.cloud.iot.httpd.cpu.permille', 'services.cloud.iot.httpd.cpu.count',
+    'services.cloud.iot.httpd.mem.rss.kb', 'services.cloud.iot.httpd.fd.count',
+    'services.cloud.iot.httpd.threads',
+    'services.cloud.openvpn.server.cpu.permille', 'services.cloud.openvpn.server.cpu.count',
+    'services.cloud.openvpn.server.mem.rss.kb', 'services.cloud.openvpn.server.fd.count',
+    'services.cloud.openvpn.server.threads',
+    'services.cloud.lwm2m.bs.cpu.permille', 'services.cloud.lwm2m.bs.cpu.count',
+    'services.cloud.lwm2m.bs.mem.rss.kb', 'services.cloud.lwm2m.bs.fd.count',
+    'services.cloud.lwm2m.bs.threads',
+    'services.cloud.lwm2m.dm.cpu.permille', 'services.cloud.lwm2m.dm.cpu.count',
+    'services.cloud.lwm2m.dm.mem.rss.kb', 'services.cloud.lwm2m.dm.fd.count',
+    'services.cloud.lwm2m.dm.threads',
   ];
 
   private cache = new Map<string, unknown>();
@@ -87,6 +113,13 @@ export class DataStoreService {
       if (s.routing.last_apply_unix != null) this.set('net.last.apply.unix', s.routing.last_apply_unix);
     }
     if (s.wan && s.wan.active_iface != null) this.set('net.iface.active', s.wan.active_iface);
+    // Cloud Service rows + domain bump keys come through verbatim — copy
+    // each into the cache under its ds key so the Services/Logs pages (and
+    // anyone observing services.stats.version / log.version) stay live off
+    // this single long-poll.
+    if (s.cloud) {
+      for (const k of Object.keys(s.cloud)) this.set(k, s.cloud[k]);
+    }
   }
 
   // ── Accessors ─────────────────────────────────────────────────────
