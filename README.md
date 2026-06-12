@@ -47,7 +47,7 @@ in `iot-httpd`, or run the dev server with `./serve.sh` (podman required).
 
 | Section    | Purpose |
 |------------|---------|
-| Dashboard  | Live VPN/WiFi/WAN/LwM2M status cards + service overview |
+| Dashboard  | Live VPN/WiFi/WAN/LwM2M connection-status cards (real-time LwM2M bootstrap → device-management → registered lifecycle) + service overview |
 | VPN        | OpenVPN config form + real-time connection status |
 | WAN        | WiFi config, scan results, interface priority |
 | Routing    | DNAT target + port forwarding rules |
