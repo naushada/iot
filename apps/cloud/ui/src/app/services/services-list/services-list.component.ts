@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../../common/httpsvc.service';
+import { DataStoreService } from '../../../common/datastore.service';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
 
@@ -98,18 +99,25 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     { key: 'lwm2m.bs',       label: 'lwm2m-bs',          desc: 'LwM2M Bootstrap Server (CoAPs 5684).',            enable_key: '', state: 'stopped', enabled: true, restarting: false, state_key: 'services.cloud.lwm2m.bs.state' },
     { key: 'lwm2m.dm',       label: 'lwm2m-dm',          desc: 'LwM2M Device Management (CoAPs 5683).',           enable_key: '', state: 'stopped', enabled: true, restarting: false, state_key: 'services.cloud.lwm2m.dm.state' },
   ];
-  private active = true;
-  private pollSub?: Subscription;   // in-flight long-poll, cancelled on destroy
+  private sub?: Subscription;   // shared-cache observer, cancelled on destroy
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
   constructor(
     private http: HttpsvcService,
+    private ds: DataStoreService,
     private session: SessionService,
     private toast: ToastService
   ) {}
 
-  ngOnInit(): void { this.fetchAll(); }
+  /// Paint instantly from the prefetched cache, then re-apply on every
+  /// services.stats.version bump pushed by the shared /status long-poll.
+  /// No per-page long-poll → no worker starvation on revisit.
+  ngOnInit(): void {
+    this.applyState(this.ds.snapshot());
+    this.sub = this.ds.observe('services.stats.version')
+      .subscribe(() => this.applyState(this.ds.snapshot()));
+  }
 
   /// Services that can be enabled/disabled + restarted (have an enable key).
   gateable(s: SvcRow): boolean { return !!s.enable_key; }
@@ -139,63 +147,32 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     return s.state_key || s.enable_key.replace('.enable', '.state');
   }
 
-  /// Fetch all state/enable + telemetry keys via POST, then start long-poll.
-  private fetchAll(): void {
-    if (!this.active) return;
-    const keys: string[] = ['services.ds.state'];
+  /// Map the flat ds-key cache into the service rows (state + enable +
+  /// telemetry). Source is the shared DataStore snapshot — no HTTP here.
+  private applyState(d: Record<string, unknown>): void {
+    const num = (k: string): number | undefined => {
+      const v = d[k];
+      return typeof v === 'number' ? v : undefined;
+    };
     for (const s of this.services) {
-      if (s.key !== 'ds') {
-        keys.push(this.stateKeyOf(s));
-        if (s.enable_key) keys.push(s.enable_key);
+      if (s.key === 'ds') {
+        const sv = d['services.ds.state'];
+        if (typeof sv === 'string') s.state = sv;
+      } else {
+        const sv = d[this.stateKeyOf(s)];
+        if (typeof sv === 'string') s.state = sv;
+        if (s.enable_key) {
+          const ev = d[s.enable_key];
+          if (typeof ev === 'boolean') s.enabled = ev;
+        }
       }
       const p = this.statsPrefix(s);
-      keys.push(p + '.cpu.permille', p + '.cpu.count', p + '.mem.rss.kb', p + '.fd.count', p + '.threads');
+      s.cpu_permille = num(p + '.cpu.permille');
+      s.cpu_count    = num(p + '.cpu.count');
+      s.mem_kb       = num(p + '.mem.rss.kb');
+      s.fd_count     = num(p + '.fd.count');
+      s.threads      = num(p + '.threads');
     }
-    this.http.dbGet(keys).subscribe({
-      next: (r) => this.applyState(r),
-      error: () => this.scheduleLongPoll()
-    });
-  }
-
-  private applyState(r: { ok: boolean; data?: Record<string, unknown> }): void {
-    if (r.ok && r.data) {
-      const d = r.data as Record<string, unknown>;
-      const num = (k: string): number | undefined => {
-        const v = d[k];
-        return typeof v === 'number' ? v : undefined;
-      };
-      for (const s of this.services) {
-        if (s.key === 'ds') {
-          const sv = d['services.ds.state'];
-          if (typeof sv === 'string') s.state = sv;
-        } else {
-          const sv = d[this.stateKeyOf(s)];
-          if (typeof sv === 'string') s.state = sv;
-          if (s.enable_key) {
-            const ev = d[s.enable_key];
-            if (typeof ev === 'boolean') s.enabled = ev;
-          }
-        }
-        const p = this.statsPrefix(s);
-        s.cpu_permille = num(p + '.cpu.permille');
-        s.cpu_count    = num(p + '.cpu.count');
-        s.mem_kb       = num(p + '.mem.rss.kb');
-        s.fd_count     = num(p + '.fd.count');
-        s.threads      = num(p + '.threads');
-      }
-    }
-    this.scheduleLongPoll();
-  }
-
-  /// Long-poll the single services.stats.version bump key — every daemon
-  /// bumps it on each ~10s flush (and the http handler bumps on state
-  /// changes), so one wake refreshes all rows (state + enable + telemetry).
-  private scheduleLongPoll(): void {
-    if (!this.active) return;
-    this.pollSub = this.http.dbGetLongPoll('services.stats.version', 30).subscribe({
-      next: () => this.fetchAll(),
-      error: () => { if (this.active) setTimeout(() => this.fetchAll(), 5000); }
-    });
   }
 
   toggleEnable(svc: SvcRow): void {
@@ -224,5 +201,5 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     });
   }
 
-  ngOnDestroy(): void { this.active = false; this.pollSub?.unsubscribe(); }
+  ngOnDestroy(): void { this.sub?.unsubscribe(); }
 }

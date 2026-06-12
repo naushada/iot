@@ -8,6 +8,9 @@ export interface StatusSnapshot {
   wan:      WanStatus;
   routing:  RoutingStatus;
   services: ServicesStatus;
+  /// Flat passthrough of ds keys the SPA caches verbatim (cloud Service
+  /// rows + domain bump keys like services.stats.version / log.version).
+  cloud?:   Record<string, unknown>;
 }
 
 export interface Lwm2mStatus {

@@ -429,8 +429,17 @@ void install_handlers(Router& router,
                     data_store::Client::kInvalidHandle;
                 data_store::Client::WatchHandle wh_conn =
                     data_store::Client::kInvalidHandle;
+                data_store::Client::WatchHandle wh_stats =
+                    data_store::Client::kInvalidHandle;
+                data_store::Client::WatchHandle wh_log =
+                    data_store::Client::kInvalidHandle;
                 auto ws = ds->watch("vpn.state", notify, &wh_vpn);
                 ds->watch("iot.conn.state", notify, &wh_conn);
+                // Also wake on the two domain bump keys so this single status
+                // long-poll carries Service telemetry + Logs freshness — the
+                // SPA needs no per-page long-poll (avoids worker starvation).
+                ds->watch("services.stats.version", notify, &wh_stats);
+                ds->watch("log.version", notify, &wh_log);
                 if (ws.ok) {
                     std::unique_lock<std::mutex> lk(st->m);
                     st->cv.wait_for(lk, std::chrono::seconds(timeout),
@@ -440,6 +449,10 @@ void install_handlers(Router& router,
                     ds->unwatch(wh_vpn);
                 if (wh_conn != data_store::Client::kInvalidHandle)
                     ds->unwatch(wh_conn);
+                if (wh_stats != data_store::Client::kInvalidHandle)
+                    ds->unwatch(wh_stats);
+                if (wh_log != data_store::Client::kInvalidHandle)
+                    ds->unwatch(wh_log);
                 // Fall through to build the full status snapshot
             }
             std::vector<data_store::Client::GetResult> got;
@@ -486,6 +499,29 @@ void install_handlers(Router& router,
                 "services.wifi.client.cpu.permille", "services.wifi.client.cpu.count",
                 "services.wifi.client.mem.rss.kb",
                 "services.wifi.client.fd.count", "services.wifi.client.threads",
+                // ── Cloud service states/enables + telemetry (cloud UI
+                // Services page reads these via the shared status poll) ──
+                "services.cloud.iot.cloudd.enable", "services.cloud.iot.cloudd.state",
+                "services.cloud.iot.httpd.enable", "services.cloud.iot.httpd.state",
+                "services.cloud.openvpn.server.enable", "services.cloud.openvpn.server.state",
+                "services.cloud.lwm2m.bs.state", "services.cloud.lwm2m.dm.state",
+                "services.cloud.iot.cloudd.cpu.permille", "services.cloud.iot.cloudd.cpu.count",
+                "services.cloud.iot.cloudd.mem.rss.kb",
+                "services.cloud.iot.cloudd.fd.count", "services.cloud.iot.cloudd.threads",
+                "services.cloud.iot.httpd.cpu.permille", "services.cloud.iot.httpd.cpu.count",
+                "services.cloud.iot.httpd.mem.rss.kb",
+                "services.cloud.iot.httpd.fd.count", "services.cloud.iot.httpd.threads",
+                "services.cloud.openvpn.server.cpu.permille", "services.cloud.openvpn.server.cpu.count",
+                "services.cloud.openvpn.server.mem.rss.kb",
+                "services.cloud.openvpn.server.fd.count", "services.cloud.openvpn.server.threads",
+                "services.cloud.lwm2m.bs.cpu.permille", "services.cloud.lwm2m.bs.cpu.count",
+                "services.cloud.lwm2m.bs.mem.rss.kb",
+                "services.cloud.lwm2m.bs.fd.count", "services.cloud.lwm2m.bs.threads",
+                "services.cloud.lwm2m.dm.cpu.permille", "services.cloud.lwm2m.dm.cpu.count",
+                "services.cloud.lwm2m.dm.mem.rss.kb",
+                "services.cloud.lwm2m.dm.fd.count", "services.cloud.lwm2m.dm.threads",
+                // Domain bump keys — echoed back so the SPA can observe them.
+                "services.stats.version", "log.version",
             }, got);
             json resp;
             resp["ok"] = true;
@@ -502,6 +538,9 @@ void install_handlers(Router& router,
             json wan        = json::object();
             json routing    = json::object();
             json services   = json::object();
+            // Flat passthrough (ds key → typed value) for keys the SPA caches
+            // verbatim (cloud Service rows + domain bump keys).
+            json cloud      = json::object();
 
             for (const auto& g : got) {
                 const auto& k = g.key;
@@ -592,6 +631,20 @@ void install_handlers(Router& router,
                 else if (k == "services.wifi.client.mem.rss.kb")      services["wifi_client"]["mem_kb"] = iv();
                 else if (k == "services.wifi.client.fd.count")        services["wifi_client"]["fd_count"] = iv();
                 else if (k == "services.wifi.client.threads")         services["wifi_client"]["threads"] = iv();
+
+                // Cloud Service rows + bump keys: pass through verbatim under
+                // their ds key, typed by suffix (state→string, enable→bool,
+                // everything else numeric).
+                else if (k.rfind("services.cloud.", 0) == 0 ||
+                         k == "services.stats.version" || k == "log.version") {
+                    if (g.has_value) {
+                        const std::string suffix =
+                            k.size() >= 6 ? k.substr(k.size() - 6) : k;
+                        if (suffix == ".state")        cloud[k] = sv();
+                        else if (suffix == "enable")   cloud[k] = bv(true);
+                        else                           cloud[k] = iv();
+                    }
+                }
             }
             resp["lwm2m"]    = lwm2m;
             resp["vpn"]      = vpn;
@@ -599,6 +652,7 @@ void install_handlers(Router& router,
             resp["wan"]      = wan;
             resp["routing"]  = routing;
             resp["services"] = services;
+            resp["cloud"]    = cloud;
             r.body = resp.dump();
             return r;
         });
