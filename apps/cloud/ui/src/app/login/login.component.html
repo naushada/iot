@@ -22,6 +22,7 @@
         <div class="alert-items"><div class="alert-item static"><span class="alert-text">{{error}}</span></div></div>
       </div>
       <button type="submit" class="btn btn-primary btn-block" [disabled]="loggingIn" style="margin-top:20px;width:100%;">
+        <span *ngIf="loggingIn" class="spinner spinner-inline spinner-inverse" style="margin-right:8px;"></span>
         {{ loggingIn ? 'Signing in…' : 'Sign in' }}
       </button>
     </form>
