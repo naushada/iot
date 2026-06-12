@@ -111,6 +111,81 @@ allow these too — it's usually what silently drops them. Host side: see
 `host-firewall.sh`. Quick reachability check from elsewhere:
 `nc -vzu <host> 5684` (UDP), `nc -vz <host> 443` (TCP).
 
+**timeout vs refused — read it right.** A `nc` / SSH **timeout** means the
+packet was silently *dropped* → a firewall is filtering that port. A
+**"Connection refused"** (TCP RST) means the packet *reached* the host and
+nothing's listening → host is reachable, firewall is NOT the problem. So
+"22 times out but 80 refuses" = a firewall rule on 22 specifically, not a
+dead host. UDP gives neither: a dropped UDP probe and an open-but-idle UDP
+port both look identical (`nc -u` prints "succeeded"), so confirm UDP from
+the host with `ss -ulnp | grep -E '5683|5684'`, not from outside.
+
+### Contabo Cloud Firewall is **default-deny** — allow, don't remove
+
+The Contabo Cloud Firewall is an **allow-list**: while it's attached to the
+VPS, *everything* is dropped except ports you explicitly allow. Two traps we
+hit:
+
+- **Editing it resets the whole policy.** Deleting "a rule" doesn't open a
+  port — it removes an *allow* and tightens the box (we watched port 80 flip
+  from open → filtered after a delete). To open a port you **add an inbound
+  allow rule**, you don't remove rules.
+- **Protocol defaults to TCP.** 5683 / 5684 / 1194 must be set to **UDP**
+  explicitly, or CoAP/DTLS/OpenVPN silently never arrive.
+
+Build **one** correct inbound allow-list and leave it alone:
+
+| Proto | Port | Purpose |
+|-------|------|---------|
+| TCP | 22 | SSH (scope to your IP) |
+| TCP | 80 / 443 | Cloud UI |
+| UDP | 5684 | LwM2M Bootstrap |
+| UDP | 5683 | LwM2M Device Management |
+| UDP *(or TCP)* | 1194 | OpenVPN — match `cloud.vpn.proto` |
+
+Fastest unblock if you're fighting the panel: **detach the Cloud Firewall**
+from the VPS entirely. If host `ufw` is inactive the box becomes fully
+reachable again, then secure it at the OS level with `host-firewall.sh` /
+`ufw` instead. Recover SSH at any time via the Contabo **VNC / noVNC
+console** in the panel — it bypasses SSH and the firewall.
+
+---
+
+## SSH — `kex_exchange_identification: Connection reset by peer`
+
+The TCP connection to port 22 **succeeds** (firewall is open) but sshd
+resets the session mid-handshake. This is **not** a firewall drop — the host
+is actively refusing the login. Most common cause on a hardened VPS:
+**TCP wrappers** denying you via `/etc/hosts.deny`.
+
+```bash
+sudo systemctl status ssh --no-pager      # look for: refused connect from <your-ip>
+cat /etc/hosts.deny                        # the smoking gun, e.g.  sshd: ALL
+cat /etc/hosts.allow
+```
+
+`sshd: ALL` in `/etc/hosts.deny` = deny SSH from everyone except whoever is
+whitelisted in `/etc/hosts.allow` (a `DenyHosts`-style or provider default).
+sshd accepts the TCP connection then immediately closes it → the
+`kex_exchange_identification` reset. `hosts.allow` is consulted **before**
+`hosts.deny`, so whitelist your IP — it wins, no sshd restart needed:
+
+```bash
+echo 'sshd: <your-public-ipv4>' | sudo tee -a /etc/hosts.allow   # keeps deny-by-default
+# …or open SSH to all (firewall still applies):
+sudo sed -i '/^sshd:[[:space:]]*ALL/d' /etc/hosts.deny
+```
+
+Find your public **IPv4** (the one sshd sees) with `curl -4 ifconfig.me`.
+If `DenyHosts` is installed it'll re-ban you after repeated probing — the
+`hosts.allow` whitelist is what makes it stick. Other resets-at-kex causes
+if `hosts.deny` is clean: missing host keys (`sudo ssh-keygen -A`), missing
+`/run/sshd`, or a bad `sshd_config` (`sudo sshd -t`). The journal names it:
+`sudo journalctl -u ssh -n 50 --no-pager`.
+
+> Run these from the Contabo **VNC console** when SSH is the thing that's
+> locked out.
+
 ---
 
 ## HTTPS — page won't open on 443
