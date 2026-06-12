@@ -361,6 +361,15 @@ The lwm2m binary holds a `DsConfig` for its process lifetime:
   - `iot.server.uri` → fills a `Rebind` mailbox + flips
     `pending_reregister` → after Unregistered, reactor swaps the
     ServiceContext peer + auto-Registers to the new server
+- The reactor tick also *publishes* the connection lifecycle to
+  `iot.conn.state` via `DsConfig::set_conn_state` (only on a transition):
+  `bootstrapping → bootstrapped → dm-connecting → dm-connected →
+  registered`, with `failed`/`idle` as the terminal/initial tokens
+  (`*-connecting` = DTLS handshake in flight, `*-connected` = secure
+  channel up + protocol exchange). `iot-httpd` surfaces it on
+  `GET /api/v1/status` as `lwm2m.conn_state` and long-polls it alongside
+  `vpn.state`, so the device-ui dashboard reflects transitions within
+  ~1 RTT.
 - DsConfig is optional: connect failures log once at LM_INFO and
   every accessor returns nullopt → caller's compiled defaults run.
 
