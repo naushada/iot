@@ -188,6 +188,91 @@ if `hosts.deny` is clean: missing host keys (`sudo ssh-keygen -A`), missing
 
 ---
 
+## Image pull fails / stalls — `127.0.0.53:53 i/o timeout`, EOF, stuck
+
+Symptoms during `./run.sh`:
+
+```
+lookup registry-1.docker.io on 127.0.0.53:53: read udp ...->127.0.0.53:53: i/o timeout
+failed to copy: httpReadSeeker: failed open: ... EOF      # blob drops mid-download
+[+] up 8/25 ... Interrupted                                # pull stuck
+```
+
+Two compounding causes on a fresh VPS:
+
+1. **Broken/blocked DNS.** The host resolver (`127.0.0.53`, systemd-resolved)
+   times out — usually because **outbound UDP 53 is blocked** by the Cloud
+   Firewall's egress policy. Test: `ping -c2 8.8.8.8` works but
+   `dig +short registry-1.docker.io @8.8.8.8` times out ⇒ egress UDP 53 is
+   filtered. Fix: allow **outbound UDP 53 + TCP 53** (and outbound TCP 443/80
+   for the pull itself) in the Cloud Firewall — or, simplest, leave the
+   **egress policy allow-all** and only filter inbound.
+2. **Lossy link.** Parallel blob fetches saturate a packet-lossy VPS link and
+   time each other out (the `EOF` mid-blob).
+
+### Fix in place (point the engine at public DNS + serialize)
+
+**Docker** — `dockerd` does the pull, so configure the daemon:
+```bash
+sudo tee /etc/docker/daemon.json >/dev/null <<'EOF'
+{ "dns": ["8.8.8.8","1.1.1.1"], "max-concurrent-downloads": 1, "max-download-attempts": 10 }
+EOF
+sudo systemctl restart docker
+docker pull docker.io/naushada/iot-cloud:latest    # resumable — re-run until clean
+```
+
+**Podman** — the `podman` process resolves via the **host** libc resolver
+(no daemon), so fix DNS at the host and use pull retries:
+```bash
+sudo mkdir -p /etc/systemd/resolved.conf.d
+printf '[Resolve]\nDNS=8.8.8.8 1.1.1.1\nFallbackDNS=9.9.9.9\n' \
+  | sudo tee /etc/systemd/resolved.conf.d/dns.conf
+sudo systemctl restart systemd-resolved
+podman pull --retry 10 --retry-delay 5s docker.io/naushada/iot-cloud:latest
+```
+
+Both `docker pull` and `podman pull` are **resumable** — completed layers are
+cached, so just re-run until it finishes.
+
+### Out-of-band transfer (when the link is too lossy to pull at all)
+
+Pull/build on a machine with good connectivity, ship the image as a file, and
+the VPS never touches the registry. `run.sh` uses the local image if present.
+
+⚠️ **Arch:** the VPS is **linux/amd64**. Building/pulling on an Apple-Silicon
+Mac yields **arm64**, which won't run there — force `--platform linux/amd64`.
+
+**Docker:**
+```bash
+# Good-network machine (e.g. your Mac):
+docker pull --platform linux/amd64 docker.io/naushada/iot-cloud:latest
+#   or build it: docker build --platform linux/amd64 \
+#                  -t naushada/iot-cloud:latest -f apps/cloud/Dockerfile .
+docker save docker.io/naushada/iot-cloud:latest | gzip > iot-cloud.tar.gz
+scp iot-cloud.tar.gz engineer@<host>:~/
+
+# VPS:
+gunzip -c iot-cloud.tar.gz | docker load
+HTTPS=1 ./run.sh                                   # starts from local image, no pull
+```
+
+**Podman** (same `save`/`load` syntax):
+```bash
+# Good-network machine:
+podman pull --platform linux/amd64 docker.io/naushada/iot-cloud:latest
+podman save docker.io/naushada/iot-cloud:latest | gzip > iot-cloud.tar.gz
+scp iot-cloud.tar.gz engineer@<host>:~/
+
+# VPS:
+gunzip -c iot-cloud.tar.gz | podman load
+HTTPS=1 ./run.sh
+```
+
+Or skip the registry entirely with the **build-locally path** (Path B in
+`INSTALL.md`) if the box has the source tree.
+
+---
+
 ## HTTPS — page won't open on 443
 
 ```bash
