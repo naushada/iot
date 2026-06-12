@@ -28,6 +28,8 @@ constexpr const char* kKeyBsPskKey    = "iot.bs.psk.key";
 constexpr const char* kKeyDmPskId     = "iot.dm.psk.identity";
 constexpr const char* kKeyDmPskKey    = "iot.dm.psk.key";
 constexpr const char* kKeyDevMode     = "iot.dev.mode";
+// LwM2M connection lifecycle published to the device-ui (write-only here).
+constexpr const char* kKeyConnState   = "iot.conn.state";
 
 } // namespace
 
@@ -244,6 +246,16 @@ bool DsConfig::set_dm_credentials(const std::string& identity,
         m_impl->dm_psk_identity = identity;
         m_impl->dm_psk_key = key_hex;
     }
+    return s.ok;
+}
+
+bool DsConfig::set_conn_state(const std::string& state) {
+    if (!m_ok || !m_impl) return false;
+    // iot.conn.state is published, never read back into the cache — the
+    // client is the sole writer, so there's nothing to mirror locally.
+    auto s = m_impl->client.set({
+        {kKeyConnState, data_store::Value{state}},
+    });
     return s.ok;
 }
 

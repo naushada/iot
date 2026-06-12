@@ -7,7 +7,7 @@
     <div class="clr-col-lg-3 clr-col-md-6 clr-col-12">
       <div class="card status-card" [ngClass]="vpnClass()">
         <clr-icon shape="network-globe" size="36"></clr-icon>
-        <div class="card-value">{{ status?.vpn?.state || '—' | uppercase }}</div>
+        <div class="card-value">{{ vpnLabel() }}</div>
         <div class="card-label">OpenVPN Client</div>
         <div class="card-detail" *ngIf="status?.vpn?.ip">
           {{ status?.vpn?.ip }}
@@ -48,10 +48,13 @@
 
     <!-- LwM2M card -->
     <div class="clr-col-lg-3 clr-col-md-6 clr-col-12">
-      <div class="card status-card" [ngClass]="cardClass(lwm2mState(), ['configured'])">
+      <div class="card status-card" [ngClass]="lwm2mClass()">
         <clr-icon shape="devices" size="36"></clr-icon>
-        <div class="card-value">{{ status?.lwm2m?.server_uri || '—' }}</div>
-        <div class="card-label">LwM2M Server</div>
+        <div class="card-value">{{ lwm2mLabel() }}</div>
+        <div class="card-label">LwM2M Connection</div>
+        <div class="card-detail" *ngIf="status?.lwm2m?.server_uri">
+          {{ status?.lwm2m?.server_uri }}
+        </div>
         <div class="card-detail" *ngIf="status?.lwm2m?.endpoint">
           EP: {{ status?.lwm2m?.endpoint }}
         </div>

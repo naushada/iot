@@ -59,9 +59,6 @@ export class DashboardComponent implements OnDestroy {
     return upStates.includes(state.toLowerCase()) ? 'connected' : 'disconnected';
   }
 
-  vpnClass(): string {
-    return this.cardClass(this.status?.vpn?.state, ['connected']);
-  }
   wifiClass(): string {
     return this.cardClass(this.status?.wifi?.state, ['connected']);
   }
@@ -70,7 +67,38 @@ export class DashboardComponent implements OnDestroy {
     return a && a.length > 0 ? 'connected' : 'disconnected';
   }
 
-  lwm2mState(): string {
-    return this.status?.lwm2m?.server_uri ? 'configured' : 'unconfigured';
+  // ── VPN connection (reuses vpn.state; professional 3-state label) ──
+  vpnLabel(): string {
+    const s = (this.status?.vpn?.state || '').toLowerCase();
+    if (s === 'connected') return 'Connected';
+    if (!s || s === 'disconnected' || s === 'exited') return 'Disconnected';
+    return 'Connecting';   // resolving / auth / wait / connecting
+  }
+  vpnClass(): string {
+    const s = (this.status?.vpn?.state || '').toLowerCase();
+    if (s === 'connected') return 'connected';
+    if (!s || s === 'disconnected' || s === 'exited') return 'disconnected';
+    return 'starting';
+  }
+
+  // ── LwM2M connection lifecycle (iot.conn.state) ───────────────────
+  private readonly lwm2mLabels: Record<string, string> = {
+    'idle':          'Disconnected',
+    'bootstrapping': 'Bootstrap: Connecting',
+    'bootstrapped':  'Bootstrap: Connected',
+    'dm-connecting': 'Device Management: Connecting',
+    'dm-connected':  'Device Management: Connected',
+    'registered':    'LwM2M Connected',
+    'failed':        'Connection Failed',
+  };
+  lwm2mLabel(): string {
+    return this.lwm2mLabels[this.status?.lwm2m?.conn_state || 'idle']
+        || 'Disconnected';
+  }
+  lwm2mClass(): string {
+    const s = this.status?.lwm2m?.conn_state;
+    if (s === 'registered') return 'connected';
+    if (!s || s === 'idle' || s === 'failed') return 'disconnected';
+    return 'starting';   // bootstrapping / bootstrapped / dm-* in progress
   }
 }

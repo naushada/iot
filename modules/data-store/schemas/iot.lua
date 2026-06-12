@@ -117,6 +117,23 @@ return {
         read_acl  = {"gid:engineer"},
     },
 
+    -- ── LwM2M connection lifecycle (client → device-ui) ──────────────
+    -- The lwm2m client publishes its live connection progress here so the
+    -- device-ui can show real-time status. Single string, read-only to the
+    -- UI. Machine tokens (the UI maps these to professional labels):
+    --   idle           - not started / no link               ("Disconnected")
+    --   bootstrapping  - establishing secure channel to BS    ("Bootstrap: Connecting")
+    --   bootstrapped   - BS channel up; exchanging /bs writes  ("Bootstrap: Connected")
+    --   dm-connecting  - establishing secure channel to DM     ("Device Management: Connecting")
+    --   dm-connected   - DM channel up; Register in flight     ("Device Management: Connected")
+    --   registered     - registered with DM                    ("LwM2M Connected")
+    --   failed         - registration rejected / link failed   ("Connection Failed")
+    ["iot.conn.state"] = {
+        access  = "Viewer",
+        type    = "string",
+        default = "idle",
+    },
+
     -- ── OTA software update (mirrors LwM2M Object 5 onto ds) ──────────
     -- Self-update trigger: device-ui (or the Object-5 RID2 apply) sets the
     -- .ipk URL here; the lwm2m client watches it and runs iot-ota-apply.

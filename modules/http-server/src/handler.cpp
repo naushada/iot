@@ -409,8 +409,10 @@ void install_handlers(Router& router,
                 if (timeout > 60) timeout = 60;  // cap at 1 min
             }
 
-            // Long-poll path: watch vpn.state (most dynamic key) and
-            // return full status on change or timeout
+            // Long-poll path: watch the two most dynamic status keys —
+            // vpn.state (VPN lifecycle) and iot.conn.state (LwM2M
+            // bootstrap → DM → registered lifecycle) — and return the full
+            // status snapshot on either change or timeout.
             if (timeout > 0) {
                 using LpState = struct {
                     std::mutex                 m;
@@ -418,27 +420,32 @@ void install_handlers(Router& router,
                     bool                       fired = false;
                 };
                 auto st = std::make_shared<LpState>();
-                data_store::Client::WatchHandle wh =
+                auto notify = [st](const data_store::Client::Event& /*e*/) {
+                    std::lock_guard<std::mutex> lk(st->m);
+                    st->fired = true;
+                    st->cv.notify_one();
+                };
+                data_store::Client::WatchHandle wh_vpn =
                     data_store::Client::kInvalidHandle;
-                auto ws = ds->watch("vpn.state",
-                    [st](const data_store::Client::Event& /*e*/) {
-                        std::lock_guard<std::mutex> lk(st->m);
-                        st->fired = true;
-                        st->cv.notify_one();
-                    }, &wh);
+                data_store::Client::WatchHandle wh_conn =
+                    data_store::Client::kInvalidHandle;
+                auto ws = ds->watch("vpn.state", notify, &wh_vpn);
+                ds->watch("iot.conn.state", notify, &wh_conn);
                 if (ws.ok) {
                     std::unique_lock<std::mutex> lk(st->m);
                     st->cv.wait_for(lk, std::chrono::seconds(timeout),
                                     [&] { return st->fired; });
-                    if (wh != data_store::Client::kInvalidHandle)
-                        ds->unwatch(wh);
                 }
+                if (wh_vpn != data_store::Client::kInvalidHandle)
+                    ds->unwatch(wh_vpn);
+                if (wh_conn != data_store::Client::kInvalidHandle)
+                    ds->unwatch(wh_conn);
                 // Fall through to build the full status snapshot
             }
             std::vector<data_store::Client::GetResult> got;
             auto rs = ds->get({
                 // LwM2M
-                "iot.server.uri", "iot.endpoint",
+                "iot.server.uri", "iot.endpoint", "iot.conn.state",
                 // VPN
                 "vpn.state", "vpn.assigned.ip", "vpn.assigned.gateway",
                 "vpn.assigned.netmask", "vpn.assigned.dns", "vpn.pid",
@@ -516,6 +523,7 @@ void install_handlers(Router& router,
 
                 if (k == "iot.server.uri")        lwm2m["server_uri"] = sv();
                 else if (k == "iot.endpoint")     lwm2m["endpoint"] = sv();
+                else if (k == "iot.conn.state")   lwm2m["conn_state"] = sv();
 
                 else if (k == "vpn.state")             vpn["state"] = sv();
                 else if (k == "vpn.assigned.ip")       vpn["ip"] = sv();
