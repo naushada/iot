@@ -26,6 +26,17 @@ meta-openembedded + meta-raspberrypi, all at Scarthgap 5.0 LTS), runs
 `bitbake` inside it, and copies the artifacts back to the host. The **first**
 run compiles the whole distribution (toolchain, glibc, ACE, kernel…) — hours.
 
+The build also compiles the **Angular device UI** as part of the iot recipe:
+a `do_build_ui` task (runs after `do_patch`, before `do_configure`) uses
+`nodejs-native` to `npm ci` + `ng build --configuration production` the SPA
+under `iot-ui/`, staging it to `/usr/share/iot/www` in the `iot-httpd`
+package (served by `iot-httpd`). The dist is `.gitignore`'d, so it is built
+fresh each time rather than fetched. `do_build_ui[network] = "1"` — `npm`
+needs network at build time; for a fully offline build, swap to the `npm`
+bbclass + an `npmsw://` SRC_URI. Angular 14's webpack needs
+`NODE_OPTIONS=--openssl-legacy-provider` on Scarthgap's newer Node, which the
+task sets automatically.
+
 **2. Collect the output** — copied back to the host per machine, under
 `yocto/build/<machine>/`:
 
@@ -138,6 +149,35 @@ ssh root@<pi-ip>
 scp yocto/build/raspberrypi3-64/ipk/*/iot-*.ipk root@<pi-ip>:/tmp/
 ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
 ```
+
+### OTA updates (LwM2M Object 5)
+
+The manual `scp` + `opkg` step above is for the bench. In the field, app
+updates ride the **LwM2M Object 5 (Firmware Update)** flow — the cloud points
+the device at an `.ipk` in its firmware feed, and the device pulls and applies
+it over the VPN tunnel. The recipe ships the apply helper for this:
+
+- `iot-ota-apply` is installed to `/usr/bin/iot-ota-apply` and packaged with
+  `iot-lwm2m` (it is the worker the LwM2M client invokes on a /5/0/0 write).
+- It runs **detached** as a `systemd-run --unit=iot-ota-apply` transient unit
+  so it survives `opkg` replacing the running `lwm2m` binary and the unit
+  restart that follows.
+- Flow: download the `.ipk` (honouring `?sha256=` / `?version=` query params)
+  → verify sha256 → `opkg install --force-reinstall --force-downgrade` →
+  `try-restart` the affected units (lwm2m-client, httpd, openvpn-client,
+  net-router, wifi-client).
+- Progress is mirrored into the data store (`iot.update.state` / `.result` /
+  `.version`), which the relaunched client maps onto Object 5 resources
+  (/5/0/3 state, /5/0/5 result, /5/0/7 version) and the device UI reflects.
+
+  | ds key              | values                                              |
+  |---------------------|-----------------------------------------------------|
+  | `iot.update.state`  | 0 idle · 1 downloading · 2 downloaded · 3 updating  |
+  | `iot.update.result` | 0 initial · 1 success · 5 integrity · 8 uri · 9 install |
+
+This is Phase 1 (single `.ipk` package update). Full-image A/B updates are
+out of scope here. See `apps/docs/` and the device/cloud OTA notes for the
+end-to-end push from the cloud UI.
 
 ## What this layer provides
 
