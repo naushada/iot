@@ -13,6 +13,10 @@ export interface StatusSnapshot {
 export interface Lwm2mStatus {
   server_uri?: string;
   endpoint?: string;
+  // Connection lifecycle token published by the client on iot.conn.state:
+  // idle / bootstrapping / bootstrapped / dm-connecting / dm-connected /
+  // registered / failed. The dashboard maps these to professional labels.
+  conn_state?: string;
 }
 
 export interface VpnStatus {

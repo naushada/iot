@@ -104,6 +104,11 @@ public:
     /// Bootstrap delivered DM credentials → iot.dm.psk.identity / .key.
     bool set_dm_credentials(const std::string& identity,
                             const std::string& key_hex);
+    /// Publish the LwM2M connection lifecycle token to iot.conn.state so
+    /// the device-ui can render real-time progress. One of: idle /
+    /// bootstrapping / bootstrapped / dm-connecting / dm-connected /
+    /// registered / failed. No-op when !connected().
+    bool set_conn_state(const std::string& state);
 
     /// Register a per-key change listener. The callback fires on the
     /// data_store::Client's listener thread — keep it short, don't

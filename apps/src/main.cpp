@@ -624,6 +624,32 @@ struct ClientPlumbing {
 /// Skipped is the plain-DM / no-BS fallback (or a bootstrap timeout).
 enum class BootPhase { NotStarted, InProgress, Done, Skipped };
 
+/// Derive the device-ui connection-lifecycle token from the live FSM
+/// signals. Published to iot.conn.state each tick (only when it changes).
+/// The progression mirrors what the operator sees on the dashboard:
+///   bootstrapping → bootstrapped → dm-connecting → dm-connected → registered
+/// "*-connecting" means a DTLS handshake is in flight; "*-connected" means
+/// the secure channel is up and the protocol exchange (BS writes / Register)
+/// is underway. `dtlsReady` is true when the session to the current peer is
+/// established (or there is no DTLS at all, i.e. plain CoAP).
+static const char* compute_conn_state(BootPhase bp,
+                                      ::lwm2m::RegistrationState rs,
+                                      bool dtlsReady, bool disabled) {
+    using RS = ::lwm2m::RegistrationState;
+    if (rs == RS::Registered || rs == RS::AwaitingUpdateAck) return "registered";
+    if (rs == RS::Failed)                                    return "failed";
+    if (disabled && rs == RS::Unregistered)                  return "idle";
+    switch (bp) {
+        case BootPhase::NotStarted:
+        case BootPhase::InProgress:
+            return dtlsReady ? "bootstrapped" : "bootstrapping";
+        case BootPhase::Done:
+        case BootPhase::Skipped:
+            return dtlsReady ? "dm-connected" : "dm-connecting";
+    }
+    return "idle";
+}
+
 /// Single-quote a string for safe inclusion in a /bin/sh command.
 static std::string ota_shquote(const std::string& s) {
     std::string out = "'";
@@ -836,9 +862,13 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     // bootstrap. Shared across ticks; default-constructed = epoch.
     auto reboot_after =
         std::make_shared<std::chrono::steady_clock::time_point>();
+    // Last connection-lifecycle token published to iot.conn.state. The tick
+    // runs at 1 Hz; we only re-publish on a transition so the device-ui
+    // long-poll fires on real changes, not every second.
+    auto lastConn = std::make_shared<std::string>();
     app->udpAdapter()->on_tick_client([wreg, wdm, wapp, rebind, wbs,
                                        reboot_after, bootPhase, bootDeadline,
-                                       dtls]() {
+                                       dtls, &ds, lastConn]() {
         auto reg = wreg.lock();
         auto dm  = wdm.lock();
         auto a   = wapp.lock();
@@ -846,6 +876,17 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
 
         const auto svc = ::UDPAdapter::ServiceType_t::LwM2MClient;
         const auto now = std::chrono::steady_clock::now();
+
+        // Publish the connection lifecycle for the device-ui (only on change).
+        {
+            const bool dtlsUp = !dtls || dtls->clientState() == "connected";
+            const char* cs = compute_conn_state(*bootPhase, reg->state(),
+                                                dtlsUp, reg->is_disabled());
+            if (*lastConn != cs) {
+                *lastConn = cs;
+                ds.set_conn_state(cs);
+            }
+        }
 
         // FUP-DS-11 — if a rebind is queued and we're between
         // registrations, swap the LwM2MClient peer FIRST so the next
