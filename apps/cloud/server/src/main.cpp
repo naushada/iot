@@ -19,6 +19,7 @@
 #include "cert_authority.hpp"
 #include "bootstrap.hpp"
 #include "cloud_credentials.hpp"
+#include "device_dnat.hpp"
 
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"
@@ -90,6 +91,50 @@ void sync_endpoints_to_ds(data_store::Client& ds,
         arr.push_back(item);
     }
     ds.set("cloud.endpoints", data_store::Value{arr.dump()});
+}
+
+// Rebuild + apply the per-device "device UI over VPN" DNAT ruleset.
+//
+// The device list is read from the *persisted* cloud.endpoints ds JSON (not
+// the in-memory EndpointRegistry, which is empty until devices re-provision),
+// so a fresh iot-cloudd reconstructs the full rule set on startup. nft -f -
+// is atomic and our scoped table is flushed first, so this is idempotent +
+// rebuildable: one call after each sync (and at startup) restores every
+// device's mapping. ui_port is read live from cloud.proxy.device.ui.port
+// (default 80 — the device UI is on 80/443).
+//
+// A device gets a rule once it has both a tun_ip and a proxy_port (i.e. it
+// has been provisioned); online/offline state doesn't gate it (the connection
+// simply fails if the tunnel is down, like any port-forward).
+void rebuild_device_dnat(data_store::Client& ds, const std::string& tun_dev) {
+    server::dnat::RulesetInput in;
+    in.tun_dev = tun_dev;
+    in.ui_port = static_cast<std::uint16_t>(
+        ds_int(ds, "cloud.proxy.device.ui.port", 80));
+    try {
+        auto arr = nlohmann::json::parse(ds_str(ds, "cloud.endpoints", "[]"));
+        if (arr.is_array()) for (const auto& e : arr) {
+            if (!e.is_object()) continue;
+            std::string ip   = e.value("tun_ip", std::string());
+            int         port = e.value("proxy_port", 0);
+            if (ip.empty() || port <= 0) continue;
+            in.devices.push_back({std::move(ip),
+                                  static_cast<std::uint16_t>(port)});
+        }
+    } catch (const std::exception& ex) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l device-UI DNAT: "
+                            "cloud.endpoints parse: %C\n"), ex.what()));
+        return;
+    }
+    const std::string script = server::dnat::build_device_dnat_ruleset(in);
+    if (server::dnat::apply_ruleset(script)) {
+        ACE_DEBUG((LM_DEBUG,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l device-UI DNAT applied "
+                            "(%u rule(s), ui_port=%d)\n"),
+                   static_cast<unsigned>(in.devices.size()),
+                   static_cast<int>(in.ui_port)));
+    }
 }
 
 // Merge lwm2m-dm's registration status into the EndpointRegistry. lwm2m-dm
@@ -406,6 +451,28 @@ int main(int argc, char** argv) {
     };
     supervise_ovpn();   // initial start
 
+    // ── Device-UI-over-VPN DNAT (per-device nftables) ─────────────
+    // iot-cloudd runs the openvpn server, so tun0 + CAP_NET_ADMIN live in
+    // this netns — the right place to install cloud:<proxy_port> →
+    // <tun_ip>:<ui_port> DNAT. Enable IPv4 forwarding once so the DNAT'd
+    // connection routes out over the tunnel, then rebuild the full ruleset
+    // from the (just-restored) endpoint registry so a restart re-installs
+    // every device's mapping atomically. openvpn names the first tun device
+    // <dev>0 (e.g. "tun" → "tun0").
+    const std::string tun_dev = ovpn_cfg.dev + "0";
+    // Seed the ui_port key so it's visible in the cloud UI / ds-cli.
+    ds.set("cloud.proxy.device.ui.port",
+           data_store::Value{static_cast<std::int32_t>(
+               ds_int(ds, "cloud.proxy.device.ui.port", 80))});
+    if (!server::dnat::enable_ip_forward()) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l could not enable "
+                            "net.ipv4.ip_forward (device-UI DNAT may not route)\n")));
+    }
+    // Reconstruct the full rule set from the persisted cloud.endpoints so a
+    // restart restores every device's mapping atomically before any sync.
+    rebuild_device_dnat(ds, tun_dev);
+
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D cloudd:thread:%t %M %N:%l started, ds=%C vpn-subnet=%C"
                         " proxy=%d-%d sync-interval=%d\n"),
@@ -664,8 +731,12 @@ int main(int argc, char** argv) {
                     ds.set("cloud.update.request", data_store::Value{std::string()});
                 }
             }
-            // Sync after every event so the UI sees changes quickly
+            // Sync after every event so the UI sees changes quickly, then
+            // rebuild the DNAT ruleset from the fresh endpoint set (a
+            // provision/deprovision/online-change may have added/removed a
+            // device → its cloud:<proxy_port> mapping must follow).
             sync_endpoints_to_ds(ds, ep_reg);
+            rebuild_device_dnat(ds, tun_dev);
             sync_tick = 0;
         } else {
             // recv_event timed out — periodic housekeeping
@@ -686,6 +757,9 @@ int main(int argc, char** argv) {
                 // Safety-net reconcile in case a watch notification was missed.
                 reconcile_registrations(ds, ep_reg);
                 sync_endpoints_to_ds(ds, ep_reg);
+                // Safety-net DNAT rebuild — also picks up a live
+                // cloud.proxy.device.ui.port change.
+                rebuild_device_dnat(ds, tun_dev);
                 ds.set("cloud.vpn.port.next",
                        data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
                 g_log.apply_level(ds);

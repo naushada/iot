@@ -53,11 +53,17 @@ services:
       - iot-vpn:/etc/iot/vpn
       - iot-ca-key:/run/secrets/iot-ca-key:ro
     cap_add:
-      - NET_ADMIN
+      - NET_ADMIN           # openvpn tun + per-device nftables DNAT
+    sysctls:
+      - net.ipv4.ip_forward=1   # route the DNAT'd device-UI flow over the tunnel
     devices:
       - /dev/net/tun        # openvpn(8) server spawned by iot-cloudd
     ports:
       - "1194:1194/tcp"     # OpenVPN server (TCP)
+      # Per-device device-UI-over-VPN proxy ports (VpnRegistry allocates
+      # 5001-6000). Publishing the range makes cloud:<proxy_port> reachable
+      # from the operator's browser; iot-cloudd DNATs each to <tun_ip>:ui_port.
+      - "5001-6000:5001-6000"
     depends_on:
       ds-server:
         condition: service_healthy
