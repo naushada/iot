@@ -93,6 +93,15 @@ interface EpCred {
         <clr-dg-detail *clrIfDetail="let e">
           <clr-dg-detail-header>Provisioned Credentials — {{e.endpoint}}</clr-dg-detail-header>
           <clr-dg-detail-body>
+            <!-- Device UI over VPN: the per-device nftables DNAT installed by
+                 iot-cloudd (cloud:<proxy_port> → <tun_ip>:<ui_port> over tun0). -->
+            <dl class="cred-list" style="margin-bottom:16px;">
+              <dt>VPN forwarding rule</dt>
+              <dd>
+                <code>tcp dport {{ e.proxy_port }} &rarr; {{ e.tun_ip }}:{{ uiPort }}</code>
+                <span class="hint" style="margin-left:8px;">DNAT — device UI over VPN</span>
+              </dd>
+            </dl>
             <ng-container *ngIf="credFor(e) as c; else noCred">
               <dl class="cred-list">
                 <dt>Serial</dt><dd><code>{{ c.serial || '—' }}</code></dd>
@@ -130,6 +139,9 @@ export class EndpointListComponent implements OnInit, OnDestroy {
   endpoints: EpInfo[] = [];
   creds: EpCred[] = [];
   windowHost = window.location.hostname;
+  // Device UI port reached over the VPN (cloud.proxy.device.ui.port,
+  // default 80). Shown in the per-endpoint "VPN forwarding rule" line.
+  uiPort = 80;
   // PSK provisioning (task O).
   provSerial = ''; provBsPsk = ''; provisioning = false; devMode = false;
   private sub = new Subscription(); private active = true;
@@ -140,11 +152,14 @@ export class EndpointListComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.startLongPoll();
-    this.http.dbGet(['cloud.dev.mode', 'cloud.endpoint.credentials']).subscribe({
+    this.http.dbGet(['cloud.dev.mode', 'cloud.endpoint.credentials',
+                     'cloud.proxy.device.ui.port']).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
           const d = r.data as Record<string, unknown>;
           this.devMode = d['cloud.dev.mode'] === true;
+          const p = Number(d['cloud.proxy.device.ui.port']);
+          if (Number.isFinite(p) && p > 0) this.uiPort = p;
           try {
             const arr = JSON.parse(String(d['cloud.endpoint.credentials'] || '[]'));
             this.creds = Array.isArray(arr) ? arr : [];

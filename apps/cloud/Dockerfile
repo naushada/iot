@@ -117,7 +117,7 @@ FROM docker.io/library/ubuntu:22.04 AS runtime
 
 RUN apt-get -o Acquire::Check-Date=false update && \
     apt-get install -y --no-install-recommends \
-    libssl3 openssl zlib1g libreadline8 liblua5.3-0 iptables openvpn ca-certificates \
+    libssl3 openssl zlib1g libreadline8 liblua5.3-0 iptables nftables openvpn ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # PSK provisioning (task P): shared cloud service account/group. The cloud

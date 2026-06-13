@@ -18,6 +18,7 @@ include_directories(
     ${CLOUD_SERVER_DIR}/../../../modules/data-store/inc
     ${CLOUD_SERVER_DIR}/../../../modules/server/lwm2m/inc
     ${CLOUD_SERVER_DIR}/../../../modules/server/openvpn/inc
+    ${CLOUD_SERVER_DIR}/../../../modules/server/dnat/inc
     ${NLOHMANN_JSON_INCLUDE}
     ${ACE_ROOT}/include
 )
@@ -29,7 +30,8 @@ add_executable(iot-cloudd
     ../../../modules/server/lwm2m/src/cloud_credentials.cpp
     ../../../modules/server/openvpn/src/vpn_registry.cpp
     ../../../modules/server/openvpn/src/openvpn_server.cpp
-    ../../../modules/server/openvpn/src/cert_authority.cpp)
+    ../../../modules/server/openvpn/src/cert_authority.cpp
+    ../../../modules/server/dnat/src/device_dnat.cpp)
 
 if(DEFINED DATASTORE_LIB)
     set(DS_LINK_LIB ${DATASTORE_LIB})
