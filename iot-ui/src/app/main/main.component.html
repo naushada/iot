@@ -62,8 +62,8 @@
       </div>
       <span class="live-date">{{ today }}</span>
 
-      <app-status-badge [label]="'VPN ' + vpnState" [state]="vpnState"></app-status-badge>
-      <app-status-badge [label]="'WiFi ' + wifiState" [state]="wifiState"></app-status-badge>
+      <app-status-badge icon="shield" [label]="'VPN ' + vpnState" [state]="vpnState"></app-status-badge>
+      <app-status-badge icon="wifi" [label]="'WiFi ' + wifiState" [state]="wifiState"></app-status-badge>
       <span class="live-stat"><clr-icon shape="world"></clr-icon> {{ wanIface }}</span>
       <span class="live-stat"><clr-icon shape="cog"></clr-icon> {{ serviceCount }} services</span>
       <span class="access-badge" [class.viewer]="!isAdmin">{{ isAdmin ? 'Admin' : 'Viewer' }}</span>

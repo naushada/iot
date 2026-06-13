@@ -6,7 +6,8 @@ import { Component, Input } from '@angular/core';
   selector: 'app-status-badge',
   template: `
     <span class="status-badge" [ngClass]="stateClass">
-      <span class="status-dot"></span>
+      <clr-icon *ngIf="icon" [attr.shape]="icon" class="status-ico"></clr-icon>
+      <span class="status-dot" *ngIf="!icon"></span>
       {{ label }}
     </span>
   `,
@@ -25,6 +26,7 @@ import { Component, Input } from '@angular/core';
       border-radius: 50%;
       display: inline-block;
     }
+    .status-ico { width: 14px; height: 14px; }
     .connected, .running {
       background: rgba(46,125,50,0.15); color: #2e7d32;
     }
@@ -46,6 +48,7 @@ import { Component, Input } from '@angular/core';
 export class StatusBadgeComponent {
   @Input() label = '';
   @Input() state = '';
+  @Input() icon = '';
 
   get stateClass(): string {
     const s = this.state.toLowerCase();
