@@ -10,10 +10,11 @@
 #   lwm2m-client  → device client: bootstraps from the cloud BS, registers to DM
 #   iot-httpd     → device REST API (/api/v1/*) + device UI (served at /)
 #
-# Point the client at your cloud Bootstrap server with DEVICE_BS_URI (the
-# cloud compose publishes BS on 5684/DM on 5683 to the host;
-# host.docker.internal resolves via the host-gateway extra_hosts entry):
-#   DEVICE_BS_URI=coaps://host.docker.internal:5684 ./run.sh
+# The bootstrap server (iot.bs.uri) and VPN server endpoint (vpn.remote.*)
+# are data-store driven, not env: iot.bs.uri is provisioned once via device-ui
+# commissioning (persists in the dev-lib volume); the VPN endpoint is pushed
+# by the cloud over LwM2M Object 2048 after registration. host.docker.internal
+# still resolves via the host-gateway extra_hosts entry for a host-local cloud.
 #
 # Usage:
 #   docker compose up -d
@@ -83,12 +84,16 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # ── VPN config seed (one-shot, declarative) ───────────────────
-  # Replaces the old ad-hoc "seed keys by hand" shell step. Sets the
-  # vpn.* config + opens the gate, then exits. In production these come
-  # from provisioning/net-router; here they're env-driven so the compose
-  # is self-contained. cert.path/key.path/ca.path point at the shared
-  # dev-vpn-certs volume the cert-watcher populates.
+  # ── VPN local-paths + dev gate seed (one-shot, declarative) ──────
+  # The VPN *server endpoint* (vpn.remote.host/port/proto) is NO LONGER
+  # seeded here — the cloud provisions it over LwM2M Object 2048 alongside
+  # the cert family, and openvpn-client hot-reloads on the change. ds (the
+  # persisted dev-lib volume) is the single source of truth for it.
+  #
+  # What remains is purely local + non-env: the on-disk cert paths (where
+  # the lwm2m client materialises the cloud-pushed cert family / the
+  # cert-watcher reads) and the WAN/dep gate keys that net-router would own
+  # in production but isn't in this dev stack.
   vpn-config:
     image: ${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}
     container_name: iot-dev-vpn-config
@@ -97,9 +102,6 @@ services:
       - |
         S=--socket=/run/iot/data_store.sock
         set -e
-        ds-cli $$S set vpn.remote.host  '"'"${VPN_REMOTE_HOST:-host.docker.internal}"'"'
-        ds-cli $$S set vpn.remote.port  ${VPN_REMOTE_PORT:-1194}
-        ds-cli $$S set vpn.remote.proto '"tcp-client"'
         ds-cli $$S set vpn.cert.path    '"/etc/iot/vpn/client.crt"'
         ds-cli $$S set vpn.key.path     '"/etc/iot/vpn/client.key"'
         ds-cli $$S set vpn.ca.path      '"/etc/iot/vpn/ca.crt"'
@@ -108,7 +110,7 @@ services:
         # the WAN/dep gate opens. Add a net-router service to own them live.
         ds-cli $$S set services.net.router.state '"running"'
         ds-cli $$S set net.iface.active '"eth0"'
-        echo "vpn-config: seeded vpn.* + opened gate"
+        echo "vpn-config: seeded local cert paths + opened gate"
     volumes:
       - dev-run:/run/iot
     depends_on:

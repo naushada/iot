@@ -156,7 +156,8 @@ int install_firmware(ObjectStore& store, const std::string& configDir) {
 int install_canonical_objects(ObjectStore& store,
                               const std::string& configDir,
                               DeviceHooks deviceHooks,
-                              FwHooks fwHooks) {
+                              FwHooks fwHooks,
+                              CertHooks certHooks) {
     int rc = 0;
     rc |= install_access_control(store, configDir);
     rc |= install_device(store, configDir, std::move(deviceHooks));
@@ -167,7 +168,7 @@ int install_canonical_objects(ObjectStore& store,
     // Custom OID 2048 — cloud-pushed VPN/TLS credential family. Default
     // store writes the cert family under /etc/iot/vpn (= vpn.{ca,cert,key}.path
     // defaults); a cert sidecar reloads openvpn-client on the change.
-    rc |= install_cert(store, "/etc/iot/vpn");
+    rc |= install_cert(store, "/etc/iot/vpn", std::move(certHooks));
     return rc;
 }
 

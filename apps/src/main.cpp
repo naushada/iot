@@ -459,6 +459,38 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                 if (auto s = data_store::to_string(got[0].value)) credsJson = *s;
             }
         }
+
+        // VPN server endpoint pushed to the device alongside the cert family,
+        // so the tunnel target is cloud-provisioned (no docker-compose seed).
+        // Host = the cloud's public host (parsed from cloud.dm.uri the device
+        // already registers against); port/proto = the openvpn server's
+        // listen config (published to ds by iot-cloudd). proto is mapped to
+        // the client form (tcp-server → tcp-client). Empty host → cert-only
+        // push (back-compat).
+        std::string vpnHost, vpnPort, vpnProto;
+        if (dsCertPush) {
+            std::vector<data_store::Client::GetResult> g;
+            if (dsCertPush->get({std::string("cloud.dm.uri"),
+                                 std::string("cloud.vpn.listen.port"),
+                                 std::string("cloud.vpn.proto")}, g).ok
+                && g.size() >= 3) {
+                if (g[0].has_value)
+                    if (auto s = data_store::to_string(g[0].value)) {
+                        // Strip scheme + port/path → bare host.
+                        std::string u = *s;
+                        auto p = u.find("://");
+                        if (p != std::string::npos) u = u.substr(p + 3);
+                        u = u.substr(0, u.find_first_of(":/"));
+                        vpnHost = u;
+                    }
+                if (g[1].has_value)
+                    if (auto n = data_store::to_int32(g[1].value))
+                        vpnPort = std::to_string(*n);
+                if (g[2].has_value)
+                    if (auto s = data_store::to_string(g[2].value))
+                        vpnProto = (*s == "tcp-server") ? "tcp-client" : *s;
+            }
+        }
         // Pull one endpoint's complete VPN cert family out of the array.
         auto vpn_family = [&credsJson](const std::string& ep, std::string& ca,
                                        std::string& cert, std::string& key) -> bool {
@@ -581,7 +613,8 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                 if (vpn_family(reg.endpoint, ca, cert, key)) {
                     std::string ctok{static_cast<char>(0x04)};
                     for (auto& fr : ::lwm2m::dmsrv::build_cert_push(
-                             next_msgid, ctok, ca, cert, key))
+                             next_msgid, ctok, ca, cert, key,
+                             vpnHost, vpnPort, vpnProto))
                         ctx->send_async(fr, reg.peerHost, reg.peerPort);
                     ACE_DEBUG((LM_INFO,
                         ACE_TEXT("%D lwm2m:thread:%t %M %N:%l pushed VPN cert to "
@@ -710,7 +743,36 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
             if (auto s = data_store::to_string(got[0].value)) return *s;
         return {};
     };
-    ::lwm2m::objects::install_canonical_objects(*plumb.store, configDir, {}, std::move(fwHooks));
+    // Cert apply (OID 2048): the systemd/RPi image ships no cert sidecar, so
+    // when a fresh VPN cert family is materialised, gate-flip the openvpn
+    // client service to make its supervisor (re)start openvpn with the new
+    // cert. Watches fire on change, so toggle false→true for a real transition.
+    ::lwm2m::objects::CertHooks certHooks;
+    certHooks.apply = [dsc]() -> int {
+        if (!dsc) return 0;
+        dsc->set("services.openvpn.client.enable", data_store::Value{false});
+        dsc->set("services.openvpn.client.enable", data_store::Value{true});
+        return 0;
+    };
+    // Cloud-provisioned VPN server endpoint (Object 2048 /0/5,6,7): persist it
+    // to ds so openvpn-client targets the right server with no compose seed.
+    // vpn.remote.port is an integer in schema, so the decimal string is parsed.
+    certHooks.set_vpn_endpoint = [dsc](const std::string& host,
+                                       const std::string& port,
+                                       const std::string& proto) -> int {
+        if (!dsc || host.empty()) return 0;
+        dsc->set("vpn.remote.host", data_store::Value{host});
+        if (!port.empty()) {
+            try {
+                dsc->set("vpn.remote.port",
+                         data_store::Value{static_cast<std::int32_t>(std::stoi(port))});
+            } catch (...) {}
+        }
+        if (!proto.empty()) dsc->set("vpn.remote.proto", data_store::Value{proto});
+        return 0;
+    };
+    ::lwm2m::objects::install_canonical_objects(*plumb.store, configDir, {},
+                                                std::move(fwHooks), std::move(certHooks));
 
     // device-ui self-update: a write to iot.update.request launches the same
     // detached apply locally (no CoAP round-trip).

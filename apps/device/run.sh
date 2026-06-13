@@ -21,9 +21,14 @@
 #   ./run.sh ds get log.text    # run ds-cli inside the ds-server container
 #
 #   HTTP_PORT=9090 ./run.sh                          # custom UI host port
-#   DEVICE_BS_URI=coaps://host.docker.internal:5684 ./run.sh
-#                               # point the client at a real cloud stack
-#                               # (cloud compose publishes BS 5684 / DM 5683)
+#
+# The bootstrap server (iot.bs.uri) and the VPN server endpoint
+# (vpn.remote.*) are NOT set via env — they live in the data store
+# (persisted in the dev-lib volume). Provision iot.bs.uri once by
+# commissioning in device-ui (./run.sh commission on, then set serial +
+# bootstrap URI + generate BS PSK); the VPN endpoint is pushed by the cloud
+# over LwM2M Object 2048 after the device registers. ds is the single
+# source of truth.
 #
 # Persistent state (named volumes):
 #   - dev-etc   volume: /etc/iot      (schemas, env files, LwM2M config)
@@ -34,7 +39,6 @@ set -euo pipefail
 
 IMAGE="${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}"
 HTTP_PORT="${HTTP_PORT:-8081}"
-DEVICE_BS_URI="${DEVICE_BS_URI:-coaps://host.docker.internal:5684}"
 # Reset the dev-etc config volume on start so the latest schema/config
 # from the image is always loaded (set to 0 to preserve manual edits).
 RESET_CONFIG="${RESET_CONFIG:-1}"
@@ -68,7 +72,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Export env so docker-compose.yml can reference them.
 export DEVICE_IMAGE="$IMAGE"
-export HTTP_PORT DEVICE_BS_URI
+export HTTP_PORT
 export COMPOSE_PROJECT_NAME="$PROJECT"
 
 case "${1:-start}" in
@@ -111,7 +115,7 @@ case "${1:-start}" in
         sleep 3
         echo ""
         echo -e "  ${GREEN}Device UI:${NC}    http://localhost:$HTTP_PORT"
-        echo -e "  ${GREEN}Bootstrap:${NC}    client → ${DEVICE_BS_URI}"
+        echo -e "  ${GREEN}Bootstrap:${NC}    iot.bs.uri (data-store) — set via device-ui commissioning"
         echo ""
         echo "  ./run.sh logs [service]  — tail logs"
         echo "  ./run.sh ps              — list services"

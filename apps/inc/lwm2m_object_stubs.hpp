@@ -5,6 +5,7 @@
 
 #include "lwm2m_object_3_device.hpp"
 #include "lwm2m_object_firmware.hpp"
+#include "lwm2m_object_cert.hpp"
 #include "lwm2m_object_store.hpp"
 
 /**
@@ -55,7 +56,8 @@ int install_firmware(ObjectStore& store, const std::string& configDir);
 int install_canonical_objects(ObjectStore& store,
                               const std::string& configDir,
                               DeviceHooks deviceHooks = {},
-                              FwHooks fwHooks = {});
+                              FwHooks fwHooks = {},
+                              CertHooks certHooks = {});
 
 }} // namespace lwm2m::objects
 

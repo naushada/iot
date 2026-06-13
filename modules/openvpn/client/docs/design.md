@@ -152,6 +152,42 @@ no I/O, no threading; fully unit-tested in `test/gate_test.cpp`.
 The Supervisor (`src/supervisor.{hpp,cpp}`) wires it to DsBridge +
 OpenVpnProcess.
 
+## Enable gate + cert-arrival respawn (L16/D4)
+
+Alongside the WAN gate, the Supervisor watches
+`services.openvpn.client.enable` via `data_store::ServiceGate`
+(`src/supervisor.cpp` — L16/D4). Setting it `false` tears the child
+down within one event-loop tick (NFR-SVC-001); setting it `true`
+lets the outer loop respawn openvpn once WAN + deps are healthy.
+
+This same enable gate is how a **cloud-pushed VPN certificate** takes
+effect on the RPi/systemd image, which ships **no cert sidecar**
+watching `/etc/iot/vpn`:
+
+1. The cloud pushes the cert family over LwM2M custom **Object 2048**
+   (instances 0/1/2 = ca/cert/key) and EXECUTEs RID 3 (Apply).
+2. On the device, `install_cert` (`apps/src/lwm2m_object_stubs.cpp`)
+   materialises `/etc/iot/vpn/{ca.crt,client.crt,client.key}`, then
+   calls its `CertHooks::apply`.
+3. The client wiring (`apps/src/main.cpp`) supplies that hook as a
+   **ds gate-flip**: it `set`s `services.openvpn.client.enable`
+   `false` then `true`. ds watches fire on *change*, so the deliberate
+   `false→true` edge is what guarantees the gate sees a transition (a
+   bare `true` write over an already-`true` value emits no event).
+4. The gate-flip wakes this Supervisor: openvpn is (re)spawned and
+   reads the just-written cert family at exec time — picking up the
+   new credentials with no sidecar and no manual restart.
+
+For the primary flow (first-time provisioning — openvpn was down or
+crash-looping because the cert was absent), even a single coalesced
+`true` edge re-spawns the idle supervisor, so the cert is picked up.
+A *rotation* while the tunnel is already connected relies on the
+`false` edge being delivered to tear the live child down first; if
+the data-store coalesces the two rapid writes to the final `true`
+only, an already-connected session keeps the old cert until its next
+natural respawn (WAN/dep/enable event). Initial provisioning — the
+case that lets the device connect at all — is unaffected.
+
 ## Why ACE (not libevent like grace-server)
 
 The rest of this repo (lwm2m, ds-server, ds-cli) all run on

@@ -183,12 +183,14 @@ DsBridge::DsBridge(std::string socketPath)
                 else if (ev.key == kMgmtPort)    { m_impl->mgmt_port    = data_store::to_uint32(ev.value); changed = Key::MgmtPort;    }
             }
             if (!changed) return;
-            // First-cut policy (L12 R4): log "needs restart"; live
-            // re-application lives in FUP-L12-1.
+            // Live hot-reload: the Supervisor's on_change handler tears the
+            // current session down and respawns openvpn with the regenerated
+            // config, so the new value (e.g. a cloud-pushed vpn.remote.host)
+            // takes effect without a daemon restart.
             ACE_DEBUG((LM_INFO,
                        ACE_TEXT("%D [ovpn:%t] %M %N:%l vpn config key "
-                                "'%C' changed — restart openvpn-client to "
-                                "apply (live hot-reload is FUP-L12-1)\n"),
+                                "'%C' changed — hot-reloading openvpn-client "
+                                "(respawn with fresh config)\n"),
                        ev.key.c_str()));
             ChangeCallback cbcopy;
             {
