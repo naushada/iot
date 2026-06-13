@@ -362,7 +362,16 @@ int main(int argc, char** argv) {
             ovpn_retry_after = {};
             state = "disabled";
         } else if (ovpn.running()) {
-            ovpn_fails = 0;                 // stable run — clear backoff
+            // Clear the backoff only after a SUSTAINED run (>=60s). A process
+            // that survives a few ticks but keeps dying inside the 30s "quick"
+            // window is a crash loop, not stable — resetting every running tick
+            // (the previous behaviour) pinned ovpn_fails at 1 so the backoff
+            // never escalated ("failure #1 … retry in 2s" forever).
+            if (ovpn_last_start.time_since_epoch().count() != 0 &&
+                (std::chrono::steady_clock::now() - ovpn_last_start)
+                    >= std::chrono::seconds(60)) {
+                ovpn_fails = 0;
+            }
             state = "running";
         } else {
             const auto now = std::chrono::steady_clock::now();

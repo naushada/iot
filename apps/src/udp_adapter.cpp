@@ -397,8 +397,13 @@ int UDPAdapter::svc() {
     // reach log.lwm2m.text. Attach the (main-thread-registered) callback.
     data_store::LogBuffer::attach_current_thread();
 
-    ACE_Time_Value to(1, 0);
     while (!m_stop.load()) {
+        // Reset the timeout every iteration: ACE_Reactor::handle_events()
+        // decrements the passed ACE_Time_Value in place (ACE_Countdown_Time),
+        // so a single shared value drains to zero after the first idle wait and
+        // the reactor then busy-spins at ~100% CPU. A fresh 1s budget each loop
+        // keeps it blocking when idle.
+        ACE_Time_Value to(1, 0);
         int ret = ACE_Reactor::instance()->handle_events(to);
         if (ret < 0) {
             ACE_DEBUG((LM_DEBUG,

@@ -202,8 +202,11 @@ int main(int argc, char** argv) {
 
     // Reactor loop on the main thread. Wakes on SIGINT/TERM via
     // on_signal's end_reactor_event_loop call.
-    ACE_Time_Value tv(1, 0);
     while (!g_stop.load()) {
+        // Reset each iteration: handle_events() decrements the timeout in place
+        // (ACE_Countdown_Time), so a shared value drains to zero after the first
+        // idle wait and the reactor then busy-spins at ~100% CPU.
+        ACE_Time_Value tv(1, 0);
         int rc = ACE_Reactor::instance()->handle_events(tv);
         if (rc < 0) {
             // -1 with errno=EINTR is normal during shutdown.
