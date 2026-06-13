@@ -276,6 +276,28 @@ return {
       default = "1.1.1.1",
     },
 
+    -- Runtime VPN PKI persisted in ds (the source of truth; the iot-vpn volume
+    -- is disposable). iot-cloudd restores these into files on boot and persists
+    -- back after generating, so a wiped/recreated volume keeps the SAME CA and
+    -- already-pushed device certs stay valid. Private keys are gid:cloud-svc
+    -- only, like the per-device keys in cloud.endpoint.credentials.
+    ["cloud.vpn.ca.key.pem"] = {
+        access = "Admin", type = "string", default = "",
+        write_acl = {"gid:cloud-svc"}, read_acl = {"gid:cloud-svc"},
+    },
+    ["cloud.vpn.ca.crt.pem"] = {
+        access = "Admin", type = "string", default = "",
+        write_acl = {"gid:cloud-svc"},
+    },
+    ["cloud.vpn.server.key.pem"] = {
+        access = "Admin", type = "string", default = "",
+        write_acl = {"gid:cloud-svc"}, read_acl = {"gid:cloud-svc"},
+    },
+    ["cloud.vpn.server.crt.pem"] = {
+        access = "Admin", type = "string", default = "",
+        write_acl = {"gid:cloud-svc"},
+    },
+
     -- Next available proxy port (bump-counter).
     ["cloud.vpn.port.next"] = {
       type    = "integer",

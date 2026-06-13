@@ -37,9 +37,12 @@
 #include <chrono>
 #include <cstdint>
 #include <csignal>
+#include <fstream>
 #include <set>
 #include <thread>
 #include <unordered_map>
+
+#include <sys/stat.h>
 
 #include <nlohmann/json.hpp>
 
@@ -74,6 +77,26 @@ int ds_int(data_store::Client& ds, const std::string& key, int dflt) {
     if (s.ok && !got.empty() && got[0].has_value)
         if (auto v = data_store::to_int32(got[0].value)) return *v;
     return dflt;
+}
+
+// Read a whole file into a string ("" if absent/unreadable).
+std::string read_file(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return {};
+    return std::string(std::istreambuf_iterator<char>(f),
+                       std::istreambuf_iterator<char>());
+}
+
+// Write a string to a file (parent dir created), with the given mode.
+bool write_file(const std::string& path, const std::string& body, mode_t mode) {
+    auto slash = path.find_last_of('/');
+    if (slash != std::string::npos) ::mkdir(path.substr(0, slash).c_str(), 0755);
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (!f) return false;
+    f.write(body.data(), static_cast<std::streamsize>(body.size()));
+    f.close();
+    ::chmod(path.c_str(), mode);
+    return static_cast<bool>(f);
 }
 
 // Sync endpoint registry to cloud.endpoints JSON in the data store.
@@ -390,11 +413,43 @@ int main(int argc, char** argv) {
                        ? std::string("ca.key")
                        : ovpn_cfg.ca_path.substr(0, slash + 1) + "ca.key";
     }
+    // ds is the persistent source of truth for the runtime PKI; the iot-vpn
+    // volume is disposable. Restore the CA + server cert from ds into the
+    // working files BEFORE ensure() so a wiped/recreated iot-vpn volume yields
+    // the SAME CA — otherwise it regenerates and invalidates every already-
+    // pushed device cert. ds (iot-lib) survives redeploys.
+    {
+        const std::string caKey  = ds_str(ds, "cloud.vpn.ca.key.pem",     "");
+        const std::string caCrt  = ds_str(ds, "cloud.vpn.ca.crt.pem",     "");
+        const std::string srvKey = ds_str(ds, "cloud.vpn.server.key.pem", "");
+        const std::string srvCrt = ds_str(ds, "cloud.vpn.server.crt.pem", "");
+        if (!caKey.empty() && !caCrt.empty() && read_file(capaths.ca_key).empty()) {
+            write_file(capaths.ca_key, caKey, 0600);
+            write_file(capaths.ca_crt, caCrt, 0644);
+            if (!srvKey.empty()) write_file(capaths.srv_key, srvKey, 0600);
+            if (!srvCrt.empty()) write_file(capaths.srv_crt, srvCrt, 0644);
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l restored runtime PKI "
+                                "from ds (iot-vpn volume not required)\n")));
+        }
+    }
+
     server::openvpn::CertAuthority cert_ca(capaths);
     if (!cert_ca.ensure()) {
         ACE_ERROR((LM_ERROR,
                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l runtime CA ensure() "
                             "failed — per-device client certs won't be mintable\n")));
+    }
+    // Persist the runtime PKI back to ds so it survives an iot-vpn volume loss
+    // (idempotent: re-sets the same PEMs when unchanged). Stored under
+    // gid:cloud-svc, like the per-device keys in cloud.endpoint.credentials.
+    if (cert_ca.have_ca()) {
+        ds.set({
+            {"cloud.vpn.ca.key.pem",     data_store::Value{read_file(capaths.ca_key)}},
+            {"cloud.vpn.ca.crt.pem",     data_store::Value{read_file(capaths.ca_crt)}},
+            {"cloud.vpn.server.key.pem", data_store::Value{read_file(capaths.srv_key)}},
+            {"cloud.vpn.server.crt.pem", data_store::Value{read_file(capaths.srv_crt)}},
+        });
     }
 
     server::openvpn::OpenVpnServer ovpn(ovpn_cfg);
