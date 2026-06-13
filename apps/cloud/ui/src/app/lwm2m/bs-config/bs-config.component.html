@@ -8,42 +8,11 @@
   <form [formGroup]="bsForm" (ngSubmit)="saveBs()" *ngIf="!loading">
     <div class="form-grid">
       <clr-input-container>
-        <label>Endpoint <span class="hint">(BS server identity)</span></label>
-        <input clrInput [disabled]="!isAdmin" formControlName="endpoint"
-               placeholder="urn:dev:gateway-" />
-        <clr-control-helper *dsDebug><app-ds-hint key="cloud.bs.endpoint"></app-ds-hint></clr-control-helper>
-      </clr-input-container>
-
-      <clr-input-container>
         <label>BS URI <span class="hint">(Bootstrap endpoint)</span></label>
         <input clrInput [disabled]="!isAdmin" formControlName="bs_uri"
                placeholder="coaps://0.0.0.0:5684" />
         <clr-control-helper *dsDebug><app-ds-hint key="cloud.bs.uri"></app-ds-hint></clr-control-helper>
       </clr-input-container>
-
-      <clr-select-container>
-        <label>Security Mode</label>
-        <select clrSelect [disabled]="!isAdmin" formControlName="security_mode">
-          <option value="PSK">PSK — Pre-Shared Key</option>
-          <option value="None">None — No DTLS (dev only)</option>
-        </select>
-        <clr-control-helper *dsDebug><app-ds-hint key="cloud.bs.security.mode"></app-ds-hint></clr-control-helper>
-      </clr-select-container>
-
-      <ng-container *ngIf="bsForm.value.security_mode === 'PSK'">
-        <clr-input-container>
-          <label>PSK Identity (RID 3)</label>
-          <input clrInput [disabled]="!isAdmin" formControlName="psk_id"
-                 placeholder="iot-client" />
-          <clr-control-helper *dsDebug><app-ds-hint key="cloud.bs.psk.id"></app-ds-hint></clr-control-helper>
-        </clr-input-container>
-        <clr-input-container>
-          <label>PSK Key — RID 5 <span class="hint">(hex secret)</span></label>
-          <input clrInput [disabled]="!isAdmin" formControlName="psk_key"
-                 placeholder="0102030405060708090a0b0c0d0e0f10" />
-          <clr-control-helper *dsDebug><app-ds-hint key="cloud.bs.psk.key"></app-ds-hint></clr-control-helper>
-        </clr-input-container>
-      </ng-container>
 
       <clr-input-container>
         <label>DM URI — RID 0 <span class="hint">(pushed to device)</span></label>
@@ -51,7 +20,16 @@
                placeholder="coaps://cloud:5683" />
         <clr-control-helper *dsDebug><app-ds-hint key="cloud.dm.uri"></app-ds-hint></clr-control-helper>
       </clr-input-container>
+
+      <div></div>
+      <div></div>
     </div>
+
+    <p class="hint" style="margin-top:12px;">
+      Per-device bootstrap credentials (PSK identity and key) are minted
+      per-endpoint during provisioning and shown read-only on the
+      <strong>Endpoints</strong> page — they are not configured here.
+    </p>
 
     <div style="margin-top:20px;" *ngIf="isAdmin">
       <button type="submit" class="btn btn-primary" [disabled]="savingBs">

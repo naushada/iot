@@ -28,30 +28,25 @@ export class BsConfigComponent implements OnInit {
     private session: SessionService,
     private toast: ToastService
   ) {
+    // Only the keys the bootstrap server actually consumes at /bs:
+    // cloud.bs.uri (Security/0 RID0) and cloud.dm.uri (Security/1 RID0).
+    // Per-device PSK identity/key are minted per-endpoint into
+    // cloud.endpoint.credentials — see the Endpoints page.
     this.bsForm = fb.group({
-      endpoint:      ['urn:dev:gateway-'],
       bs_uri:        ['coaps://0.0.0.0:5684'],
-      security_mode: ['PSK'],
-      psk_id:        ['iot-client'],
-      psk_key:       [''],
       dm_uri:        ['coaps://0.0.0.0:5683'],
     });
   }
 
   ngOnInit(): void {
     this.http.dbGet([
-      'cloud.bs.endpoint', 'cloud.bs.uri', 'cloud.bs.security.mode',
-      'cloud.bs.psk.id', 'cloud.bs.psk.key', 'cloud.dm.uri'
+      'cloud.bs.uri', 'cloud.dm.uri'
     ]).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
           const d = r.data as Record<string, unknown>;
           this.bsForm.patchValue({
-            endpoint:      d['cloud.bs.endpoint']      || 'urn:dev:gateway-',
             bs_uri:        d['cloud.bs.uri']           || 'coaps://0.0.0.0:5684',
-            security_mode: d['cloud.bs.security.mode'] || 'PSK',
-            psk_id:        d['cloud.bs.psk.id']        || 'iot-client',
-            psk_key:       d['cloud.bs.psk.key']       || '',
             dm_uri:        d['cloud.dm.uri']           || 'coaps://0.0.0.0:5683',
           });
         }
@@ -65,11 +60,7 @@ export class BsConfigComponent implements OnInit {
     this.savingBs = true;
     const v = this.bsForm.value;
     this.http.dbSet([
-      { key: 'cloud.bs.endpoint',      value: v.endpoint },
       { key: 'cloud.bs.uri',           value: v.bs_uri },
-      { key: 'cloud.bs.security.mode', value: v.security_mode },
-      { key: 'cloud.bs.psk.id',        value: v.psk_id },
-      { key: 'cloud.bs.psk.key',       value: v.psk_key },
       { key: 'cloud.dm.uri',           value: v.dm_uri },
     ]).subscribe({
       next: (r) => {

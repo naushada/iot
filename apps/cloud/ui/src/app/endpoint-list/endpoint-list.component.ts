@@ -1,9 +1,21 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../common/httpsvc.service';
+import { SessionService } from '../../common/session.service';
 import { ToastService } from '../../common/toast.service';
 
 interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered:boolean; }
+
+/** Per-endpoint credential record, as minted by iot-cloudd into the
+ *  cloud.endpoint.credentials ds key (JSON array). Field names follow the
+ *  dotted convention used server-side (see cloud_credentials.cpp). */
+interface EpCred {
+  serial?: string;
+  identity?: string;
+  'bs.psk.key'?: string;
+  'dm.psk.id'?: string;
+  'dm.psk.key'?: string;
+}
 
 @Component({
   selector: 'app-endpoint-list',
@@ -75,6 +87,28 @@ interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered
           </clr-dg-cell>
         </clr-dg-row>
 
+        <!-- Read-only per-endpoint credentials minted into
+             cloud.endpoint.credentials by the provisioning flow. PSK secrets
+             are admin-gated; non-admins see a placeholder. -->
+        <clr-dg-detail *clrIfDetail="let e">
+          <clr-dg-detail-header>Provisioned Credentials — {{e.endpoint}}</clr-dg-detail-header>
+          <clr-dg-detail-body>
+            <ng-container *ngIf="credFor(e) as c; else noCred">
+              <dl class="cred-list">
+                <dt>Serial</dt><dd><code>{{ c.serial || '—' }}</code></dd>
+                <dt>DM PSK Identity</dt><dd><code>{{ c.identity || c['dm.psk.id'] || '—' }}</code></dd>
+                <dt>BS PSK Key</dt><dd><code>{{ secret(c['bs.psk.key']) }}</code></dd>
+                <dt>DM PSK Identity (key id)</dt><dd><code>{{ c['dm.psk.id'] || '—' }}</code></dd>
+                <dt>DM PSK Key</dt><dd><code>{{ secret(c['dm.psk.key']) }}</code></dd>
+              </dl>
+              <p *ngIf="!isAdmin" class="hint">Sign in as an admin to reveal PSK secrets.</p>
+            </ng-container>
+            <ng-template #noCred>
+              <p class="hint">No provisioned credentials found for this endpoint.</p>
+            </ng-template>
+          </clr-dg-detail-body>
+        </clr-dg-detail>
+
         <clr-dg-footer>{{endpoints.length}} endpoint{{endpoints.length===1?'':'s'}}</clr-dg-footer>
       </clr-datagrid>
 
@@ -87,24 +121,51 @@ interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered
     .page{padding:24px;} h3{color:#333;margin:0;font-size:16px;font-weight:600;}
     .header-row{display:flex;align-items:center;justify-content:space-between;margin:0 0 16px 0;}
     .hint{font-size:12px;color:#888;}
+    .cred-list{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0;}
+    .cred-list dt{color:#666;font-weight:600;}
+    .cred-list dd{margin:0;word-break:break-all;}
   `]
 })
 export class EndpointListComponent implements OnInit, OnDestroy {
   endpoints: EpInfo[] = [];
+  creds: EpCred[] = [];
   windowHost = window.location.hostname;
-  isAdmin = true; // TODO: from SessionService
   // PSK provisioning (task O).
   provSerial = ''; provBsPsk = ''; provisioning = false; devMode = false;
   private sub = new Subscription(); private active = true;
 
-  constructor(private http: HttpsvcService, private toast: ToastService) {}
+  get isAdmin(): boolean { return this.session.isAdmin; }
+
+  constructor(private http: HttpsvcService, private session: SessionService, private toast: ToastService) {}
 
   ngOnInit(): void {
     this.startLongPoll();
-    this.http.dbGet(['cloud.dev.mode']).subscribe({
-      next: (r) => { if (r.ok && r.data) this.devMode = (r.data as Record<string, unknown>)['cloud.dev.mode'] === true; },
+    this.http.dbGet(['cloud.dev.mode', 'cloud.endpoint.credentials']).subscribe({
+      next: (r) => {
+        if (r.ok && r.data) {
+          const d = r.data as Record<string, unknown>;
+          this.devMode = d['cloud.dev.mode'] === true;
+          try {
+            const arr = JSON.parse(String(d['cloud.endpoint.credentials'] || '[]'));
+            this.creds = Array.isArray(arr) ? arr : [];
+          } catch { this.creds = []; }
+        }
+      },
       error: () => {}
     });
+  }
+
+  /** Join an endpoint to its credential record on serial, falling back to the
+   *  formatted DM PSK identity. */
+  credFor(e: EpInfo): EpCred | undefined {
+    return this.creds.find(c => c.serial === e.endpoint)
+        || this.creds.find(c => c.identity === e.endpoint);
+  }
+
+  /** Render a PSK secret only to admins; mask it otherwise. */
+  secret(v?: string): string {
+    if (!v) return '—';
+    return this.isAdmin ? v : '•••••• (admin only)';
   }
 
   /**
