@@ -8,12 +8,14 @@
         <input clrInput [disabled]="!isAdmin" formControlName="subnet"
                placeholder="10.9.0.0/24" />
         <clr-control-helper>Device tunnel IPs are allocated from this subnet</clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.subnet"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
         <label>Proxy Port Start</label>
         <input clrInput [disabled]="!isAdmin" type="number"
                formControlName="port_next" min="5001" max="6000" />
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.port.next"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
@@ -21,6 +23,7 @@
         <input clrInput [disabled]="!isAdmin" type="number"
                formControlName="listen_port" min="1" max="65535" />
         <clr-control-helper>OpenVPN server UDP/TCP listen port (default 1194)</clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.listen.port"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-select-container>
@@ -29,6 +32,7 @@
           <option value="udp">udp</option>
           <option value="tcp">tcp</option>
         </select>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.proto"></app-ds-hint></clr-control-helper>
       </clr-select-container>
 
       <clr-select-container>
@@ -37,12 +41,14 @@
           <option value="tun">tun</option>
           <option value="tap">tap</option>
         </select>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.dev"></app-ds-hint></clr-control-helper>
       </clr-select-container>
 
       <clr-input-container>
         <label>Cipher</label>
         <input clrInput [disabled]="!isAdmin" formControlName="cipher"
                placeholder="AES-256-GCM" />
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.cipher"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
@@ -50,18 +56,21 @@
         <input clrInput [disabled]="!isAdmin" type="number"
                formControlName="mgmt_port" min="1" max="65535" />
         <clr-control-helper>openvpn(8) management socket on 127.0.0.1</clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.mgmt.port"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
         <label>Log Verbosity</label>
         <input clrInput [disabled]="!isAdmin" type="number"
                formControlName="verb" min="0" max="11" />
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.verb"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
         <label>CA Certificate</label>
         <input clrInput [disabled]="!isAdmin" formControlName="ca_crt"
                placeholder="/etc/iot/vpn/ca/ca.crt" />
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.ca.crt"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
@@ -69,18 +78,21 @@
         <input clrInput [disabled]="!isAdmin" formControlName="ca_key"
                placeholder="/run/secrets/iot-ca-key/ca.key" />
         <clr-control-helper>Mounted from secret volume at runtime</clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.ca.key"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
         <label>Server Certificate</label>
         <input clrInput [disabled]="!isAdmin" formControlName="server_crt"
                placeholder="/etc/iot/vpn/server.crt" />
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.server.crt"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
         <label>Server Private Key</label>
         <input clrInput [disabled]="!isAdmin" formControlName="server_key"
                placeholder="/etc/iot/vpn/server.key" />
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.server.key"></app-ds-hint></clr-control-helper>
       </clr-input-container>
     </div>
 

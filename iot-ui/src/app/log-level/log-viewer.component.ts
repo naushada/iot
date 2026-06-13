@@ -24,6 +24,7 @@ import { environment } from '../../environments/environment';
             <option *ngFor="let l of levels" [value]="l">{{ l }}</option>
           </select>
           <clr-control-helper>Global default — used when per-daemon is unset</clr-control-helper>
+          <clr-control-helper *dsDebug><app-ds-hint key="log.level"></app-ds-hint></clr-control-helper>
         </clr-select-container>
         <clr-select-container>
           <label>httpd</label>
@@ -31,6 +32,7 @@ import { environment } from '../../environments/environment';
                   [ngModel]="logLevelHttpd" (ngModelChange)="setLevel('log.level.httpd', $event)">
             <option *ngFor="let l of daemonLevels" [value]="l">{{ l }}</option>
           </select>
+          <clr-control-helper *dsDebug><app-ds-hint key="log.level.httpd"></app-ds-hint></clr-control-helper>
         </clr-select-container>
         <clr-select-container>
           <label>lwm2m</label>
@@ -38,6 +40,7 @@ import { environment } from '../../environments/environment';
                   [ngModel]="logLevelLwm2m" (ngModelChange)="setLevel('log.level.lwm2m', $event)">
             <option *ngFor="let l of daemonLevels" [value]="l">{{ l }}</option>
           </select>
+          <clr-control-helper *dsDebug><app-ds-hint key="log.level.lwm2m"></app-ds-hint></clr-control-helper>
         </clr-select-container>
         <clr-select-container>
           <label>vpn</label>
@@ -45,6 +48,7 @@ import { environment } from '../../environments/environment';
                   [ngModel]="logLevelVpn" (ngModelChange)="setLevel('log.level.vpn', $event)">
             <option *ngFor="let l of daemonLevels" [value]="l">{{ l }}</option>
           </select>
+          <clr-control-helper *dsDebug><app-ds-hint key="log.level.vpn"></app-ds-hint></clr-control-helper>
         </clr-select-container>
         <clr-select-container>
           <label>dtls</label>
@@ -52,6 +56,7 @@ import { environment } from '../../environments/environment';
                   [ngModel]="logLevelDtls" (ngModelChange)="setLevel('log.level.dtls', $event)">
             <option *ngFor="let l of daemonLevels" [value]="l">{{ l }}</option>
           </select>
+          <clr-control-helper *dsDebug><app-ds-hint key="log.level.dtls"></app-ds-hint></clr-control-helper>
         </clr-select-container>
       </div>
 

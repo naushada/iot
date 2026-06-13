@@ -8,6 +8,7 @@
         <input clrInput [disabled]="!isAdmin" formControlName="dm_uri"
                placeholder="coaps://cloud.example.com:5683" />
         <clr-control-helper>Devices register here after bootstrapping</clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.dm.uri"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
@@ -15,6 +16,7 @@
         <input clrInput [disabled]="!isAdmin" type="number" formControlName="lifetime"
                min="0" max="2592000" />
         <clr-control-helper>Registration lifetime pushed to devices at bootstrap</clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.dm.lifetime"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-select-container>
@@ -26,6 +28,7 @@
           <option value="UQ">UQ — UDP+Queue</option>
         </select>
         <clr-control-helper>Pushed in Server Object (OID 1) at bootstrap</clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.dm.binding"></app-ds-hint></clr-control-helper>
       </clr-select-container>
 
       <clr-input-container>
@@ -33,6 +36,7 @@
         <input clrInput [disabled]="!isAdmin" formControlName="dm_psk_id"
                placeholder="iot-dm-client" />
         <clr-control-helper>Device identity for post-bootstrap DM communication</clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.dm.psk.id"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
@@ -40,6 +44,7 @@
         <input clrInput [disabled]="!isAdmin" formControlName="dm_psk_key"
                placeholder="hex-encoded PSK" />
         <clr-control-helper>Separate from BS PSK — used after bootstrap</clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.dm.psk.key"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
@@ -47,6 +52,7 @@
         <input clrInput [disabled]="!isAdmin" formControlName="lwm2m_version"
                placeholder="1.1" />
         <clr-control-helper>Default version for provisioned devices</clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.dm.lwm2m.version"></app-ds-hint></clr-control-helper>
       </clr-input-container>
     </div>
 

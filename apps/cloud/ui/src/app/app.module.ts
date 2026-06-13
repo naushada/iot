@@ -37,6 +37,8 @@ import { SoftwareUpdateComponent } from './software-update/software-update.compo
 
 import { SsoAuthInterceptor } from '../common/sso-auth.interceptor';
 import { SessionService, initSession } from '../common/session.service';
+import { DsHintComponent } from '../common/ds-hint.component';
+import { DsDebugDirective } from '../common/ds-debug.directive';
 
 @NgModule({
   declarations: [
@@ -48,6 +50,7 @@ import { SessionService, initSession } from '../common/session.service';
     Lwm2mSubmenuComponent, Lwm2mConfigComponent, BsConfigComponent,
     ServicesSubmenuComponent, ServicesListComponent, HttpConfigComponent,
     UsersComponent, SoftwareUpdateComponent,
+    DsHintComponent, DsDebugDirective,
   ],
   imports: [
     BrowserModule, AppRoutingModule, BrowserAnimationsModule,
