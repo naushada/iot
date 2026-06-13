@@ -25,11 +25,13 @@ interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered
               <label>Serial Number</label>
               <input clrInput [(ngModel)]="provSerial" style="width:100%;"
                      placeholder="device serial (from device-ui)" />
+              <clr-control-helper *dsDebug><app-ds-hint key="cloud.provision.request"></app-ds-hint></clr-control-helper>
             </clr-input-container>
             <clr-input-container>
               <label>Bootstrap PSK (32 hex)</label>
               <input clrInput [(ngModel)]="provBsPsk" style="width:100%;font-family:monospace;"
                      placeholder="paste BS PSK from device-ui" />
+              <clr-control-helper *dsDebug><app-ds-hint key="cloud.provision.bs.psk"></app-ds-hint></clr-control-helper>
             </clr-input-container>
             <div></div>
             <div></div>

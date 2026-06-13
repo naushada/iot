@@ -23,6 +23,7 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
               <option value="">— select firmware —</option>
               <option *ngFor="let p of manifest" [value]="p.ipk_url">{{ p.pkg }} {{ p.version }} ({{ p.arch }})</option>
             </select>
+            <clr-control-helper *dsDebug><app-ds-hint key="cloud.firmware.manifest → cloud.update.request"></app-ds-hint></clr-control-helper>
           </clr-select-container>
           <div class="btn-cell">
             <button class="btn btn-primary" (click)="pushUpdate()"
