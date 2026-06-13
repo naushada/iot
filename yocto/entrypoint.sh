@@ -117,6 +117,14 @@ INHERIT += "own-mirrors"
 DLCONF
 fi
 
+# ── Upstream shared-state mirror (network) ─────────────────────────
+# Pull prebuilt sstate for stock recipes (kernel, base distro, toolchain)
+# on a cold build instead of compiling them. Appended (+=) so any baked
+# local mirror above is tried first; bitbake builds anything the mirror
+# lacks. Best-effort — coverage varies by release (scarthgap)/MACHINE.
+echo 'SSTATE_MIRRORS += "file://.* http://sstate.yoctoproject.org/all/PATH;downloadfilename=PATH"' \
+    >> conf/local.conf
+
 # ── 5. Run bitbake ─────────────────────────────────────────────────
 echo ""
 echo "→ Starting bitbake for $MACHINE: $@ ..."
