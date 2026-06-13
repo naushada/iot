@@ -40,17 +40,12 @@ services:
   iot-cloudd:
     image: ${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}
     container_name: iot-cloudd
-    # Host networking: iot-cloudd runs the OpenVPN server AND installs the
-    # per-device nftables DNAT (proxy_port -> tun_ip:ui_port). On the host
-    # netns there is nothing to publish — openvpn 1194 + every DNAT'd proxy
-    # port are reachable directly on the host, so the proxy-port range is
-    # 100% ds-driven (cloud.vpn.proxy.port.{start,end}) with no env / no
-    # published-range to keep in sync. Host firewall still gates access.
-    network_mode: host
     command: >
       iot-cloudd
       ds-socket=/var/run/iot/data_store.sock
       vpn-subnet=${VPN_SUBNET:-10.9.0.0/24}
+      proxy-start=${PROXY_START:-5001}
+      proxy-end=${PROXY_END:-6000}
       sync-interval=5
     volumes:
       - iot-run:/var/run/iot
@@ -58,12 +53,20 @@ services:
       - iot-vpn:/etc/iot/vpn
       - iot-ca-key:/run/secrets/iot-ca-key:ro
     cap_add:
-      - NET_ADMIN           # openvpn tun + per-device nftables DNAT + ip_forward
+      - NET_ADMIN           # openvpn tun + per-device nftables DNAT
+    sysctls:
+      - net.ipv4.ip_forward=1   # route the DNAT'd device-UI flow over the tunnel
     devices:
       - /dev/net/tun        # openvpn(8) server spawned by iot-cloudd
-    # No sysctls block: net.* sysctls aren't settable per-container under host
-    # networking. iot-cloudd's enable_ip_forward() sets net.ipv4.ip_forward at
-    # startup (NET_ADMIN on the host netns); ensure it's enabled on the host.
+    # Publish openvpn (1194) + the per-device device-UI proxy range. Bridge +
+    # docker's port-proxy is deliberate: published ports bypass the host ufw,
+    # so 1194 + the proxy range are reachable without per-port ufw rules (host
+    # networking lost that bypass and ufw — allow-22-only — blocked 1194). The
+    # published range must match the ds proxy-port range; both follow
+    # PROXY_START/PROXY_END.
+    ports:
+      - "1194:1194/tcp"
+      - "${PROXY_START:-5001}-${PROXY_END:-6000}:${PROXY_START:-5001}-${PROXY_END:-6000}"
     depends_on:
       ds-server:
         condition: service_healthy
