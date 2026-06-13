@@ -17,10 +17,12 @@ import { DataStoreService } from '../../../common/datastore.service';
           <clr-input-container>
             <label>Target IP <span class="hint">(LwM2M client)</span></label>
             <input clrInput [disabled]="!isAdmin" [(ngModel)]="targetIp" placeholder="192.168.1.100" />
+            <clr-control-helper *dsDebug><app-ds-hint key="net.lwm2m.target.ip"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>Target Port</label>
             <input clrInput type="number" [disabled]="!isAdmin" [(ngModel)]="targetPort" />
+            <clr-control-helper *dsDebug><app-ds-hint key="net.lwm2m.target.port"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <div class="btn-cell" *ngIf="isAdmin">
             <button class="btn btn-primary" (click)="saveDnat()" [disabled]="savingDnat">
@@ -38,6 +40,7 @@ import { DataStoreService } from '../../../common/datastore.service';
             <label>Port List</label>
             <input clrInput [disabled]="!isAdmin" [(ngModel)]="forwardPorts" placeholder="80,443,5684" />
             <clr-control-helper>Comma-separated, DNAT'd to {{ targetIp || 'target IP' }}:{{ targetPort }}</clr-control-helper>
+            <clr-control-helper *dsDebug><app-ds-hint key="net.forward.ports"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <div class="btn-cell" *ngIf="isAdmin">
             <button class="btn btn-primary" (click)="savePorts()" [disabled]="savingPorts">

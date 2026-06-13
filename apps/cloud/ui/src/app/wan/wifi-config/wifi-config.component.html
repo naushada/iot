@@ -6,28 +6,34 @@
       <clr-input-container>
         <label>Interface</label>
         <input clrInput [disabled]="!isAdmin" formControlName="iface" placeholder="wlan0" />
+        <clr-control-helper *dsDebug><app-ds-hint key="wifi.iface"></app-ds-hint></clr-control-helper>
       </clr-input-container>
       <clr-input-container>
         <label>wpa_supplicant Path</label>
         <input clrInput [disabled]="!isAdmin" formControlName="wpa_path" placeholder="/usr/sbin/wpa_supplicant" />
+        <clr-control-helper *dsDebug><app-ds-hint key="wifi.wpa.path"></app-ds-hint></clr-control-helper>
       </clr-input-container>
       <clr-input-container>
         <label>Control Directory</label>
         <input clrInput [disabled]="!isAdmin" formControlName="ctrl_dir" placeholder="/run/wpa_supplicant" />
+        <clr-control-helper *dsDebug><app-ds-hint key="wifi.ctrl.dir"></app-ds-hint></clr-control-helper>
       </clr-input-container>
       <clr-select-container>
         <label>DHCP Client</label>
         <select clrSelect [disabled]="!isAdmin" formControlName="dhcp_client">
           <option value="auto">auto</option><option value="udhcpc">udhcpc</option><option value="dhclient">dhclient</option>
         </select>
+        <clr-control-helper *dsDebug><app-ds-hint key="wifi.dhcp.client"></app-ds-hint></clr-control-helper>
       </clr-select-container>
       <clr-input-container>
         <label>Scan Interval (s)</label>
         <input clrInput [disabled]="!isAdmin" type="number" formControlName="scan_interval" />
+        <clr-control-helper *dsDebug><app-ds-hint key="wifi.scan.interval.sec"></app-ds-hint></clr-control-helper>
       </clr-input-container>
       <clr-input-container>
         <label>Max Scan Results</label>
         <input clrInput [disabled]="!isAdmin" type="number" formControlName="scan_max_results" />
+        <clr-control-helper *dsDebug><app-ds-hint key="wifi.scan.max.results"></app-ds-hint></clr-control-helper>
       </clr-input-container>
     </div>
 

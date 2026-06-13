@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { HttpsvcService } from '../../common/httpsvc.service';
 import { SessionService } from '../../common/session.service';
 import { ThemeService } from '../../common/theme.service';
+import { DebugService } from '../../common/debug.service';
 import { DataStoreService } from '../../common/datastore.service';
 
 @Component({
@@ -31,7 +32,8 @@ export class MainComponent implements OnInit {
 
   constructor(private http: HttpsvcService, private session: SessionService,
               private router: Router, public theme: ThemeService,
-              private ds: DataStoreService) { this.theme.init(); }
+              public debug: DebugService,
+              private ds: DataStoreService) { this.theme.init(); this.debug.init(); }
 
   ngOnInit(): void {
     // Authenticated shell: warm the shared data-store cache once so every

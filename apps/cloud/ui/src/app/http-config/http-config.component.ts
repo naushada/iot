@@ -24,11 +24,13 @@ import { DataStoreService } from '../../common/datastore.service';
             <label>IP</label>
             <input clrInput [disabled]="!isAdmin" formControlName="ip"
                    placeholder="0.0.0.0" />
+            <clr-control-helper *dsDebug><app-ds-hint key="http.listen.ip"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>Port</label>
             <input clrInput [disabled]="!isAdmin" type="number"
                    formControlName="port" min="1" max="65535" />
+            <clr-control-helper *dsDebug><app-ds-hint key="http.listen.port"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-select-container>
             <label>Scheme</label>
@@ -36,12 +38,14 @@ import { DataStoreService } from '../../common/datastore.service';
               <option value="http">HTTP</option>
               <option value="https">HTTPS</option>
             </select>
+            <clr-control-helper *dsDebug><app-ds-hint key="http.listen.scheme"></app-ds-hint></clr-control-helper>
           </clr-select-container>
           <clr-input-container>
             <label>Worker Threads</label>
             <input clrInput [disabled]="!isAdmin" type="number"
                    formControlName="workers" min="0" max="64" />
             <clr-control-helper>0 = inline. Requires restart to change.</clr-control-helper>
+            <clr-control-helper *dsDebug><app-ds-hint key="http.workers"></app-ds-hint></clr-control-helper>
           </clr-input-container>
         </div>
 
@@ -51,16 +55,19 @@ import { DataStoreService } from '../../common/datastore.service';
             <label>Certificate (PEM)</label>
             <input clrInput [disabled]="!isAdmin" formControlName="cert"
                    placeholder="/etc/iot/certs/server.crt" />
+            <clr-control-helper *dsDebug><app-ds-hint key="http.tls.cert"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>Private Key (PEM)</label>
             <input clrInput [disabled]="!isAdmin" formControlName="key"
                    placeholder="/etc/iot/certs/server.key" />
+            <clr-control-helper *dsDebug><app-ds-hint key="http.tls.key"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>CA Bundle (PEM) <span class="hint">(optional — enables mTLS)</span></label>
             <input clrInput [disabled]="!isAdmin" formControlName="ca"
                    placeholder="/etc/iot/certs/ca.crt" />
+            <clr-control-helper *dsDebug><app-ds-hint key="http.tls.ca"></app-ds-hint></clr-control-helper>
           </clr-input-container>
         </div>
 

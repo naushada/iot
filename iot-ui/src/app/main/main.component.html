@@ -40,6 +40,12 @@
       <span>{{ theme.dark ? 'Light' : 'Dark' }}</span>
     </a>
 
+    <a class="nav-item" [class.active]="debug.on" (click)="debug.toggle()"
+       title="Show the data-store key + editable raw value under each form field">
+      <clr-icon [attr.shape]="debug.on ? 'eye-hide' : 'eye'"></clr-icon>
+      <span>{{ debug.on ? 'Debug Off' : 'Debug' }}</span>
+    </a>
+
     <a class="nav-item nav-logout" (click)="onLogout()">
       <clr-icon shape="logout"></clr-icon>
       <span>Sign out</span>

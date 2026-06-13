@@ -232,6 +232,8 @@ body.dark-theme {
   .clr-input, .clr-select { background: #16213e; color: #e0e0e0; border-color: #2a2a4a; }
   .btn-sm { background: #2a2a4a; color: #bdbdbd; border-color: #3a3a5a; }
   .nav-logout { border-color: #2a2a4a; }
+  // Debug mode ds-hint (app-ds-hint) — keep the raw box readable on dark.
+  app-ds-hint .ds-raw { background: #16213e; color: #e0e0e0; border-color: #2a2a4a; }
 }
 
 // ── Responsive ────────────────────────────────────────────────────

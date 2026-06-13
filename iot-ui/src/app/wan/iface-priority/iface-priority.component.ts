@@ -15,22 +15,27 @@ import { DataStoreService } from '../../../common/datastore.service';
         <clr-input-container>
           <label>Priority List</label>
           <input clrInput [disabled]="!isAdmin" [(ngModel)]="priority" placeholder="eth,wifi,cellular" />
+          <clr-control-helper *dsDebug><app-ds-hint key="net.iface.priority"></app-ds-hint></clr-control-helper>
         </clr-input-container>
         <clr-input-container>
           <label>Ethernet Interface</label>
           <input clrInput [disabled]="!isAdmin" [(ngModel)]="ethName" placeholder="eth0" />
+          <clr-control-helper *dsDebug><app-ds-hint key="net.iface.eth.name"></app-ds-hint></clr-control-helper>
         </clr-input-container>
         <clr-input-container>
           <label>WiFi Interface</label>
           <input clrInput [disabled]="!isAdmin" [(ngModel)]="wifiName" placeholder="wlan0" />
+          <clr-control-helper *dsDebug><app-ds-hint key="net.iface.wifi.name"></app-ds-hint></clr-control-helper>
         </clr-input-container>
         <clr-input-container>
           <label>Cellular Interface</label>
           <input clrInput [disabled]="!isAdmin" [(ngModel)]="cellName" placeholder="wwan0" />
+          <clr-control-helper *dsDebug><app-ds-hint key="net.iface.cellular.name"></app-ds-hint></clr-control-helper>
         </clr-input-container>
         <clr-input-container>
           <label>Poll Interval (s)</label>
           <input clrInput [disabled]="!isAdmin" type="number" [(ngModel)]="pollInterval" />
+          <clr-control-helper *dsDebug><app-ds-hint key="net.poll.interval.sec"></app-ds-hint></clr-control-helper>
         </clr-input-container>
         <div>
           <label class="clr-control-label">Active Interface</label>

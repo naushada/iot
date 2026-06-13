@@ -16,14 +16,17 @@
         <clr-input-container>
           <label>DM Server URI</label>
           <input clrInput readonly formControlName="server_uri" />
+          <clr-control-helper *dsDebug><app-ds-hint key="iot.server.uri"></app-ds-hint></clr-control-helper>
         </clr-input-container>
         <clr-input-container>
           <label>Binding Mode</label>
           <input clrInput readonly formControlName="binding" />
+          <clr-control-helper *dsDebug><app-ds-hint key="iot.binding"></app-ds-hint></clr-control-helper>
         </clr-input-container>
         <clr-input-container>
           <label>Lifetime (s)</label>
           <input clrInput readonly type="number" formControlName="lifetime" />
+          <clr-control-helper *dsDebug><app-ds-hint key="iot.lifetime"></app-ds-hint></clr-control-helper>
         </clr-input-container>
       </div>
     </div>
@@ -48,6 +51,7 @@
         <clr-control-helper *ngIf="!serialAutoDetected && !devMode">
           Enable commissioning mode (iot.dev.mode) to set the serial
         </clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="iot.serial"></app-ds-hint></clr-control-helper>
       </clr-input-container>
       <clr-input-container>
         <label>Bootstrap Server URI</label>
@@ -56,6 +60,7 @@
                placeholder="coaps://cloud.example.com:5684" />
         <clr-control-helper *ngIf="devMode">Where the device bootstraps from</clr-control-helper>
         <clr-control-helper *ngIf="!devMode">Enable commissioning mode to set the bootstrap URI</clr-control-helper>
+        <clr-control-helper *dsDebug><app-ds-hint key="iot.bs.uri"></app-ds-hint></clr-control-helper>
       </clr-input-container>
     </div>
 
