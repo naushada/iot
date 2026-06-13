@@ -1,6 +1,6 @@
 import { Component, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
-import { HttpsvcService } from '../../common/httpsvc.service';
+import { DataStoreService } from '../../common/datastore.service';
 import { PubSubService } from '../../common/pubsubsvc.service';
 import { StatusSnapshot } from '../../common/app-globals';
 
@@ -14,40 +14,19 @@ export class DashboardComponent implements OnDestroy {
   loading = true;
   private subs = new Subscription();
 
-  constructor(private http: HttpsvcService, private pubsub: PubSubService) {}
+  constructor(private ds: DataStoreService, private pubsub: PubSubService) {}
 
+  /// Read the full status live off the single shared /status stream — no
+  /// per-page long-poll. The BehaviorSubject replays the latest snapshot,
+  /// so the dashboard paints instantly.
   ngOnInit(): void {
-    this.startLongPoll();
-    // Also accept pubsub updates from main component
     this.subs.add(
-      this.pubsub.on<StatusSnapshot>('status').subscribe(s => {
-        this.status = s;
-      })
+      this.ds.observeStatus().subscribe(s => { this.status = s; this.loading = false; })
     );
-  }
-
-  /// Long-poll loop: blocks until a state change or 30s timeout,
-  /// then immediately re-subscribes.  Keeps the dashboard live
-  /// within ~1 RTT of any state change.
-  private startLongPoll(): void {
-    const poll = (): void => {
-      this.http.getStatusLongPoll(30).subscribe({
-        next: (s) => {
-          this.status = s;
-          this.loading = false;
-          poll();  // re-subscribe immediately
-        },
-        error: () => {
-          // On error, fall back to a 10s poll and retry
-          this.http.getStatus().subscribe({
-            next: (s) => { this.status = s; this.loading = false; },
-            error: () => { this.loading = false; }
-          });
-          setTimeout(() => poll(), 10000);
-        }
-      });
-    };
-    poll();
+    // Also accept pubsub updates from main component (one-shot login seed).
+    this.subs.add(
+      this.pubsub.on<StatusSnapshot>('status').subscribe(s => { this.status = s; })
+    );
   }
 
   ngOnDestroy(): void { this.subs.unsubscribe(); }

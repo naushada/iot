@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
+import { filter } from 'rxjs/operators';
 import { HttpsvcService } from './httpsvc.service';
 import { StatusSnapshot } from './app-globals';
 
@@ -74,6 +75,10 @@ export class DataStoreService {
   private cache = new Map<string, unknown>();
   private subjects = new Map<string, BehaviorSubject<unknown>>();
   private statusActive = false;
+  /// Latest full /status snapshot, replayed to late subscribers. Pages that
+  /// need live status (vpn-status, wifi-scan) read this instead of opening
+  /// their own /status long-poll — one shared socket for the whole SPA.
+  private statusSubject = new BehaviorSubject<StatusSnapshot | null>(null);
 
   constructor(private http: HttpsvcService) {}
 
@@ -93,6 +98,9 @@ export class DataStoreService {
   startWatch(): void {
     if (this.statusActive) return;
     this.statusActive = true;
+    // Immediate seed so status-driven pages paint without waiting for the
+    // first long-poll wake.
+    this.http.getStatus().subscribe({ next: (s) => this.ingestStatus(s) });
     const poll = (): void => {
       if (!this.statusActive) return;
       this.http.getStatusLongPoll(30).subscribe({
@@ -104,6 +112,13 @@ export class DataStoreService {
   }
 
   stop(): void { this.statusActive = false; }
+
+  /// Live full-status stream off the single shared long-poll. Replays the
+  /// most recent snapshot to new subscribers (instant paint on revisit).
+  observeStatus(): Observable<StatusSnapshot> {
+    return this.statusSubject.pipe(
+      filter((s): s is StatusSnapshot => s != null));
+  }
 
   private ingestStatus(s: StatusSnapshot): void {
     if (!s) return;
@@ -120,6 +135,9 @@ export class DataStoreService {
     if (s.cloud) {
       for (const k of Object.keys(s.cloud)) this.set(k, s.cloud[k]);
     }
+    // Publish the full snapshot for status-driven pages (vpn-status,
+    // wifi-scan) that consume the structured shape directly.
+    this.statusSubject.next(s);
   }
 
   // ── Accessors ─────────────────────────────────────────────────────

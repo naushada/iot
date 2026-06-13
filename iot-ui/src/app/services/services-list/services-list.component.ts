@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../../common/httpsvc.service';
+import { DataStoreService } from '../../../common/datastore.service';
 import { SessionService } from '../../../common/session.service';
 import { StatusSnapshot, ServiceInfo } from '../../../common/app-globals';
 
@@ -75,7 +76,8 @@ export class ServicesListComponent implements OnInit, OnDestroy {
 
     get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, private session: SessionService) {}
+  constructor(private http: HttpsvcService, private ds: DataStoreService,
+              private session: SessionService) {}
 
   /// cpu_count==0 ⇒ no live StatsPublisher for this service (not separately
   /// measured) → show "—" rather than misleading zeros.
@@ -92,21 +94,10 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     return (kb / 1024).toFixed(1) + ' MB';
   }
 
-  private active = true;
-
+  /// Read service state/telemetry live off the single shared /status stream
+  /// — no per-page long-poll. Replayed snapshot → instant paint on revisit.
   ngOnInit(): void {
-    this.startLongPoll();
-  }
-
-  private startLongPoll(): void {
-    const poll = (): void => {
-      if (!this.active) return;
-      this.http.getStatusLongPoll(30).subscribe({
-        next: (s) => { this.applyStatus(s); if (this.active) poll(); },
-        error: () => { if (this.active) setTimeout(() => poll(), 5000); }
-      });
-    };
-    poll();
+    this.sub.add(this.ds.observeStatus().subscribe((s) => this.applyStatus(s)));
   }
 
   applyStatus(s: StatusSnapshot): void {
@@ -149,5 +140,5 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     return m[k] || '';
   }
 
-  ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
 }
