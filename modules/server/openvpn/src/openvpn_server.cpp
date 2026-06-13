@@ -1,6 +1,7 @@
 #include "openvpn_server.hpp"
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -11,6 +12,7 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -123,8 +125,25 @@ bool OpenVpnServer::start() {
     cmd << m_openvpn_path << " --config " << m_config_path;
     opts.command_line("%s", cmd.str().c_str());
 
+    // Capture the child's stdout+stderr to a file so a failed start is
+    // diagnosable. openvpn(8) prints its exit reason there (e.g. missing
+    // TUN device, bad cert) — otherwise it vanishes onto the container's
+    // stdout, invisible to the cloudd log. Truncated fresh on every start.
+    if (m_log_path.empty()) {
+        const char* t = ::getenv("TMPDIR");
+        std::string base = (t && *t) ? t : "/tmp";
+        m_log_path = base + "/ovpn-server.log";
+    }
+    int lfd = ::open(m_log_path.c_str(),
+                     O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    if (lfd >= 0) {
+        // Keep stdin inherited; redirect stdout + stderr to the capture file.
+        opts.set_handles(ACE_STDIN, lfd, lfd);
+    }
+
     ACE_Process proc;
     pid_t p = proc.spawn(opts);
+    if (lfd >= 0) ::close(lfd);   // child has its own dup'd descriptor now
     if (p == ACE_INVALID_PID) {
         ACE_ERROR_RETURN((LM_ERROR,
                           ACE_TEXT("%D cloudd:thread:%t %M %N:%l openvpn spawn(%C)"
@@ -151,6 +170,24 @@ bool OpenVpnServer::running() {
     else if (WIFSIGNALED(status)) m_exit_code = 128 + WTERMSIG(status);
     m_pid = 0;
     return false;
+}
+
+std::string OpenVpnServer::log_tail(std::size_t max_bytes) const {
+    if (m_log_path.empty()) return {};
+    int fd = ::open(m_log_path.c_str(), O_RDONLY);
+    if (fd < 0) return {};
+    off_t end = ::lseek(fd, 0, SEEK_END);
+    if (end <= 0) { ::close(fd); return {}; }
+    off_t start = (static_cast<std::size_t>(end) > max_bytes)
+                ? end - static_cast<off_t>(max_bytes) : 0;
+    ::lseek(fd, start, SEEK_SET);
+    std::string out;
+    out.resize(static_cast<std::size_t>(end - start));
+    ssize_t n = ::read(fd, &out[0], out.size());
+    ::close(fd);
+    if (n <= 0) return {};
+    out.resize(static_cast<std::size_t>(n));
+    return out;
 }
 
 void OpenVpnServer::stop(std::chrono::milliseconds grace) {

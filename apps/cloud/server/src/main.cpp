@@ -31,7 +31,9 @@
 #include "data_store/log_buffer.hpp"
 #include "data_store/stats_publisher.hpp"
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <csignal>
 #include <set>
@@ -337,7 +339,14 @@ int main(int argc, char** argv) {
 
     // Bring openvpn to the operator-desired state and publish it. Runs on
     // the main thread only (single owner of the child process / waitpid).
-    auto supervise_ovpn = [&ds, &ovpn]() {
+    // Crash-backoff state for openvpn supervision. The child runs in the
+    // foreground; if it dies (bad TUN/cert/config) we restart it — but with
+    // exponential backoff and the captured exit reason logged, so a
+    // persistent failure no longer silently respawns every tick.
+    int  ovpn_fails = 0;
+    auto ovpn_last_start  = std::chrono::steady_clock::time_point{};
+    auto ovpn_retry_after = std::chrono::steady_clock::time_point{};
+    auto supervise_ovpn = [&]() {
         bool enabled = true;
         {
             std::vector<data_store::Client::GetResult> got;
@@ -346,18 +355,41 @@ int main(int argc, char** argv) {
                 if (auto b = data_store::to_bool(got[0].value)) enabled = *b;
         }
         std::string state;
-        if (enabled) {
-            const bool was = ovpn.running();
-            if (!was) {
+        if (!enabled) {
+            if (ovpn.running()) ovpn.stop();
+            ovpn_fails = 0;
+            ovpn_last_start  = {};
+            ovpn_retry_after = {};
+            state = "disabled";
+        } else if (ovpn.running()) {
+            ovpn_fails = 0;                 // stable run — clear backoff
+            state = "running";
+        } else {
+            const auto now = std::chrono::steady_clock::now();
+            // Transition running → exited: diagnose the crash exactly once,
+            // schedule a backoff, and clear the tracker so subsequent ticks
+            // in the backoff window stay quiet.
+            if (ovpn_last_start.time_since_epoch().count() != 0) {
+                const bool quick = (now - ovpn_last_start) < std::chrono::seconds(30);
+                ovpn_fails = quick ? ovpn_fails + 1 : 1;
+                const int backoff = std::min(60, 1 << std::min(ovpn_fails, 6)); // 2..60s
+                ovpn_retry_after = now + std::chrono::seconds(backoff);
+                const std::string tail = ovpn.log_tail();
+                ACE_ERROR((LM_ERROR, ACE_TEXT("%D cloudd:thread:%t %M %N:%l "
+                           "openvpn server exited rc=%d (failure #%d); next retry "
+                           "in %ds. Captured output:\n%s\n"),
+                           ovpn.exit_code(), ovpn_fails, backoff,
+                           tail.empty() ? "(none captured)" : tail.c_str()));
+                ovpn_last_start = {};       // handled
+            }
+            if (now >= ovpn_retry_after) {
                 if (ovpn.start()) {
+                    ovpn_last_start = now;
                     ACE_DEBUG((LM_INFO, ACE_TEXT("%D cloudd:thread:%t %M %N:%l "
                                "openvpn server (re)started\n")));
                 }
             }
             state = ovpn.running() ? "running" : "exited";
-        } else {
-            if (ovpn.running()) ovpn.stop();
-            state = "disabled";
         }
         g_ovpn_pid.store(ovpn.running() ? ovpn.pid() : 0);
         ds.set("services.cloud.openvpn.server.state",
