@@ -95,6 +95,7 @@
       <!-- Routing -->
       <ng-container *ngIf="selectedMenu==='routing'">
         <app-port-forward *ngIf="!selectedSubNav || selectedSubNav==='ports' || selectedSubNav==='dnat'"></app-port-forward>
+        <app-custom-rules *ngIf="selectedSubNav==='rules'"></app-custom-rules>
       </ng-container>
 
       <!-- LwM2M -->

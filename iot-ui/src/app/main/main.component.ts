@@ -31,7 +31,7 @@ export class MainComponent {
     { id: 'wan',       label: 'WAN',       svg: 'assets/icons/wan.svg',
       children: [{id:'wifi',label:'WiFi Config'},{id:'scan',label:'Scan Results'},{id:'priority',label:'Priority'}] },
     { id: 'routing',   label: 'Routing',   svg: 'assets/icons/routing.svg',
-      children: [{id:'ports',label:'Port Forward'},{id:'dnat',label:'DNAT Target'}] },
+      children: [{id:'ports',label:'Port Forward'},{id:'dnat',label:'DNAT Target'},{id:'rules',label:'Firewall Rules'}] },
     { id: 'lwm2m',     label: 'LwM2M',     svg: 'assets/icons/lwm2m.svg',
       children: [{id:'server',label:'Server'},{id:'security',label:'Security'}] },
     { id: 'services',  label: 'Services',  svg: 'assets/icons/services.svg',
