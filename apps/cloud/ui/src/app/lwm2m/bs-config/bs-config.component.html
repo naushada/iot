@@ -101,8 +101,9 @@
 
       <clr-input-container>
         <label>PSK Identity — RID 3</label>
-        <input clrInput [disabled]="!isAdmin" formControlName="sec_identity"
-               placeholder="iot-client" />
+        <input clrInput [disabled]="true" formControlName="sec_identity"
+               placeholder="rpi&lt;endpoint&gt;&#64;cloud.local" />
+        <clr-control-helper>Auto-derived from Endpoint Name — not editable</clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>
@@ -120,8 +121,9 @@
       <!-- DM PSK (post-bootstrap, separate from BS PSK above) -->
       <clr-input-container>
         <label>DM PSK Identity <span class="hint">(per-device)</span></label>
-        <input clrInput [disabled]="!isAdmin" formControlName="dm_psk_id"
-               placeholder="iot-dm-client" />
+        <input clrInput [disabled]="true" formControlName="dm_psk_id"
+               placeholder="rpi&lt;endpoint&gt;&#64;cloud.local" />
+        <clr-control-helper>Auto-derived from Endpoint Name — not editable</clr-control-helper>
       </clr-input-container>
 
       <clr-input-container>

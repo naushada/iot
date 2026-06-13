@@ -83,6 +83,26 @@ export class BsConfigComponent implements OnInit {
       },
       error: () => { this.loading = false; }
     });
+
+    // BS/DM PSK Identity are never free-text: the cloud always derives the
+    // identity from the endpoint as rpi<endpoint>@cloud.local (mirrors
+    // server::lwm2m::format_identity). Keep them in lock-step with the
+    // Endpoint Name field; the template renders them read-only so the
+    // installer cannot enter a mismatching value.
+    this.syncIdentities(this.provForm.value.endpoint);
+    this.provForm.get('endpoint')!.valueChanges
+      .subscribe((ep: string) => this.syncIdentities(ep));
+  }
+
+  /// rpi<endpoint>@cloud.local — must match server::lwm2m::format_identity.
+  private formatIdentity(endpoint: string): string {
+    const ep = (endpoint || '').trim();
+    return ep ? `rpi${ep}@cloud.local` : '';
+  }
+
+  private syncIdentities(endpoint: string | null): void {
+    const id = this.formatIdentity(endpoint || '');
+    this.provForm.patchValue({ sec_identity: id, dm_psk_id: id }, { emitEvent: false });
   }
 
   saveBs(): void {
@@ -105,12 +125,12 @@ export class BsConfigComponent implements OnInit {
     });
   }
 
-  /// Copy server-config into the provision form.
+  /// Copy server-config into the provision form. PSK identities are NOT
+  /// copied — they are derived from the endpoint (see syncIdentities).
   fillFromServer(): void {
     const v = this.bsForm.value;
     this.provForm.patchValue({
       sec_uri:      v.dm_uri,
-      sec_identity: v.psk_id,
       sec_key:      v.psk_key,
       sec_mode:     v.security_mode === 'None' ? 3 : 0,
     });
