@@ -398,10 +398,13 @@ int main(int argc, char** argv) {
                    httpIp.c_str(), httpPort));
     };
 
-    ACE_Time_Value tv(0, 50 * 1000);  // 50ms tick for accept
     int reload_tick = 0;
     constexpr int kReloadEvery = 40;  // 40 * 50ms ≈ 2s
     while (!g_stop.load()) {
+        // Reset each iteration: handle_events() decrements the timeout in place
+        // (ACE_Countdown_Time), so a shared value drains to zero and the reactor
+        // then busy-spins at ~100% CPU.
+        ACE_Time_Value tv(0, 50 * 1000);  // 50ms tick for accept
         // Accept pending connections
         ACE_SOCK_Stream stream;
         ACE_INET_Addr peer;
