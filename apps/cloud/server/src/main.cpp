@@ -357,6 +357,9 @@ int main(int argc, char** argv) {
     ovpn_cfg.port      = static_cast<std::uint16_t>(ds_int(ds, "cloud.vpn.listen.port", 1194));
     ovpn_cfg.mgmt_port = static_cast<std::uint16_t>(ds_int(ds, "cloud.vpn.mgmt.port", 7506));
     ovpn_cfg.verb      = ds_int(ds, "cloud.vpn.verb", 3);
+    // DNS resolver pushed to devices (so the device surfaces vpn.assigned.dns).
+    // Empty disables the push; default 1.1.1.1 so the field is populated.
+    ovpn_cfg.dns       = ds_str(ds, "cloud.vpn.dns", "1.1.1.1");
     // Seed the effective config back to ds so every cloud.vpn.* key exists
     // with its default (visible in the cloud UI / ds-cli).
     ds.set({
@@ -369,6 +372,7 @@ int main(int argc, char** argv) {
         {"cloud.vpn.listen.port", data_store::Value{static_cast<std::int32_t>(ovpn_cfg.port)}},
         {"cloud.vpn.mgmt.port",   data_store::Value{static_cast<std::int32_t>(ovpn_cfg.mgmt_port)}},
         {"cloud.vpn.verb",        data_store::Value{static_cast<std::int32_t>(ovpn_cfg.verb)}},
+        {"cloud.vpn.dns",         data_store::Value{ovpn_cfg.dns}},
     });
     // ── Runtime VPN PKI (Phase 2) ─────────────────────────────────
     // The cloud image generates a CA + server cert at build time but PURGES

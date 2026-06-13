@@ -42,6 +42,12 @@ std::string build_openvpn_config(const OpenVpnConfig& c) {
     ss << "cipher " << c.cipher      << "\n";
     ss << "verb 3\n";
     ss << "management 127.0.0.1 " << c.mgmt_port << "\n";
+    // Start held: openvpn opens the mgmt socket but does NOT connect until the
+    // supervisor sends `hold release`. This lets the supervisor attach + enable
+    // state notifications FIRST, so the CONNECTED state and the PUSH_REPLY
+    // (assigned ip/netmask/gateway/dns) are captured in real time instead of
+    // racing — they previously fired before we subscribed and were lost.
+    ss << "management-hold\n";
     return ss.str();
 }
 

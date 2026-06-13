@@ -30,6 +30,8 @@ struct OpenVpnServerConfig {
     std::string   cert_path  = "/etc/iot/vpn/server.crt";
     std::string   key_path   = "/etc/iot/vpn/server.key";
     std::string   cipher     = "AES-256-GCM";
+    std::string   dns;                          // empty → no DNS pushed;
+                                                // else `push "dhcp-option DNS …"`
     std::uint16_t mgmt_port  = 7506;            // management 127.0.0.1 <port>
     int           verb       = 3;
 };

@@ -269,6 +269,13 @@ return {
       max     = 11,
     },
 
+    -- DNS resolver pushed to VPN clients (`push "dhcp-option DNS …"`), so the
+    -- device surfaces vpn.assigned.dns. Empty disables the push.
+    ["cloud.vpn.dns"] = {
+      type    = "string",
+      default = "1.1.1.1",
+    },
+
     -- Next available proxy port (bump-counter).
     ["cloud.vpn.port.next"] = {
       type    = "integer",

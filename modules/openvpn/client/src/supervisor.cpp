@@ -210,6 +210,19 @@ bool Supervisor::serve_one_session(const std::string& iface) {
                                 "connecting\n"),
                        errno));
         }
+        // openvpn was spawned with `management-hold`, so it is paused until we
+        // release it. Now that real-time state notifications are enabled, let
+        // it connect — the CONNECTED state + PUSH_REPLY (assigned
+        // ip/netmask/gateway/dns) then arrive while we're already listening,
+        // so vpn.assigned.* is captured rather than raced.
+        static const char kHoldRelease[] = "hold release\r\n";
+        if (stream.send_n(kHoldRelease, sizeof(kHoldRelease) - 1) < 0) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l mgmt 'hold release' "
+                                "failed errno=%d; openvpn will stay held and "
+                                "never connect\n"),
+                       errno));
+        }
     }
 
     Lifecycle::Sinks sinks;
