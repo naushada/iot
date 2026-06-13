@@ -223,6 +223,20 @@ void DTLSAdapter::connect(const std::string& ip, const std::uint16_t& port) {
     m_peerSession = m_session;
     isClient(true);
 
+    // A previous handshake to this peer may have stalled (dropped
+    // HelloVerifyRequest / no ServerHello). tinydtls then keeps the peer in a
+    // non-connected state and dtls_connect() only attempts renegotiation
+    // (dtls_connect_peer → dtls_renegotiate), which fails — "Error in
+    // establishes Channel" — so no fresh ClientHello is ever sent and the
+    // client can never recover. Reset such a stale peer first so dtls_connect()
+    // starts a clean handshake. A *connected* peer is left untouched so we
+    // don't tear down a healthy session.
+    dtls_peer_t* existing = dtls_get_peer(dtls_ctx(), &m_session);
+    if (existing && dtls_peer_state(existing) != DTLS_STATE_CONNECTED) {
+        dtls_debug("DTLSAdapter::connect resetting stale peer for a fresh handshake\n");
+        dtls_reset_peer(dtls_ctx(), existing);
+    }
+
     auto ret = dtls_connect(dtls_ctx(), &m_session);
     if(!ret) {
         /// Channel exists
