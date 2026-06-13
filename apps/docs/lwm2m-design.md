@@ -208,6 +208,46 @@ the readline prompt. Driving this from `App` requires:
 - A "bootstrap pending writes" buffer so `apply` is atomic — partial
   writes are discarded on `/bs` finish failure.
 
+#### 5.1.1 Bootstrap retry & backoff (driver in `main.cpp` client tick)
+
+The above FSM is *driven* by the 1 Hz client tick (`UDPAdapter::on_tick_client`
+in `apps/src/main.cpp`), which owns a small `BootPhase` state
+(`NotStarted → InProgress → Done | Skipped`). The connection must **never
+wedge** — a dropped ClientHello, a briefly-unavailable Bootstrap Server, or an
+unanswered `POST /bs` all self-heal by retrying forever with capped backoff.
+Two cooperating mechanisms make that happen:
+
+1. **DTLS handshake retransmission.** Every tick calls
+   `DTLSAdapter::check_retransmit()` → tinydtls `dtls_check_retransmit()`.
+   Without this, an unanswered handshake flight (the bootstrap ClientHello) is
+   never retransmitted and the client stalls after one packet. Pumping it makes
+   tinydtls resend the in-flight flight on its own timers until the BS answers.
+
+2. **Bootstrap-level retry loop with backoff.** State carried across ticks:
+   - `bootRetryAfter` — earliest `steady_clock` time the next bootstrap action
+     may run (default-constructed = epoch ⇒ first attempt is immediate).
+   - `bootBackoff` — current wait in seconds, starts at **2**, doubles on each
+     failed attempt and is capped at **30** (`2 → 4 → 8 → 16 → 30 → 30 …`).
+
+   Per-tick logic while `Unregistered` and not yet `Done`:
+
+   | Phase | Condition | Action |
+   |-------|-----------|--------|
+   | `NotStarted` | no BS configured | → `Skipped` (plain-DM fallback) |
+   | `NotStarted` | `now ≥ bootRetryAfter` **and** DTLS up | send `POST /bs` → `InProgress`, set 15 s `bootDeadline` |
+   | `NotStarted` | `now ≥ bootRetryAfter` **and** DTLS not up | re-kick `connect(bsHost,bsPort)` (covers a peer dropped after max retransmits); `bootRetryAfter = now + bootBackoff`; then grow `bootBackoff` |
+   | `InProgress` | `now ≥ bootDeadline` (15 s, `/bs` didn't complete) | `bootRetryAfter = now + bootBackoff`; grow `bootBackoff`; → `NotStarted` (re-send `/bs` after the backoff window) |
+
+   `bootDeadline` bounds a single `/bs` attempt (15 s); `bootRetryAfter` +
+   `bootBackoff` space out the *retries*. The loop is unbounded by design — a
+   gateway must eventually reach the cloud — so a bootstrap timeout **no longer
+   falls back to a direct DM register**; only an explicitly BS-less config takes
+   the `Skipped` path. On success the FSM leaves `NotStarted/InProgress` for
+   `Done`, so the backoff state is simply abandoned (no reset needed).
+
+   The device-ui sees this via `iot.conn.state` (`bootstrapping` while looping;
+   see `compute_conn_state`).
+
 ### 5.2 Bootstrap Server (replaces today's static reply in `processRequest`)
 
 ```

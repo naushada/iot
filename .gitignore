@@ -69,3 +69,6 @@ apps/test/build/
 # Yocto build output
 yocto/build/
 build/
+
+# Image export tarballs
+iot-cloud.tar.gz

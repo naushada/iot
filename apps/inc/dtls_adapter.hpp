@@ -234,6 +234,20 @@ class DTLSAdapter {
             return(m_dtls_ctx);
         }
 
+        /// Pump tinydtls' handshake retransmission timer. Without periodic
+        /// calls, an unanswered handshake flight (e.g. the bootstrap
+        /// ClientHello) is never retransmitted and the connection wedges.
+        /// Driven from the client's 1 Hz tick. Returns true if tinydtls has
+        /// exhausted its max retransmits for some peer (handshake gave up) —
+        /// the caller may then re-initiate via connect().
+        bool check_retransmit() {
+            if(!m_dtls_ctx) return(false);
+            clock_time_t next = 0;
+            bool isMaxRetransmit = false;
+            dtls_check_retransmit(m_dtls_ctx, &next, &isMaxRetransmit);
+            return(isMaxRetransmit);
+        }
+
         std::string& data() {
             return(m_data);
         }
