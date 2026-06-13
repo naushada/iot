@@ -1,6 +1,7 @@
 #include "mgmt_protocol.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -119,8 +120,25 @@ void Parser::emit(std::string line) {
         // raw stays empty
     }
     else if (!line.empty()) {
-        ev.kind = Event::Kind::DataLine;
-        ev.raw = std::move(line);
+        // The `state` query (as opposed to the `>STATE:` async form) replies
+        // with bare comma-records `<unix_ts>,<STATE>,<desc>,<localip>,...`
+        // terminated by END — the same layout as a `>STATE:` body without the
+        // prefix. Surface a leading-numeric-timestamp record as a State event
+        // so the Lifecycle advances vpn.state from a current-state query (the
+        // case where openvpn reached CONNECTED before `state on` was sent).
+        auto fields = comma_split(line);
+        const bool is_state_record =
+            fields.size() >= 2 && !fields[0].empty() &&
+            std::all_of(fields[0].begin(), fields[0].end(),
+                        [](unsigned char c) { return std::isdigit(c) != 0; });
+        if (is_state_record) {
+            ev.kind   = Event::Kind::State;
+            ev.fields = std::move(fields);
+            ev.raw    = std::move(line);
+        } else {
+            ev.kind = Event::Kind::DataLine;
+            ev.raw  = std::move(line);
+        }
     }
     else {
         // Empty line — drop, don't enqueue.

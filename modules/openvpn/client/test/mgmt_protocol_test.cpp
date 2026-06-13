@@ -69,6 +69,23 @@ TEST(MgmtParser, StateAssignIpCarriesAssignedIpInFieldThree) {
     EXPECT_EQ("10.8.0.6",  evs[0].fields[3]);
 }
 
+TEST(MgmtParser, StateQueryBareRecordClassifiedAsState) {
+    // Reply to the `state 1` current-state query: a bare comma-record with NO
+    // `>STATE:` prefix, terminated by END. It must be surfaced as a State
+    // event (not a DataLine) so the Lifecycle can advance vpn.state from a
+    // current-state query — covering openvpn reaching CONNECTED before the
+    // daemon enabled real-time notifications with `state on`.
+    Parser p;
+    p.feed("1701420000,CONNECTED,SUCCESS,10.8.0.6,vpn.example.com,1194,,\nEND\n");
+    auto evs = drain(p);
+    ASSERT_EQ(2u, evs.size());
+    EXPECT_EQ(Event::Kind::State, evs[0].kind);
+    ASSERT_GE(evs[0].fields.size(), 4u);
+    EXPECT_EQ("CONNECTED", evs[0].fields[1]);
+    EXPECT_EQ("10.8.0.6",  evs[0].fields[3]);
+    EXPECT_EQ(Event::Kind::EndMarker, evs[1].kind);
+}
+
 /* ─────────────────────────── PUSH_REPLY ──────────────────────────── */
 
 TEST(MgmtParser, PushReplyCommaSplitsOptions) {

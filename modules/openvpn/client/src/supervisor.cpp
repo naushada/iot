@@ -186,18 +186,28 @@ bool Supervisor::serve_one_session(const std::string& iface) {
 
     // Subscribe to real-time state notifications. Real openvpn keeps the
     // management interface silent after the `>INFO:` banner until a client
-    // asks for them; `state on` makes it emit the CURRENT state immediately
-    // (covers the case where openvpn reached CONNECTED before we attached)
-    // AND every subsequent transition as a `>STATE:` event the Lifecycle
-    // consumes. Without this, vpn.state never advances past "connecting"
-    // against real openvpn — the L12/L14 fake openvpn masked the gap by
-    // pushing STATE/PUSH_REPLY lines unsolicited.
+    // asks for them. `state on` enables FUTURE `>STATE:` transitions, but it
+    // does NOT replay the current state — so if openvpn already reached
+    // CONNECTED before we attached the mgmt socket (the common race), that
+    // event is missed and vpn.state stalls at "connecting" forever (even
+    // though PUSH_REPLY still sets vpn.assigned.*). Fix: also query `state 1`
+    // for the most-recent state right now. Its reply is a bare comma-record
+    // (no `>STATE:` prefix) terminated by END; the mgmt Parser surfaces that
+    // as a State event too, so the Lifecycle advances vpn.state to "connected".
     {
         static const char kStateOn[] = "state on\r\n";
         if (stream.send_n(kStateOn, sizeof(kStateOn) - 1) < 0) {
             ACE_ERROR((LM_WARNING,
                        ACE_TEXT("%D [ovpn:%t] %M %N:%l mgmt 'state on' send "
                                 "failed errno=%d; vpn.state may stall\n"),
+                       errno));
+        }
+        static const char kStateQuery[] = "state 1\r\n";
+        if (stream.send_n(kStateQuery, sizeof(kStateQuery) - 1) < 0) {
+            ACE_ERROR((LM_WARNING,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l mgmt 'state 1' query "
+                                "failed errno=%d; vpn.state may stall at "
+                                "connecting\n"),
                        errno));
         }
     }
