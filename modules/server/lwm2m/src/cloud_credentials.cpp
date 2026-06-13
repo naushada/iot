@@ -77,8 +77,7 @@ std::string upsert_credential(const std::string& array_json,
     json arr = parse_array(array_json);
     const std::string identity = format_identity(serial);
 
-    // JSON field names follow the dotted convention used by
-    // cloud.provision.configs (sec.uri, dm.psk.id, …).
+    // JSON field names follow the dotted convention (dm.psk.id, …).
     json rec = {
         {"serial",     serial},
         {"identity",   identity},

@@ -34,7 +34,8 @@ interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered
             <div></div>
             <div></div>
           </div>
-          <button class="btn btn-primary" [disabled]="provisioning" (click)="provision()">
+          <button class="btn btn-primary" style="margin-top:16px;"
+                  [disabled]="provisioning" (click)="provision()">
             {{ provisioning ? 'Provisioning…' : 'Provision' }}
           </button>
           <span *ngIf="!devMode" class="hint" style="margin-left:12px;">

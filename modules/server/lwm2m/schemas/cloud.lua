@@ -99,7 +99,6 @@ return {
     },
     -- DM-level PSK for post-bootstrap device communication.
     -- Separate from cloud.bs.psk.* (used only during bootstrapping).
-    -- Per-device overrides stored in cloud.provision.configs per endpoint.
     ["cloud.dm.psk.id"] = {
         access  = "Admin",
       type    = "string",
@@ -111,8 +110,6 @@ return {
       default = "",
     },
     -- LwM2M version reported by devices / expected by the DM server.
-    -- Per-device overrides stored in cloud.provision.configs as
-    -- lwm2m.version inside the endpoint's JSON entry.
     ["cloud.dm.lwm2m.version"] = {
         access  = "Admin",
       type    = "string",
@@ -125,24 +122,6 @@ return {
         access  = "Admin",
       type    = "string",
       default = "",
-    },
-    -- Per-endpoint Security Object (OID 0) configs — a table of
-    -- tables keyed by endpoint name, stored as a JSON string:
-    -- {
-    --   "urn:dev:gateway-42": {
-    --     "sec.uri":      "coaps://cloud:5683",
-    --     "sec.mode":     0,
-    --     "sec.identity": "iot-client",
-    --     "sec.key":      "0102...",
-    --     "sec.bs":       1,
-    --     "sec.ssid":     0
-    --   }
-    -- }
-    -- iot-cloudd reads the matching entry at provision time.
-    ["cloud.provision.configs"] = {
-        access  = "Admin",
-      type    = "string",
-      default = "{}",
     },
     -- Deprovision request: iot-httpd writes the endpoint name here;
     -- iot-cloudd watches this key and calls deprovision().
