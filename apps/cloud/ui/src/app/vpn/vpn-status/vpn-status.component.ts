@@ -13,7 +13,10 @@ import { VpnStatus } from '../../../common/app-globals';
         <clr-dg-column>Value</clr-dg-column>
 
         <clr-dg-row *clrDgItems="let row of rows">
-          <clr-dg-cell>{{ row.key }}</clr-dg-cell>
+          <clr-dg-cell>
+            {{ row.key }}
+            <app-ds-hint *dsDebug [key]="row.dsKey"></app-ds-hint>
+          </clr-dg-cell>
           <clr-dg-cell>
             <app-status-badge *ngIf="row.isBadge" [label]="row.value" [state]="v.state||''"></app-status-badge>
             <ng-container *ngIf="row.isDns">
@@ -41,17 +44,17 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
   loading = true;
   private sub = new Subscription();
 
-  get rows(): { key: string; value: string; isBadge: boolean; isDns?: boolean }[] {
+  get rows(): { key: string; value: string; isBadge: boolean; isDns?: boolean; dsKey: string }[] {
     return [
-      { key: 'State',           value: this.v.state || 'unknown', isBadge: true },
-      { key: 'Assigned IP',     value: this.v.ip || '—',          isBadge: false },
-      { key: 'Gateway',         value: this.v.gateway || '—',     isBadge: false },
-      { key: 'Netmask',         value: this.v.netmask || '—',     isBadge: false },
-      { key: 'DNS',             value: this.v.dns || '—',         isBadge: false, isDns: true },
-      { key: 'PID',             value: String(this.v.pid || '—'), isBadge: false },
-      { key: 'Exit Code',       value: this.v.exit_code != null ? String(this.v.exit_code) : '—', isBadge: false },
-      { key: 'Gate Reason',     value: this.v.gate_reason || '—', isBadge: false },
-      { key: 'Bound Interface', value: this.v.bound_iface || '—', isBadge: false },
+      { key: 'State',           value: this.v.state || 'unknown', isBadge: true,  dsKey: 'vpn.state' },
+      { key: 'Assigned IP',     value: this.v.ip || '—',          isBadge: false, dsKey: 'vpn.assigned.ip' },
+      { key: 'Gateway',         value: this.v.gateway || '—',     isBadge: false, dsKey: 'vpn.assigned.gateway' },
+      { key: 'Netmask',         value: this.v.netmask || '—',     isBadge: false, dsKey: 'vpn.assigned.netmask' },
+      { key: 'DNS',             value: this.v.dns || '—',         isBadge: false, isDns: true, dsKey: 'vpn.assigned.dns' },
+      { key: 'PID',             value: String(this.v.pid || '—'), isBadge: false, dsKey: 'vpn.pid' },
+      { key: 'Exit Code',       value: this.v.exit_code != null ? String(this.v.exit_code) : '—', isBadge: false, dsKey: 'vpn.exit_code' },
+      { key: 'Gate Reason',     value: this.v.gate_reason || '—', isBadge: false, dsKey: 'vpn.gate.reason' },
+      { key: 'Bound Interface', value: this.v.bound_iface || '—', isBadge: false, dsKey: 'vpn.bound.iface' },
     ];
   }
 
