@@ -54,6 +54,12 @@ std::string build_server_config(const OpenVpnServerConfig& c) {
     ss << "port "  << c.port  << "\n";
     ss << "topology subnet\n";
     ss << "server " << net << " " << mask << "\n";
+    // Push a DNS resolver to clients (when configured) so the device learns
+    // it in the PUSH_REPLY and surfaces vpn.assigned.dns. topology subnet
+    // already auto-pushes route-gateway + ifconfig (ip+netmask).
+    if (!c.dns.empty()) {
+        ss << "push \"dhcp-option DNS " << c.dns << "\"\n";
+    }
     ss << "ca   " << c.ca_path   << "\n";
     ss << "cert " << c.cert_path << "\n";
     ss << "key  " << c.key_path  << "\n";

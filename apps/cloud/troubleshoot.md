@@ -320,3 +320,32 @@ update, you likely started with `RESET_CONFIG=0`; drop the volume:
 docker volume rm cloud_iot-etc
 ./run.sh
 ```
+
+## Redeploys leave orphan containers / `rmi` says "image is being used"
+
+Symptoms after pulling a new image:
+
+```
+docker rmi -f <id>   → conflict: image is being used by running container <c>
+./run.sh stop        → ! Network cloud_default Resource is still in use
+```
+
+Cause: `docker compose down` only stops the services in the **current**
+compose file. When the service set changes between releases (e.g. a service
+is renamed/removed, or this release moved `iot-cloudd` to host networking),
+the old container becomes an **orphan** — still `Up` (often
+`restart: unless-stopped`), still attached to `cloud_default`, still holding
+the old image. `down` skips it, so the network can't be removed and the image
+stays in use. (Same redeploy-staleness family as the bootstrap provision-watch
+going stale after a redeploy — `docker restart iot-cloudd`.)
+
+Fix — tear down **with orphan removal**, then pull + up:
+
+```bash
+docker compose down --remove-orphans     # or: docker rm -f <orphan-name>
+docker rmi -f naushada/iot-cloud:latest  # now free
+docker compose pull
+./run.sh
+```
+
+Make `--remove-orphans` the default teardown whenever the service set changes.

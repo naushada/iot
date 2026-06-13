@@ -62,6 +62,9 @@ TEST(BuildOpenvpnConfig, EmitsExpectedDirectives) {
     EXPECT_NE(std::string::npos, body.find("\nkey  /etc/iot/vpn/client.key\n"));
     EXPECT_NE(std::string::npos, body.find("\ncipher AES-256-GCM\n"));
     EXPECT_NE(std::string::npos, body.find("\nmanagement 127.0.0.1 7505\n"));
+    // Held at startup so the supervisor subscribes before openvpn connects
+    // (captures CONNECTED + PUSH_REPLY rather than racing them).
+    EXPECT_NE(std::string::npos, body.find("\nmanagement-hold\n"));
 }
 
 TEST(BuildOpenvpnConfig, OverridesFlowThrough) {

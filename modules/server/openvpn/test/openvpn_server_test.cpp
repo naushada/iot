@@ -49,4 +49,19 @@ TEST(BuildServerConfig, badSubnetReturnsEmpty) {
     EXPECT_TRUE(build_server_config(c).empty());
 }
 
+TEST(BuildServerConfig, pushesDnsWhenSet) {
+    OpenVpnServerConfig c;
+    c.subnet = "10.9.0.0/24";
+    c.dns = "1.1.1.1";
+    const std::string conf = build_server_config(c);
+    EXPECT_NE(conf.find("push \"dhcp-option DNS 1.1.1.1\""), std::string::npos);
+}
+
+TEST(BuildServerConfig, noDnsPushWhenEmpty) {
+    OpenVpnServerConfig c;
+    c.subnet = "10.9.0.0/24";   // c.dns left empty
+    const std::string conf = build_server_config(c);
+    EXPECT_EQ(conf.find("dhcp-option DNS"), std::string::npos);
+}
+
 }  // namespace
