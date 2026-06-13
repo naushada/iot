@@ -16,16 +16,19 @@ import { UserAccount } from '../../common/app-globals';
           <clr-input-container>
             <label>User ID</label>
             <input clrInput [(ngModel)]="newId" placeholder="alice" />
+            <clr-control-helper *dsDebug><app-ds-hint key="auth.users.accounts (via /api/v1/users)"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-password-container>
             <label>Password</label>
             <input clrPassword type="password" [(ngModel)]="newPassword" placeholder="••••••••" />
+            <clr-control-helper *dsDebug><app-ds-hint key="auth.users.accounts (SHA-256, write-only)"></app-ds-hint></clr-control-helper>
           </clr-password-container>
           <clr-select-container>
             <label>Access</label>
             <select clrSelect [(ngModel)]="newAccess">
               <option *ngFor="let a of accessLevels" [value]="a">{{ a }}</option>
             </select>
+            <clr-control-helper *dsDebug><app-ds-hint key="auth.users.accounts"></app-ds-hint></clr-control-helper>
           </clr-select-container>
           <div class="btn-cell">
             <button class="btn btn-primary" (click)="create()" [disabled]="saving">
