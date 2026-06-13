@@ -34,7 +34,7 @@ One binary, `lwm2m`, plays either role:
 | L17d | Rate-limit + chaos coverage — set-rate throttling, random gate-flip harness | ✅ |
 | L18 | HTTP REST API server (`iot-httpd`) — AF_UNIX data-store bridge, worker pool, TLS/mTLS, hot-reload | ✅ |
 | L19 | Auth module — SHA-256 session cookies, role-based access control (Admin/Viewer), log ring buffer, keep-alive + idle timeout | ✅ |
-| L20 | **IoT Manager UI** — Angular 14 SPA with Clarity Design System, collapsible sidebar, long-poll real-time updates, dark/light theme | ✅ |
+| L20 | **IoT Manager UI** — Angular 14 SPA with Clarity Design System, collapsible sidebar, long-poll real-time updates, dark/light theme, Debug mode (reveals the data-store key + editable raw value under each form field) | ✅ |
 
 All six binding decisions (D1–D6) are recorded in
 [`apps/docs/lwm2m-rdd.md`](apps/docs/lwm2m-rdd.md#11-decisions-log) and
