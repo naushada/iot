@@ -48,6 +48,14 @@ GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 log_section() { echo -e "\n${GREEN}=== $1 ===${NC}"; }
 log_info()    { echo -e "${YELLOW} → $1${NC}"; }
 
+# Remove dangling (<none>) images left behind by a rebuild. Works on both
+# docker and podman (same CLI). `|| true` keeps set -e happy when there is
+# nothing to prune.
+prune_dangling() {
+    log_info "Pruning dangling images…"
+    $CR image prune -f >/dev/null 2>&1 || true
+}
+
 detect_runtime() {
     if command -v docker &>/dev/null; then echo "docker"
     elif command -v podman &>/dev/null; then echo "podman"
@@ -67,11 +75,13 @@ case "${1:-start}" in
     build)
         log_section "Building $IMAGE"
         $CR build -t "$IMAGE" -f "$SCRIPT_DIR/Dockerfile" "$SCRIPT_DIR/../../"
+        prune_dangling
         log_info "Built — start it with: ./run.sh"
         ;;
     nocache|build-nocache)
         log_section "Building $IMAGE (no cache)"
         $CR build --no-cache -t "$IMAGE" -f "$SCRIPT_DIR/Dockerfile" "$SCRIPT_DIR/../../"
+        prune_dangling
         log_info "Built — start it with: ./run.sh"
         ;;
 
