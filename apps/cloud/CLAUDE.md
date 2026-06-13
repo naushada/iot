@@ -336,27 +336,16 @@ cloud.dm.psk.key         → DM PSK key (post-bootstrap, opaque)
 cloud.dm.lwm2m.version   → LwM2M version (default "1.1")
 ```
 
-### Provision (per-device, stored in cloud.provision.configs JSON)
+### Provision (per-device)
 ```
-cloud.provision.request   → Endpoint name to provision (iot-cloudd watches)
-cloud.provision.configs   → JSON blob keyed by endpoint name:
-  {
-    "urn:dev:gateway-42": {
-      "sec.uri":      "coaps://...",    // OID 0 RID 0
-      "sec.bs":       1,                // OID 0 RID 1
-      "sec.mode":     0,                // OID 0 RID 2
-      "sec.identity": "iot-client",     // OID 0 RID 3
-      "sec.key":      "...",            // OID 0 RID 5
-      "sec.ssid":     0,                // OID 0 RID 10
-      "dm.psk.id":    "iot-dm-...",     // DM PSK per-device
-      "dm.psk.key":   "...",            // DM PSK key per-device
-      "srv.lifetime": 86400,            // OID 1 RID 1
-      "srv.binding":  "U",              // OID 1 RID 7
-      "lwm2m.version":"1.1"
-    }
-  }
+cloud.provision.request   → Endpoint name (serial) to provision (iot-cloudd watches)
 cloud.deprovision.request → Endpoint name to deprovision (iot-cloudd watches)
 ```
+Provisioning is driven from the cloud-ui **Endpoints** page via the PSK flow
+below (serial + BS PSK → `cloud.endpoint.credentials`). The Security/Server
+object TLVs pushed at `/bs` are built by the `lwm2m-bs` server from
+`cloud.bs.*` / `cloud.dm.*` + the per-endpoint `cloud.endpoint.credentials`
+(see below) — there is no per-endpoint `cloud.provision.configs` override.
 
 ### PSK provisioning (serial-derived endpoint + write-only PSK)
 
