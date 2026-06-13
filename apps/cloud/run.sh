@@ -19,6 +19,8 @@
 #   ./run.sh build              # rebuild the image
 #   ./run.sh nocache            # rebuild without cache
 #   ./run.sh ps                 # list running services
+#   ./run.sh ds get KEY         # run ds-cli inside the ds-server container
+#   ./run.sh ds set KEY VAL     #   e.g. ./run.sh ds get cloud.endpoint.credentials
 #
 #   HTTP_PORT=8443 ./run.sh     # custom HTTP port
 #   VPN_SUBNET=10.8.0.0/24 ./run.sh  # custom VPN subnet
@@ -244,8 +246,19 @@ case "${1:-start}" in
         $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" restart "${@}"
         ;;
 
+    ds)
+        # Forward to ds-cli inside the ds-server container:
+        #   ./run.sh ds get cloud.endpoint.credentials
+        #   ./run.sh ds set cloud.provision.request '"urn:dev:device-1"'
+        # NOTE: ds-cli runs as root here; gid-scoped keys (e.g.
+        # cloud.provision.bs.psk / cloud.endpoint.credentials, gid:cloud-svc)
+        # are reachable only while cloud.dev.mode=true bypasses the ACLs.
+        shift || true
+        $CR exec iot-ds-server ds-cli --socket=/var/run/iot/data_store.sock "${@}"
+        ;;
+
     *)
-        echo "Usage: $0 {start|stop|logs|ps|build|restart}" >&2
+        echo "Usage: $0 {start|stop|logs|ps|build|restart|ds}" >&2
         exit 1
         ;;
 esac
