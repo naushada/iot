@@ -769,6 +769,14 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     auto bootPhase    = std::make_shared<BootPhase>(BootPhase::NotStarted);
     auto bootDeadline =
         std::make_shared<std::chrono::steady_clock::time_point>();
+    // Bootstrap retry-with-backoff so a dropped ClientHello / briefly-down BS /
+    // an unanswered /bs never wedges us permanently at "bootstrapping".
+    // bootRetryAfter gates the next bootstrap action; bootBackoff (seconds)
+    // doubles 2→4→…→cap each failed attempt. Default-constructed time_point =
+    // epoch, so the first attempt fires immediately.
+    auto bootRetryAfter =
+        std::make_shared<std::chrono::steady_clock::time_point>();
+    auto bootBackoff  = std::make_shared<int>(2);   // seconds; doubles, cap 30
 
     // After the Bootstrap commit, switch the LwM2MClient peer + DTLS identity
     // to the DM and (re)connect; the tick sends Register once the DM
@@ -868,6 +876,7 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     auto lastConn = std::make_shared<std::string>();
     app->udpAdapter()->on_tick_client([wreg, wdm, wapp, rebind, wbs,
                                        reboot_after, bootPhase, bootDeadline,
+                                       bootRetryAfter, bootBackoff, bsHost, bsPort,
                                        dtls, &ds, lastConn]() {
         auto reg = wreg.lock();
         auto dm  = wdm.lock();
@@ -876,6 +885,12 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
 
         const auto svc = ::UDPAdapter::ServiceType_t::LwM2MClient;
         const auto now = std::chrono::steady_clock::now();
+
+        // Pump tinydtls' handshake retransmission so an unanswered flight
+        // (e.g. the bootstrap ClientHello) is retried instead of wedging the
+        // connection. Without this, a single dropped packet stalls bootstrap
+        // forever.
+        if (dtls) dtls->check_retransmit();
 
         // Publish the connection lifecycle for the device-ui (only on change).
         {
@@ -930,24 +945,44 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
             if (*bootPhase == BootPhase::NotStarted) {
                 if (!bs) {
                     *bootPhase = BootPhase::Skipped;        // plain-DM / no BS
-                } else if (dtlsReady) {
-                    ACE_DEBUG((LM_INFO,
-                               ACE_TEXT("%D lwm2m:thread:%t %M %N:%l initiating "
-                                        "bootstrap: POST /bs\n")));
-                    auto payload = bs->build_bs_request(
-                        next_msgid(), std::string{static_cast<char>(0x40)});
-                    tx_via(*a, payload, svc);
-                    *bootPhase    = BootPhase::InProgress;
-                    *bootDeadline = now + std::chrono::seconds(15);
+                } else if (now >= *bootRetryAfter) {
+                    if (dtlsReady) {
+                        ACE_DEBUG((LM_INFO,
+                                   ACE_TEXT("%D lwm2m:thread:%t %M %N:%l initiating "
+                                            "bootstrap: POST /bs\n")));
+                        auto payload = bs->build_bs_request(
+                            next_msgid(), std::string{static_cast<char>(0x40)});
+                        tx_via(*a, payload, svc);
+                        *bootPhase    = BootPhase::InProgress;
+                        *bootDeadline = now + std::chrono::seconds(15);
+                    } else if (dtls) {
+                        // BS DTLS isn't up yet. check_retransmit() (above) retries
+                        // in-flight handshake flights; re-kick connect() too in
+                        // case the peer was dropped after max retransmits, on a
+                        // growing backoff. Retry forever — a gateway must
+                        // eventually reach the cloud.
+                        dtls->connect(bsHost, bsPort);
+                        *bootRetryAfter = now + std::chrono::seconds(*bootBackoff);
+                        ACE_DEBUG((LM_INFO,
+                                   ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS DTLS not "
+                                            "up — re-kicking handshake, next retry "
+                                            "in %d s\n"), *bootBackoff));
+                        *bootBackoff = (*bootBackoff * 2 > 30) ? 30 : (*bootBackoff * 2);
+                    }
                 }
-                // else: wait for the BS handshake, retry next tick.
+                // else: within the backoff window; retry on a later tick.
             } else if (*bootPhase == BootPhase::InProgress &&
                        now >= *bootDeadline) {
+                // /bs didn't complete in time. Loop back and retry the whole
+                // bootstrap on a growing backoff instead of giving up — never
+                // wedge at "bootstrapping".
+                *bootRetryAfter = now + std::chrono::seconds(*bootBackoff);
                 ACE_ERROR((LM_WARNING,
-                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l bootstrap did "
-                                    "not complete in time — registering "
-                                    "directly\n")));
-                *bootPhase = BootPhase::Skipped;
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l bootstrap did not "
+                                    "complete in time — retrying in %d s\n"),
+                           *bootBackoff));
+                *bootBackoff = (*bootBackoff * 2 > 30) ? 30 : (*bootBackoff * 2);
+                *bootPhase = BootPhase::NotStarted;
             }
 
             // Register when ready: bootstrap committed + the DM DTLS session
