@@ -36,18 +36,18 @@
     <div class="sidebar-spacer"></div>
 
     <a class="nav-item" (click)="theme.toggle()" title="Toggle theme">
-      <clr-icon [attr.shape]="theme.dark ? 'sun' : 'moon'"></clr-icon>
+      <img [src]="theme.dark ? 'assets/icons/sun.svg' : 'assets/icons/moon.svg'" class="nav-icon" alt="" />
       <span>{{ theme.dark ? 'Light' : 'Dark' }}</span>
     </a>
 
     <a class="nav-item" [class.active]="debug.on" (click)="debug.toggle()"
-       title="Show the data-store key + editable raw value under each form field">
-      <clr-icon [attr.shape]="debug.on ? 'eye-hide' : 'eye'"></clr-icon>
+       title="Show the data-store key under each form field">
+      <img src="assets/icons/debug.svg" class="nav-icon" alt="" />
       <span>{{ debug.on ? 'Debug Off' : 'Debug' }}</span>
     </a>
 
     <a class="nav-item nav-logout" (click)="onLogout()">
-      <clr-icon shape="logout"></clr-icon>
+      <img src="assets/icons/logout.svg" class="nav-icon" alt="" />
       <span>Sign out</span>
     </a>
   </nav>
