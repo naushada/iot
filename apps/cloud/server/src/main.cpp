@@ -456,7 +456,10 @@ int main(int argc, char** argv) {
         if (rs.ok) {
             // A watched key changed
             if (ev.key == "cloud.provision.request") {
-                if (auto ep = data_store::to_string(ev.value)) {
+                // Ignore an empty request: clearing the trigger (below) sets it
+                // to "" and re-fires this watch; processing "" would provision a
+                // bogus empty-serial endpoint.
+                if (auto ep = data_store::to_string(ev.value); ep && !ep->empty()) {
                     ACE_DEBUG((LM_INFO,
                                ACE_TEXT("%D cloudd:thread:%t %M %N:%l provision request '%C'\n"),
                                ep->c_str()));
@@ -542,9 +545,14 @@ int main(int argc, char** argv) {
                                             " '%C' (dup or exhausted)\n"),
                                    ep->c_str()));
                     }
+                    // One-shot: clear the request so a watch replay on cloudd
+                    // restart doesn't re-provision (and resurrect) a since-
+                    // deprovisioned endpoint. The "" re-fire is ignored above.
+                    ds.set("cloud.provision.request",
+                           data_store::Value{std::string("")});
                 }
             } else if (ev.key == "cloud.deprovision.request") {
-                if (auto ep = data_store::to_string(ev.value)) {
+                if (auto ep = data_store::to_string(ev.value); ep && !ep->empty()) {
                     ACE_DEBUG((LM_INFO,
                                ACE_TEXT("%D cloudd:thread:%t %M %N:%l deprovision request '%C'\n"),
                                ep->c_str()));
@@ -573,6 +581,13 @@ int main(int argc, char** argv) {
                     ACE_DEBUG((LM_INFO,
                                ACE_TEXT("%D cloudd:thread:%t %M %N:%l deprovision %C '%C'\n"),
                                (ok ? "ok" : "failed (not found)"), ep->c_str()));
+                    // One-shot: clear both triggers so a watch replay on restart
+                    // doesn't re-deprovision, and a stale provision.request can't
+                    // resurrect what we just removed.
+                    ds.set("cloud.deprovision.request",
+                           data_store::Value{std::string("")});
+                    ds.set("cloud.provision.request",
+                           data_store::Value{std::string("")});
                 }
             } else if (ev.key == "log.level") {
                 g_log.apply_level(ds);
