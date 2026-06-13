@@ -114,8 +114,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # host openssl, no cert files here. run.sh only tells it which host the
 # cert is for: the host's primary IP (override by exporting TLS_HOST).
 if [ "$HTTPS" = "1" ]; then
-    TLS_HOST="${TLS_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
-    TLS_HOST="${TLS_HOST:-localhost}"
+    # Primary host IP for the cert CN/SAN. `hostname -I` is Linux-only; fall
+    # back to macOS `ipconfig getifaddr`, then localhost. `|| true` keeps the
+    # command substitution from tripping `set -e`/`pipefail` when a probe is
+    # unavailable (e.g. `hostname -I` on macOS).
+    if [ -z "${TLS_HOST:-}" ]; then
+        TLS_HOST="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+        [ -n "$TLS_HOST" ] || TLS_HOST="$(ipconfig getifaddr en0 2>/dev/null || true)"
+        [ -n "$TLS_HOST" ] || TLS_HOST="localhost"
+    fi
     export TLS_HOST
     log_info "HTTPS on — image will self-provision a self-signed cert for ${TLS_HOST}"
 fi
