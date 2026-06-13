@@ -76,6 +76,13 @@ local_conf_header:
     # Serial console on the GPIO header (no-op on qemu machines).
     ENABLE_UART = "1"
 
+    # Upstream shared-state mirror — download prebuilt sstate for stock
+    # recipes (kernel, base distro, toolchain, ...) instead of compiling them
+    # on a cold build. Best-effort: bitbake builds anything the mirror lacks,
+    # and a local sstate-cache still takes precedence. Coverage varies by
+    # release (scarthgap) / MACHINE.
+    SSTATE_MIRRORS ?= "file://.* http://sstate.yoctoproject.org/all/PATH;downloadfilename=PATH"
+
 bblayers_conf_header:
   meta-iot: |
     BBLAYERS += "${TOPDIR}/../meta-iot"
