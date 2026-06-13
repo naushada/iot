@@ -277,6 +277,24 @@ return {
       max     = 6000,
     },
 
+    -- Per-device proxy-port allocation range for device-UI-over-VPN DNAT.
+    -- ds-driven so it isn't hardcoded; iot-cloudd reads these to size the
+    -- VpnRegistry pool. The docker-compose published port range must cover
+    -- this (Docker publishes ports before ds is consulted, so it can't follow
+    -- ds automatically).
+    ["cloud.vpn.proxy.port.start"] = {
+      type    = "integer",
+      default = 5001,
+      min     = 1,
+      max     = 65535,
+    },
+    ["cloud.vpn.proxy.port.end"] = {
+      type    = "integer",
+      default = 6000,
+      min     = 1,
+      max     = 65535,
+    },
+
     -- VPN PKI paths.  CA + server certs are generated at image build
     -- time (per-build CA, xpmile pattern).  ca.key is NOT in the image
     -- — mount at runtime via secret volume.

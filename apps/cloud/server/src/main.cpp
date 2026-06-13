@@ -262,6 +262,19 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Proxy-port range is ds-driven (cloud.vpn.proxy.port.{start,end}); the
+    // CLI arg / built-in default is only the fallback so the range is never
+    // hardcoded. Seed the effective values back so they're visible/editable
+    // in ds (idempotent: an operator-set value is read then re-set unchanged).
+    // NB: the docker-compose port-publish range must still cover this — Docker
+    // can't read ds, so that publish stays a deployment knob.
+    proxy_port_start = ds_int(ds, "cloud.vpn.proxy.port.start", proxy_port_start);
+    proxy_port_end   = ds_int(ds, "cloud.vpn.proxy.port.end",   proxy_port_end);
+    ds.set("cloud.vpn.proxy.port.start",
+           data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
+    ds.set("cloud.vpn.proxy.port.end",
+           data_store::Value{static_cast<std::uint32_t>(proxy_port_end)});
+
     // ── Core services ─────────────────────────────────────────────
     server::openvpn::VpnRegistry vpn_reg(vpn_subnet,
         static_cast<std::uint16_t>(proxy_port_start),
