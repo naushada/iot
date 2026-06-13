@@ -83,8 +83,21 @@ private:
     bool                       m_wan_dirty = false;
     bool                       m_shutdown  = false;
 
+    /// FUP-L12-1 → done: a vpn.* config key (remote host/port/proto, cert
+    /// paths, cipher, dev, mgmt port) changed. Signals the run loop to tear
+    /// the session down and respawn openvpn with the regenerated config —
+    /// live hot-reload instead of requiring a daemon restart.
+    std::atomic<bool>          m_cfg_dirty{false};
+
     /// Called from the DsBridge listener thread.
     void on_wan_event(const std::optional<std::string>& target);
+
+    /// Called from the DsBridge listener thread when a vpn.* config key
+    /// changes; flags a respawn so the new config takes effect live.
+    void on_config_event();
+
+    /// Cheap snapshot of m_cfg_dirty for the inner event-loop.
+    bool cfg_dirty();
 
     /// Snapshot the latest WAN target under lock, clearing the dirty
     /// flag. Returns nullopt on shutdown OR when target is empty.

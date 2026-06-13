@@ -175,6 +175,29 @@ This is consistent on every leg:
 Both sides hex-decode the same string → the same raw key → the handshake
 matches.
 
+### 2.7 Re-provisioning a PSK at runtime (hot change)
+
+PSK credentials are read **once at process start** and registered with DTLS
+(`add_credential`). They are not re-read on every handshake, so the two sides
+re-provision differently:
+
+- **Device client — auto self-restart.** The client subscribes to its own
+  `iot.bs.psk.key` (`ds.on_change`, `apps/src/main.cpp`). When the key changes
+  underneath it — e.g. an engineer edits it via `ds-cli`, or the cloud
+  re-provisions — `should_restart_on_psk_change` fires and the client calls
+  `::exit(0)`. systemd (`Restart=always`) relaunches it, which reloads the new
+  BS PSK, re-registers the DTLS credential, and re-runs bootstrap → DM with the
+  fresh key. **So yes: the device LwM2M client re-initialises itself on a BS PSK
+  change — no manual restart needed.** (The client never writes `iot.bs.psk.key`
+  itself, so any observed change is genuinely external; the initial provisioning
+  write while uninitialised does *not* trigger a restart.)
+- **Cloud BS/DM server — manual restart.** The per-endpoint creds in
+  `cloud.endpoint.credentials` are loaded once at startup
+  (`register_endpoint_creds`); there is **no** watch re-loading them. After
+  changing an endpoint's `bs.psk.key`/`dm.psk.*`, restart the cloud daemon
+  (`docker restart iot-cloudd` / restart the `lwm2m-bs` unit) so it picks up the
+  new credential.
+
 ---
 
 ## 3. Registration interface — `POST /rd`

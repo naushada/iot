@@ -65,17 +65,24 @@ without port clashes.
 ## Test against the real cloud
 
 Start the cloud stack (`apps/cloud/run.sh`) — it publishes the Bootstrap
-server on host `5684` and DM on `5683` — then point the device client at
-it:
+server on host `5684` and DM on `5683` — then start the device and
+provision its bootstrap target in the data store (it is **not** an env
+var; ds is the single source of truth and persists in the `dev-lib`
+volume):
 
 ```bash
-DEVICE_BS_URI=coaps://host.docker.internal:5684 ./run.sh
+./run.sh
+# point the client at the cloud BS (one-time; persists in ds):
+./run.sh ds set iot.bs.uri '"coaps://host.docker.internal:5684"'
+./run.sh ds set iot.bs.psk.key '"…"'    # see apps/cloud/CLAUDE.md
+# (or commission interactively in device-ui: ./run.sh commission on)
 ```
 
 `host.docker.internal` resolves to the host via the `host-gateway`
-mapping already wired into the client service. (For a DTLS/PSK bootstrap
-seed the client's PSK keys first, e.g. `./run.sh ds set iot.bs.psk.key …`
-— see `apps/cloud/CLAUDE.md` for the PSK provisioning flow.)
+mapping already wired into the client service. The **VPN server endpoint**
+(`vpn.remote.host/port/proto`) is not set here at all — the cloud pushes it
+over LwM2M Object 2048 after the device registers, and openvpn-client
+hot-reloads on the change.
 
 ## Environment knobs
 
@@ -83,8 +90,12 @@ seed the client's PSK keys first, e.g. `./run.sh ds set iot.bs.psk.key …`
 |-----|---------|---------|
 | `DEVICE_IMAGE` | `docker.io/naushada/iot-device:latest` | image tag |
 | `HTTP_PORT` | `8081` | host port for the device UI |
-| `DEVICE_BS_URI` | `coap://lwm2m-server:5685` | client's bootstrap server |
 | `RESET_CONFIG` | `1` | refresh the `dev-etc` config volume on start |
+
+> The bootstrap target (`iot.bs.uri`) and VPN endpoint (`vpn.remote.*`) are
+> **data-store** values, not env vars — see above. `iot.bs.uri` is set once
+> (commissioning / `ds set`, persisted in `dev-lib`); `vpn.remote.*` is
+> cloud-pushed via LwM2M Object 2048.
 
 ## Relationship to the other device build paths
 

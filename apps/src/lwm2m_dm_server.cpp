@@ -139,7 +139,10 @@ std::vector<std::string> build_cert_push(const std::function<std::uint16_t()>& n
                                          const std::string& token,
                                          const std::string& ca_pem,
                                          const std::string& cert_pem,
-                                         const std::string& key_pem) {
+                                         const std::string& key_pem,
+                                         const std::string& vpn_host,
+                                         const std::string& vpn_port,
+                                         const std::string& vpn_proto) {
     std::vector<std::string> f;
     // Each artifact: zip+chunk into opaque WRITEs (CF_OctetStream) to its
     // instance's data RID. The device reassembles + inflates, then Apply
@@ -154,6 +157,20 @@ std::vector<std::string> build_cert_push(const std::function<std::uint16_t()>& n
     push_artifact(kCredInstCa,   ca_pem);
     push_artifact(kCredInstCert, cert_pem);
     push_artifact(kCredInstKey,  key_pem);
+    // VPN server endpoint (instance 0, RID 5/6/7), small plain-text WRITEs.
+    // The device stages these and the Apply EXECUTE materialises them into
+    // vpn.remote.{host,port,proto}. Only emitted when the cloud knows its
+    // public host — the cert-only push stays back-compatible.
+    if (!vpn_host.empty()) {
+        f.push_back(build_write(next_msgid(), token, kCredObjectOid, kCredInstCa,
+                                kCredRidVpnHost, CF_PlainText, vpn_host, false));
+        if (!vpn_port.empty())
+            f.push_back(build_write(next_msgid(), token, kCredObjectOid, kCredInstCa,
+                                    kCredRidVpnPort, CF_PlainText, vpn_port, false));
+        if (!vpn_proto.empty())
+            f.push_back(build_write(next_msgid(), token, kCredObjectOid, kCredInstCa,
+                                    kCredRidVpnProto, CF_PlainText, vpn_proto, false));
+    }
     f.push_back(build_execute(next_msgid(), token,
                               kCredObjectOid, kCredInstCa, kCredRidApply, ""));
     return f;

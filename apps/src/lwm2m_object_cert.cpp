@@ -31,6 +31,15 @@ struct Staged {
 /// "key"). shared_ptr so all the std::function captures see the same map.
 using Staging = std::map<std::string, Staged>;
 
+/// Cloud-pushed VPN server endpoint (Object 2048 /0/5,6,7), staged like the
+/// cert artifacts and materialised into the data store at Apply via
+/// CertHooks::set_vpn_endpoint. Empty host → no endpoint was pushed.
+struct VpnEndpoint {
+    std::string host;
+    std::string port;
+    std::string proto;
+};
+
 /// Map an artifact type to the default file name under certDir.
 const char* default_filename(const std::string& type) {
     if (type == "ca")   return "ca.crt";
@@ -115,7 +124,8 @@ ObjectInstance make_instance(std::uint32_t iid,
                              const std::string& certDir,
                              std::shared_ptr<CertHooks> hooks,
                              bool require_complete,
-                             std::shared_ptr<std::string> applied) {
+                             std::shared_ptr<std::string> applied,
+                             std::shared_ptr<VpnEndpoint> vpn) {
     ObjectInstance inst;
     inst.iid = iid;
 
@@ -174,7 +184,7 @@ ObjectInstance make_instance(std::uint32_t iid,
         Resource r;
         r.rid = 3; r.name = "Apply";
         r.type = ResourceType::None; r.ops = Operations::E;
-        r.execute = [staging, certDir, hooks, require_complete, applied]
+        r.execute = [staging, certDir, hooks, require_complete, applied, vpn]
                     (const std::string& /*args*/) -> int {
             // Completeness gate: don't half-provision. If we require a full
             // family, hold the commit until ca+cert+key are all staged. The
@@ -218,6 +228,16 @@ ObjectInstance make_instance(std::uint32_t iid,
             // Clear staging so a later partial push can't re-commit stale bytes.
             staging->clear();
             if (applied) *applied = fnv1a_hex(fpInput);
+            // Materialise the cloud-pushed VPN endpoint (if any) into ds before
+            // the reload hook, so openvpn (re)starts against the right server.
+            if (vpn && !vpn->host.empty() && hooks->set_vpn_endpoint) {
+                int vrc = hooks->set_vpn_endpoint(vpn->host, vpn->port, vpn->proto);
+                ACE_DEBUG((LM_INFO,
+                    ACE_TEXT("%D [cert-obj] %M %N:%l applied VPN endpoint "
+                             "host=%C port=%C proto=%C rc=%d\n"),
+                    vpn->host.c_str(), vpn->port.c_str(),
+                    vpn->proto.c_str(), vrc));
+            }
             int rc = hooks->apply ? hooks->apply() : 0;
             ACE_DEBUG((LM_INFO,
                 ACE_TEXT("%D [cert-obj] %M %N:%l applied %d artifact(s) fp=%C, "
@@ -235,6 +255,31 @@ ObjectInstance make_instance(std::uint32_t iid,
         st.type = ResourceType::String; st.ops = Operations::R;
         st.read = [applied]() { return applied ? *applied : std::string(); };
         inst.resources[4] = std::move(st);
+
+        // RID 5/6/7 — VPN server endpoint (write-only; staged, materialised at
+        // Apply). The cloud writes these before the Apply EXECUTE so the device
+        // learns its tunnel target without a docker-compose seed.
+        {
+            Resource r;
+            r.rid = 5; r.name = "VPN Remote Host";
+            r.type = ResourceType::String; r.ops = Operations::W;
+            r.write = [vpn](const std::string& v) { if (vpn) vpn->host = v; return 0; };
+            inst.resources[5] = std::move(r);
+        }
+        {
+            Resource r;
+            r.rid = 6; r.name = "VPN Remote Port";
+            r.type = ResourceType::String; r.ops = Operations::W;
+            r.write = [vpn](const std::string& v) { if (vpn) vpn->port = v; return 0; };
+            inst.resources[6] = std::move(r);
+        }
+        {
+            Resource r;
+            r.rid = 7; r.name = "VPN Remote Proto";
+            r.type = ResourceType::String; r.ops = Operations::W;
+            r.write = [vpn](const std::string& v) { if (vpn) vpn->proto = v; return 0; };
+            inst.resources[7] = std::move(r);
+        }
     }
     return inst;
 }
@@ -248,6 +293,7 @@ int install_cert(ObjectStore& store,
     auto staging = std::make_shared<Staging>();
     auto hooksp  = std::make_shared<CertHooks>(std::move(hooks));
     auto applied = std::make_shared<std::string>();   // RID 4 fingerprint
+    auto vpn     = std::make_shared<VpnEndpoint>();    // RID 5/6/7 staging
 
     ObjectDescriptor desc;
     desc.oid              = kCertObjectOid;
@@ -259,9 +305,9 @@ int install_cert(ObjectStore& store,
     // Apply trigger + Applied status live on instance 0 (the CA instance) so
     // the server has a single, well-known commit point: EXECUTE /2048/0/3,
     // READ /2048/0/4.
-    desc.instances[0] = make_instance(0, "ca",   staging, /*withApply*/true,  certDir, hooksp, require_complete, applied);
-    desc.instances[1] = make_instance(1, "cert", staging, /*withApply*/false, certDir, hooksp, require_complete, applied);
-    desc.instances[2] = make_instance(2, "key",  staging, /*withApply*/false, certDir, hooksp, require_complete, applied);
+    desc.instances[0] = make_instance(0, "ca",   staging, /*withApply*/true,  certDir, hooksp, require_complete, applied, vpn);
+    desc.instances[1] = make_instance(1, "cert", staging, /*withApply*/false, certDir, hooksp, require_complete, applied, vpn);
+    desc.instances[2] = make_instance(2, "key",  staging, /*withApply*/false, certDir, hooksp, require_complete, applied, vpn);
 
     store.add_object(std::move(desc));
     return 0;

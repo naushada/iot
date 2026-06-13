@@ -98,6 +98,13 @@ constexpr std::uint32_t kCredInstCert  = 1;   ///< instance 1, Type="cert"
 constexpr std::uint32_t kCredInstKey   = 2;   ///< instance 2, Type="key"
 constexpr std::uint32_t kCredRidData   = 1;   ///< RID 1 Certificate Data (opaque, W)
 constexpr std::uint32_t kCredRidApply  = 3;   ///< RID 3 Apply (Execute)
+// VPN server endpoint, written on instance 0 alongside the cert family so the
+// device knows *where* the just-delivered cert lets it connect. The device
+// materialises these into vpn.remote.{host,port,proto} at Apply time, making
+// the device tunnel config fully cloud-provisioned (no docker-compose seed).
+constexpr std::uint32_t kCredRidVpnHost  = 5; ///< RID 5 VPN remote host  (string, W)
+constexpr std::uint32_t kCredRidVpnPort  = 6; ///< RID 6 VPN remote port  (string, W)
+constexpr std::uint32_t kCredRidVpnProto = 7; ///< RID 7 VPN remote proto (string, W)
 
 /// Build the server→device push sequence for a VPN cert family over Object
 /// 2048. Each artifact (CA/cert/key) is zipped + chunked (see
@@ -106,11 +113,21 @@ constexpr std::uint32_t kCredRidApply  = 3;   ///< RID 3 Apply (Execute)
 /// an EXECUTE of Apply /2048/0/3 commits the family. Every frame draws a fresh
 /// id from `next_msgid` and carries `token`; ship them to the client's peer in
 /// order via UDPAdapter::send_async. Returns the frames in send order.
+///
+/// `vpn_host` is the cloud's public host (parsed by the caller from
+/// cloud.dm.uri), `vpn_port`/`vpn_proto` the openvpn server endpoint (e.g.
+/// "1194"/"tcp-client"). When `vpn_host` is non-empty these are emitted as
+/// plain-text WRITEs to /2048/0/{5,6,7} before the Apply, so the device's
+/// Apply commits the cert family AND the endpoint atomically. Empty `vpn_host`
+/// → only the cert family is pushed (back-compat with the cert-only path).
 std::vector<std::string> build_cert_push(const std::function<std::uint16_t()>& next_msgid,
                                          const std::string& token,
                                          const std::string& ca_pem,
                                          const std::string& cert_pem,
-                                         const std::string& key_pem);
+                                         const std::string& key_pem,
+                                         const std::string& vpn_host  = "",
+                                         const std::string& vpn_port  = "",
+                                         const std::string& vpn_proto = "");
 
 }} // namespace lwm2m::dmsrv
 

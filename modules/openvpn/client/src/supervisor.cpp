@@ -132,13 +132,23 @@ std::optional<std::string> Supervisor::drain_target() {
     return m_pending_target;
 }
 
+void Supervisor::on_config_event() {
+    m_cfg_dirty.store(true, std::memory_order_release);
+    m_cv.notify_all();
+}
+
+bool Supervisor::cfg_dirty() {
+    return m_cfg_dirty.load(std::memory_order_acquire);
+}
+
 bool Supervisor::wait_for_event() {
     std::unique_lock<std::mutex> g(m_mtx);
     m_cv.wait(g, [&]{
         return m_shutdown
             || m_wan_dirty
             || m_svc_dirty.load(std::memory_order_acquire)
-            || m_dep_dirty.load(std::memory_order_acquire);
+            || m_dep_dirty.load(std::memory_order_acquire)
+            || m_cfg_dirty.load(std::memory_order_acquire);
     });
     return !m_shutdown;
 }
@@ -241,6 +251,17 @@ bool Supervisor::serve_one_session(const std::string& iface) {
                        iface.c_str()));
             break;
         }
+        // Live config hot-reload: a vpn.* key changed (e.g. cloud pushed a new
+        // vpn.remote.host). Tear down; the outer loop respawns openvpn with a
+        // freshly snapshotted config.
+        if (cfg_dirty()) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l vpn config changed during "
+                                "session on iface=%C; respawning with fresh "
+                                "config\n"),
+                       iface.c_str()));
+            break;
+        }
         {
             std::lock_guard<std::mutex> g(m_mtx);
             if (m_shutdown) break;
@@ -277,6 +298,10 @@ bool Supervisor::serve_one_session(const std::string& iface) {
 
 Status Supervisor::run() {
     m_ds.on_wan_change([this](auto t) { this->on_wan_event(t); });
+    // Live hot-reload: any vpn.* config change tears the session down and
+    // respawns openvpn with the regenerated config (e.g. a cloud-pushed
+    // vpn.remote.host). DsBridge already updated its cache before this fires.
+    m_ds.on_change([this](DsBridge::Key) { this->on_config_event(); });
 
     // Initial publish: until proven otherwise we are gated.
     m_ds.set_state("disconnected");
@@ -297,6 +322,9 @@ Status Supervisor::run() {
         // of the svc gate or WAN state.
         m_dep_dirty.store(false, std::memory_order_release);
         m_svc_dirty.store(false, std::memory_order_release);
+        // Cleared before (re)evaluating gates + respawning; a config change
+        // arriving during the new session re-sets it for the next iteration.
+        m_cfg_dirty.store(false, std::memory_order_release);
         if (m_dep && !m_dep->healthy()) {
             if (m_gate.running()) m_gate.note_terminated();
             m_ds.set_state("disabled");

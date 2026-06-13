@@ -68,9 +68,22 @@ struct CertHooks {
 
     /// Commit/reload trigger, called once after all artifacts are stored.
     /// Default: no-op (a cert sidecar watching certDir detects the change
-    /// and reloads). Wire a ds gate-flip of services.openvpn.client.enable
-    /// here for an immediate reload without a sidecar. Returns 0 on success.
+    /// and reloads). The client wiring (apps/src/main.cpp) supplies a ds
+    /// gate-flip of services.openvpn.client.enable (false→true) so the
+    /// openvpn-client supervisor respawns openvpn with the freshly
+    /// materialised cert without a sidecar — see the openvpn-client design
+    /// doc, "Cert-arrival respawn". Returns 0 on success.
     std::function<int()> apply;
+
+    /// Persist the cloud-pushed VPN server endpoint (Object 2048 /0/5,6,7)
+    /// into the data store so openvpn-client targets the right server. Called
+    /// at Apply when a non-empty host was staged, before `apply`. `port` is a
+    /// decimal string ("" if unset), `proto` e.g. "tcp-client" ("" if unset).
+    /// Default: unset → endpoint ignored. The client wiring (main.cpp) supplies
+    /// a lambda writing vpn.remote.{host,port,proto}. Returns 0 on success.
+    std::function<int(const std::string& host,
+                      const std::string& port,
+                      const std::string& proto)> set_vpn_endpoint;
 
     /// Optional integrity check, called per artifact at commit if a hash
     /// was written to RID 2. Returns 0 if the hash matches `pem`, non-zero
