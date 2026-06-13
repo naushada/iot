@@ -36,7 +36,8 @@ interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered
       <p *ngIf="!endpoints.length" style="color:#888;">No devices provisioned yet.</p>
     </div>
   `,
-  styles: [`.page{padding:24px;} h3,h4{color:#333;margin:0 0 16px 0;} h4{font-size:14px;margin-top:20px;}`]
+  styles: [`.page{padding:24px;} h3,h4{color:#333;margin:0 0 16px 0;} h4{font-size:14px;margin-top:20px;}
+    .clr-row > [class*="clr-col"]{margin-bottom:1rem;}`]
 })
 export class DashboardComponent implements OnInit {
   endpoints: EpInfo[] = [];
