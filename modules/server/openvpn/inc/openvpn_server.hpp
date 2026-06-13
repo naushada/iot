@@ -69,10 +69,16 @@ public:
     /// Last observed exit code (after running() saw the child exit).
     int exit_code() const { return m_exit_code; }
 
+    /// Tail of the last run's captured stdout+stderr (openvpn(8) writes its
+    /// failure reason there). Empty if nothing was captured. Reads at most
+    /// `max_bytes` from the end of the redirect file.
+    std::string log_tail(std::size_t max_bytes = 4096) const;
+
 private:
     OpenVpnServerConfig m_cfg;
     std::string         m_openvpn_path;
     std::string         m_config_path;   // temp file, unlinked on stop/dtor
+    std::string         m_log_path;      // child stdout+stderr capture file
     pid_t               m_pid = 0;
     int                 m_exit_code = 0;
 };
