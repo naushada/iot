@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
-import { HttpsvcService } from '../../../common/httpsvc.service';
+import { DataStoreService } from '../../../common/datastore.service';
 import { VpnStatus } from '../../../common/app-globals';
 
 @Component({
@@ -40,8 +40,6 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
   v: VpnStatus = {};
   loading = true;
   private sub = new Subscription();
-  private active = true;
-  private pollSub?: Subscription;   // in-flight long-poll, cancelled on destroy
 
   get rows(): { key: string; value: string; isBadge: boolean; isDns?: boolean }[] {
     return [
@@ -63,37 +61,17 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
     return (this.v.dns || '').split(/[\s,]+/).filter(Boolean);
   }
 
-  constructor(private http: HttpsvcService) {}
+  constructor(private ds: DataStoreService) {}
 
+  /// Read vpn.* live off the single shared /status stream — no per-page
+  /// long-poll. The BehaviorSubject replays the latest snapshot, so this
+  /// paints instantly on revisit.
   ngOnInit(): void {
-    this.startLongPoll();
+    this.sub.add(this.ds.observeStatus().subscribe((s) => {
+      this.v = s.vpn || {};
+      this.loading = false;
+    }));
   }
 
-  /// Long-poll loop: blocks until vpn.state changes or 30s timeout,
-  /// then re-subscribes immediately.  Falls back to 5s poll on error.
-  private startLongPoll(): void {
-    const poll = (): void => {
-      if (!this.active) return;
-      this.pollSub = this.http.getStatusLongPoll(30).subscribe({
-        next: (s) => {
-          this.v = s.vpn || {};
-          this.loading = false;
-          if (this.active) poll();
-        },
-        error: () => {
-          this.loading = false;
-          if (this.active) {
-            // Fallback: immediate status + retry long-poll after 5s
-            this.http.getStatus().subscribe({
-              next: (s) => { this.v = s.vpn || {}; }
-            });
-            setTimeout(() => poll(), 5000);
-          }
-        }
-      });
-    };
-    poll();
-  }
-
-  ngOnDestroy(): void { this.active = false; this.pollSub?.unsubscribe(); this.sub.unsubscribe(); }
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
 }

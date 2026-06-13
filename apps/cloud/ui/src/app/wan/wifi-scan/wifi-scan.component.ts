@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../../common/httpsvc.service';
+import { DataStoreService } from '../../../common/datastore.service';
 import { WifiStatus } from '../../../common/app-globals';
 
 interface ScanEntry { ssid: string; bssid: string; signal: number; flags: string; }
@@ -59,43 +60,18 @@ export class WifiScanComponent implements OnInit, OnDestroy {
   loading = true; scanning = false; scanMsg = '';
   private sub = new Subscription();
 
-  constructor(private http: HttpsvcService) {}
+  constructor(private http: HttpsvcService, private ds: DataStoreService) {}
 
-  private active = true;
-  private pollSub?: Subscription;   // in-flight long-poll, cancelled on destroy
-
+  /// Connection status rides the single shared /status stream; scan results
+  /// (wifi.scan.results — large/volatile, not cached) are fetched on each
+  /// snapshot tick and on demand. No per-page long-poll.
   ngOnInit(): void {
-    this.startLongPoll();
-  }
-
-  private startLongPoll(): void {
-    const poll = (): void => {
-      if (!this.active) return;
-      this.pollSub = this.http.getStatusLongPoll(30).subscribe({
-        next: (s) => {
-          this.status = s.wifi || {};
-          this.tryParseScan();
-          this.loading = false;
-          if (this.active) poll();
-        },
-        error: () => {
-          this.loading = false;
-          if (this.active) setTimeout(() => poll(), 5000);
-        }
-      });
-    };
-    poll();
-  }
-
-  loadStatus(): void {
-    this.http.getStatus().subscribe({
-      next: (s) => { this.status = s.wifi || {}; this.tryParseScan(); this.loading = false; },
-      error: () => { this.loading = false; }
-    });
-    // Also fetch scan results directly
-    this.http.dbGet(['wifi.scan.results']).subscribe({
-      next: (r) => { if (r.ok && r.data) this.tryParse(r.data['wifi.scan.results'] as string); }
-    });
+    this.tryParseScan();   // show any existing results immediately
+    this.sub.add(this.ds.observeStatus().subscribe((s) => {
+      this.status = s.wifi || {};
+      this.tryParseScan();
+      this.loading = false;
+    }));
   }
 
   tryParseScan(): void {
@@ -121,5 +97,5 @@ export class WifiScanComponent implements OnInit, OnDestroy {
     });
   }
 
-  ngOnDestroy(): void { this.active = false; this.pollSub?.unsubscribe(); this.sub.unsubscribe(); }
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
 }
