@@ -134,6 +134,17 @@ return {
         default = "idle",
     },
 
+    -- ── DM Server URI (client → device-ui) ───────────────────────────
+    -- The lwm2m client publishes the bootstrap-delivered DM Server URI
+    -- (Security Object RID 0 of the non-bootstrap PSK account) here once
+    -- the bootstrap commit lands, so the device-ui can show the URI the
+    -- device actually registered to. Single string, read-only to the UI.
+    ["iot.dm.uri"] = {
+        access  = "Viewer",
+        type    = "string",
+        default = "",
+    },
+
     -- ── OTA software update (mirrors LwM2M Object 5 onto ds) ──────────
     -- Self-update trigger: device-ui (or the Object-5 RID2 apply) sets the
     -- .ipk URL here; the lwm2m client watches it and runs iot-ota-apply.

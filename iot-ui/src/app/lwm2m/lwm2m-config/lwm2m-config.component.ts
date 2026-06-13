@@ -40,7 +40,7 @@ export class Lwm2mConfigComponent implements OnInit {
   ngOnInit(): void {
     this.http.dbGet([
       'iot.serial', 'iot.dev.mode', 'iot.bs.uri',
-      'iot.server.uri', 'iot.binding', 'iot.lifetime'
+      'iot.dm.uri', 'iot.server.uri', 'iot.binding', 'iot.lifetime'
     ]).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
@@ -53,8 +53,12 @@ export class Lwm2mConfigComponent implements OnInit {
           this.serverForm.patchValue({
             serial:     serial,
             bs_uri:     d['iot.bs.uri']    || 'coaps://',
-            // DM config below is pushed by the bootstrap server — read-only.
-            server_uri: d['iot.server.uri'] || '(set by bootstrap)',
+            // DM Server URI: prefer the actual bootstrap-delivered URI the
+            // client persisted (iot.dm.uri); fall back to the legacy
+            // ds-driven server.uri, then to the placeholder when both empty.
+            server_uri: (d['iot.dm.uri'] as string)
+                        || (d['iot.server.uri'] as string)
+                        || '(set by bootstrap)',
             binding:    d['iot.binding']    || 'U',
             lifetime:   d['iot.lifetime']   || 86400,
           });

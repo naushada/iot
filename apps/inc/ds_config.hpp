@@ -104,6 +104,11 @@ public:
     /// Bootstrap delivered DM credentials → iot.dm.psk.identity / .key.
     bool set_dm_credentials(const std::string& identity,
                             const std::string& key_hex);
+    /// Persist the bootstrap-delivered DM Server URI (Security Object RID 0
+    /// of the non-bootstrap PSK account) → iot.dm.uri, so the device-ui can
+    /// display the URI the device actually registered to. Write-only here —
+    /// the client is the sole writer, so there's nothing to mirror locally.
+    bool set_dm_uri(const std::string& uri);
     /// Publish the LwM2M connection lifecycle token to iot.conn.state so
     /// the device-ui can render real-time progress. One of: idle /
     /// bootstrapping / bootstrapped / dm-connecting / dm-connected /
