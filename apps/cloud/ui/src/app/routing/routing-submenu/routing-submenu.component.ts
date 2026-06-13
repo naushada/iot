@@ -5,11 +5,20 @@ import { Component, Output, EventEmitter } from '@angular/core';
   template: `
     <div class="subnav-bar">
       <a class="subnav-tab" [class.active]="active === 'ports'"
-         (click)="select('ports')">Port Forward</a>
+         (click)="select('ports')">
+        <clr-icon shape="forward"></clr-icon>
+        <span>Port Forward</span>
+      </a>
       <a class="subnav-tab" [class.active]="active === 'dnat'"
-         (click)="select('dnat')">DNAT Target</a>
+         (click)="select('dnat')">
+        <clr-icon shape="target"></clr-icon>
+        <span>DNAT Target</span>
+      </a>
       <a class="subnav-tab" [class.active]="active === 'rules'"
-         (click)="select('rules')">Firewall Rules</a>
+         (click)="select('rules')">
+        <clr-icon shape="firewall"></clr-icon>
+        <span>Firewall Rules</span>
+      </a>
     </div>
   `,
   // styles provided by global .subnav-bar / .subnav-tab in styles.scss
