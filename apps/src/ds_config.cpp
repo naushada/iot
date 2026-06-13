@@ -30,6 +30,8 @@ constexpr const char* kKeyDmPskKey    = "iot.dm.psk.key";
 constexpr const char* kKeyDevMode     = "iot.dev.mode";
 // LwM2M connection lifecycle published to the device-ui (write-only here).
 constexpr const char* kKeyConnState   = "iot.conn.state";
+// Bootstrap-delivered DM Server URI, published to the device-ui (write-only).
+constexpr const char* kKeyDmUri       = "iot.dm.uri";
 
 } // namespace
 
@@ -246,6 +248,16 @@ bool DsConfig::set_dm_credentials(const std::string& identity,
         m_impl->dm_psk_identity = identity;
         m_impl->dm_psk_key = key_hex;
     }
+    return s.ok;
+}
+
+bool DsConfig::set_dm_uri(const std::string& uri) {
+    if (!m_ok || !m_impl) return false;
+    // iot.dm.uri is published, never read back into the cache — the client
+    // is the sole writer, so there's nothing to mirror locally.
+    auto s = m_impl->client.set({
+        {kKeyDmUri, data_store::Value{uri}},
+    });
     return s.ok;
 }
 

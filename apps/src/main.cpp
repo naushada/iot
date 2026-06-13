@@ -882,6 +882,15 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
             *bootPhase = BootPhase::Skipped;
             return;
         }
+        // Persist the bootstrap-delivered DM Server URI (Security Object
+        // RID 0) to the data-store so the device-ui can display the URI the
+        // device actually registered to (otherwise iot.dm.uri stays empty).
+        if (ds.set_dm_uri(dmUri)) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l DM URI persisted to "
+                                "data-store (iot.dm.uri=%C)\n"),
+                       dmUri.c_str()));
+        }
         // Point the LwM2MClient peer at the DM, pin the DM PSK identity, and
         // force a fresh DTLS handshake against the DM.
         for (auto& [type, ctx] : a->udpAdapter()->services()) {
