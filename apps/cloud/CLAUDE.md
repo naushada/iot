@@ -182,13 +182,20 @@ cd apps/cloud
 ### Volume persistence and schema updates
 
 `docker-compose.yml` uses named volumes so data survives container
-restarts:
+restarts **and host reboots** (named volumes are on-disk under the runtime's
+`volumes/` store; only an explicit `volume rm` destroys them):
 
 | Volume | Mount point | Content |
 |--------|-------------|---------|
 | `iot-etc` | `/etc/iot` | Schemas, config files |
-| `iot-lib` | `/var/lib/iot` | Persisted data store |
+| `iot-lib` | `/var/lib/iot` | Persisted data store (`data_store.lua`) |
 | `iot-run` | `/var/run/iot` | Unix socket (tmpfs-like) |
+
+The data store at **`/var/lib/iot/data_store.lua`** is write-through +
+`fsync` on every `set`, so committed config/credentials persist across a
+reboot. Host path: `$(docker volume inspect cloud_iot-lib --format '{{.Mountpoint}}')/data_store.lua`.
+See `modules/data-store/docs/design.md` §4.4 for the full persistence/host-path
+matrix.
 
 **Important:** Named volumes are populated from the image only on
 **first creation**. After a rebuild that changes schema files

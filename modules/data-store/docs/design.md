@@ -287,6 +287,44 @@ next phase batches writes onto a 100 ms tick.
    migrate (v1 introduces no breaking changes; v0 loaders are
    forward-compatible).
 
+### 4.4 Host paths & reboot durability
+
+The store path is set per deployment via `ds-store=` (device/Yocto) or
+`--persist-dir=` (cloud, file is `<dir>/data_store.lua`). It is always
+**`/var/lib/iot/data_store.lua`** *inside the daemon's namespace*; where that
+lands on the host:
+
+| Deployment | Host path |
+|---|---|
+| Yocto / real RPi | `/var/lib/iot/data_store.lua` on the SD-card rootfs (the device *is* the host; `iot.conf` `systemd-tmpfiles`-creates `/var/lib/iot` 0750 on first boot) |
+| Cloud VM (podman/docker) | `cloud_iot-lib` named volume → `…/storage/volumes/cloud_iot-lib/_data/data_store.lua` |
+| Device dev (podman) | `device_dev-lib` named volume → `…/storage/volumes/device_dev-lib/_data/data_store.lua` |
+
+Resolve a volume's host path with
+`<runtime> volume inspect <name> --format '{{.Mountpoint}}'`. On macOS the
+volume lives inside the podman VM (reach it via `podman machine ssh`, or read
+through the container: `<runtime> exec iot-ds-server cat /var/lib/iot/data_store.lua`).
+
+**Reboot durability: yes, contents persist.** Every `set`/`remove` is
+write-through + `fsync` (§4.2, REQ-DS-001), so committed values are on
+persistent storage before the ack — not just in memory. Across a host reboot:
+- **Yocto/RPi:** `/var/lib/iot` is on the writable rootfs partition → survives.
+- **Cloud / dev (containers):** the data lives in a **named volume**, which
+  survives container restart *and* host reboot. It is destroyed only by an
+  explicit `<runtime> volume rm <name>`.
+
+Caveats:
+- `RESET_CONFIG=1` in `run.sh` removes the **config/schema** volume
+  (`cloud_iot-etc` / `device_dev-etc`) to reload image-provided schemas — it
+  does **not** touch the **data** volume (`iot-lib` / `dev-lib`), so the store
+  survives a `RESET_CONFIG` start.
+- Atomic `rename(2)` requires the `.tmp` and the final file to be on one
+  filesystem (RISK-DS-04) — they are, both under `/var/lib/iot`.
+- The file grows with one-shot keys unless callers `remove` ephemeral entries
+  (RISK-DS-03).
+- A hard power-cut *during* the rename can leave the pre-`set` file (never a
+  torn write); a clean reboot is always safe.
+
 ---
 
 ## 5. Threading
