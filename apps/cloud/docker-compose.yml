@@ -60,10 +60,13 @@ services:
       - /dev/net/tun        # openvpn(8) server spawned by iot-cloudd
     ports:
       - "1194:1194/tcp"     # OpenVPN server (TCP)
-      # Per-device device-UI-over-VPN proxy ports (VpnRegistry allocates
-      # 5001-6000). Publishing the range makes cloud:<proxy_port> reachable
-      # from the operator's browser; iot-cloudd DNATs each to <tun_ip>:ui_port.
-      - "5001-6000:5001-6000"
+      # Per-device device-UI-over-VPN proxy ports. Publishing the range makes
+      # cloud:<proxy_port> reachable from the operator's browser; iot-cloudd
+      # DNATs each to <tun_ip>:ui_port. The range is env-parameterised to match
+      # the same PROXY_START/PROXY_END passed to iot-cloudd above, which seed
+      # the ds keys cloud.vpn.proxy.port.{start,end} (Docker can't read ds, so
+      # this publish must be kept in sync with that ds range).
+      - "${PROXY_START:-5001}-${PROXY_END:-6000}:${PROXY_START:-5001}-${PROXY_END:-6000}"
     depends_on:
       ds-server:
         condition: service_healthy
