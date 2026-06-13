@@ -23,6 +23,7 @@ import { IfacePriorityComponent } from './wan/iface-priority/iface-priority.comp
 
 import { RoutingSubmenuComponent } from './routing/routing-submenu/routing-submenu.component';
 import { PortForwardComponent } from './routing/port-forward/port-forward.component';
+import { CustomRulesComponent } from './routing/custom-rules/custom-rules.component';
 
 import { Lwm2mSubmenuComponent } from './lwm2m/lwm2m-submenu/lwm2m-submenu.component';
 import { Lwm2mConfigComponent } from './lwm2m/lwm2m-config/lwm2m-config.component';
@@ -49,7 +50,7 @@ import { DsDebugDirective } from '../common/ds-debug.directive';
     StatusBadgeComponent,
     VpnSubmenuComponent, VpnConfigComponent, VpnStatusComponent,
     WanSubmenuComponent, WifiConfigComponent, WifiScanComponent, IfacePriorityComponent,
-    RoutingSubmenuComponent, PortForwardComponent,
+    RoutingSubmenuComponent, PortForwardComponent, CustomRulesComponent,
     Lwm2mSubmenuComponent, Lwm2mConfigComponent,
     ServicesSubmenuComponent, ServicesListComponent,
     LogLevelComponent, LogViewerComponent, ToastComponent,
