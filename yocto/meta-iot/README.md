@@ -186,7 +186,7 @@ end-to-end push from the cloud UI.
 | `iot_git.bb`             | `PN=iot`; sub-packages: `iot-ds-server`, `iot-ds-cli`, `iot-lwm2m`, `iot-openvpn-client`, `iot-net-router`, `iot-wifi-client`, `iot-httpd`, `iot-config` |
 | `images/iot-image.bb`    | Full bootable distribution (`packagegroup-iot-full` + kernel modules + RPi Wi-Fi/BT firmware + sshd + opkg) → `*.wic.bz2` |
 | `ace-tao_7.0.0.bb`       | `libACE.so.7.0.0`, `libACE_SSL.so.7.0.0`, dev headers       |
-| `tinydtls_git.bb`        | `libtinydtls.a` (static archive)                             |
+| `tinydtls_git.bb`        | `libtinydtls.a` (static archive). Carries `0002-add-dtls-log-sink.patch` — adds `dtls_set_log_sink()` (present in the in-tree fork `apps/3rdparty/tinydtls`, absent from the legatoproject SRCREV) so the iot binary's DTLS log-sink in `apps/src/main.cpp` links. See the patch header for detail. |
 | `mongo-c-driver_1.19.bb` | `libbson-1.0.so`, `libmongoc-1.0.so`                        |
 | `mongo-cxx-driver_3.6.bb`| `libbsoncxx.so`, `libmongocxx.so`                            |
 | `packagegroup-iot.bb`    | Meta-packages: `packagegroup-iot-core`, `-full`, `-debug`   |

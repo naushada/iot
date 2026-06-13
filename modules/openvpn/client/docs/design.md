@@ -275,6 +275,41 @@ two more transitions out of every state above:
 
 Auto-restart on bare child crash (no WAN event) is still FUP-L12-1.
 
+## Known issue: `vpn.state` stuck at `connecting`
+
+> **Status: known issue, fix pending.** The tunnel itself works.
+
+**Symptom.** The tunnel is fully up — `tun0` has the assigned IP,
+openvpn logged `Initialization Sequence Completed`, and the cloud's
+`cloud.vpn.connected` lists the endpoint — yet `vpn.state` reads
+`connecting` and never advances to `connected`. `vpn.assigned.ip` is still
+set correctly.
+
+**Cause.** On attach the supervisor sends `state on` (`supervisor.cpp`),
+which enables *future* real-time `>STATE:` notifications. It does **not**
+issue a query for the *current* state. If openvpn already reached
+`CONNECTED` before the daemon attached the mgmt socket, that transition
+was emitted before notifications were on and is therefore missed — so the
+Lifecycle never sees the `CONNECTED` `>STATE:` event that would write
+`vpn.state=connected`. `vpn.assigned.ip` still gets set because the
+`>PUSH_REPLY` line is parsed independently.
+
+The mgmt parser (`mgmt_protocol.cpp`) only recognises the prefixed
+`>STATE:` / `>PUSH_REPLY:` events. A bare `state` *query response* (the
+state record without the `>STATE:` prefix) is classified as a `DataLine`
+response payload and ignored by the Lifecycle — so even if the current
+state were requested today, the reply wouldn't update `vpn.state`.
+
+> Note: the inline comment at `supervisor.cpp` (`state on` "makes it emit
+> the CURRENT state immediately") describes the *intended* behavior; in
+> practice the current-state emission arrives as the bare state-record
+> response that the parser drops, which is why this issue persists.
+
+**Pending fix.** After `state on`, also send `state 1` (query the current
+state) **and** teach the parser to surface the bare state-record response
+as a `State` event so the Lifecycle promotes `vpn.state` to `connected`
+even when the daemon attached late.
+
 ## Related docs
 
 - [L12 plan](../../../log/L12/plan.md) — phase plan + risk register

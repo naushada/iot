@@ -246,6 +246,61 @@ mirror).
 `apps/config/`) are also copied into the cloud image at `/etc/iot/` so
 the lwm2m binary finds the schema and provisioning data it expects.
 
+## Device UI over VPN
+
+Each registered device runs its own web UI behind NAT, reachable from the
+operator only through the tunnel. The cloud exposes it via a per-device DNAT.
+
+**Per-device mapping.** When a device registers it is assigned a VPN virtual
+IP (`tun_ip`, e.g. `10.9.0.x`) and a proxy port (`proxy_port`, allocated by
+`VpnRegistry`); both live in the `cloud.endpoints` ds JSON. Operator access is
+`http://<cloud-host>:<proxy_port>/` — the Endpoints page **Launch UI** link —
+which DNATs to the device's UI over the tunnel.
+
+**nftables DNAT (`modules/server/dnat`).** `iot-cloudd` installs a per-device
+DNAT for every endpoint that has both a `tun_ip` and a `proxy_port`:
+
+```
+tcp dport <proxy_port> dnat to <tun_ip>:<ui_port>     # prerouting (nat)
+oifname "tun0" masquerade                              # postrouting (nat)
+oifname/iifname "tun0" accept                          # forward (filter)
+```
+
+The whole ruleset lives in its own table `ip iot_cloud_dnat` so re-applying
+flushes only our rules (never NetworkManager / docker / openvpn chains). It is
+built (`build_device_dnat_ruleset`) from `cloud.endpoints` and applied with
+`nft -f -` (`apply_ruleset`) at startup and on every provision / deprovision /
+registration change — idempotent (full-table flush + rebuild). `iot-cloudd`
+also enables IPv4 forwarding (`enable_ip_forward` → `net.ipv4.ip_forward=1`)
+once at startup.
+
+**ds-driven ports** (no Docker publish — see host-networking note below):
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `cloud.proxy.device.ui.port` | `80` | the device's web-UI port (DNAT target port); seeded at startup |
+| `cloud.vpn.proxy.port.start` | `5001` | low end of the proxy-port range `VpnRegistry` allocates from |
+| `cloud.vpn.proxy.port.end` | `6000` | high end of the proxy-port range |
+
+The range is read from ds at startup (CLI `proxy-start=`/`proxy-end=` are
+fallbacks) and written back so it is visible/editable; changing
+`cloud.proxy.device.ui.port` triggers a DNAT rebuild.
+
+**Host networking.** `iot-cloudd` runs with `network_mode: host` and **no**
+published `ports:` — it runs the OpenVPN server *and* installs the DNAT on the
+host netns, so the entire proxy-port range plus 1194 are reachable directly on
+the host with nothing to keep in sync. Consequences:
+
+- The proxy range is 100% ds-controlled (no Docker publish, no env).
+- The **host firewall** must allow the proxy range + `1194/tcp` to operators
+  (ideally scoped to admin source IPs — see `host-firewall.sh`).
+- `net.* ` sysctls aren't settable per-container under host networking, so
+  `iot-cloudd` sets `net.ipv4.ip_forward=1` itself at startup (needs
+  `NET_ADMIN` on the host netns); ensure it stays enabled on the host.
+
+The cloud also pushes the VPN *endpoint* (host/port/proto) down to the device
+over LwM2M Object 2048 — see `apps/docs/lwm2m-object-handling.md` §2.8.
+
 ## Log Levels
 
 Default is `INFO` for all daemons. Per-daemon keys override the global

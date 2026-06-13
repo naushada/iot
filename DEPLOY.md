@@ -223,6 +223,22 @@ bzcat $IMG | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
 # macOS: target the raw node /dev/rdiskN instead of /dev/diskN — much faster.
 ```
 
+> **Pick the right disk — `dd` is irreversible and writes the whole device.**
+> On macOS run `diskutil list` and identify the card by **size** (e.g. a 32 GB
+> card), *not* the internal Mac disk (`disk0`, usually the largest with an
+> `APFS`/`Apple_APFS` container). Writing to the wrong `/dev/diskN` destroys
+> that disk with no undo. Full macOS sequence:
+>
+> ```sh
+> diskutil list                                   # find the card by size
+> diskutil unmountDisk /dev/diskN                 # unmount (don't eject yet)
+> bzcat $IMG | sudo dd of=/dev/rdiskN bs=4m       # raw node = much faster
+> sync                                            # flush write cache
+> diskutil eject /dev/diskN                       # safe to remove
+> ```
+>
+> (`bs=4m` is the BSD `dd` spelling on macOS; `bs=4M` is the GNU/Linux one.)
+
 > The build does **not** emit a `.bmap` file: `bmaptool` needs the FIEMAP
 > ioctl / `SEEK_HOLE`, which the macOS-podman build filesystem doesn't
 > support, so `wic.bmap` is omitted from `IMAGE_FSTYPES`. If you build on a

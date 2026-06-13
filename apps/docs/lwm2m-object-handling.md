@@ -198,6 +198,34 @@ re-provision differently:
   (`docker restart iot-cloudd` / restart the `lwm2m-bs` unit) so it picks up the
   new credential.
 
+### 2.8 Pushing the VPN server endpoint (Object 2048 RIDs 5/6/7)
+
+The device needs to know *where* to dial the OpenVPN server. Rather than seed
+it through docker-compose env (those seeds were removed — **ds is the source of
+truth**), the cloud DM server pushes the endpoint down the same Object 2048
+delivery that carries the VPN cert family.
+
+**Cloud side** (`build_cert_push`, `apps/src/lwm2m_dm_server.cpp`). Alongside
+the ca/cert/key chunks (instances 0/1/2 → RID 1), it appends three small
+plain-text WRITEs to **instance 0**:
+
+| RID | ds key derived from | Notes |
+|-----|---------------------|-------|
+| 5 (VPN host)  | `cloud.dm.uri` (host parsed out) | only emitted when known; empty host → cert-only push (back-compatible) |
+| 6 (VPN port)  | `cloud.vpn.listen.port` | as a decimal string |
+| 7 (VPN proto) | `cloud.vpn.proto`, mapped `tcp-server` → `tcp-client` | the device dials, so the role is flipped |
+
+The push (`apps/src/main.cpp`, DM wiring) is sent on each registration/cert-push
+cycle until `cloud.vpn.connected` lists the endpoint, then it stops. The push is
+finalised by the same **RID 3 (Apply) EXECUTE** that commits the cert family.
+
+**Device side** (`certHooks.set_vpn_endpoint`, `apps/src/main.cpp`). At Apply,
+the staged values are materialised into `vpn.remote.host` / `vpn.remote.port`
+(parsed to the schema's integer) / `vpn.remote.proto`. The cert hook's
+`false→true` gate-flip on `services.openvpn.client.enable` (see §2 of
+`modules/openvpn/client/docs/design.md`) then hot-reloads openvpn-client, which
+re-execs reading the new `vpn.remote.*` — no compose seed, no manual restart.
+
 ---
 
 ## 3. Registration interface — `POST /rd`
