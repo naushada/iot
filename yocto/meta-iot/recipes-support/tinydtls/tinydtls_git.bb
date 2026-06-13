@@ -16,6 +16,7 @@ SECTION = "libs"
 # (the handle_handshake NULL-guard is already upstream here, so dropped).
 SRC_URI = "git://github.com/legatoproject/tinydtls.git;protocol=https;branch=master-swi \
            file://0001-security-and-uthash-fixes.patch \
+           file://0002-add-dtls-log-sink.patch \
            file://platform-inet.h \
            file://platform-types.h \
           "
