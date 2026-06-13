@@ -202,6 +202,14 @@ int main(int argc, char** argv) {
     if (!workersStr.empty()) httpWorkers = std::atoi(workersStr.c_str());
     if (httpWorkers < 0) httpWorkers = 0;
 
+    // A redirect-only instance (redirect-https-port set) is by definition a
+    // plain-http :80 listener that 301-redirects to https — it never terminates
+    // TLS itself. Force scheme=http so it doesn't inherit http.listen.scheme=
+    // https from the shared data store (the main https server's setting) and
+    // then crash-loop demanding a cert/key it has no reason to hold.
+    if (!arg_value(argc, argv, "redirect-https-port").empty())
+        httpScheme = "http";
+
     // ── TLS context (shared by every https session) ───────────
     http_server::TlsContext tlsCtx;
     const http_server::TlsContext* tlsPtr = nullptr;
