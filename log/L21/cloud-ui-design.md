@@ -152,12 +152,23 @@ Calls `POST /api/v1/cloud/provision` with `{"endpoint":"..."}`.
 │              │
 │              │
 │ ☀ Dark       │
+│ ◎ Debug      │
 │ ← Sign out   │
 └──────────────┘
 ```
 
 Same collapsible tree structure as iot-ui — but only 4 menu items,
 no children needed (simpler than device UI).
+
+**Dark** and **Debug** are global toggles pinned to the bottom of the
+sidebar (both in iot-ui and cloud-ui), each a `providedIn:'root'` service
+persisted per-browser in `localStorage` (`iot-theme` / `iot-debug`).
+With **Debug** on, every config form input renders — just below it, in a
+Clarity `<clr-control-helper>` so the 4-column `.form-grid` stays aligned —
+the data-store key that fills the field plus an editable raw value box
+bound straight to that key (`<app-ds-hint key="...">`, gated to admins,
+reads/writes via `/api/v1/db`). The `*dsDebug` structural directive shows
+the hint only while Debug is on, so it costs nothing when off.
 
 ## API Endpoints (already built in TDD #7)
 

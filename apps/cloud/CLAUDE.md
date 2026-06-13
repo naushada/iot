@@ -90,6 +90,34 @@ Dashboard  Endpoints  VPN  HTTP  WAN  Routing  LwM2M              Services  Logs
 | Services | services.cloud.* (polled every 5s) |
 | Logs | log.level + GET /api/v1/log |
 
+### Debug mode (developer aid)
+
+A global **Debug** toggle sits at the bottom of the sidebar next to
+**Dark** (in both cloud-ui and iot-ui). Like the theme toggle it is a
+`providedIn:'root'` `DebugService` persisted per-browser in
+`localStorage['iot-debug']` — no backend state.
+
+When on, every config form input shows — just below it — the data-store
+key that fills the field plus an **editable raw value box** bound straight
+to that key, so an operator building their own app can discover and poke
+the ds key/value behind any field. Implementation (in each UI's
+`src/common/`):
+
+- `debug.service.ts` — the on/off flag.
+- `ds-debug.directive.ts` — `*dsDebug`, a structural directive that renders
+  its content only while Debug is on (placed on `<clr-control-helper>` so
+  the hint slots into Clarity's below-input region and keeps the 4-column
+  `.form-grid` aligned).
+- `ds-hint.component.ts` — `<app-ds-hint key="cloud.vpn.subnet">`, which
+  self-reads/writes the raw value via `/api/v1/db`, admin-gated.
+
+Wire a new field with one line — no component changes needed:
+```html
+<clr-control-helper *dsDebug><app-ds-hint key="cloud.vpn.subnet"></app-ds-hint></clr-control-helper>
+```
+Array/datagrid editors (no single key) and checkbox containers are not
+wired.
+
 ## API patterns
 
 All config pages use the same REST surface.  The UI always calls the
