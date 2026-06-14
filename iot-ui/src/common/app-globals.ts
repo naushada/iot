@@ -15,6 +15,9 @@ export interface StatusSnapshot {
 
 export interface Lwm2mStatus {
   server_uri?: string;
+  // Bootstrap-delivered DM server URI the client persisted to iot.dm.uri
+  // (preferred over the legacy ds-driven server_uri on the DM status tab).
+  dm_uri?: string;
   endpoint?: string;
   // Connection lifecycle token published by the client on iot.conn.state:
   // idle / bootstrapping / bootstrapped / dm-connecting / dm-connected /

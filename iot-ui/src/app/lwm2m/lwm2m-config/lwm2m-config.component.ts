@@ -1,6 +1,8 @@
-import { Component, Input, OnInit } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { HttpsvcService } from '../../../common/httpsvc.service';
+import { DataStoreService } from '../../../common/datastore.service';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
 
@@ -9,7 +11,7 @@ import { ToastService } from '../../../common/toast.service';
   templateUrl: './lwm2m-config.component.html',
   styleUrls: ['./lwm2m-config.component.scss']
 })
-export class Lwm2mConfigComponent implements OnInit {
+export class Lwm2mConfigComponent implements OnInit, OnDestroy {
   // Which tab is rendering this component: 'server' shows the registration
   // fields (Server Object), 'security' shows serial + Bootstrap PSK
   // (Security Object). Same form-group backs both; we just show a subset.
@@ -24,9 +26,11 @@ export class Lwm2mConfigComponent implements OnInit {
   generatedPsk = '';           // last generated BS PSK (hex), shown once to copy
   generatingPsk = false;
 
+  private sub = new Subscription();
+
   get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, fb: FormBuilder, private session: SessionService, private toast: ToastService) {
+  constructor(private http: HttpsvcService, private ds: DataStoreService, fb: FormBuilder, private session: SessionService, private toast: ToastService) {
     this.serverForm = fb.group({
       serial:     [''],
       bs_uri:     ['coaps://'],
@@ -67,6 +71,25 @@ export class Lwm2mConfigComponent implements OnInit {
       },
       error: () => { this.loading = false; }
     });
+
+    // The Server (Device Management) tab is read-only STATUS — the DM URI is
+    // pushed by the bootstrap server after the client registers. Subscribe to
+    // the shared store so it renders live (off the single /status long-poll)
+    // and never shows a stale "(set by bootstrap)" once iot.dm.uri is written.
+    // The Security tab is an editable form, so it stays load-once (no live
+    // subscription that could clobber in-progress edits).
+    if (this.mode === 'server') {
+      this.sub.add(this.ds.observe('iot.dm.uri').subscribe(() => this.refreshDmUri()));
+      this.sub.add(this.ds.observe('iot.server.uri').subscribe(() => this.refreshDmUri()));
+    }
+  }
+
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
+
+  private refreshDmUri(): void {
+    const dm = this.ds.getString('iot.dm.uri');
+    const legacy = this.ds.getString('iot.server.uri');
+    this.serverForm.patchValue({ server_uri: dm || legacy || '(set by bootstrap)' });
   }
 
   // Only the Security (commissioning) tab saves — the Server tab is
