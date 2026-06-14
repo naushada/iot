@@ -80,8 +80,6 @@ services:
       lwm2m
       role=server
       local=coaps://0.0.0.0:5684
-      identity=${LWM2M_PSK_ID:-97554878B284CE3B727D8DD06E87659A}
-      secret=${LWM2M_PSK_KEY:-3894beedaa7fe0eae6597dc350a59525}
       ds-socket=/var/run/iot/data_store.sock
       lwm2m-instance=bs
     ports:
@@ -106,8 +104,6 @@ services:
       lwm2m
       role=server
       local=coaps://0.0.0.0:5683
-      identity=${LWM2M_PSK_ID:-97554878B284CE3B727D8DD06E87659A}
-      secret=${LWM2M_PSK_KEY:-3894beedaa7fe0eae6597dc350a59525}
       ds-socket=/var/run/iot/data_store.sock
       lwm2m-instance=dm
     ports:

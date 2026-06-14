@@ -1249,7 +1249,12 @@ int main(std::int32_t argc, char *argv[]) {
     std::string endpoint = epres.ready ? epres.endpoint
                                        : std::string("urn:dev:client-1");
 
-    std::string identity("97554878B284CE3B727D8DD06E87659A"), secret("3894beedaa7fe0eae6597dc350a59525");
+    // No hardcoded identity/secret. The client derives its BS DTLS identity
+    // from the endpoint and reads the secret from ds; the server
+    // authenticates against per-endpoint PSKs loaded from
+    // cloud.endpoint.credentials (register_endpoint_creds below). Both are
+    // generated → stored in ds → read from ds — nothing is baked in.
+    std::string identity, secret;
     if(scheme == UDPAdapter::Scheme_t::CoAPs) {
         auto dsKey = ds.bs_psk_key();
         if (UDPAdapter::Role_t::CLIENT == role) {
@@ -1271,15 +1276,16 @@ int main(std::int32_t argc, char *argv[]) {
             ACE_DEBUG((LM_INFO,
                        ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK identity=sha256(endpoint)=%C\n"),
                        identity.c_str()));
-        } else if (!argValueMap["identity"].empty() &&
-                   !argValueMap["secret"].empty()) {
-            identity.assign(argValueMap["identity"]);
-            secret.assign(argValueMap["secret"]);
         } else {
-            ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l identity or secret missing "
-                                "for coaps (no CLI args and no data-store BS PSK)\n")));
-            return(-2);
+            // SERVER role: per-endpoint PSKs come from cloud.endpoint.credentials
+            // (registered below). An explicit shared identity/secret may still
+            // be supplied via CLI for a dev/test harness, but it is NOT required
+            // and NOT hardcoded — a provisioned fleet needs none.
+            if (!argValueMap["identity"].empty() &&
+                !argValueMap["secret"].empty()) {
+                identity.assign(argValueMap["identity"]);
+                secret.assign(argValueMap["secret"]);
+            }
         }
     }
 
@@ -1358,7 +1364,11 @@ int main(std::int32_t argc, char *argv[]) {
 
         if(it != app->udpAdapter()->services().end()) {
             auto& ent = *it;
-            ent.second->dtlsAdapter()->add_credential(identity, secret);
+            // Only register a shared identity/secret when one was explicitly
+            // provided (client: derived id + ds secret; dev server override).
+            // Empty → server relies solely on per-endpoint creds below.
+            if (!identity.empty() && !secret.empty())
+                ent.second->dtlsAdapter()->add_credential(identity, secret);
             register_endpoint_creds(ent.second->dtlsAdapter());
         }
     }
