@@ -442,9 +442,13 @@ void install_handlers(Router& router,
                 // SPA needs no per-page long-poll (avoids worker starvation).
                 ds->watch("services.stats.version", notify, &wh_stats);
                 ds->watch("log.version", notify, &wh_log);
-                // OTA progress: wake on iot.update.state so the Software page
-                // tracks an in-flight update live off this same stream.
+                // OTA progress: wake on iot.update.state (device self-update)
+                // and cloud.update.status (cloud→device push progress) so the
+                // Software pages track an in-flight update live off this stream.
                 ds->watch("iot.update.state", notify, &wh_update);
+                data_store::Client::WatchHandle wh_cupd =
+                    data_store::Client::kInvalidHandle;
+                ds->watch("cloud.update.status", notify, &wh_cupd);
                 if (ws.ok) {
                     std::unique_lock<std::mutex> lk(st->m);
                     st->cv.wait_for(lk, std::chrono::seconds(timeout),
@@ -460,6 +464,8 @@ void install_handlers(Router& router,
                     ds->unwatch(wh_log);
                 if (wh_update != data_store::Client::kInvalidHandle)
                     ds->unwatch(wh_update);
+                if (wh_cupd != data_store::Client::kInvalidHandle)
+                    ds->unwatch(wh_cupd);
                 // Fall through to build the full status snapshot
             }
             std::vector<data_store::Client::GetResult> got;
@@ -531,6 +537,7 @@ void install_handlers(Router& router,
                 "services.cloud.lwm2m.dm.fd.count", "services.cloud.lwm2m.dm.threads",
                 // Domain bump keys — echoed back so the SPA can observe them.
                 "services.stats.version", "log.version",
+                "cloud.update.status",
             }, got);
             json resp;
             resp["ok"] = true;
@@ -649,6 +656,9 @@ void install_handlers(Router& router,
                 // Cloud Service rows + bump keys: pass through verbatim under
                 // their ds key, typed by suffix (state→string, enable→bool,
                 // everything else numeric).
+                // Cloud OTA push status: a JSON array string, passed through
+                // verbatim so the cloud Software page observes it off /status.
+                else if (k == "cloud.update.status") cloud[k] = sv();
                 else if (k.rfind("services.cloud.", 0) == 0 ||
                          k == "services.stats.version" || k == "log.version") {
                     if (g.has_value) {
