@@ -55,6 +55,30 @@ target_link_libraries(http_server_lib
 add_executable(iot-httpd src/main.cpp)
 target_link_libraries(iot-httpd PRIVATE http_server_lib)
 
+# Bake the release version (the repo-root VERSION file, single source of truth,
+# bumped per release alongside the git tag). iot-httpd writes it to ds
+# (iot.version) at startup so the UI can show what's actually running — after an
+# OTA the restarted new binary self-reports the freshly-installed version.
+# Append a short git sha when building from a checkout; fall back gracefully when
+# neither the file nor .git is present (e.g. partial build contexts).
+set(_iot_version_file "${CMAKE_CURRENT_SOURCE_DIR}/../../VERSION")
+if(EXISTS "${_iot_version_file}")
+    file(STRINGS "${_iot_version_file}" IOT_VERSION LIMIT_COUNT 1)
+else()
+    set(IOT_VERSION "0.0.0-dev")
+endif()
+find_package(Git QUIET)
+if(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../.git")
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}/../.." rev-parse --short HEAD
+        OUTPUT_VARIABLE _iot_git_sha OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(_iot_git_sha)
+        set(IOT_VERSION "${IOT_VERSION}+${_iot_git_sha}")
+    endif()
+endif()
+message(STATUS "iot-httpd version: ${IOT_VERSION}")
+target_compile_definitions(iot-httpd PRIVATE IOT_VERSION="${IOT_VERSION}")
+
 # ─────────────────────────── Tests ─────────────────────────────
 # OFF by default (like the sibling modules) so a packaging/yocto build
 # doesn't pull in GTest. The Dockerfile + standalone dev builds pass

@@ -16,6 +16,7 @@
       <img src="assets/icons/debug.svg" class="nav-icon" alt="" /><span>{{debug.on ? 'Debug Off' : 'Debug'}}</span>
     </a>
     <a class="nav-item nav-logout" (click)="onLogout()"><img src="assets/icons/logout.svg" class="nav-icon" alt="" /><span>Sign out</span></a>
+    <div class="nav-version" *ngIf="version" title="Running release">v{{ version }}</div>
   </nav>
   <div class="main-area">
     <div class="live-strip">

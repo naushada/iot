@@ -335,6 +335,16 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Publish the baked-in release version so the UI can show what's running.
+    // After an OTA, iot-swupdate restarts iot-httpd and the new binary writes
+    // its new version here — so iot.version always reflects what's installed.
+#ifndef IOT_VERSION
+#define IOT_VERSION "unknown"
+#endif
+    ds.set("iot.version", data_store::Value{std::string(IOT_VERSION)});
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D httpd:thread:%t %M %N:%l iot.version=%C\n"),
+               IOT_VERSION));
+
     // Push startup logs immediately so the cloud UI can tail them.
     g_log.flush(ds);
     // Periodic log flush via LogBuffer's own ACE reactor timer (same

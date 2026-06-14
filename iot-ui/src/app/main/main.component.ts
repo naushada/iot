@@ -43,6 +43,7 @@ export class MainComponent {
   ];
 
   expandedMenu: string | null = null;  // which menu is expanded in sidebar
+  version = '';                         // running release (iot.version)
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
@@ -65,6 +66,12 @@ export class MainComponent {
     this.ds.prefetchAll();
     this.ds.startWatch();
     this.refreshStatus();
+    // Running release version (written to ds by iot-httpd at startup).
+    this.http.dbGet(['iot.version']).subscribe({
+      next: (r) => {
+        if (r.ok && r.data) this.version = String((r.data as Record<string, unknown>)['iot.version'] || '');
+      }
+    });
   }
 
   toggleMenu(menuId: string): void {

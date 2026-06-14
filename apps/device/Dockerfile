@@ -64,6 +64,7 @@ RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_
     ldconfig && echo /usr/local/ACE_TAO-7.0.0/lib > /etc/ld.so.conf.d/ace.conf && \
     rm -rf /tmp/ACE_wrappers /tmp/ace.tar.gz
 
+COPY VERSION     /src/VERSION
 COPY modules/    /src/modules/
 COPY apps/       /src/apps/
 COPY packaging/  /src/packaging/

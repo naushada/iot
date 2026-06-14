@@ -172,6 +172,16 @@ return {
         default = "",
     },
 
+    -- Running application/release version (e.g. "1.1.0+ab12cd3"). Written by
+    -- iot-httpd at startup from its baked-in IOT_VERSION, so the UI shows what's
+    -- actually installed — after an OTA the restarted binary self-reports the
+    -- new version. Loaded by both the device and cloud ds-server.
+    ["iot.version"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
+
     -- Applied config/schema generation (OTA migration marker). iot-swupdate
     -- runs /usr/share/iot/migrations/NNNN-*.sh with NNNN > this value after an
     -- opkg upgrade, then bumps it. 0 = baseline (no migration applied yet).
