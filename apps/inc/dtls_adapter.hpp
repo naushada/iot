@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <iostream>
 #include <unordered_map>
+#include <functional>
 
 #include "coap_adapter.hpp"
 
@@ -181,6 +182,18 @@ class DTLSAdapter {
             return(std::string());
         }
 
+        /// Server-role PSK resolver: looks the secret up live from the data
+        /// store for the identity the client presented during the handshake,
+        /// so newly-provisioned endpoints authenticate without a restart and
+        /// ds stays the single source of truth (no in-memory pre-load/watch).
+        /// Runs on the handshake/reactor thread — NOT the ds listener thread —
+        /// so a blocking ds get() here is safe. Returns "" when unset/unknown.
+        using PskResolver = std::function<std::string(const std::string& identity)>;
+        void set_psk_resolver(PskResolver r) { m_psk_resolver = std::move(r); }
+        std::string resolve_secret(const std::string& identity) {
+            return m_psk_resolver ? m_psk_resolver(identity) : std::string();
+        }
+
         /**
          * @brief 
          * 
@@ -345,6 +358,7 @@ class DTLSAdapter {
         //std::unique_ptr<dtls_context_t, decltype(&dtls_free_context)> dtls_ctx;
         dtls_context_t *m_dtls_ctx;
         std::unordered_map<std::string, std::string> device_credentials;
+        PskResolver m_psk_resolver;
         std::int32_t dtlsFd;
         std::shared_ptr<CoAPAdapter> m_coapAdapter;
         session_t m_session;

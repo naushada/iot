@@ -170,7 +170,12 @@ std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtl
         }
         case DTLS_PSK_KEY:
         {
+            // In-memory store first (client's derived identity / explicit
+            // creds); then the server's ds-backed resolver, which looks the
+            // key up live from cloud.endpoint.credentials by the presented
+            // identity — so provisioning takes effect without a restart.
             auto secret = inst.get_secret(in);
+            if (secret.empty()) secret = inst.resolve_secret(in);
             if (secret.empty()) {
                 dtls_warn("PSK for unknown identity requested\n");
                 return dtls_alert_fatal_create(DTLS_ALERT_ILLEGAL_PARAMETER);
