@@ -458,7 +458,7 @@ void install_handlers(Router& router,
             std::vector<data_store::Client::GetResult> got;
             auto rs = ds->get({
                 // LwM2M
-                "iot.server.uri", "iot.endpoint", "iot.conn.state",
+                "iot.server.uri", "iot.dm.uri", "iot.endpoint", "iot.conn.state",
                 // VPN
                 "vpn.state", "vpn.assigned.ip", "vpn.assigned.gateway",
                 "vpn.assigned.netmask", "vpn.assigned.dns", "vpn.pid",
@@ -561,6 +561,7 @@ void install_handlers(Router& router,
                 };
 
                 if (k == "iot.server.uri")        lwm2m["server_uri"] = sv();
+                else if (k == "iot.dm.uri")       lwm2m["dm_uri"] = sv();
                 else if (k == "iot.endpoint")     lwm2m["endpoint"] = sv();
                 else if (k == "iot.conn.state")   lwm2m["conn_state"] = sv();
 

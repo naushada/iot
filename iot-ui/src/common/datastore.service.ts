@@ -36,7 +36,7 @@ export class DataStoreService {
     'net.state', 'net.rules.applied.count', 'net.last.apply.unix',
     'net.iface.active',
     // LwM2M client
-    'iot.serial', 'iot.dev.mode', 'iot.bs.uri', 'iot.server.uri',
+    'iot.serial', 'iot.dev.mode', 'iot.bs.uri', 'iot.server.uri', 'iot.dm.uri',
     'iot.binding', 'iot.lifetime',
     // Log levels
     'log.level', 'log.level.httpd', 'log.level.lwm2m',
@@ -98,6 +98,12 @@ export class DataStoreService {
       if (s.routing.state != null) this.set('net.state', s.routing.state);
       if (s.routing.rules_applied != null) this.set('net.rules.applied.count', s.routing.rules_applied);
       if (s.routing.last_apply_unix != null) this.set('net.last.apply.unix', s.routing.last_apply_unix);
+    }
+    if (s.lwm2m) {
+      // Republish read-only LwM2M status to per-key subjects so the DM tab's
+      // observe('iot.dm.uri') updates live (e.g. when registration completes).
+      if (s.lwm2m.dm_uri != null)     this.set('iot.dm.uri', s.lwm2m.dm_uri);
+      if (s.lwm2m.server_uri != null) this.set('iot.server.uri', s.lwm2m.server_uri);
     }
     if (s.wan && s.wan.active_iface != null) this.set('net.iface.active', s.wan.active_iface);
     // Flat passthrough keys (log.version / services.stats.version bump keys)
