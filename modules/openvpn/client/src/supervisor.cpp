@@ -210,6 +210,19 @@ bool Supervisor::serve_one_session(const std::string& iface) {
                                 "connecting\n"),
                        errno));
         }
+        // Subscribe to the log too: the pushed config (route-gateway, ifconfig
+        // ip+netmask, dhcp-option DNS) is NOT delivered as a >PUSH_REPLY mgmt
+        // event — it only appears in openvpn's log ("PUSH: Received control
+        // message: 'PUSH_REPLY,...'"). Without `log on`, vpn.assigned.gateway/
+        // netmask/dns never populate (only the IP, from the CONNECTED state).
+        static const char kLogOn[] = "log on\r\n";
+        if (stream.send_n(kLogOn, sizeof(kLogOn) - 1) < 0) {
+            ACE_ERROR((LM_WARNING,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l mgmt 'log on' send failed "
+                                "errno=%d; vpn.assigned.gateway/netmask/dns may "
+                                "stay empty\n"),
+                       errno));
+        }
         // openvpn was spawned with `management-hold`, so it is paused until we
         // release it. Now that real-time state notifications are enabled, let
         // it connect — the CONNECTED state + PUSH_REPLY (assigned

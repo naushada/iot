@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "mgmt_protocol.hpp"
 
@@ -44,9 +45,12 @@ private:
     /// pass through verbatim.
     static std::string normalise_state(const std::string& openvpn_state);
 
-    /// Parse a PUSH_REPLY option into name/value, then dispatch
-    /// known options (ifconfig / route-gateway / dhcp-option DNS).
-    void apply_push_option(const std::string& option);
+    /// Apply a list of PUSH_REPLY options (each "name value..."), dispatching
+    /// the known ones (ifconfig → ip+netmask, route-gateway, dhcp-option DNS) to
+    /// the sinks. Shared by the >PUSH_REPLY event path and the >LOG "PUSH:
+    /// Received control message: 'PUSH_REPLY,...'" path (real openvpn surfaces
+    /// the pushed config via the log, not a PUSH_REPLY mgmt notification).
+    void apply_push_options(const std::vector<std::string>& opts);
 };
 
 } // namespace openvpn_client
