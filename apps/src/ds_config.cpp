@@ -32,6 +32,10 @@ constexpr const char* kKeyDevMode     = "iot.dev.mode";
 constexpr const char* kKeyConnState   = "iot.conn.state";
 // Bootstrap-delivered DM Server URI, published to the device-ui (write-only).
 constexpr const char* kKeyDmUri       = "iot.dm.uri";
+// VPN server endpoint host. Derived from the DM URI at bootstrap (the VPN
+// concentrator is co-located with the DM on the cloud VM); the cloud's
+// Object-2048 endpoint push can still override it (write-only here).
+constexpr const char* kKeyVpnRemoteHost = "vpn.remote.host";
 
 } // namespace
 
@@ -257,6 +261,18 @@ bool DsConfig::set_dm_uri(const std::string& uri) {
     // is the sole writer, so there's nothing to mirror locally.
     auto s = m_impl->client.set({
         {kKeyDmUri, data_store::Value{uri}},
+    });
+    return s.ok;
+}
+
+bool DsConfig::set_vpn_remote_host(const std::string& host) {
+    if (!m_ok || !m_impl || host.empty()) return false;
+    // Derived from the bootstrap-delivered DM URI host. The cloud's LwM2M
+    // Object-2048 endpoint push may later overwrite this with an explicit
+    // value (split VPN/DM topology); in the common single-VM case the two
+    // agree, so the override is idempotent. Write-only — nothing to mirror.
+    auto s = m_impl->client.set({
+        {kKeyVpnRemoteHost, data_store::Value{host}},
     });
     return s.ok;
 }

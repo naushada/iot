@@ -316,7 +316,11 @@ because it subjected `1194` to ufw (allow-22-only → connection refused). Notes
   to run the OpenVPN server tun + install the per-device DNAT.
 
 The cloud also pushes the VPN *endpoint* (host/port/proto) down to the device
-over LwM2M Object 2048 — see `apps/docs/lwm2m-object-handling.md` §2.8.
+over LwM2M Object 2048 — see `apps/docs/lwm2m-object-handling.md` §2.8. The VPN
+**host** is additionally *derived on the device* from the bootstrap-delivered
+DM URI (the VPN concentrator is co-located with the DM), so a co-located cloud
+needs no VPN-host config on the device; the Object-2048 push is the override for
+a split topology (derive-with-override).
 
 ## Log Levels
 

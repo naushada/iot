@@ -109,6 +109,12 @@ public:
     /// display the URI the device actually registered to. Write-only here —
     /// the client is the sole writer, so there's nothing to mirror locally.
     bool set_dm_uri(const std::string& uri);
+    /// Derive the VPN server host from the bootstrap-delivered DM URI and
+    /// persist it → vpn.remote.host, so a co-located cloud (VPN concentrator
+    /// on the same VM as the DM) needs no separate VPN-host config on the
+    /// device. The cloud's Object-2048 endpoint push still overrides it for a
+    /// split topology. No-op when !connected() or host is empty.
+    bool set_vpn_remote_host(const std::string& host);
     /// Publish the LwM2M connection lifecycle token to iot.conn.state so
     /// the device-ui can render real-time progress. One of: idle /
     /// bootstrapping / bootstrapped / dm-connecting / dm-connected /

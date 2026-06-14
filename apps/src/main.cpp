@@ -891,6 +891,18 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                                 "data-store (iot.dm.uri=%C)\n"),
                        dmUri.c_str()));
         }
+        // Derive the VPN server host from the DM URI: the VPN concentrator is
+        // co-located with the DM on the cloud VM, so its host == dmHost. This
+        // gives a co-located cloud zero VPN-host config on the device (just the
+        // commissioned bootstrap URI + BS PSK). The cloud's Object-2048 endpoint
+        // push (set_vpn_endpoint) still overrides this for a split topology;
+        // in the common case both write the same value (idempotent).
+        if (ds.set_vpn_remote_host(dmHost)) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l VPN remote host "
+                                "derived from DM URI (vpn.remote.host=%C)\n"),
+                       dmHost.c_str()));
+        }
         // Point the LwM2MClient peer at the DM, pin the DM PSK identity, and
         // force a fresh DTLS handshake against the DM.
         for (auto& [type, ctx] : a->udpAdapter()->services()) {
