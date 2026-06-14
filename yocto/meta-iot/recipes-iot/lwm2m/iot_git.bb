@@ -23,6 +23,8 @@ SRC_URI = "\
     file://iot-lwm2m-client.service \
     file://iot-lwm2m-server.service \
     file://iot-openvpn-client.service \
+    file://iot-vpn-cert.path \
+    file://iot-vpn-cert.service \
     file://iot-net-router.service \
     file://iot-wifi-client.service \
     file://iot-httpd.service \
@@ -180,6 +182,8 @@ do_install() {
         install -m 0644 ${WORKDIR}/iot-lwm2m-client.service   ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-lwm2m-server.service   ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-openvpn-client.service ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-vpn-cert.path          ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-vpn-cert.service       ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-net-router.service     ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-wifi-client.service    ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-httpd.service          ${D}${systemd_system_unitdir}/
@@ -269,6 +273,8 @@ RRECOMMENDS:${PN}-lwm2m = "\
 FILES:${PN}-openvpn-client = "\
     ${bindir}/openvpn-client \
     ${systemd_system_unitdir}/iot-openvpn-client.service \
+    ${systemd_system_unitdir}/iot-vpn-cert.path \
+    ${systemd_system_unitdir}/iot-vpn-cert.service \
 "
 RDEPENDS:${PN}-openvpn-client = "ace-tao openvpn"
 RRECOMMENDS:${PN}-openvpn-client = "\
@@ -333,7 +339,9 @@ FILES:${PN}-config = "\
 # ── systemd ─────────────────────────────────────────────────────────
 SYSTEMD_SERVICE:${PN}-ds-server = "iot-ds.service"
 SYSTEMD_SERVICE:${PN}-lwm2m = "iot-lwm2m-client.service iot-lwm2m-server.service"
-SYSTEMD_SERVICE:${PN}-openvpn-client = "iot-openvpn-client.service"
+# iot-vpn-cert.path is enabled (watches the cert); iot-vpn-cert.service is
+# activated by the path unit, not enabled directly (it has no [Install]).
+SYSTEMD_SERVICE:${PN}-openvpn-client = "iot-openvpn-client.service iot-vpn-cert.path"
 SYSTEMD_SERVICE:${PN}-net-router = "iot-net-router.service"
 SYSTEMD_SERVICE:${PN}-wifi-client = "iot-wifi-client.service"
 SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service"
