@@ -24,6 +24,13 @@ std::string build_device_dnat_ruleset(const RulesetInput& in) {
     // Scope everything to our own table so re-applying flushes only our
     // rules (never NetworkManager / docker / openvpn-managed chains). We
     // use the `ip` family (IPv4) — the VPN subnet is IPv4.
+    //
+    // `add table` BEFORE `flush table`: on a fresh netns (every container
+    // start) the table doesn't exist yet, and `flush table` on a missing
+    // table is a hard error that aborts the whole ruleset — so the DNAT
+    // never applied. `add table` is idempotent (creates if absent, no-op if
+    // present), guaranteeing the subsequent flush + rebuild always succeed.
+    ss << "add table ip " << kTable << "\n";
     ss << "flush table ip " << kTable << "\n";
     ss << "table ip " << kTable << " {\n";
 

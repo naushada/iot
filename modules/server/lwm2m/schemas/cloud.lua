@@ -214,11 +214,13 @@ return {
     -- per-device nftables DNAT (cloud:<proxy_port> → <tun_ip>:ui_port over
     -- tun0) so an operator can reach a device's local UI by hitting the
     -- cloud on the device's assigned proxy port. Global (same value for all
-    -- devices); read live by iot-cloudd. The device UI listens on 80/443
-    -- (NOT 8080), so the default is 80.
+    -- devices); read live by iot-cloudd. DNAT target = the port the device's
+    -- iot-httpd binds: http-port=8080, published host:8081 -> container:8080,
+    -- and over the VPN the cloud DNATs straight to the container's 8080 — so
+    -- the default is 8080 (override in ds if a device serves on another port).
     ["cloud.proxy.device.ui.port"] = {
       type    = "integer",
-      default = 80,
+      default = 8080,
       min     = 1,
       max     = 65535,
     },
