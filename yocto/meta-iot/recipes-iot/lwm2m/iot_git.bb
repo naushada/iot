@@ -6,7 +6,10 @@ packages: ds-server (typed KV config plane), ds-cli (debug CLI), lwm2m \
 iot-httpd (HTTP REST API fronting ds-server). \
 Supports x86-64, ARM64, and ARMv7 targets via Yocto MACHINE selection."
 HOMEPAGE = "https://github.com/naushada/iot"
-LICENSE = "CLOSED"
+LICENSE = "MIT"
+# Repo-root LICENSE file (fetched into ${S}). Update the md5 if the LICENSE text
+# (e.g. the copyright year) changes.
+LIC_FILES_CHKSUM = "file://LICENSE;md5=5b1ad2e89d6319fe2af63290833075ef"
 SECTION = "net"
 
 # ── Fetch ──────────────────────────────────────────────────────────
