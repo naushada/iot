@@ -40,6 +40,14 @@ public:
     /// the subnet or port range is exhausted.
     std::optional<VpnAllocation> allocate(const std::string& ep);
 
+    /// Restore a previously-persisted allocation at startup (rehydration).
+    /// Marks `ip` / `port` as in-use for `ep` so the pools never hand them
+    /// out again — unlike allocate(), the caller supplies the exact values
+    /// read back from the persisted cloud.endpoints. Empty ip / zero port
+    /// are ignored; an already-allocated ip/port is left as-is.
+    void reserve(const std::string& ep, const std::string& ip,
+                 std::uint16_t port);
+
     /// Allocate only an IP.  Returns nullopt when exhausted.
     std::optional<std::string> allocate_ip();
 

@@ -86,6 +86,24 @@ std::optional<VpnAllocation> VpnRegistry::allocate(const std::string& ep) {
     return a;
 }
 
+void VpnRegistry::reserve(const std::string& ep, const std::string& ip,
+                          std::uint16_t port) {
+    std::lock_guard<std::mutex> lk(m_mutex);
+    if (!ip.empty()) {
+        m_free_ips.erase(ip);
+        m_allocated_ips.insert(ip);
+    }
+    if (port != 0) {
+        m_free_ports.erase(port);
+        m_allocated_ports.insert(port);
+    }
+    VpnAllocation a;
+    a.ep         = ep;
+    a.tun_ip     = ip;
+    a.proxy_port = port;
+    m_ep_to_alloc[ep] = a;
+}
+
 std::optional<std::string> VpnRegistry::allocate_ip() {
     std::lock_guard<std::mutex> lk(m_mutex);
     if (m_free_ips.empty()) return std::nullopt;
