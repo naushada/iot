@@ -247,6 +247,72 @@ std::vector<std::string> poll_vpn_connected(std::uint16_t mgmt_port) {
     return out;
 }
 
+// Rehydrate the in-memory EndpointRegistry + VpnRegistry from persisted ds at
+// startup. Both are in-memory only; without this they come up EMPTY after a
+// restart/upgrade, and the main loop's first sync_endpoints_to_ds() then
+// clobbers the persisted cloud.endpoints to [] — so a provisioned device
+// "disappears" from the table on every cloud update and loses its tun_ip /
+// proxy_port (→ no DNAT, no VPN cert push). We:
+//   1) exact-restore tun_ip/proxy_port/registered from the last persisted
+//      cloud.endpoints (stable ports across restarts), and
+//   2) heal any provisioned endpoint (cloud.endpoint.credentials) that lacks a
+//      registry row — e.g. a cloud.endpoints already clobbered to [] by the
+//      pre-fix bug — by allocating a fresh tun_ip/proxy_port.
+// PSKs are never touched: provision() only assigns tun_ip/port + registry row.
+std::size_t rehydrate_registry(data_store::Client& ds,
+                               server::lwm2m::EndpointRegistry& reg,
+                               server::openvpn::VpnRegistry& vpn,
+                               server::lwm2m::BootstrapProvisioner& prov) {
+    std::size_t restored = 0, healed = 0;
+
+    try {
+        auto eps = nlohmann::json::parse(ds_str(ds, "cloud.endpoints", "[]"));
+        if (eps.is_array()) {
+            for (const auto& e : eps) {
+                if (!e.is_object()) continue;
+                auto ep = e.value("endpoint", std::string());
+                if (ep.empty()) continue;
+                server::lwm2m::EndpointInfo info(
+                    ep, e.value("tun_ip", std::string()),
+                    static_cast<std::uint16_t>(e.value("proxy_port", 0)),
+                    e.value("registered", false));
+                info.last_seen_unix = e.value("last_seen_unix", std::int64_t{0});
+                if (reg.add(info)) {
+                    vpn.reserve(info.ep, info.tun_ip, info.proxy_port);
+                    ++restored;
+                }
+            }
+        }
+    } catch (const std::exception& ex) {
+        ACE_ERROR((LM_ERROR, ACE_TEXT("%D cloudd:thread:%t %M %N:%l rehydrate "
+                   "cloud.endpoints parse: %C\n"), ex.what()));
+    }
+
+    try {
+        auto creds = nlohmann::json::parse(
+            ds_str(ds, "cloud.endpoint.credentials", "[]"));
+        if (creds.is_array()) {
+            for (const auto& c : creds) {
+                if (!c.is_object()) continue;
+                auto serial = c.value("serial", std::string());
+                if (serial.empty() || reg.lookup_by_ep(serial)) continue;
+                if (prov.provision(serial)) ++healed;
+            }
+        }
+    } catch (const std::exception& ex) {
+        ACE_ERROR((LM_ERROR, ACE_TEXT("%D cloudd:thread:%t %M %N:%l rehydrate "
+                   "cloud.endpoint.credentials parse: %C\n"), ex.what()));
+    }
+
+    if (restored || healed)
+        ACE_DEBUG((LM_INFO, ACE_TEXT("%D cloudd:thread:%t %M %N:%l rehydrated "
+                  "%u endpoint(s) from ds (%u restored, %u healed)\n"),
+                  static_cast<unsigned>(restored + healed),
+                  static_cast<unsigned>(restored),
+                  static_cast<unsigned>(healed)));
+    return restored + healed;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -304,6 +370,11 @@ int main(int argc, char** argv) {
         static_cast<std::uint16_t>(proxy_port_end));
     server::lwm2m::EndpointRegistry ep_reg;
     server::lwm2m::BootstrapProvisioner provisioner(ep_reg, vpn_reg);
+
+    // Restore persisted endpoints into the in-memory registries BEFORE the
+    // main loop's first sync — otherwise the empty registry overwrites
+    // cloud.endpoints with [] and every restart "loses" provisioning.
+    rehydrate_registry(ds, ep_reg, vpn_reg, provisioner);
 
     ::signal(SIGINT, on_signal);
     ::signal(SIGTERM, on_signal);
