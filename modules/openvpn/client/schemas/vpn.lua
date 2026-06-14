@@ -1,9 +1,14 @@
 -- vpn.* schema for openvpn-client (L12).
 --
 -- Read keys (operator configures via ds-cli):
---   vpn.remote.host   - server hostname or IP (required)
---   vpn.remote.port   - server port            (default 1194, 1..65535)
---   vpn.remote.proto  - "tcp-client" or "udp"  (default "tcp-client")
+--   The remote endpoint (host/port/proto) has NO default — it is the cloud's
+--   to define and is pushed to the device over LwM2M Object 2048 (or set by an
+--   operator for a manual deployment). All three are required-to-start, so the
+--   client stays gated until the cloud provides them; baking defaults would
+--   risk dialing the wrong port/proto before the push lands.
+--   vpn.remote.host   - server hostname or IP (required; cloud-pushed)
+--   vpn.remote.port   - server port            (required; cloud-pushed, 1..65535)
+--   vpn.remote.proto  - "tcp-client" or "udp"  (required; cloud-pushed)
 --   vpn.cert.path     - client X.509 cert      (default /etc/iot/vpn/client.crt)
 --   vpn.key.path      - client X.509 priv key  (default /etc/iot/vpn/client.key)
 --   vpn.ca.path       - server CA              (default /etc/iot/vpn/ca.crt)
@@ -41,10 +46,9 @@ return {
     ["vpn.remote.host"]  = {
         access  = "Admin", type = "string"  },
     ["vpn.remote.port"]  = {
-        access  = "Admin", type = "integer", default = 1194,
-                             min = 1, max = 65535 },
+        access  = "Admin", type = "integer", min = 1, max = 65535 },
     ["vpn.remote.proto"] = {
-        access  = "Admin", type = "string",  default = "tcp-client" },
+        access  = "Admin", type = "string"  },
 
     -- Default to where the lwm2m-client materialises the cloud-pushed cert
     -- family (LwM2M Object 2048). This makes the openvpn client work on a
