@@ -136,7 +136,10 @@ RUN groupadd --system cloud-svc && \
 
 # ACE shared libraries
 COPY --from=builder /usr/local/ACE_TAO-7.0.0/lib/libACE.so* /usr/local/lib/
-RUN ldconfig
+# ldconfig under qemu-user (multi-arch arm64 emulation in CI) intermittently
+# segfaults (signal 11). Retry a few times so a flaky emulated run doesn't fail
+# the build; on real hardware the first call succeeds.
+RUN ldconfig || ldconfig || ldconfig
 
 # Binaries
 COPY --from=builder /tmp/bds/ds-server /usr/local/bin/
