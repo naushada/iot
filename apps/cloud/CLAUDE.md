@@ -230,11 +230,23 @@ cloud image and run as two containers in `role=server` mode:
 | `lwm2m-bs` | 5684/udp | Bootstrap Server | `coaps://0.0.0.0:5684` |
 | `lwm2m-dm` | 5683/udp | Device Management | `coaps://0.0.0.0:5683` |
 
-Both share the same PSK identity/secret, configured via env vars:
-```bash
-LWM2M_PSK_ID=97554878B284CE3B727D8DD06E87659A   # default
-LWM2M_PSK_KEY=3894beedaa7fe0eae6597dc350a59525  # default
-```
+**PSKs are never hardcoded.** Neither server registers a shared/default
+identity or secret — there is no `LWM2M_PSK_ID/KEY` env or CLI arg in the
+deployed compose. Each server authenticates a handshake against the
+**per-endpoint credential** for the identity the client presents, looked up
+**live from `cloud.endpoint.credentials`** by a ds-backed PSK resolver
+(`DTLSAdapter::set_psk_resolver`, wired in `apps/src/main.cpp`):
+
+- **BS** matches `sha256(serial)[:32] == presented-identity` → `bs.psk.key`
+- **DM** matches `dm.psk.id == presented-identity` → `dm.psk.key`
+
+The resolver runs on the handshake/reactor thread (not the ds listener
+thread), so its blocking `get()` is safe; reading live means a device
+provisioned *after* the server started authenticates with no restart, and ds
+stays the single source of truth. The identity itself is always *derived from
+the serial* (BS `sha256`, DM `rpi<serial>@cloud.local`), never stored. A
+`identity=/secret=` CLI override still exists but only for the dev/interop
+test harness — production passes nothing.
 
 The device binary already handles `/bs` (bootstrap session) and `/rd`
 (registration) dispatch over CoAP/UDP/DTLS. It is built from the same
@@ -274,29 +286,34 @@ registration change — idempotent (full-table flush + rebuild). `iot-cloudd`
 also enables IPv4 forwarding (`enable_ip_forward` → `net.ipv4.ip_forward=1`)
 once at startup.
 
-**ds-driven ports** (no Docker publish — see host-networking note below):
+**ds-driven proxy ports:**
 
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `cloud.proxy.device.ui.port` | `80` | the device's web-UI port (DNAT target port); seeded at startup |
-| `cloud.vpn.proxy.port.start` | `5001` | low end of the proxy-port range `VpnRegistry` allocates from |
-| `cloud.vpn.proxy.port.end` | `6000` | high end of the proxy-port range |
+| `cloud.vpn.proxy.port.start` | `10000` | low end of the proxy-port range `VpnRegistry` allocates from |
+| `cloud.vpn.proxy.port.end` | `10050` | high end of the proxy-port range |
 
 The range is read from ds at startup (CLI `proxy-start=`/`proxy-end=` are
 fallbacks) and written back so it is visible/editable; changing
 `cloud.proxy.device.ui.port` triggers a DNAT rebuild.
 
-**Host networking.** `iot-cloudd` runs with `network_mode: host` and **no**
-published `ports:` — it runs the OpenVPN server *and* installs the DNAT on the
-host netns, so the entire proxy-port range plus 1194 are reachable directly on
-the host with nothing to keep in sync. Consequences:
+**Networking: bridge + published ports** (NOT host networking). `iot-cloudd`
+runs on the default bridge and **publishes** `1194/tcp` + the proxy range
+(`PROXY_START-PROXY_END`, default `10000-10050`) via docker-compose `ports:`.
+Published ports bypass the host `ufw` (the `DOCKER-USER` chain), so they're
+reachable without per-port ufw rules — host networking was tried and reverted
+because it subjected `1194` to ufw (allow-22-only → connection refused). Notes:
 
-- The proxy range is 100% ds-controlled (no Docker publish, no env).
-- The **host firewall** must allow the proxy range + `1194/tcp` to operators
-  (ideally scoped to admin source IPs — see `host-firewall.sh`).
-- `net.* ` sysctls aren't settable per-container under host networking, so
-  `iot-cloudd` sets `net.ipv4.ip_forward=1` itself at startup (needs
-  `NET_ADMIN` on the host netns); ensure it stays enabled on the host.
+- The proxy range is kept **small and above the CoAP ports** (5683/5684):
+  each published port spawns a `docker-proxy` process, so a wide range (the
+  old `5001-6000` = 1000 ports) exhausts the host. Widen `PROXY_START/END`
+  for a bigger fleet, or switch to host networking (no per-port proxy).
+- The **published** range (`ports:`, a deploy-time env knob Docker reads
+  before ds exists) must cover the **ds** allocation range
+  (`cloud.vpn.proxy.port.*`); `run.sh` defaults both to `10000-10050`.
+- `iot-cloudd` has `NET_ADMIN` + `sysctls: net.ipv4.ip_forward=1` in compose
+  to run the OpenVPN server tun + install the per-device DNAT.
 
 The cloud also pushes the VPN *endpoint* (host/port/proto) down to the device
 over LwM2M Object 2048 — see `apps/docs/lwm2m-object-handling.md` §2.8.
@@ -374,10 +391,14 @@ http.listen.scheme       → "http" | "https"
 http.tls.cert            → TLS cert PEM path (required for https)
 http.tls.key             → TLS key PEM path (required for https)
 http.tls.ca              → CA bundle PEM path (optional — enables mTLS)
-http.workers             → Handler thread pool (0 = inline, default)
+http.workers             → Handler thread pool (0 = inline, default). ds-ONLY:
+                           no CLI arg / env — the compose used to pass
+                           http-workers= which silently overrode this key, so
+                           the UI showed 0 while the daemon ran 4. Now ds is
+                           the single source of truth (set it in the HTTP page).
 http.auth.enabled        → Auth gate (true = enabled, from auth.lua)
 ```
-Hot-reloaded: all except `http.workers`.
+Hot-reloaded: all except `http.workers` (needs a restart).
 
 ### Bootstrap Server (cloud.bs.*)
 ```
@@ -458,13 +479,23 @@ iot.dm.psk.key            → DM PSK, hex, from bootstrap, write-only. (gid:engi
 the client / cloud servers run as) — not ds keys, so hyphens are allowed.
 
 ### Endpoints (written by iot-cloudd, read by cloud UI)
+
+`EndpointRegistry` + `VpnRegistry` are in-memory, but iot-cloudd **rehydrates
+them from ds at startup** (`rehydrate_registry`, before the first sync): it
+exact-restores `tun_ip`/`proxy_port`/registered from the persisted
+`cloud.endpoints`, and heals any provisioned endpoint in
+`cloud.endpoint.credentials` that lacks a registry row. Without this the empty
+registry would overwrite `cloud.endpoints` with `[]` on every restart — a
+provisioned device would vanish from the table and lose its tun_ip/proxy_port.
+PSKs are never touched (only the registry/allocations are rebuilt).
+
 ```
 cloud.endpoints          → JSON array of provisioned endpoints
   [{
     "endpoint":      "urn:dev:gateway-42",
     "state":         "online",
     "tun_ip":        "10.9.0.12",
-    "proxy_port":    5001,
+    "proxy_port":    10000,
     "registered":    true,
     "last_seen_unix": 1718123456
   }]
@@ -479,8 +510,9 @@ cloud.lwm2m.registrations → JSON array of currently-registered endpoints.
 
 ### VPN Server (cloud.vpn.*)
 ```
-cloud.vpn.subnet         → Tunnel subnet (default 10.9.0.0/24)
-cloud.vpn.port.next      → Next proxy port (5001–6000)
+cloud.vpn.subnet         → Tunnel subnet (default 10.9.0.0/24); ds-only (no
+                           VPN_SUBNET env/CLI — read live by iot-cloudd)
+cloud.vpn.port.next      → Next proxy port (10000–10050)
 cloud.vpn.ca.crt         → CA cert path
 cloud.vpn.ca.key         → CA key path (secret volume)
 cloud.vpn.server.crt     → Server cert path

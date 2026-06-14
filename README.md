@@ -136,6 +136,12 @@ PSK / DTLS variant — supply `identity=…` and `secret=…` (16-byte hex PSK):
         ep=urn:dev:client-1
 ```
 
+> This shared `identity=/secret=` is a **manual dev/interop** override only. The
+> cloud deployment hardcodes no PSK: each endpoint is provisioned with its own
+> key in `cloud.endpoint.credentials`, and the server resolves it live from the
+> data store at the handshake (identity derived from the serial). See
+> `apps/cloud/CLAUDE.md` → *LwM2M CoAP Server*.
+
 CLI flags:
 
 | Flag       | Required | Meaning                                                                  |

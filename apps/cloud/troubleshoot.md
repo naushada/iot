@@ -332,7 +332,7 @@ docker rmi -f <id>   → conflict: image is being used by running container <c>
 
 Cause: `docker compose down` only stops the services in the **current**
 compose file. When the service set changes between releases (e.g. a service
-is renamed/removed, or this release moved `iot-cloudd` to host networking),
+is renamed/removed, or a `ports:` / networking change between releases),
 the old container becomes an **orphan** — still `Up` (often
 `restart: unless-stopped`), still attached to `cloud_default`, still holding
 the old image. `down` skips it, so the network can't be removed and the image
