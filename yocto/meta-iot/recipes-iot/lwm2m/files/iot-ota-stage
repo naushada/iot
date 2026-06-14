@@ -1,0 +1,83 @@
+#!/bin/sh
+# iot-ota-stage <url> — stage an OTA .ipk for the inotify-triggered installer.
+#
+# Downloads the .ipk from the cloud firmware feed (over the VPN tunnel),
+# verifies its sha256, writes a small metadata sidecar, then touches the empty
+# trigger file that iot-swupdate.path (systemd inotify) watches. It does NOT
+# install — that is iot-swupdate's job, in its own systemd unit, so it survives
+# opkg replacing the running binaries.
+#
+# Runs DETACHED as root (systemd-run --unit=iot-ota-stage by the lwm2m client)
+# so it can write the root-owned spool and reach the network.
+#
+# URL may carry ?sha256=<hex>&version=<v>&reboot=<auto|always|never>.
+#
+#   State:  0 idle, 1 downloading, 2 downloaded (install state 3 set by installer)
+#   Result: 0 initial, 5 integrity, 8 uri/download error (1/9 set by installer)
+
+set -u
+
+URL="${1:-}"
+SOCK="/run/iot/data_store.sock"
+DSCLI="ds-cli --socket=${SOCK}"
+SPOOL="/run/iot/update"
+
+set_state()  { $DSCLI set iot.update.state  "$1" >/dev/null 2>&1 || true; }
+set_result() { $DSCLI set iot.update.result "$1" >/dev/null 2>&1 || true; }
+log() { logger -t iot-ota-stage "$*" 2>/dev/null; echo "iot-ota-stage: $*"; }
+fail() { log "FAILED ($1): $2"; set_result "$1"; set_state 0; exit 1; }
+
+[ -n "$URL" ] || fail 8 "no URL"
+
+# Split the query string and parse optional params.
+BASE="${URL%%\?*}"
+QUERY="${URL#*\?}"; [ "$QUERY" = "$URL" ] && QUERY=""
+SHA=""; VER=""; REBOOT=""
+for kv in $(echo "$QUERY" | tr '&' ' '); do
+    case "$kv" in
+        sha256=*) SHA="${kv#sha256=}" ;;
+        version=*) VER="${kv#version=}" ;;
+        reboot=*) REBOOT="${kv#reboot=}" ;;
+    esac
+done
+
+# Name the staged file from the URL basename so several distinct packages in one
+# campaign don't collide; fall back to fw.ipk.
+NAME="$(basename "$BASE")"
+case "$NAME" in *.ipk) ;; *) NAME="fw.ipk" ;; esac
+
+mkdir -p "$SPOOL"
+IPK="$SPOOL/$NAME"
+
+set_state 1   # downloading
+log "downloading $URL -> $IPK"
+if command -v wget >/dev/null 2>&1; then
+    wget --no-check-certificate -q -O "$IPK" "$URL" || fail 8 "download failed"
+elif command -v curl >/dev/null 2>&1; then
+    curl -ksSL -o "$IPK" "$URL" || fail 8 "download failed"
+else
+    fail 9 "no wget/curl on device"
+fi
+[ -s "$IPK" ] || fail 8 "empty download"
+
+if [ -n "$SHA" ]; then
+    GOT="$(sha256sum "$IPK" 2>/dev/null | awk '{print $1}')"
+    if [ "$GOT" != "$SHA" ]; then
+        rm -f "$IPK"
+        fail 5 "sha256 mismatch (want $SHA got $GOT)"
+    fi
+    log "sha256 verified"
+fi
+set_state 2   # downloaded
+
+# Metadata sidecar (consumed by iot-swupdate; the trigger itself stays empty).
+{
+    [ -n "$VER" ]    && echo "version=$VER"
+    [ -n "$SHA" ]    && echo "sha256=$SHA"
+    [ -n "$REBOOT" ] && echo "reboot=$REBOOT"
+} > "$SPOOL/update.meta" 2>/dev/null || true
+
+# Atomic last step: arm the trigger. iot-swupdate.path fires on its creation.
+: > "$SPOOL/update"
+log "staged $NAME; triggered iot-swupdate"
+exit 0

@@ -1,0 +1,16 @@
+#!/bin/sh
+# 0000-template.sh.example — copy to NNNN-<slug>.sh for a real migration.
+# Runs once when iot.config.version < NNNN, then iot-swupdate bumps the marker.
+# Must be idempotent. ds-server already has the NEW schema loaded here.
+#
+# Example: carry iot.old.key -> iot.new.key, then prune the old key.
+
+S="--socket=/run/iot/data_store.sock"
+
+old="$(ds-cli $S get iot.old.key 2>/dev/null | sed 's/^iot\.old\.key=//')"
+if [ -n "$old" ]; then
+    ds-cli $S set iot.new.key "$old" || exit 1   # non-zero aborts the migration
+fi
+ds-cli $S del iot.old.key 2>/dev/null || true
+
+exit 0

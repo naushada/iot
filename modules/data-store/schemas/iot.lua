@@ -172,6 +172,16 @@ return {
         default = "",
     },
 
+    -- Applied config/schema generation (OTA migration marker). iot-swupdate
+    -- runs /usr/share/iot/migrations/NNNN-*.sh with NNNN > this value after an
+    -- opkg upgrade, then bumps it. 0 = baseline (no migration applied yet).
+    -- See apps/docs/tdd-yocto-swupdate.md §11.
+    ["iot.config.version"] = {
+        access  = "Admin",
+        type    = "integer",
+        default = 0,
+    },
+
     -- Log level for all iot daemons.  Each daemon reads this key
     -- and adjusts its ACE_Log_Msg priority mask at startup and on
     -- change (hot-reload).  Valid values (case-insensitive):

@@ -210,9 +210,12 @@ ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
 
 In the field, app updates ride **LwM2M Object 5 (Firmware Update)** instead of
 the manual `scp`/`opkg` above: the cloud points the device at an `.ipk` in its
-firmware feed and the `iot-ota-apply` helper pulls, verifies (sha256), installs,
-and restarts — detached so it survives replacing the running binary. See the OTA
-section in [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md#ota-updates-lwm2m-object-5).
+firmware feed and the `iot-ota-stage` helper pulls + verifies (sha256) the .ipk
+into a tmpfs spool and trips an inotify trigger; the separate `iot-swupdate`
+service then installs it, runs config/schema migrations, and restarts or reboots
+— decoupled so it survives replacing the running binaries. See the OTA section in
+[`yocto/meta-iot/README.md`](yocto/meta-iot/README.md#ota-updates-lwm2m-object-5)
+and the design in [`apps/docs/tdd-yocto-swupdate.md`](apps/docs/tdd-yocto-swupdate.md).
 
 Full docs: [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md) ·
 deploy walkthrough: [`DEPLOY.md`](DEPLOY.md) Path C.
