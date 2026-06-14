@@ -79,6 +79,9 @@
       <!-- Dashboard -->
       <app-dashboard *ngIf="selectedMenu==='dashboard'"></app-dashboard>
 
+      <!-- HTTP -->
+      <app-http-config *ngIf="selectedMenu==='http'"></app-http-config>
+
       <!-- VPN -->
       <ng-container *ngIf="selectedMenu==='vpn'">
         <app-vpn-config *ngIf="!selectedSubNav || selectedSubNav==='config'"></app-vpn-config>

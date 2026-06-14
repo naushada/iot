@@ -28,6 +28,7 @@ export class MainComponent {
     { id: 'dashboard', label: 'Dashboard', svg: 'assets/icons/dashboard.svg', children: [] as {id:string,label:string}[] },
     { id: 'vpn',       label: 'VPN',       svg: 'assets/icons/vpn.svg',
       children: [{id:'config',label:'Configuration'},{id:'status',label:'Status'}] },
+    { id: 'http',      label: 'HTTP',      svg: 'assets/icons/lwm2m.svg', children: [] as {id:string,label:string}[] },
     { id: 'wan',       label: 'WAN',       svg: 'assets/icons/wan.svg',
       children: [{id:'wifi',label:'WiFi Config'},{id:'scan',label:'Scan Results'},{id:'priority',label:'Priority'}] },
     { id: 'routing',   label: 'Routing',   svg: 'assets/icons/routing.svg',

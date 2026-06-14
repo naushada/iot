@@ -3,6 +3,7 @@
 export interface StatusSnapshot {
   ok: boolean;
   lwm2m:    Lwm2mStatus;
+  update?:  UpdateStatus;
   vpn:      VpnStatus;
   wifi:     WifiStatus;
   wan:      WanStatus;
@@ -11,6 +12,14 @@ export interface StatusSnapshot {
   /// Flat passthrough of ds keys the SPA caches verbatim (domain bump keys
   /// like log.version / services.stats.version, shared with the cloud build).
   cloud?:   Record<string, unknown>;
+}
+
+// OTA software-update progress (LwM2M Object 5). state/result are the
+// numeric LwM2M update state/result codes; version is the installed feed tag.
+export interface UpdateStatus {
+  version?: string;
+  state?: number;
+  result?: number;
 }
 
 export interface Lwm2mStatus {
