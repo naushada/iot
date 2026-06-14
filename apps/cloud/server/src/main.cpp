@@ -133,7 +133,7 @@ void rebuild_device_dnat(data_store::Client& ds, const std::string& tun_dev) {
     server::dnat::RulesetInput in;
     in.tun_dev = tun_dev;
     in.ui_port = static_cast<std::uint16_t>(
-        ds_int(ds, "cloud.proxy.device.ui.port", 80));
+        ds_int(ds, "cloud.proxy.device.ui.port", 8080));
     try {
         auto arr = nlohmann::json::parse(ds_str(ds, "cloud.endpoints", "[]"));
         if (arr.is_array()) for (const auto& e : arr) {
@@ -610,7 +610,7 @@ int main(int argc, char** argv) {
     // Seed the ui_port key so it's visible in the cloud UI / ds-cli.
     ds.set("cloud.proxy.device.ui.port",
            data_store::Value{static_cast<std::int32_t>(
-               ds_int(ds, "cloud.proxy.device.ui.port", 80))});
+               ds_int(ds, "cloud.proxy.device.ui.port", 8080))});
     if (!server::dnat::enable_ip_forward()) {
         ACE_ERROR((LM_ERROR,
                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l could not enable "

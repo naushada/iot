@@ -20,7 +20,12 @@ bool contains(const std::string& hay, const std::string& needle) {
 TEST(DeviceDnat, EmptyStillEmitsScopedTableAndFlush) {
     RulesetInput in;  // no devices
     auto s = build_device_dnat_ruleset(in);
+    // `add table` MUST precede `flush table` so a fresh netns (no table yet)
+    // doesn't abort the whole apply on a "flush: No such file" error.
+    EXPECT_TRUE(contains(s, "add table ip iot_cloud_dnat"));
     EXPECT_TRUE(contains(s, "flush table ip iot_cloud_dnat"));
+    EXPECT_LT(s.find("add table ip iot_cloud_dnat"),
+              s.find("flush table ip iot_cloud_dnat"));
     EXPECT_TRUE(contains(s, "table ip iot_cloud_dnat {"));
     EXPECT_TRUE(contains(s, "type nat hook prerouting"));
     EXPECT_TRUE(contains(s, "type nat hook postrouting"));
