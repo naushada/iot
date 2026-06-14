@@ -3,11 +3,10 @@ import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../../common/httpsvc.service';
 
 /// Cloud VPN status = the OpenVPN **server** view (the cloud runs the server, not
-/// a client). The device's vpn.* client keys (assigned ip/gateway/dns/pid) never
-/// populate here, so this shows server state, listen config, and the connected
-/// clients instead — sourced from services.cloud.openvpn.server.state +
-/// cloud.vpn.* + cloud.vpn.connected (the live client list from the openvpn mgmt
-/// ROUTING TABLE).
+/// a client). The device's vpn.* client keys never populate here, so this shows
+/// server-level state + listen config from services.cloud.openvpn.server.state +
+/// cloud.vpn.*. The connected devices (online state + tunnel IP) are shown by
+/// the Dashboard / Endpoints tables, so they're not duplicated here.
 @Component({
   selector: 'app-vpn-status',
   template: `
@@ -47,17 +46,6 @@ import { HttpsvcService } from '../../../common/httpsvc.service';
           </clr-dg-cell>
           <clr-dg-cell>{{ dev || '—' }}</clr-dg-cell>
         </clr-dg-row>
-        <clr-dg-row>
-          <clr-dg-cell>Connected Clients
-            <app-ds-hint *dsDebug key="cloud.vpn.connected"></app-ds-hint>
-          </clr-dg-cell>
-          <clr-dg-cell>
-            <span *ngFor="let c of clients" class="chip"><code>{{ c }}</code></span>
-            <span *ngIf="!clients.length" style="color:#888;">none</span>
-          </clr-dg-cell>
-        </clr-dg-row>
-
-        <clr-dg-footer>{{ clients.length }} client(s) connected</clr-dg-footer>
       </clr-datagrid>
       <p *ngIf="loading">Loading…</p>
     </div>
@@ -65,14 +53,11 @@ import { HttpsvcService } from '../../../common/httpsvc.service';
   styles: [`
     .page { padding: 24px; }
     h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
-    .chip { display: inline-block; margin: 2px 6px 2px 0; padding: 1px 8px;
-            background: #eef2f7; border-radius: 10px; font-size: 12px; }
   `]
 })
 export class VpnStatusComponent implements OnInit, OnDestroy {
   serverState = 'unknown';
   proto = ''; port = 0; subnet = ''; cipher = ''; dev = '';
-  clients: string[] = [];
   loading = true;
   private sub = new Subscription();
   private active = true;
@@ -93,7 +78,7 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
     this.sub.add(this.http.dbGet([
       'services.cloud.openvpn.server.state', 'cloud.vpn.proto',
       'cloud.vpn.listen.port', 'cloud.vpn.subnet', 'cloud.vpn.cipher',
-      'cloud.vpn.dev', 'cloud.vpn.connected',
+      'cloud.vpn.dev',
     ]).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
@@ -104,10 +89,6 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
           this.subnet = String(d['cloud.vpn.subnet'] || '');
           this.cipher = String(d['cloud.vpn.cipher'] || '');
           this.dev    = String(d['cloud.vpn.dev'] || '');
-          try {
-            const a = JSON.parse(String(d['cloud.vpn.connected'] || '[]'));
-            this.clients = Array.isArray(a) ? a : [];
-          } catch { this.clients = []; }
         }
         this.loading = false;
       },
@@ -115,11 +96,10 @@ export class VpnStatusComponent implements OnInit, OnDestroy {
     }));
   }
 
-  /// Live updates: long-poll the connected-client list; on each change/timeout
-  /// re-read the row data, then poll again.
+  /// Live server-state updates: long-poll the server state key, re-read on change.
   private poll(): void {
     if (!this.active) return;
-    this.sub.add(this.http.dbGetLongPoll('cloud.vpn.connected', 30).subscribe({
+    this.sub.add(this.http.dbGetLongPoll('services.cloud.openvpn.server.state', 30).subscribe({
       next: () => { this.refresh(); if (this.active) this.poll(); },
       error: () => { if (this.active) setTimeout(() => this.poll(), 5000); }
     }));
