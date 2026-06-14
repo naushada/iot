@@ -73,19 +73,18 @@ interface EpCred {
             <app-status-badge [label]="e.registered?'online':'offline'"
               [state]="e.registered?'connected':'exited'"></app-status-badge>
           </clr-dg-cell>
-          <clr-dg-cell><code>{{e.tun_ip}}</code></clr-dg-cell>
+          <clr-dg-cell><code>{{ serverTunIp || '—' }}</code></clr-dg-cell>
           <clr-dg-cell><code>{{ e.dev_tun_ip || '—' }}</code></clr-dg-cell>
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
           <clr-dg-cell>
             <!-- Launch UI only when the device's VPN tunnel is up (dev_tun_ip).
-                 Port-based: iot-cloudd publishes <proxy_port> and DNATs it to
-                 dev_tun_ip:<ui_port> over tun0 (all in the cloudd netns that owns
-                 the tun). The path-scoped /dev/<ep>/ proxy is the intended future
-                 path but needs iot-httpd to share the tun netns first — see
-                 apps/docs/tdd-device-ui-path-proxy.md §"netns". -->
+                 Same-origin path-scoped reverse proxy: iot-httpd proxies
+                 /dev/<ep>/ over the tun to the device UI (one HTTPS origin,
+                 per-device cookie isolation). Requires iot-httpd to share
+                 iot-cloudd's netns — see apps/docs/tdd-device-ui-path-proxy.md. -->
             <a class="btn btn-sm" target="_blank" rel="noopener"
-               [href]="'http://' + windowHost + ':' + e.proxy_port + '/'"
-               *ngIf="e.registered && e.proxy_port && e.dev_tun_ip">
+               [href]="launchUrl(e.endpoint)"
+               *ngIf="e.registered && e.dev_tun_ip">
               Launch UI <clr-icon shape="pop-out" size="12"></clr-icon>
             </a>
             <span *ngIf="!e.registered" class="hint">offline</span>
@@ -152,24 +151,43 @@ export class EndpointListComponent implements OnInit, OnDestroy {
   // Device UI port reached over the VPN (cloud.proxy.device.ui.port,
   // default 80). Shown in the per-endpoint "VPN forwarding rule" line.
   uiPort = 80;
+  // VPN server's tunnel IP (first host of cloud.vpn.subnet, e.g. 10.9.0.1) —
+  // the server end of every tunnel. Shown in the "Tunnel IP" column.
+  serverTunIp = '';
   // PSK provisioning (task O).
   provSerial = ''; provBsPsk = ''; provisioning = false; devMode = false;
   private sub = new Subscription(); private active = true;
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
+  /** Same-origin path-scoped device-UI URL (reverse-proxied by iot-httpd over
+   *  the VPN tun). The endpoint is URL-encoded so urn:dev:* names are path-safe.
+   *  See apps/docs/tdd-device-ui-path-proxy.md. */
+  launchUrl(ep: string): string { return '/dev/' + encodeURIComponent(ep) + '/'; }
+
+  /** First host of a CIDR subnet ("10.9.0.0/24" → "10.9.0.1") = the OpenVPN
+   *  server's tun IP under `topology subnet`. */
+  private firstHost(subnet: string): string {
+    const base = (subnet || '').split('/')[0];
+    const o = base.split('.');
+    if (o.length !== 4) return '';
+    o[3] = String((Number(o[3]) || 0) + 1);
+    return o.join('.');
+  }
+
   constructor(private http: HttpsvcService, private session: SessionService, private toast: ToastService) {}
 
   ngOnInit(): void {
     this.startLongPoll();
     this.http.dbGet(['cloud.dev.mode', 'cloud.endpoint.credentials',
-                     'cloud.proxy.device.ui.port']).subscribe({
+                     'cloud.proxy.device.ui.port', 'cloud.vpn.subnet']).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
           const d = r.data as Record<string, unknown>;
           this.devMode = d['cloud.dev.mode'] === true;
           const p = Number(d['cloud.proxy.device.ui.port']);
           if (Number.isFinite(p) && p > 0) this.uiPort = p;
+          this.serverTunIp = this.firstHost(String(d['cloud.vpn.subnet'] || ''));
           try {
             const arr = JSON.parse(String(d['cloud.endpoint.credentials'] || '[]'));
             this.creds = Array.isArray(arr) ? arr : [];

@@ -1,31 +1,29 @@
 # TDD — Per-device path-scoped reverse proxy for the device UI
 
-Status: **PARTIAL — blocked on netns (see §netns)** · Target: cloud (`iot-httpd`)
+Status: **ENABLED via shared netns (see §netns)** · Target: cloud (`iot-httpd`)
 + device UI (`iot-ui`) · Author: 2026-06-14
 
-## ⚠️ §netns — the proxy can't reach the tun from the httpd container (BLOCKER)
+## §netns — the proxy must run where the tun is (RESOLVED)
 
-Shipped in #186, but **disabled in the cloud** as of the Launch-UI revert: the
-proxy runs inside `iot-httpd`, but in the cloud's multi-container topology the
-OpenVPN `tun0` (10.9.0.1) lives **only in the `iot-cloudd` container**.
-`iot-httpd` is a separate container on the docker bridge with **no tun and no
-route to 10.9.0.0/24**, so the proxy's `ACE_SOCK_Connector` to `dev_tun_ip:8080`
-fails → **504**. (The old port-based Launch UI works because the DNAT + the
-published `proxy_port` are in `iot-cloudd`, which owns the tun.)
+The proxy runs inside `iot-httpd`, but the OpenVPN `tun0` (10.9.0.1) lives in the
+`iot-cloudd` container. Initially `iot-httpd` was a separate bridge container
+with **no route to 10.9.0.0/24**, so the proxy's `ACE_SOCK_Connector` to
+`dev_tun_ip:8080` failed → **504** (and unauth → 302 to `/webui/`, which looked
+like "Launch UI opens the Cloud UI"). Verified live; also verified that a process
+*inside* `iot-cloudd`'s netns reaches `10.9.0.2:8080` fine.
 
-**Fix options (pick before re-enabling `/dev/<ep>/` Launch UI):**
-1. **Share the netns** — `iot-httpd` joins `iot-cloudd`'s network namespace
-   (`network_mode: "service:iot-cloudd"` in `apps/cloud/docker-compose.yml`),
-   mirroring the device stack's httpd↔openvpn-client sharing (#175). Then httpd
-   sees `tun0` and reaches `10.9.0.x`. Requires moving httpd's published `443`
-   (and `80`) onto `iot-cloudd` (the netns owner). **Recommended.**
-2. Route `10.9.0.0/24` from the httpd container via `iot-cloudd` (bridge IP) with
-   `iot-cloudd` forwarding — more moving parts.
-3. Move the proxy into `iot-cloudd` (would need an HTTP listener there).
+**Resolution (shipped):** `iot-httpd` now joins `iot-cloudd`'s network namespace
+— `network_mode: "service:iot-cloudd"` in `apps/cloud/docker-compose.yml`, with
+the published HTTP port moved onto `iot-cloudd` (the netns owner). Mirrors the
+device stack's httpd↔openvpn-client sharing (#175). httpd now sees `tun0` and
+reaches `10.9.0.x`, so `/dev/<ep>/` works; Launch UI points back at it.
 
-Until one of these lands, **Launch UI uses the port-based DNAT** (works today;
-cookie collision already solved by the per-instance cookie name in #183). The
-device↔device cookie isolation that this proxy adds is therefore still pending.
+> **Deploy requirement:** this needs the **updated compose** (shared netns) AND
+> the image with the proxy. Pulling a new image without the new compose leaves
+> httpd in its own netns → 504 again. Redeploy both.
+
+The port-based DNAT (`proxy_port` range) stays published for one transition
+release as a fallback; removing it is the phase-2 follow-up.
 
 ---
 

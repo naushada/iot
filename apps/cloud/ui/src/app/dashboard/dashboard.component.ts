@@ -29,7 +29,7 @@ interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; proxy_por
         <clr-dg-row *clrDgItems="let e of endpoints">
           <clr-dg-cell><code>{{e.endpoint}}</code></clr-dg-cell>
           <clr-dg-cell><app-status-badge [label]="e.registered?'online':'offline'" [state]="e.registered?'connected':'exited'"></app-status-badge></clr-dg-cell>
-          <clr-dg-cell>{{e.tun_ip}}</clr-dg-cell>
+          <clr-dg-cell>{{ serverTunIp || '—' }}</clr-dg-cell>
           <clr-dg-cell>{{ e.dev_tun_ip || '—' }}</clr-dg-cell>
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
         </clr-dg-row>
@@ -43,6 +43,9 @@ interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; proxy_por
 })
 export class DashboardComponent implements OnInit {
   endpoints: EpInfo[] = [];
+  // VPN server's tunnel IP (first host of cloud.vpn.subnet) — the server end of
+  // every tunnel; shown in the "Tunnel IP" column.
+  serverTunIp = '';
   cards: {label:string;value:number;icon:string;cls:string}[] = [
     {label:'Online',value:0,icon:'check-circle',cls:'connected'},
     {label:'Offline',value:0,icon:'times-circle',cls:'disconnected'},
@@ -52,6 +55,15 @@ export class DashboardComponent implements OnInit {
   constructor(private http: HttpsvcService) {}
 
   ngOnInit(): void {
+    this.http.dbGet(['cloud.vpn.subnet']).subscribe({
+      next: (r) => {
+        if (r.ok && r.data) {
+          const base = String((r.data as Record<string, unknown>)['cloud.vpn.subnet'] || '').split('/')[0];
+          const o = base.split('.');
+          if (o.length === 4) { o[3] = String((Number(o[3]) || 0) + 1); this.serverTunIp = o.join('.'); }
+        }
+      }
+    });
     this.http.getCloudEndpoints().subscribe({
       next: (eps) => {
         this.endpoints = eps;
