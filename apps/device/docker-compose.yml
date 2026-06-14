@@ -180,7 +180,6 @@ services:
       iot-httpd
       ds-socket=/run/iot/data_store.sock
       http-port=8080
-      http-workers=${HTTP_WORKERS:-4}
       www-dir=/usr/share/iot/www
     ports:
       - "${HTTP_PORT:-8081}:8080"

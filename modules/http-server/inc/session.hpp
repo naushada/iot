@@ -34,10 +34,13 @@ public:
                          SessionStore* auth = nullptr);
 
     int handle_input(ACE_HANDLE fd) override;
-    // Off-loaded handler finished on a worker thread and notify()'d the
-    // reactor; this runs on the reactor thread to send the response.
-    int handle_exception(ACE_HANDLE fd) override;
     int handle_close(ACE_HANDLE fd, ACE_Reactor_Mask mask) override;
+
+    // Send the worker-computed response and re-arm (keep-alive) or tear down
+    // the connection. Queued by the worker via WorkerPool::post_to_reactor()
+    // and run on the reactor thread by WorkerPool::drain_reactor() — replaces
+    // the old notify()/handle_exception() handoff, whose wakeups were lossy.
+    void deliver_response();
 
 private:
     const Router& m_router;

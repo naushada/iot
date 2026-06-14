@@ -45,6 +45,22 @@ void WorkerPool::submit(Job job) {
     m_cv.notify_one();
 }
 
+void WorkerPool::post_to_reactor(Job fn) {
+    std::lock_guard<std::mutex> lk(m_reactor_mtx);
+    m_reactor_jobs.push_back(std::move(fn));
+}
+
+void WorkerPool::drain_reactor() {
+    // Swap out under the lock, then run unlocked so a callback may re-enter
+    // post_to_reactor() (or block on I/O) without deadlocking the workers.
+    std::vector<Job> jobs;
+    {
+        std::lock_guard<std::mutex> lk(m_reactor_mtx);
+        jobs.swap(m_reactor_jobs);
+    }
+    for (auto& j : jobs) j();
+}
+
 void WorkerPool::run() {
     for (;;) {
         Job job;
