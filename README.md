@@ -4,6 +4,11 @@ A C++17 implementation of the OMA Lightweight M2M (LwM2M) device
 management protocol on top of CoAP / DTLS, with the I/O layer built on
 ACE (`ACE_Reactor`, `ACE_Task`, `ACE_SOCK_Dgram`).
 
+> **License:** MIT — see [`LICENSE`](LICENSE). For a product overview,
+> deployment fit, security posture, and an honest list of current
+> limitations, see [`SALES.md`](SALES.md). (Distributed images bundle
+> third-party components under their own licenses — see `SALES.md` §6.)
+
 One binary, `lwm2m`, plays either role:
 
 | Role     | Listens on                                  | Roughly speaking            |
