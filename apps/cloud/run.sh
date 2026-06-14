@@ -23,7 +23,10 @@
 #   ./run.sh ds set KEY VAL     #   e.g. ./run.sh ds get cloud.endpoint.credentials
 #
 #   HTTP_PORT=8443 ./run.sh     # custom HTTP port
-#   VPN_SUBNET=10.8.0.0/24 ./run.sh  # custom VPN subnet
+#
+# The VPN subnet is NOT an env/CLI knob — it lives in the data store
+# (cloud.vpn.subnet, schema default 10.9.0.0/24). Change it on the VPN page
+# or with: ./run.sh ds set cloud.vpn.subnet '"10.8.0.0/24"'
 #
 # Secrets (first run auto-generates):
 #   - iot-cloud-ca-key  volume: /run/secrets/iot-ca-key  (CA private key)
@@ -56,7 +59,6 @@ else
     HTTP_PORT="${HTTP_PORT:-80}"
 fi
 HTTPS_PORT="$HTTP_PORT"
-VPN_SUBNET="${VPN_SUBNET:-10.9.0.0/24}"
 # Per-device device-UI proxy ports. Kept ABOVE the CoAP ports (5683 DM /
 # 5684 BS that lwm2m-dm/bs publish) and SMALL on purpose: each published port
 # spawns a docker-proxy process, so a 1000-wide range exhausts the host. Bump
@@ -155,7 +157,7 @@ COMPOSE_PROFILES=""
 # Export env vars so docker-compose.yml can reference them
 export CLOUD_IMAGE="$IMAGE"
 export HTTP_PORT HTTP_SCHEME HTTPS_PORT
-export VPN_SUBNET PROXY_START PROXY_END
+export PROXY_START PROXY_END
 export COMPOSE_PROJECT_NAME="$PROJECT"
 
 case "${1:-start}" in

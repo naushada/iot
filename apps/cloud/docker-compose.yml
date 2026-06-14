@@ -41,9 +41,8 @@ services:
     command: >
       iot-cloudd
       ds-socket=/var/run/iot/data_store.sock
-      vpn-subnet=${VPN_SUBNET:-10.9.0.0/24}
-      proxy-start=${PROXY_START:-5001}
-      proxy-end=${PROXY_END:-6000}
+      proxy-start=${PROXY_START:-10000}
+      proxy-end=${PROXY_END:-10050}
       sync-interval=5
     volumes:
       - iot-run:/var/run/iot
