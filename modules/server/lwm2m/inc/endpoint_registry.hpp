@@ -18,7 +18,10 @@ namespace lwm2m {
 
 struct EndpointInfo {
     std::string ep;          // "urn:dev:gateway-42"
-    std::string tun_ip;      // "10.9.0.12"
+    std::string tun_ip;      // registry-ALLOCATED tunnel IP, e.g. "10.9.0.10"
+    std::string dev_tun_ip;  // device's ACTUAL openvpn-assigned IP (from the
+                             // server mgmt status), e.g. "10.9.0.2"; the DNAT
+                             // targets this. Empty until the device connects.
     std::uint16_t proxy_port = 0;  // 5001+
     bool registered = false;       // LwM2M registration active
     std::int64_t last_seen_unix = 0;  // last Register/Update, 0 = never
@@ -51,13 +54,12 @@ public:
     bool update_state(const std::string& ep, bool registered,
                       std::int64_t last_seen_unix);
 
-    /// Update the tunnel IP for an endpoint to the address openvpn actually
-    /// assigned it (learned from the server's management interface), so the
-    /// per-device DNAT targets the real IP rather than the registry's
-    /// pre-allocated one. Maintains the tun_ip→ep index. Returns true only if
-    /// the value changed (false if unknown ep, unchanged, or `ip` is held by a
-    /// different endpoint).
-    bool update_tun_ip(const std::string& ep, const std::string& ip);
+    /// Record the address openvpn actually assigned an endpoint (learned from
+    /// the server's management interface). Stored separately from the
+    /// registry-allocated tun_ip so both are visible; the per-device DNAT
+    /// targets this `dev_tun_ip`. Returns true only if the value changed
+    /// (false if unknown ep or unchanged).
+    bool update_dev_tun_ip(const std::string& ep, const std::string& ip);
 
     /// Lookup by endpoint name.  Returns nullptr when not found.
     const EndpointInfo* lookup_by_ep(const std::string& ep) const;

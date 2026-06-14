@@ -4,7 +4,7 @@ import { HttpsvcService } from '../../common/httpsvc.service';
 import { SessionService } from '../../common/session.service';
 import { ToastService } from '../../common/toast.service';
 
-interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered:boolean; }
+interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; proxy_port:number; registered:boolean; }
 
 /** Per-endpoint credential record, as minted by iot-cloudd into the
  *  cloud.endpoint.credentials ds key (JSON array). Field names follow the
@@ -62,6 +62,7 @@ interface EpCred {
         <clr-dg-column>Endpoint</clr-dg-column>
         <clr-dg-column>State</clr-dg-column>
         <clr-dg-column>Tunnel IP</clr-dg-column>
+        <clr-dg-column>Device Tunnel IP</clr-dg-column>
         <clr-dg-column>Proxy Port</clr-dg-column>
         <clr-dg-column>Device UI</clr-dg-column>
         <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
@@ -73,6 +74,7 @@ interface EpCred {
               [state]="e.registered?'connected':'exited'"></app-status-badge>
           </clr-dg-cell>
           <clr-dg-cell><code>{{e.tun_ip}}</code></clr-dg-cell>
+          <clr-dg-cell><code>{{ e.dev_tun_ip || '—' }}</code></clr-dg-cell>
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
           <clr-dg-cell>
             <a class="btn btn-sm" target="_blank" rel="noopener"

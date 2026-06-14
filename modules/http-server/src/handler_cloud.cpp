@@ -41,6 +41,7 @@ void install_cloud_handlers(Router& router,
                 json item;
                 item["endpoint"]   = e.ep;
                 item["tun_ip"]     = e.tun_ip;
+                item["dev_tun_ip"] = e.dev_tun_ip;
                 item["proxy_port"] = e.proxy_port;
                 item["registered"] = e.registered;
                 arr.push_back(item);
@@ -79,6 +80,7 @@ void install_cloud_handlers(Router& router,
             resp["ok"]         = true;
             resp["endpoint"]   = info->ep;
             resp["tun_ip"]     = info->tun_ip;
+            resp["dev_tun_ip"] = info->dev_tun_ip;
             resp["proxy_port"] = info->proxy_port;
             resp["registered"] = info->registered;
             r.body = resp.dump();

@@ -108,7 +108,8 @@ void sync_endpoints_to_ds(data_store::Client& ds,
         nlohmann::json item;
         item["endpoint"]      = ep.ep;
         item["state"]         = ep.registered ? "online" : "offline";
-        item["tun_ip"]        = ep.tun_ip;
+        item["tun_ip"]        = ep.tun_ip;       // registry allocation
+        item["dev_tun_ip"]    = ep.dev_tun_ip;   // openvpn-assigned (actual)
         item["proxy_port"]    = ep.proxy_port;
         item["registered"]    = ep.registered;
         item["last_seen_unix"] = ep.last_seen_unix;
@@ -139,7 +140,10 @@ void rebuild_device_dnat(data_store::Client& ds, const std::string& tun_dev) {
         auto arr = nlohmann::json::parse(ds_str(ds, "cloud.endpoints", "[]"));
         if (arr.is_array()) for (const auto& e : arr) {
             if (!e.is_object()) continue;
-            std::string ip   = e.value("tun_ip", std::string());
+            // Prefer the openvpn-assigned address; fall back to the registry
+            // allocation before the device has connected (DNAT is moot then).
+            std::string ip   = e.value("dev_tun_ip", std::string());
+            if (ip.empty()) ip = e.value("tun_ip", std::string());
             int         port = e.value("proxy_port", 0);
             if (ip.empty() || port <= 0) continue;
             in.devices.push_back({std::move(ip),
@@ -293,6 +297,7 @@ std::size_t rehydrate_registry(data_store::Client& ds,
                     ep, e.value("tun_ip", std::string()),
                     static_cast<std::uint16_t>(e.value("proxy_port", 0)),
                     e.value("registered", false));
+                info.dev_tun_ip     = e.value("dev_tun_ip", std::string());
                 info.last_seen_unix = e.value("last_seen_unix", std::int64_t{0});
                 if (reg.add(info)) {
                     vpn.reserve(info.ep, info.tun_ip, info.proxy_port);
@@ -916,16 +921,17 @@ int main(int argc, char** argv) {
                 for (const auto& kv : ips) arr.push_back(kv.first);
                 ds.set("cloud.vpn.connected", data_store::Value{arr.dump()});
 
-                // Point each connected endpoint's tun_ip (and thus the DNAT) at
-                // the address openvpn actually assigned, so device-UI-over-VPN
-                // (Launch UI) reaches the device. Match the registry endpoint to
-                // a connected client via sanitize_cn(endpoint) == CN serial.
+                // Record each connected endpoint's REAL openvpn-assigned IP as
+                // dev_tun_ip (the DNAT targets it), keeping the registry-
+                // allocated tun_ip for reference. Both surface in the cloud UI.
+                // Match the registry endpoint to a connected client via
+                // sanitize_cn(endpoint) == CN serial.
                 bool ip_changed = false;
                 for (const auto& e : ep_reg.list_all()) {
                     auto it = ips.find(
                         server::openvpn::CertAuthority::sanitize_cn(e.ep));
                     if (it != ips.end())
-                        ip_changed |= ep_reg.update_tun_ip(e.ep, it->second);
+                        ip_changed |= ep_reg.update_dev_tun_ip(e.ep, it->second);
                 }
                 if (ip_changed) {
                     sync_endpoints_to_ds(ds, ep_reg);

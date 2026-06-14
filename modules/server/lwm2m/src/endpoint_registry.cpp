@@ -48,20 +48,16 @@ bool EndpointRegistry::update_state(const std::string& ep, bool registered,
     return true;
 }
 
-bool EndpointRegistry::update_tun_ip(const std::string& ep,
-                                     const std::string& ip) {
+bool EndpointRegistry::update_dev_tun_ip(const std::string& ep,
+                                         const std::string& ip) {
     std::lock_guard<std::mutex> lk(m_mutex);
 
     auto it = m_by_ep.find(ep);
     if (it == m_by_ep.end()) return false;          // unknown endpoint
-    if (it->second.tun_ip == ip) return false;      // unchanged
-    auto held = m_tun_ip_to_ep.find(ip);
-    if (held != m_tun_ip_to_ep.end() && held->second != ep)
-        return false;                               // ip belongs to another ep
-
-    m_tun_ip_to_ep.erase(it->second.tun_ip);        // drop the old index entry
-    it->second.tun_ip = ip;
-    m_tun_ip_to_ep[ip] = ep;
+    if (it->second.dev_tun_ip == ip) return false;  // unchanged
+    // dev_tun_ip is not a unique lookup key (no reverse index), so just store
+    // it — the registry-allocated tun_ip + its index are left untouched.
+    it->second.dev_tun_ip = ip;
     return true;
 }
 
