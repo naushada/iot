@@ -301,9 +301,9 @@ return {
     -- Next available proxy port (bump-counter).
     ["cloud.vpn.port.next"] = {
       type    = "integer",
-      default = 5001,
-      min     = 5001,
-      max     = 6000,
+      default = 10000,
+      min     = 1024,
+      max     = 65535,
     },
 
     -- Per-device proxy-port allocation range for device-UI-over-VPN DNAT.
@@ -311,16 +311,19 @@ return {
     -- VpnRegistry pool. The docker-compose published port range must cover
     -- this (Docker publishes ports before ds is consulted, so it can't follow
     -- ds automatically).
+    -- Default kept ABOVE the CoAP ports (5683 DM / 5684 BS) and a SMALL
+    -- window: every published proxy port spawns a docker-proxy, so a wide
+    -- range exhausts the host. Widen for more devices, or use host networking.
     ["cloud.vpn.proxy.port.start"] = {
       type    = "integer",
-      default = 5001,
-      min     = 1,
+      default = 10000,
+      min     = 1024,
       max     = 65535,
     },
     ["cloud.vpn.proxy.port.end"] = {
       type    = "integer",
-      default = 6000,
-      min     = 1,
+      default = 10050,
+      min     = 1024,
       max     = 65535,
     },
 

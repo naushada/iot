@@ -253,8 +253,8 @@ int main(int argc, char** argv) {
     // ── CLI args ──────────────────────────────────────────────────
     std::string ds_path = "/var/run/iot/data_store.sock";
     std::string vpn_subnet = "10.9.0.0/24";
-    int proxy_port_start = 5001;
-    int proxy_port_end   = 6000;
+    int proxy_port_start = 10000;   // above CoAP 5683/5684; small window —
+    int proxy_port_end   = 10050;   // each published port = one docker-proxy
     int sync_interval    = 10;  // seconds
 
     for (int i = 1; i < argc; ++i) {

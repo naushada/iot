@@ -57,8 +57,13 @@ else
 fi
 HTTPS_PORT="$HTTP_PORT"
 VPN_SUBNET="${VPN_SUBNET:-10.9.0.0/24}"
-PROXY_START="${PROXY_START:-5001}"
-PROXY_END="${PROXY_END:-6000}"
+# Per-device device-UI proxy ports. Kept ABOVE the CoAP ports (5683 DM /
+# 5684 BS that lwm2m-dm/bs publish) and SMALL on purpose: each published port
+# spawns a docker-proxy process, so a 1000-wide range exhausts the host. Bump
+# the window for more devices, or switch iot-cloudd to host networking for a
+# large fleet (no per-port proxy).
+PROXY_START="${PROXY_START:-10000}"
+PROXY_END="${PROXY_END:-10050}"
 HTTP_WORKERS="${HTTP_WORKERS:-4}"
 # Reset the iot-etc config volume on start so the latest schema/config
 # from the image is always loaded (set to 0 to preserve manual edits).
