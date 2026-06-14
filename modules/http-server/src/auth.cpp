@@ -134,6 +134,16 @@ void SessionStore::sweep_expired() {
     }
 }
 
+std::string SessionStore::cookie_name() const {
+    std::lock_guard<std::mutex> lk(m_mutex);
+    return m_cookie_name;
+}
+
+void SessionStore::set_cookie_name(const std::string& name) {
+    std::lock_guard<std::mutex> lk(m_mutex);
+    if (!name.empty()) m_cookie_name = name;
+}
+
 // ── SHA-256 ─────────────────────────────────────────────────────────
 
 std::string sha256_hex(const std::string& input) {
@@ -197,20 +207,26 @@ bool can_write(const std::string& access_level, const std::string& /*key*/) {
 // ── Cookie helpers ─────────────────────────────────────────────────
 
 std::string extract_session_cookie(
-    const std::map<std::string, std::string>& headers) {
+    const std::map<std::string, std::string>& headers,
+    const std::string& cookie_name) {
     auto it = headers.find("cookie");
     if (it == headers.end()) return {};
-    return cookie_value(it->second, "iot-session");
+    return cookie_value(it->second, cookie_name);
 }
 
-std::string make_set_cookie(const std::string& token, int max_age_sec) {
+std::string make_set_cookie(const std::string& token,
+                            const std::string& cookie_name, int max_age_sec) {
     std::ostringstream oss;
-    oss << "iot-session=" << token
+    oss << cookie_name << "=" << token
         << "; Path=/"
         << "; HttpOnly"
         << "; SameSite=Strict"
         << "; Max-Age=" << max_age_sec;
     return oss.str();
+}
+
+std::string make_clear_cookie(const std::string& cookie_name) {
+    return cookie_name + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0";
 }
 
 // ── Auth guard ─────────────────────────────────────────────────────
@@ -235,7 +251,8 @@ Router::HandlerFn with_auth(Router::HandlerFn next,
         if (is_public_route(req.path)) return next(req);
 
         // Validate session cookie
-        std::string token = extract_session_cookie(req.headers);
+        std::string token = extract_session_cookie(req.headers,
+                                                   store.cookie_name());
         if (token.empty()) {
             HttpResponse r;
             r.status = 401;

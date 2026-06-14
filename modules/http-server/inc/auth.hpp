@@ -63,10 +63,17 @@ public:
     bool enabled() const { return m_enabled.load(std::memory_order_acquire); }
     void set_enabled(bool v) { m_enabled.store(v, std::memory_order_release); }
 
+    /// Session cookie name (mirrors http.auth.cookie.name). Must differ
+    /// between same-host/different-port instances (cloud vs proxied device
+    /// UI) so their cookies don't clobber each other. Thread-safe.
+    std::string cookie_name() const;
+    void set_cookie_name(const std::string& name);
+
 private:
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
     std::map<std::string, Session> m_sessions;   // token → session
     std::atomic<bool> m_enabled{true};
+    std::string m_cookie_name{"iot-session"};    // guarded by m_mutex
 
     /// Random token (URL-safe base64, 32 bytes of entropy).
     static std::string make_token();
@@ -108,15 +115,20 @@ public:
 /// "Admin" can modify anything; "Viewer" is read-only.
 bool can_write(const std::string& access_level, const std::string& key);
 
-/// Extract the session token from a Cookie header.
-/// Returns empty string when no session cookie is present.
+/// Extract the session token from a Cookie header, looking up the cookie
+/// named `cookie_name`. Returns empty string when not present.
 std::string extract_session_cookie(
-    const std::map<std::string, std::string>& headers);
+    const std::map<std::string, std::string>& headers,
+    const std::string& cookie_name = "iot-session");
 
-/// Build a Set-Cookie header value for the session token.
+/// Build a Set-Cookie header value for the session token under `cookie_name`.
 /// path=/; HttpOnly; SameSite=Strict. Max-Age defaults to 8h.
 std::string make_set_cookie(const std::string& token,
+                             const std::string& cookie_name = "iot-session",
                              int max_age_sec = 28800);
+
+/// Build a Set-Cookie header value that clears the session cookie (Max-Age=0).
+std::string make_clear_cookie(const std::string& cookie_name = "iot-session");
 
 /// Wrap a HandlerFn with an auth check.  When the request carries a
 /// valid session cookie the wrapped handler is called normally;

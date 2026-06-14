@@ -51,5 +51,17 @@ return {
       type    = "boolean",
       default = true,
     },
+
+    -- Name of the session cookie. MUST differ between two iot-httpd
+    -- instances reachable on the SAME host/domain but different ports
+    -- (cookies are not isolated by port) — e.g. the cloud UI and a device
+    -- UI reverse-proxied through the cloud. If they share a name, logging
+    -- into one clobbers the other's session. The cloud sets this to
+    -- "iot-cloud-session" (seeded by iot-cloudd); the device keeps the
+    -- default. Hot-reloaded with the other auth keys.
+    ["http.auth.cookie.name"] = {
+      type    = "string",
+      default = "iot-session",
+    },
   },
 }
