@@ -42,6 +42,7 @@ add_library(http_server_lib STATIC
     src/session.cpp
     src/handler.cpp
     src/handler_cloud.cpp
+    src/handler_proxy.cpp
     src/auth.cpp
     src/tls.cpp
     src/worker.cpp)
