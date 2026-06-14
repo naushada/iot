@@ -1,12 +1,15 @@
 -- vpn.* schema for openvpn-client (L12).
 --
 -- Read keys (operator configures via ds-cli):
---   The remote endpoint (host/port/proto) has NO default — it is the cloud's
---   to define and is pushed to the device over LwM2M Object 2048 (or set by an
---   operator for a manual deployment). All three are required-to-start, so the
---   client stays gated until the cloud provides them; baking defaults would
---   risk dialing the wrong port/proto before the push lands.
---   vpn.remote.host   - server hostname or IP (required; cloud-pushed)
+--   The remote endpoint (host/port/proto) has NO schema default — it is the
+--   cloud's to define. vpn.remote.host is *derived on the device* from the
+--   bootstrap-delivered DM URI (the VPN concentrator is co-located with the DM
+--   on the cloud VM), so a co-located cloud needs no VPN-host config here. The
+--   cloud's LwM2M Object 2048 endpoint push still overrides all three — and is
+--   the source for port/proto (which the cloud knows authoritatively; baking
+--   defaults would risk dialing the wrong port/proto). The client stays gated
+--   until host+port+proto are present (derived host + pushed port/proto).
+--   vpn.remote.host   - server hostname or IP (device-derived from DM URI; cloud-override)
 --   vpn.remote.port   - server port            (required; cloud-pushed, 1..65535)
 --   vpn.remote.proto  - "tcp-client" or "udp"  (required; cloud-pushed)
 --   vpn.cert.path     - client X.509 cert      (default /etc/iot/vpn/client.crt)
@@ -43,6 +46,9 @@ return {
   namespace = "vpn",
   keys = {
     -- ───────── Read keys (operator → daemon) ─────────
+    -- Derived on the device from the bootstrap-delivered DM URI host (the VPN
+    -- concentrator is co-located with the DM); the cloud's Object-2048 endpoint
+    -- push overrides it for a split topology. No schema default either way.
     ["vpn.remote.host"]  = {
         access  = "Admin", type = "string"  },
     ["vpn.remote.port"]  = {

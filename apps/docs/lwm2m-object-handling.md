@@ -226,6 +226,20 @@ the staged values are materialised into `vpn.remote.host` / `vpn.remote.port`
 `modules/openvpn/client/docs/design.md`) then hot-reloads openvpn-client, which
 re-execs reading the new `vpn.remote.*` — no compose seed, no manual restart.
 
+**VPN host is also derived at bootstrap (derive-with-override).** Because the
+VPN concentrator is co-located with the DM on the cloud VM, the VPN host equals
+the DM URI host. So the device sets `vpn.remote.host` *itself* at bootstrap
+commit — `DsConfig::set_vpn_remote_host(dmHost)` in the BS `on_done`
+(`apps/src/main.cpp`), right after it persists `iot.dm.uri`. This means a
+co-located cloud needs **zero** VPN-host config on the device (only the
+commissioned bootstrap URI + BS PSK), and the device learns the host before
+registration rather than waiting on the Object-2048 endpoint push. The push
+(RID 5) above remains the **override**: for a split topology where the VPN
+concentrator ≠ DM host, the operator-driven push wins; in the common single-VM
+case both write the identical host, so the override is idempotent. Port/proto
+have no on-device default and still come from the push (the cloud knows them
+authoritatively).
+
 ---
 
 ## 3. Registration interface — `POST /rd`
