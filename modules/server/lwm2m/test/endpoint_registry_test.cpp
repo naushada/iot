@@ -44,6 +44,29 @@ TEST(EndpointRegistryTest, AddAndLookupByEp) {
     EXPECT_EQ(found->proxy_port, 5001);
 }
 
+// ── update_tun_ip: retarget to the openvpn-assigned address ─────────
+
+TEST(EndpointRegistryTest, UpdateTunIpRetargetsAndReindexes) {
+    EndpointRegistry reg;
+    EndpointInfo info;
+    info.ep         = "urn:dev:gateway-1";
+    info.tun_ip     = "10.9.0.10";   // registry pre-allocation
+    info.proxy_port = 10000;
+    ASSERT_TRUE(reg.add(info));
+
+    // openvpn actually assigned .2 → retarget.
+    EXPECT_TRUE(reg.update_tun_ip("urn:dev:gateway-1", "10.9.0.2"));
+    EXPECT_EQ(reg.lookup_by_ep("urn:dev:gateway-1")->tun_ip, "10.9.0.2");
+    // index moved: old IP gone, new IP resolves.
+    EXPECT_EQ(reg.lookup_by_tun_ip("10.9.0.10"), nullptr);
+    ASSERT_NE(reg.lookup_by_tun_ip("10.9.0.2"), nullptr);
+    EXPECT_EQ(reg.lookup_by_tun_ip("10.9.0.2")->ep, "urn:dev:gateway-1");
+
+    // no-ops: unchanged value, and unknown endpoint.
+    EXPECT_FALSE(reg.update_tun_ip("urn:dev:gateway-1", "10.9.0.2"));
+    EXPECT_FALSE(reg.update_tun_ip("urn:dev:nope", "10.9.0.9"));
+}
+
 // ── 3. Duplicate endpoint rejected ──────────────────────────────────
 
 TEST(EndpointRegistryTest, DuplicateEpRejected) {
