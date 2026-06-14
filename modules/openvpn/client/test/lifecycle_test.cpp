@@ -79,6 +79,33 @@ TEST(Lifecycle, PushReplyFillsIfconfigGatewayAndDns) {
     EXPECT_TRUE(s.first_push_seen);
 }
 
+TEST(Lifecycle, LogPushReplyFillsIfconfigGatewayAndDns) {
+    // Real openvpn delivers the pushed config via the LOG, not a >PUSH_REPLY
+    // mgmt event: ">LOG:<time>,<flags>,PUSH: Received control message:
+    // 'PUSH_REPLY,...'". The lifecycle must parse it (requires `log on`).
+    Spy s;
+    Lifecycle l(sinks_for(s));
+    Parser p; p.feed(">LOG:1718,I,PUSH: Received control message: "
+                     "'PUSH_REPLY,route-gateway 10.9.0.1,topology subnet,"
+                     "ifconfig 10.9.0.2 255.255.255.0,dhcp-option DNS 1.1.1.1,"
+                     "peer-id 0'\n");
+    while (auto ev = p.next()) l.step(*ev);
+    EXPECT_EQ("10.9.0.2",      s.ip);
+    EXPECT_EQ("255.255.255.0", s.netmask);
+    EXPECT_EQ("10.9.0.1",      s.gateway);
+    EXPECT_EQ("1.1.1.1",       s.dns);
+    EXPECT_TRUE(s.first_push_seen);
+}
+
+TEST(Lifecycle, LogWithoutPushReplyIgnored) {
+    Spy s;
+    Lifecycle l(sinks_for(s));
+    Parser p; p.feed(">LOG:1718,I,OpenVPN 2.6 starting\n");
+    while (auto ev = p.next()) l.step(*ev);
+    EXPECT_EQ("", s.gateway);
+    EXPECT_FALSE(s.first_push_seen);
+}
+
 TEST(Lifecycle, PushReplyJoinsMultipleDnsCommaSeparated) {
     Spy s;
     Lifecycle l(sinks_for(s));

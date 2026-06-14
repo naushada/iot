@@ -37,6 +37,18 @@ std::string join_csv(const std::vector<std::string>& v) {
     return out;
 }
 
+/// Split `s` on commas (PUSH_REPLY option list from a log line).
+std::vector<std::string> comma_split(const std::string& s) {
+    std::vector<std::string> out;
+    std::string cur;
+    for (char c : s) {
+        if (c == ',') { out.push_back(cur); cur.clear(); }
+        else          { cur.push_back(c); }
+    }
+    out.push_back(cur);
+    return out;
+}
+
 } // namespace
 
 std::string Lifecycle::normalise_state(const std::string& s) {
@@ -71,45 +83,67 @@ void Lifecycle::step(const mgmt::Event& ev) {
         return;
     }
 
+    // A real >PUSH_REPLY: mgmt notification (kept for completeness — most
+    // openvpn builds don't emit it; the >LOG path below is what fires live).
     if (ev.kind == K::PushReply) {
-        // Each field is "name [value...]"; dispatch each known one.
-        std::vector<std::string> dns;
-        for (const auto& opt : ev.fields) {
-            auto [name, val] = mgmt::split_push_option(opt);
-            if (name == "ifconfig") {
-                // "10.8.0.6 255.255.255.0" → ip + netmask
-                auto toks = ws_split(val);
-                if (toks.size() >= 1 && m_sinks.set_assigned_ip) {
-                    m_sinks.set_assigned_ip(toks[0]);
-                }
-                if (toks.size() >= 2 && m_sinks.set_assigned_netmask) {
-                    m_sinks.set_assigned_netmask(toks[1]);
-                }
-            } else if (name == "route-gateway") {
-                if (m_sinks.set_assigned_gateway) {
-                    m_sinks.set_assigned_gateway(val);
-                }
-            } else if (name == "dhcp-option") {
-                // "DNS 1.1.1.1" — strip the "DNS " prefix, collect.
-                auto toks = ws_split(val);
-                if (toks.size() >= 2 && toks[0] == "DNS") {
-                    dns.push_back(toks[1]);
-                }
-            }
-        }
-        if (!dns.empty() && m_sinks.set_assigned_dns) {
-            m_sinks.set_assigned_dns(join_csv(dns));
-        }
-        if (!m_saw_push_reply) {
-            m_saw_push_reply = true;
-            if (m_sinks.on_first_push_reply) m_sinks.on_first_push_reply();
+        apply_push_options(ev.fields);
+        return;
+    }
+
+    // openvpn surfaces the pushed config in its log, not a PUSH_REPLY mgmt
+    // event: ">LOG:<time>,<flags>,PUSH: Received control message:
+    // 'PUSH_REPLY,route-gateway 10.9.0.1,...,ifconfig 10.9.0.2 255.255.255.0,
+    // dhcp-option DNS 1.1.1.1,...'". Parse it so gateway/netmask/DNS populate
+    // (the assigned IP also comes via the CONNECTED state line above). Requires
+    // the supervisor to have sent `log on`.
+    if (ev.kind == K::Log) {
+        auto pos = ev.raw.find("PUSH_REPLY,");
+        if (pos != std::string::npos) {
+            std::string sub = ev.raw.substr(pos + 11);  // after "PUSH_REPLY,"
+            auto q = sub.find('\'');   // closing quote of the log message
+            if (q != std::string::npos) sub = sub.substr(0, q);
+            apply_push_options(comma_split(sub));
         }
         return;
     }
 
-    // Other event kinds (Banner, Hold, Log, ByteCount, Fatal, ...)
-    // are observed but not acted on by v1. The reactor wrapper logs
-    // them via ACE_DEBUG.
+    // Other event kinds (Banner, Hold, ByteCount, Fatal, ...) are observed but
+    // not acted on by v1. The reactor wrapper logs them via ACE_DEBUG.
+}
+
+void Lifecycle::apply_push_options(const std::vector<std::string>& opts) {
+    // Each option is "name [value...]"; dispatch the known ones.
+    std::vector<std::string> dns;
+    for (const auto& opt : opts) {
+        auto [name, val] = mgmt::split_push_option(opt);
+        if (name == "ifconfig") {
+            // "10.9.0.2 255.255.255.0" → ip + netmask (topology subnet).
+            auto toks = ws_split(val);
+            if (toks.size() >= 1 && m_sinks.set_assigned_ip) {
+                m_sinks.set_assigned_ip(toks[0]);
+            }
+            if (toks.size() >= 2 && m_sinks.set_assigned_netmask) {
+                m_sinks.set_assigned_netmask(toks[1]);
+            }
+        } else if (name == "route-gateway") {
+            if (m_sinks.set_assigned_gateway) {
+                m_sinks.set_assigned_gateway(val);
+            }
+        } else if (name == "dhcp-option") {
+            // "DNS 1.1.1.1" — strip the "DNS " prefix, collect.
+            auto toks = ws_split(val);
+            if (toks.size() >= 2 && toks[0] == "DNS") {
+                dns.push_back(toks[1]);
+            }
+        }
+    }
+    if (!dns.empty() && m_sinks.set_assigned_dns) {
+        m_sinks.set_assigned_dns(join_csv(dns));
+    }
+    if (!m_saw_push_reply) {
+        m_saw_push_reply = true;
+        if (m_sinks.on_first_push_reply) m_sinks.on_first_push_reply();
+    }
 }
 
 } // namespace openvpn_client
