@@ -28,7 +28,7 @@ export class MainComponent {
     { id: 'dashboard', label: 'Dashboard', svg: 'assets/icons/dashboard.svg', children: [] as {id:string,label:string}[] },
     { id: 'vpn',       label: 'VPN',       svg: 'assets/icons/vpn.svg',
       children: [{id:'config',label:'Configuration'},{id:'status',label:'Status'}] },
-    { id: 'http',      label: 'HTTP',      svg: 'assets/icons/lwm2m.svg', children: [] as {id:string,label:string}[] },
+    { id: 'http',      label: 'HTTP',      svg: 'assets/icons/http.svg', children: [] as {id:string,label:string}[] },
     { id: 'wan',       label: 'WAN',       svg: 'assets/icons/wan.svg',
       children: [{id:'wifi',label:'WiFi Config'},{id:'scan',label:'Scan Results'},{id:'priority',label:'Priority'}] },
     { id: 'routing',   label: 'Routing',   svg: 'assets/icons/routing.svg',
@@ -38,8 +38,8 @@ export class MainComponent {
     { id: 'services',  label: 'Services',  svg: 'assets/icons/services.svg',
       children: [{id:'list',label:'All Services'}] },
     { id: 'logs',      label: 'Logs',      svg: 'assets/icons/logs.svg', children: [] as {id:string,label:string}[] },
-    { id: 'users',     label: 'Users',     svg: 'assets/icons/services.svg', children: [] as {id:string,label:string}[] },
-    { id: 'software',  label: 'Software',  svg: 'assets/icons/services.svg', children: [] as {id:string,label:string}[] },
+    { id: 'users',     label: 'Users',     svg: 'assets/icons/users.svg', children: [] as {id:string,label:string}[] },
+    { id: 'software',  label: 'Software',  svg: 'assets/icons/software.svg', children: [] as {id:string,label:string}[] },
   ];
 
   expandedMenu: string | null = null;  // which menu is expanded in sidebar

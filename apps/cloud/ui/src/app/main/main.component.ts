@@ -18,14 +18,14 @@ export class MainComponent implements OnInit {
     { id: 'dashboard', label: 'Dashboard', svg: 'assets/icons/dashboard.svg' },
     { id: 'endpoints', label: 'Endpoints', svg: 'assets/icons/endpoints.svg' },
     { id: 'vpn',       label: 'VPN',       svg: 'assets/icons/vpn.svg' },
-    { id: 'http',      label: 'HTTP',      svg: 'assets/icons/lwm2m.svg' },
+    { id: 'http',      label: 'HTTP',      svg: 'assets/icons/http.svg' },
     { id: 'wan',       label: 'WAN',       svg: 'assets/icons/wan.svg' },
     { id: 'routing',   label: 'Routing',   svg: 'assets/icons/routing.svg' },
     { id: 'lwm2m',     label: 'LwM2M',     svg: 'assets/icons/lwm2m.svg' },
     { id: 'services',  label: 'Services',  svg: 'assets/icons/services.svg' },
     { id: 'logs',      label: 'Logs',      svg: 'assets/icons/logs.svg' },
-    { id: 'users',     label: 'Users',     svg: 'assets/icons/services.svg' },
-    { id: 'software',  label: 'Software',  svg: 'assets/icons/services.svg' },
+    { id: 'users',     label: 'Users',     svg: 'assets/icons/users.svg' },
+    { id: 'software',  label: 'Software',  svg: 'assets/icons/software.svg' },
   ];
 
   get isAdmin(): boolean { return this.session.isAdmin; }
