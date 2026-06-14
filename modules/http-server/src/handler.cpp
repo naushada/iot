@@ -433,6 +433,8 @@ void install_handlers(Router& router,
                     data_store::Client::kInvalidHandle;
                 data_store::Client::WatchHandle wh_log =
                     data_store::Client::kInvalidHandle;
+                data_store::Client::WatchHandle wh_update =
+                    data_store::Client::kInvalidHandle;
                 auto ws = ds->watch("vpn.state", notify, &wh_vpn);
                 ds->watch("iot.conn.state", notify, &wh_conn);
                 // Also wake on the two domain bump keys so this single status
@@ -440,6 +442,9 @@ void install_handlers(Router& router,
                 // SPA needs no per-page long-poll (avoids worker starvation).
                 ds->watch("services.stats.version", notify, &wh_stats);
                 ds->watch("log.version", notify, &wh_log);
+                // OTA progress: wake on iot.update.state so the Software page
+                // tracks an in-flight update live off this same stream.
+                ds->watch("iot.update.state", notify, &wh_update);
                 if (ws.ok) {
                     std::unique_lock<std::mutex> lk(st->m);
                     st->cv.wait_for(lk, std::chrono::seconds(timeout),
@@ -453,12 +458,16 @@ void install_handlers(Router& router,
                     ds->unwatch(wh_stats);
                 if (wh_log != data_store::Client::kInvalidHandle)
                     ds->unwatch(wh_log);
+                if (wh_update != data_store::Client::kInvalidHandle)
+                    ds->unwatch(wh_update);
                 // Fall through to build the full status snapshot
             }
             std::vector<data_store::Client::GetResult> got;
             auto rs = ds->get({
                 // LwM2M
                 "iot.server.uri", "iot.dm.uri", "iot.endpoint", "iot.conn.state",
+                // OTA software update
+                "iot.update.version", "iot.update.state", "iot.update.result",
                 // VPN
                 "vpn.state", "vpn.assigned.ip", "vpn.assigned.gateway",
                 "vpn.assigned.netmask", "vpn.assigned.dns", "vpn.pid",
@@ -533,6 +542,7 @@ void install_handlers(Router& router,
             }
             // Build status sections
             json lwm2m      = json::object();
+            json update     = json::object();
             json vpn        = json::object();
             json wifi       = json::object();
             json wan        = json::object();
@@ -562,6 +572,9 @@ void install_handlers(Router& router,
 
                 if (k == "iot.server.uri")        lwm2m["server_uri"] = sv();
                 else if (k == "iot.dm.uri")       lwm2m["dm_uri"] = sv();
+                else if (k == "iot.update.version") update["version"] = sv();
+                else if (k == "iot.update.state")   update["state"] = iv();
+                else if (k == "iot.update.result")  update["result"] = iv();
                 else if (k == "iot.endpoint")     lwm2m["endpoint"] = sv();
                 else if (k == "iot.conn.state")   lwm2m["conn_state"] = sv();
 
@@ -648,6 +661,7 @@ void install_handlers(Router& router,
                 }
             }
             resp["lwm2m"]    = lwm2m;
+            resp["update"]   = update;
             resp["vpn"]      = vpn;
             resp["wifi"]     = wifi;
             resp["wan"]      = wan;

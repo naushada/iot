@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../common/httpsvc.service';
+import { DataStoreService } from '../../common/datastore.service';
 import { SessionService } from '../../common/session.service';
 import { ToastService } from '../../common/toast.service';
 
@@ -16,16 +17,19 @@ import { ToastService } from '../../common/toast.service';
           <clr-dg-column>Property</clr-dg-column>
           <clr-dg-column>Value</clr-dg-column>
           <clr-dg-row>
-            <clr-dg-cell>Installed Version</clr-dg-cell>
+            <clr-dg-cell>Installed Version
+              <app-ds-hint *dsDebug key="iot.update.version"></app-ds-hint></clr-dg-cell>
             <clr-dg-cell>{{ version || '—' }}</clr-dg-cell>
           </clr-dg-row>
           <clr-dg-row>
-            <clr-dg-cell>State</clr-dg-cell>
+            <clr-dg-cell>State
+              <app-ds-hint *dsDebug key="iot.update.state"></app-ds-hint></clr-dg-cell>
             <clr-dg-cell><app-status-badge [label]="stateLabel"
               [state]="state===0 ? 'connected' : 'idle'"></app-status-badge></clr-dg-cell>
           </clr-dg-row>
           <clr-dg-row>
-            <clr-dg-cell>Result</clr-dg-cell>
+            <clr-dg-cell>Result
+              <app-ds-hint *dsDebug key="iot.update.result"></app-ds-hint></clr-dg-cell>
             <clr-dg-cell><app-status-badge [label]="resultLabel"
               [state]="result===1 ? 'connected' : (result>=5 ? 'exited' : 'idle')"></app-status-badge></clr-dg-cell>
           </clr-dg-row>
@@ -37,7 +41,8 @@ import { ToastService } from '../../common/toast.service';
           <clr-input-container style="grid-column: span 3;">
             <label>Package URL</label>
             <input clrInput [(ngModel)]="url" style="width:100%;"
-                   placeholder="http://10.9.0.1:8080/firmware/iot_0.2.0_aarch64.ipk?sha256=..." />
+                   placeholder="https://<cloud-host>/firmware/<package>.ipk?sha256=<hash>" />
+            <clr-control-helper *dsDebug><app-ds-hint key="iot.update.request"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <div class="btn-cell">
             <button class="btn btn-primary" (click)="apply()" [disabled]="busy || !url">
@@ -66,7 +71,6 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   result = 0;
   url = '';
   busy = false;
-  private active = true;
   private sub = new Subscription();
 
   get isAdmin(): boolean { return this.session.isAdmin; }
@@ -82,25 +86,23 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     return 'error ' + this.result;
   }
 
-  constructor(private http: HttpsvcService, private session: SessionService,
-              private toast: ToastService) {}
+  constructor(private http: HttpsvcService, private ds: DataStoreService,
+              private session: SessionService, private toast: ToastService) {}
 
-  ngOnInit(): void { if (this.isAdmin) this.poll(); }
-
-  private poll(): void {
-    if (!this.active) return;
-    this.http.dbGet(['iot.update.version', 'iot.update.state', 'iot.update.result']).subscribe({
-      next: (r) => {
-        if (r.ok && r.data) {
-          const d = r.data as Record<string, unknown>;
-          if (d['iot.update.version'] != null) this.version = String(d['iot.update.version']);
-          if (d['iot.update.state'] != null)   this.state = Number(d['iot.update.state']) || 0;
-          if (d['iot.update.result'] != null)  this.result = Number(d['iot.update.result']) || 0;
-        }
-        if (this.active) setTimeout(() => this.poll(), 5000);
-      },
-      error: () => { if (this.active) setTimeout(() => this.poll(), 5000); }
-    });
+  ngOnInit(): void {
+    if (!this.isAdmin) return;
+    // Read OTA progress live off the single shared /status stream — no
+    // per-page 5s self-poll. The long-poll wakes on iot.update.state changes,
+    // so download/install progress renders promptly without missing updates.
+    this.sub.add(this.ds.observe('iot.update.version').subscribe(v => {
+      if (v != null) this.version = String(v);
+    }));
+    this.sub.add(this.ds.observe('iot.update.state').subscribe(v => {
+      this.state = Number(v) || 0;
+    }));
+    this.sub.add(this.ds.observe('iot.update.result').subscribe(v => {
+      this.result = Number(v) || 0;
+    }));
   }
 
   apply(): void {
@@ -116,5 +118,5 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     });
   }
 
-  ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
 }

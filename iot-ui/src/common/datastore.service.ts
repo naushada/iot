@@ -38,6 +38,8 @@ export class DataStoreService {
     // LwM2M client
     'iot.serial', 'iot.dev.mode', 'iot.bs.uri', 'iot.server.uri', 'iot.dm.uri',
     'iot.binding', 'iot.lifetime',
+    // OTA software update (read-only progress; rendered on the Software page)
+    'iot.update.version', 'iot.update.state', 'iot.update.result',
     // Log levels
     'log.level', 'log.level.httpd', 'log.level.lwm2m',
     'log.level.vpn', 'log.level.dtls',
@@ -104,6 +106,13 @@ export class DataStoreService {
       // observe('iot.dm.uri') updates live (e.g. when registration completes).
       if (s.lwm2m.dm_uri != null)     this.set('iot.dm.uri', s.lwm2m.dm_uri);
       if (s.lwm2m.server_uri != null) this.set('iot.server.uri', s.lwm2m.server_uri);
+    }
+    if (s.update) {
+      // OTA progress → per-key subjects so the Software page renders live off
+      // this stream (the long-poll wakes on iot.update.state changes).
+      if (s.update.version != null) this.set('iot.update.version', s.update.version);
+      if (s.update.state != null)   this.set('iot.update.state', s.update.state);
+      if (s.update.result != null)  this.set('iot.update.result', s.update.result);
     }
     if (s.wan && s.wan.active_iface != null) this.set('net.iface.active', s.wan.active_iface);
     // Flat passthrough keys (log.version / services.stats.version bump keys)
