@@ -16,7 +16,7 @@ export class MainComponent implements OnInit {
   selectedSubNav = '';
   menus = [
     { id: 'dashboard', label: 'Dashboard', svg: 'assets/icons/dashboard.svg' },
-    { id: 'endpoints', label: 'Endpoints', svg: 'assets/icons/routing.svg' },
+    { id: 'endpoints', label: 'Endpoints', svg: 'assets/icons/endpoints.svg' },
     { id: 'vpn',       label: 'VPN',       svg: 'assets/icons/vpn.svg' },
     { id: 'http',      label: 'HTTP',      svg: 'assets/icons/lwm2m.svg' },
     { id: 'wan',       label: 'WAN',       svg: 'assets/icons/wan.svg' },
