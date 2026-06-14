@@ -50,7 +50,9 @@
       <img src="assets/icons/logout.svg" class="nav-icon" alt="" />
       <span>Sign out</span>
     </a>
-    <div class="nav-version" *ngIf="version" title="Running release">v{{ version }}</div>
+    <div class="nav-version" *ngIf="version" title="Running release">
+      <img src="assets/icons/version.svg" class="nav-icon" alt="" /><span>v{{ version }}</span>
+    </div>
   </nav>
 
   <!-- ── Main area ──────────────────────────────────────────────── -->
