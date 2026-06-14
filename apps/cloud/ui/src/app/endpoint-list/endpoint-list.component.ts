@@ -77,14 +77,15 @@ interface EpCred {
           <clr-dg-cell><code>{{ e.dev_tun_ip || '—' }}</code></clr-dg-cell>
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
           <clr-dg-cell>
-            <!-- Launch UI only when the device's VPN tunnel is actually up
-                 (dev_tun_ip present). Same-origin path-scoped reverse proxy:
-                 the cloud httpd proxies /dev/<ep>/ over the tun to the device UI
-                 (one TLS origin, per-device cookie isolation, no published port).
-                 See apps/docs/tdd-device-ui-path-proxy.md. -->
+            <!-- Launch UI only when the device's VPN tunnel is up (dev_tun_ip).
+                 Port-based: iot-cloudd publishes <proxy_port> and DNATs it to
+                 dev_tun_ip:<ui_port> over tun0 (all in the cloudd netns that owns
+                 the tun). The path-scoped /dev/<ep>/ proxy is the intended future
+                 path but needs iot-httpd to share the tun netns first — see
+                 apps/docs/tdd-device-ui-path-proxy.md §"netns". -->
             <a class="btn btn-sm" target="_blank" rel="noopener"
-               [href]="launchUrl(e.endpoint)"
-               *ngIf="e.registered && e.dev_tun_ip">
+               [href]="'http://' + windowHost + ':' + e.proxy_port + '/'"
+               *ngIf="e.registered && e.proxy_port && e.dev_tun_ip">
               Launch UI <clr-icon shape="pop-out" size="12"></clr-icon>
             </a>
             <span *ngIf="!e.registered" class="hint">offline</span>
@@ -156,11 +157,6 @@ export class EndpointListComponent implements OnInit, OnDestroy {
   private sub = new Subscription(); private active = true;
 
   get isAdmin(): boolean { return this.session.isAdmin; }
-
-  /** Same-origin path-scoped device-UI URL (reverse-proxied by the cloud httpd
-   *  over the VPN tun). The endpoint is URL-encoded so urn:dev:* names are
-   *  path-safe. See apps/docs/tdd-device-ui-path-proxy.md. */
-  launchUrl(ep: string): string { return '/dev/' + encodeURIComponent(ep) + '/'; }
 
   constructor(private http: HttpsvcService, private session: SessionService, private toast: ToastService) {}
 
