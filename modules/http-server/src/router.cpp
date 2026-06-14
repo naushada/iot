@@ -86,6 +86,11 @@ void Router::set_https_redirect(int https_port) {
     m_https_redirect = https_port;
 }
 
+void Router::set_proxy(std::string url_prefix, HandlerFn fn) {
+    m_proxy_prefix = std::move(url_prefix);
+    m_proxy_fn = std::move(fn);
+}
+
 HttpResponse Router::route(const HttpParser::Request& req) const {
     // HTTPS-redirect mode: bounce every request to the https listener.
     // Runs before all other routing so a plain-http :80 instance is a pure
@@ -119,6 +124,13 @@ HttpResponse Router::route(const HttpParser::Request& req) const {
             r.body = R"({"ok":false,"err":"method not allowed"})";
             return r;
         }
+    }
+
+    // ── Per-device UI reverse proxy (/dev/<ep>/...) ────────────
+    // Prefix-matched, all methods, after exact routes and before static.
+    if (m_proxy_fn && !m_proxy_prefix.empty() &&
+        req.path.rfind(m_proxy_prefix, 0) == 0) {
+        return m_proxy_fn(req);
     }
 
     // ── Firmware feed (OTA .ipk) ───────────────────────────────

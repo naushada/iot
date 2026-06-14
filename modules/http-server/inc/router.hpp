@@ -45,6 +45,11 @@ public:
     /// traversal is rejected. Used for the OTA .ipk firmware feed.
     void set_firmware_dir(std::string url_prefix, std::string dir);
 
+    /// Register a prefix-matched handler (e.g. "/dev/") for ALL methods,
+    /// dispatched after exact-match routes but before firmware/static serving.
+    /// Used for the per-device UI reverse proxy. Empty prefix → disabled.
+    void set_proxy(std::string url_prefix, HandlerFn fn);
+
     /// Enable HTTPS-redirect mode. When `https_port > 0`, EVERY request
     /// is answered with a 301 to `https://<Host>:<https_port><path>`,
     /// taking precedence over all other routing. Used to run a plain-http
@@ -60,6 +65,8 @@ private:
     std::string m_static_dir;
     std::string m_fw_prefix;
     std::string m_fw_dir;
+    std::string m_proxy_prefix;        // e.g. "/dev/"; empty = disabled
+    HandlerFn   m_proxy_fn;
     int         m_https_redirect = 0;  // 0 = off; else the https port
 };
 

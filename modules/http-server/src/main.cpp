@@ -280,6 +280,9 @@ int main(int argc, char** argv) {
     if (!wwwDir.empty()) router.set_static_dir(wwwDir);
     if (!fwDir.empty()) router.set_firmware_dir("/firmware/", fwDir);
     http_server::install_handlers(router, &ds, &auth_store);
+    // Per-device UI reverse proxy at /dev/<ep>/ (cloud-only effect; on a device
+    // there is no cloud.endpoints so any /dev/ hit just 502s).
+    http_server::install_proxy_handler(router, &ds, &auth_store);
 
     // Optional HTTPS-redirect mode: when redirect-https-port is set, this
     // (plain-http) instance 301-redirects every request to https://<host>:

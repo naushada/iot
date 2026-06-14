@@ -26,6 +26,15 @@ void install_cloud_handlers(Router& router,
                             server::lwm2m::EndpointRegistry* ep_reg,
                             server::lwm2m::BootstrapProvisioner* provisioner);
 
+/// Install the per-device UI reverse proxy at /dev/<ep>/ (design:
+/// apps/docs/tdd-device-ui-path-proxy.md). Resolves <ep> -> dev_tun_ip from
+/// cloud.endpoints and proxies over the VPN tun, gated behind the cloud
+/// session. Cloud-only effect (a device has no cloud.endpoints → 502).
+/// Pointers must outlive the router.
+void install_proxy_handler(Router& router,
+                           data_store::Client* ds,
+                           SessionStore* auth);
+
 } // namespace http_server
 
 #endif

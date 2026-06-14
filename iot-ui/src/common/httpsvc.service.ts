@@ -15,7 +15,14 @@ import {
 @Injectable({ providedIn: 'root' })
 export class HttpsvcService {
 
-  private api = environment.apiUrl;
+  // Base-relative API root. Empty when served at "/" (direct device access) so
+  // calls hit /api/v1/*. When the device UI is reverse-proxied through the cloud
+  // at /dev/<ep>/ (the proxy rewrites <base href> to that path), this derives
+  // "/dev/<ep>" from the document base so calls go to /dev/<ep>/api/v1/* and the
+  // cloud proxy strips the prefix back to /api/v1/* on the device.
+  // See apps/docs/tdd-device-ui-path-proxy.md.
+  private api = environment.apiUrl ||
+    (new URL(document.baseURI).pathname.replace(/\/+$/, ''));
 
   constructor(private http: HttpClient) {}
 
