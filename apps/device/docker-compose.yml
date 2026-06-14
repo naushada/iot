@@ -23,8 +23,6 @@
 #
 #   HTTP_PORT=8081 docker compose up -d   # custom host port for the UI
 
-version: "3.8"
-
 services:
   # ── Data Store (IPC backbone) ──────────────────────────────────
   ds-server:

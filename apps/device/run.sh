@@ -125,7 +125,10 @@ case "${1:-start}" in
 
     stop|down)
         log_section "Stopping IoT Device stack"
-        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" down
+        # --remove-orphans clears containers left behind when the service set
+        # changes between releases (e.g. the one-shot vpn-config), so the
+        # compose network can always be torn down.
+        $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" down --remove-orphans
         ;;
 
     logs)
