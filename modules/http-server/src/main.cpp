@@ -438,6 +438,12 @@ int main(int argc, char** argv) {
             break;
         }
 
+        // Deliver any worker-computed responses on this (the reactor) thread.
+        // Workers queue a deliver_response() callback per finished request;
+        // draining here is the reliable handoff that replaced the lossy
+        // reactor notify() dispatch. No-op when running inline (0 workers).
+        pool.drain_reactor();
+
         // ~Every 2s, check for operator config changes via the data store.
         // Also sweep expired sessions and reload auth config every ~60s.
         if (++reload_tick >= kReloadEvery) {

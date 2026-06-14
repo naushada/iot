@@ -64,7 +64,10 @@ VPN_SUBNET="${VPN_SUBNET:-10.9.0.0/24}"
 # large fleet (no per-port proxy).
 PROXY_START="${PROXY_START:-10000}"
 PROXY_END="${PROXY_END:-10050}"
-HTTP_WORKERS="${HTTP_WORKERS:-4}"
+# http.workers is NOT passed on the command line — it is read from the data
+# store (key http.workers, schema default 0 = inline). ds is the single
+# source of truth so the cloud-ui HTTP page reflects the live value; a CLI
+# arg would silently override ds and the UI would show the wrong number.
 # Reset the iot-etc config volume on start so the latest schema/config
 # from the image is always loaded (set to 0 to preserve manual edits).
 RESET_CONFIG="${RESET_CONFIG:-1}"
@@ -151,7 +154,7 @@ COMPOSE_PROFILES=""
 
 # Export env vars so docker-compose.yml can reference them
 export CLOUD_IMAGE="$IMAGE"
-export HTTP_PORT HTTP_WORKERS HTTP_SCHEME HTTPS_PORT
+export HTTP_PORT HTTP_SCHEME HTTPS_PORT
 export VPN_SUBNET PROXY_START PROXY_END
 export COMPOSE_PROJECT_NAME="$PROJECT"
 

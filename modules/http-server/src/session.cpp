@@ -115,15 +115,21 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
     if (m_pool && m_pool->size() > 0) {
         // Off-load the handler to a worker thread. Suspend reads so no other
         // request (or close) is dispatched on this connection while the
-        // worker owns it; the worker routes, stores m_response, and notifies
-        // the reactor, which sends from handle_exception() on this thread.
+        // worker owns it; the worker routes, stores m_response, then hands
+        // delivery back to the reactor thread via the pool's completion queue.
+        //
+        // We deliberately do NOT use reactor()->notify(this, EXCEPT_MASK) to
+        // drive handle_exception(): that dispatch dropped ~half its wakeups
+        // under load, leaving m_response unsent and the client hung. The
+        // completion queue (drained every reactor tick) is reliable; the bare
+        // notify() below only wakes the reactor so the drain runs promptly,
+        // and is harmless if coalesced or lost.
         if (reactor()) reactor()->suspend_handler(this);
         m_pool->submit([this, req = std::move(req)]() mutable {
             auto route_resp = m_router.route(req);
             m_response = route_resp.to_string(m_keep_alive);
-            if (reactor()) {
-                reactor()->notify(this, ACE_Event_Handler::EXCEPT_MASK);
-            }
+            m_pool->post_to_reactor([this]() { deliver_response(); });
+            if (reactor()) reactor()->notify();  // wake; not a handler dispatch
         });
         return 0;
     }
@@ -133,14 +139,23 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
     return finish_response();
 }
 
-int HttpSession::handle_exception(ACE_HANDLE /*fd*/) {
-    // A worker finished and notify()'d us; we're back on the reactor thread,
-    // so it's safe to touch the socket / TLS engine.
+void HttpSession::deliver_response() {
+    // Runs on the reactor thread (invoked from WorkerPool::drain_reactor),
+    // so it is safe to touch the socket / TLS engine and to tear ourselves
+    // down here. Exactly one deliver_response() is queued per request.
     int rc = finish_response();
-    if (rc == 0 && reactor()) {
-        reactor()->resume_handler(this);  // keep-alive: re-enable reads
+    if (rc == 0) {
+        if (reactor()) reactor()->resume_handler(this);  // keep-alive: re-arm
+        return;
     }
-    return rc;  // -1 → reactor removes us → handle_close → delete this
+    // Close: detach from the reactor without a second callback (DONT_CALL),
+    // then run our own close — which closes the socket and deletes us. After
+    // this returns, `this` is gone; touch no members.
+    if (ACE_Reactor* r = reactor()) {
+        r->remove_handler(this, ACE_Event_Handler::READ_MASK |
+                                ACE_Event_Handler::DONT_CALL);
+    }
+    handle_close(ACE_INVALID_HANDLE, ACE_Event_Handler::READ_MASK);
 }
 
 int HttpSession::finish_response() {

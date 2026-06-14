@@ -136,7 +136,6 @@ services:
       http-key=/etc/iot/tls/server.key
       www-dir=/usr/share/iot/cloud-www
       firmware-dir=/var/lib/iot/firmware
-      http-workers=${HTTP_WORKERS:-4}
     ports:
       - "${HTTP_PORT:-80}:${HTTP_PORT:-80}"
     volumes:
