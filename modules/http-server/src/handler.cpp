@@ -146,7 +146,8 @@ void install_handlers(Router& router,
             // ── Access control ─────────────────────────────────
             std::string access_level = "Admin";  // default: full access
             if (auth && auth->enabled()) {
-                std::string token = extract_session_cookie(req.headers);
+                std::string token = extract_session_cookie(req.headers,
+                                                           auth->cookie_name());
                 if (!token.empty()) {
                     const auto* session = auth->validate(token);
                     if (session) access_level = session->access;
@@ -368,7 +369,8 @@ void install_handlers(Router& router,
             resp["access"] = access;
             r.body = resp.dump();
             if (!token.empty()) {
-                r.headers["Set-Cookie"] = make_set_cookie(token);
+                r.headers["Set-Cookie"] = make_set_cookie(
+                    token, auth ? auth->cookie_name() : "iot-session");
             }
             return r;
         });
@@ -377,13 +379,13 @@ void install_handlers(Router& router,
     router.add("POST", "/api/v1/auth/logout",
         [auth](const HttpParser::Request& req) -> HttpResponse {
             HttpResponse r;
+            const std::string cname = auth ? auth->cookie_name() : "iot-session";
             if (auth) {
-                std::string token = extract_session_cookie(req.headers);
+                std::string token = extract_session_cookie(req.headers, cname);
                 if (!token.empty()) auth->destroy(token);
             }
             r.body = R"({"ok":true})";
-            r.headers["Set-Cookie"] =
-                "iot-session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0";
+            r.headers["Set-Cookie"] = make_clear_cookie(cname);
             return r;
         });
 
@@ -981,7 +983,8 @@ void install_handlers(Router& router,
             // Access control (mirrors db/set): Viewer is forbidden.
             std::string access_level = "Admin";
             if (auth && auth->enabled()) {
-                std::string token = extract_session_cookie(req.headers);
+                std::string token = extract_session_cookie(req.headers,
+                                                           auth->cookie_name());
                 if (!token.empty()) {
                     const auto* session = auth->validate(token);
                     if (session) access_level = session->access;
@@ -1050,7 +1053,8 @@ void install_handlers(Router& router,
             }
             std::string access_level = "Admin";
             if (auth && auth->enabled()) {
-                std::string token = extract_session_cookie(req.headers);
+                std::string token = extract_session_cookie(req.headers,
+                                                           auth->cookie_name());
                 if (!token.empty()) {
                     const auto* session = auth->validate(token);
                     if (session) access_level = session->access;

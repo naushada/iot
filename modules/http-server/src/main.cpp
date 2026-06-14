@@ -248,6 +248,20 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Session cookie name (http.auth.cookie.name). MUST differ between two
+    // iot-httpd instances on the same host/domain but different ports (the
+    // cloud UI and a device UI reverse-proxied through it) — cookies ignore
+    // ports, so a shared name makes logging into one clobber the other. The
+    // cloud seeds "iot-cloud-session"; device keeps the default "iot-session".
+    {
+        std::vector<data_store::Client::GetResult> got;
+        auto rs = ds.get({"http.auth.cookie.name"}, got);
+        if (rs.ok && !got.empty() && got[0].has_value) {
+            if (auto s = data_store::to_string(got[0].value))
+                auth_store.set_cookie_name(*s);
+        }
+    }
+
     // ── Static file serving (SPA) ─────────────────────────────
     std::string wwwDir = arg_value(argc, argv, "www-dir");
     if (wwwDir.empty()) {
@@ -458,6 +472,14 @@ int main(int argc, char** argv) {
                 if (rs.ok && !got.empty() && got[0].has_value) {
                     if (auto b = data_store::to_bool(got[0].value))
                         auth_store.set_enabled(*b);
+                }
+                // Reload the session cookie name (the cloud seeds a distinct
+                // name; pick it up regardless of cloudd/httpd start order).
+                std::vector<data_store::Client::GetResult> cgot;
+                auto crs = ds.get({"http.auth.cookie.name"}, cgot);
+                if (crs.ok && !cgot.empty() && cgot[0].has_value) {
+                    if (auto s = data_store::to_string(cgot[0].value))
+                        auth_store.set_cookie_name(*s);
                 }
                 // Password hash is reloaded on each login attempt
                 // (stateless — no cache to invalidate).

@@ -636,6 +636,14 @@ int main(int argc, char** argv) {
     ds.set("cloud.proxy.device.ui.port",
            data_store::Value{static_cast<std::int32_t>(
                ds_int(ds, "cloud.proxy.device.ui.port", 8080))});
+    // Give the cloud httpd a session-cookie name distinct from the device's
+    // default ("iot-session"). The device UI is reverse-proxied through the
+    // cloud on the same host/different port; cookies ignore ports, so a shared
+    // name makes a device-UI login clobber the cloud session (and vice-versa).
+    // The cloud httpd hot-reloads this key (watch loop), so start order with
+    // iot-cloudd doesn't matter.
+    ds.set("http.auth.cookie.name",
+           data_store::Value{std::string("iot-cloud-session")});
     if (!server::dnat::enable_ip_forward()) {
         ACE_ERROR((LM_ERROR,
                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l could not enable "
