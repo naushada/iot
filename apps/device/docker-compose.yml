@@ -132,6 +132,14 @@ services:
       - /dev/net/tun
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Publish the device-UI port here (not on iot-httpd): iot-httpd shares THIS
+    # container's network namespace (network_mode: service:openvpn-client), so
+    # the device UI, the tun interface (10.9.0.x), and this publish all live in
+    # one netns — mirroring the RPi's host-networking layout. That makes the
+    # cloud's device-UI-over-VPN DNAT (cloud:proxy_port -> dev_tun_ip:8080)
+    # actually reach the httpd, and keeps LAN access on http://localhost:8081.
+    ports:
+      - "${HTTP_PORT:-8081}:8080"
     volumes:
       - dev-run:/run/iot
       - dev-vpn-certs:/etc/iot/vpn:ro
@@ -173,6 +181,13 @@ services:
     restart: unless-stopped
 
   # ── HTTP Server (device REST API + device UI) ──────────────────
+  # Shares the openvpn-client container's network namespace so the device UI
+  # (8080), the tun interface (10.9.0.x), and the host publish (8081, declared
+  # on openvpn-client) are co-located — the same single-netns layout the RPi
+  # gets from host networking. Without this the cloud's Launch-UI DNAT to
+  # dev_tun_ip:8080 lands in the ovpn netns where nothing listens. Because of
+  # network_mode:service, this container can't declare its own ports/extra_hosts
+  # /networks — they come from openvpn-client.
   iot-httpd:
     image: ${DEVICE_IMAGE:-docker.io/naushada/iot-device:latest}
     container_name: iot-dev-httpd
@@ -181,13 +196,14 @@ services:
       ds-socket=/run/iot/data_store.sock
       http-port=8080
       www-dir=/usr/share/iot/www
-    ports:
-      - "${HTTP_PORT:-8081}:8080"
+    network_mode: "service:openvpn-client"
     volumes:
       - dev-run:/run/iot
     depends_on:
       ds-server:
         condition: service_healthy
+      openvpn-client:
+        condition: service_started
     restart: unless-stopped
 
 # ── Shared volumes ──────────────────────────────────────────────
