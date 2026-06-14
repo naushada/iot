@@ -63,7 +63,7 @@ services:
     # PROXY_START/PROXY_END.
     ports:
       - "1194:1194/tcp"
-      - "${PROXY_START:-5001}-${PROXY_END:-6000}:${PROXY_START:-5001}-${PROXY_END:-6000}"
+      - "${PROXY_START:-10000}-${PROXY_END:-10050}:${PROXY_START:-10000}-${PROXY_END:-10050}"
     depends_on:
       ds-server:
         condition: service_healthy
