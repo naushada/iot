@@ -121,6 +121,17 @@ export class MainComponent {
   // Quick status helpers
   get vpnState(): string { return this.status?.vpn?.state || 'unknown'; }
   get wifiState(): string { return this.status?.wifi?.state || 'unknown'; }
+  // LwM2M connection lifecycle (iot.conn.state → status.lwm2m.conn_state):
+  // bootstrapping → bootstrapped → dm-connecting → dm-connected → registered.
+  // The raw token is already concise enough for the live bar; map it to a
+  // status-badge colour the same way the dashboard tile does.
+  get lwm2mState(): string { return this.status?.lwm2m?.conn_state || 'idle'; }
+  get lwm2mBadgeState(): string {
+    const s = this.status?.lwm2m?.conn_state;
+    if (s === 'registered') return 'connected';
+    if (!s || s === 'idle' || s === 'failed') return 'disconnected';
+    return 'starting';   // bootstrapping / bootstrapped / dm-* in progress
+  }
   get wanIface(): string { return this.status?.wan?.active_iface || '-'; }
   get serviceCount(): number {
     if (!this.status?.services) return 0;
