@@ -155,17 +155,27 @@ ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
 The manual `scp` + `opkg` step above is for the bench. In the field, app
 updates ride the **LwM2M Object 5 (Firmware Update)** flow — the cloud points
 the device at an `.ipk` in its firmware feed, and the device pulls and applies
-it over the VPN tunnel. The recipe ships the apply helper for this:
+it over the VPN tunnel. This is split into a **stager** and an
+**inotify-triggered installer** (full design: `apps/docs/tdd-yocto-swupdate.md`):
 
-- `iot-ota-apply` is installed to `/usr/bin/iot-ota-apply` and packaged with
-  `iot-lwm2m` (it is the worker the LwM2M client invokes on a /5/0/0 write).
-- It runs **detached** as a `systemd-run --unit=iot-ota-apply` transient unit
-  so it survives `opkg` replacing the running `lwm2m` binary and the unit
-  restart that follows.
-- Flow: download the `.ipk` (honouring `?sha256=` / `?version=` query params)
-  → verify sha256 → `opkg install --force-reinstall --force-downgrade` →
-  `try-restart` the affected units (lwm2m-client, httpd, openvpn-client,
-  net-router, wifi-client).
+- `iot-ota-stage` (`/usr/bin/iot-ota-stage`, in `iot-lwm2m`) is the worker the
+  LwM2M client invokes on a /5/0/0 write. It runs **detached**
+  (`systemd-run --unit=iot-ota-stage`): download the `.ipk` (honouring
+  `?sha256=` / `?version=` / `?reboot=` params) → verify sha256 → write it to the
+  tmpfs spool `/run/iot/update/` → `touch` the empty `update` trigger. It does
+  **not** install.
+- `iot-swupdate.path` (systemd **inotify** watch on the trigger) fires
+  `iot-swupdate.service` → `/usr/bin/iot-swupdate`, which: snapshots + re-arms,
+  `opkg install --force-reinstall --force-downgrade`, runs config/schema
+  migrations (§11 below), then **reboots** if a kernel/`base-files`/`u-boot`/
+  `systemd` package landed (or `reboot=always`) else `try-restart`s the iot
+  daemons. Decoupled from the lwm2m client, so it survives `opkg` replacing the
+  running binaries.
+- **Config/schema migration:** new schema keys are picked up automatically (the
+  persisted store at `/var/lib/iot/data_store.lua` is preserved; schemas in
+  `/etc/iot/ds-schemas/` are overwritten by `opkg`). Renames/retypes need a
+  migration script under `/usr/share/iot/migrations/NNNN-*.sh`, run once by
+  `iot-swupdate` and gated by `iot.config.version`. See that dir's `README.md`.
 - Progress is mirrored into the data store (`iot.update.state` / `.result` /
   `.version`), which the relaunched client maps onto Object 5 resources
   (/5/0/3 state, /5/0/5 result, /5/0/7 version) and the device UI reflects.

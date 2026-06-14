@@ -1,0 +1,13 @@
+[Unit]
+Description=Watch the IPK update spool trigger (inotify)
+Documentation=https://github.com/naushada/iot
+
+[Path]
+# Fires iot-swupdate.service when the stager touches the trigger. systemd .path
+# units use kernel inotify internally. The triggered service removes the file to
+# re-arm (a .path unit won't re-fire until the path is gone again).
+PathExists=/run/iot/update/update
+Unit=iot-swupdate.service
+
+[Install]
+WantedBy=multi-user.target

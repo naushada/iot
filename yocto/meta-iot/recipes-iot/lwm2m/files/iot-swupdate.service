@@ -1,0 +1,13 @@
+[Unit]
+Description=Install staged IPK(s), migrate config, restart/reboot as needed
+Documentation=https://github.com/naushada/iot
+# No [Install]: activated by iot-swupdate.path, never enabled directly.
+After=iot-ds.service
+Wants=iot-ds.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/iot-swupdate
+# The installer restarts ds-server + the iot daemons (and may reboot); give it
+# room and don't let a daemon restart cascade back into killing this unit.
+TimeoutStartSec=600

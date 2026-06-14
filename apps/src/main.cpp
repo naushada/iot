@@ -691,13 +691,16 @@ static std::string ota_shquote(const std::string& s) {
     return out;
 }
 
-/// Launch the detached OTA apply for `uri` as a systemd transient unit so
-/// the opkg install (which may replace the running `lwm2m` binary) and the
-/// unit restart survive — never a child of this daemon. Returns 0 on launch.
+/// Launch the detached OTA *stager* for `uri` as a systemd transient unit.
+/// iot-ota-stage downloads + verifies the .ipk into /run/iot/update and touches
+/// the inotify trigger; the actual opkg install runs in the separate
+/// iot-swupdate.service (so it survives opkg replacing the running binaries).
+/// Detached so it's never a child of this daemon. Returns 0 on launch.
+/// See apps/docs/tdd-yocto-swupdate.md.
 static int ota_launch_apply(const std::string& uri) {
     if (uri.empty()) return -1;
     std::string cmd =
-        "systemd-run --unit=iot-ota-apply --collect /usr/bin/iot-ota-apply "
+        "systemd-run --unit=iot-ota-stage --collect /usr/bin/iot-ota-stage "
         + ota_shquote(uri);
     int rc = std::system(cmd.c_str());
     if (rc != 0) {
@@ -706,7 +709,7 @@ static int ota_launch_apply(const std::string& uri) {
             rc, cmd.c_str()));
         return -1;
     }
-    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ota] %M %N:%l launched iot-ota-apply\n")));
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ota] %M %N:%l launched iot-ota-stage\n")));
     return 0;
 }
 
@@ -720,8 +723,8 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     plumb.store = std::make_shared<::lwm2m::ObjectStore>();
 
     // ── OTA (LwM2M Object 5) apply hooks ──────────────────────────────
-    // RID 3/5/7 read the live apply progress from ds (iot.update.*, written
-    // by the detached iot-ota-apply); RID 2 launches that detached apply.
+    // RID 3/5/7 read the live apply progress from ds (iot.update.*, written by
+    // the detached iot-ota-stage + iot-swupdate); RID 2 launches the stager.
     data_store::Client* dsc = ds.client();
     ::lwm2m::objects::FwHooks fwHooks;
     fwHooks.launch = [](const std::string& uri) { return ota_launch_apply(uri); };

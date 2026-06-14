@@ -165,9 +165,14 @@ ExecStart=/usr/bin/iot-swupdate
    `> /run/iot/update/last.log 2>&1`. On failure: `iot.update.result = 9`,
    state 0, log tail, clean work dir, exit 1 (**no reboot, no restart**).
 6. Derive version (`update.meta` `version=` wins, else parsed from opkg log) →
-   `iot.update.version`; `iot.update.result = 1`; `iot.update.state = 0`.
-7. **Reboot decision (§4).**
-8. Clean `.work-$$/`.
+   `iot.update.version`.
+7. **Config/schema migration (§11)** — restart `ds-server` so it loads the new
+   schemas, then run any pending migrations. On migration failure: `result=9`,
+   skip the daemon restart, exit non-zero (operator intervention) — opkg is
+   already applied, so we don't restart app daemons against a half-migrated ds.
+8. `iot.update.result = 1`; `iot.update.state = 0`.
+9. **Reboot decision (§4).**
+10. Clean `.work-$$/`.
 
 ds writes use `ds-cli --socket=/run/iot/data_store.sock` (root) — identical to
 today's script, and ds (`/var/lib/iot`) is persistent so the result survives a
@@ -303,3 +308,78 @@ logic change; the Object-5 / `iot.update.request` wiring is untouched.
 4. **`update.meta` = plain `key=value`** — shell-friendly, transient `/run`
    spool sidecar (not persistent config, so outside Project-Rule-2 Lua).
    *(Pending final nod; recommended.)*
+5. **Migration marker = ds key `iot.config.version`** (integer) ✅ — chosen over
+   reusing the persistor's `schema_version` (which versions the on-disk *format*,
+   not the app config generation). See §11.
+
+## 11. Config & schema migration
+
+The data store separates two things, and an `opkg upgrade` treats them
+differently — this is what makes most upgrades safe with no work:
+
+| | Path | Shipped by `.ipk`? | On upgrade |
+|---|---|---|---|
+| **Schema** (key type/default/ACL) | `/etc/iot/ds-schemas/*.lua` | yes | **overwritten** — MUST stay non-conffile (see below) |
+| **Persisted values** (what was `set`) | `/var/lib/iot/data_store.lua` | **no** (ds-server writes it at runtime) | **preserved** (opkg never touches `/var/lib`) |
+
+ds-server boots, loads the **new** schema (`SchemaRegistry::load_directory`),
+then blind-bulk-loads the **old** values (`DataStore::load_from` — no
+validate/prune). So:
+
+- **Key added** (new feature) → **automatic, no migration.** `data_store.lua`
+  has no value → `get` falls through to the schema `default` (`default_for`); the
+  daemon seeds/uses it.
+- **Key deleted** → the old value lingers as a harmless **orphan** in
+  `data_store.lua` (nothing prunes it; `get` returns it as unknown-key
+  passthrough, `set` may be rejected if the namespace is still claimed). Optional
+  prune via a migration.
+- **Key renamed / retyped / semantically changed** → **needs an explicit
+  migration.** `load_from` doesn't coerce, so a retyped key keeps its old-typed
+  value, and a renamed key orphans the old value while the new one gets its
+  default (value not carried). These are the only cases that require work.
+
+**MUST:** the schema files stay **plain files, not opkg conffiles** (confirmed:
+no `CONFFILES` in the recipe). If they were ever marked conffiles, an upgrade
+would keep the *old* schema and new keys would silently never appear.
+
+### 11.1 Migration runner (in `iot-swupdate`, after opkg, before app restart)
+
+- **Marker:** ds key `iot.config.version` (integer, default 0) — the applied
+  config generation; persisted, survives reboot.
+- **Migrations:** ordered, idempotent scripts shipped in the `.ipk` at
+  `/usr/share/iot/migrations/NNNN-<slug>.sh` (zero-padded number = the config
+  generation it produces). Each does its rename/retype/prune/seed via `ds-cli`.
+- **Sequence** (§3.4 step 7):
+  1. `systemctl restart iot-ds.service`; wait until it's healthy (so it has the
+     **new** schema loaded — migrations' `ds-cli` writes validate against it).
+  2. `cur = ds-cli get iot.config.version` (default 0).
+  3. For each `NNNN-*.sh` with `NNNN > cur`, ascending: run it; on success
+     `ds-cli set iot.config.version NNNN`. (So after the last one,
+     `iot.config.version` = the highest migration shipped — no separate "target".)
+  4. On any migration failure: stop, leave `iot.config.version` at the last good
+     value, `iot.update.result = 9`, log, and **do not** restart the app daemons
+     (don't run them against a half-migrated store) — exit non-zero for operator
+     intervention.
+- **Idempotency:** the version guard runs each migration once; scripts are also
+  written defensively (e.g. "set new only if old exists; then delete old").
+- **Adds-with-default need NO migration entry** — only renames/retypes/prunes do.
+- **Forward-only:** a downgrade does not auto-reverse migrations (newer orphans
+  linger; the older schema serves defaults). Documented limitation.
+
+### 11.2 Example migration (`0001-rename-foo-to-bar.sh`)
+
+```sh
+#!/bin/sh
+# Carry iot.old.key → iot.new.key, then prune the old one. Idempotent.
+S=--socket=/run/iot/data_store.sock
+old=$(ds-cli $S get iot.old.key 2>/dev/null | sed 's/^iot.old.key=//')
+[ -n "$old" ] && ds-cli $S set iot.new.key "$old"
+ds-cli $S del iot.old.key 2>/dev/null || true
+```
+
+### 11.3 What this adds to the implementation
+
+- ds schema: new key `iot.config.version` (`iot.lua`).
+- `iot-swupdate`: the §11.1 runner (restart ds → loop migrations → bump marker).
+- recipe: ship `/usr/share/iot/migrations/` (FILES + install); seed one example.
+- No change to the stager, the `.path`, or the cloud/UI side.
