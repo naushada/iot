@@ -68,7 +68,7 @@ interface CustomRule {
             <!-- ds-key hint (debug mode) -->
             <clr-control-helper *dsDebug><app-ds-hint key="net.custom.rules"></app-ds-hint></clr-control-helper>
           </div>
-          <button class="btn btn-primary" (click)="addRule()" [disabled]="saving">
+          <button class="btn btn-primary add-rule-btn" (click)="addRule()" [disabled]="saving">
             {{ saving ? 'Saving…' : 'Add Rule' }}
           </button>
         </div>
@@ -109,6 +109,8 @@ interface CustomRule {
     h4 { color: #555; margin: 18px 0 10px 0; font-size: 13px; font-weight: 600; }
     .hint { color: #888; font-weight: normal; font-size: 11px; }
     .bad { color: #c62828; font-size: 12px; margin: 0 0 12px 0; }
+    /* Separate the action button from the form row above it. */
+    .add-rule-btn { margin-top: 20px; }
   `]
 })
 export class CustomRulesComponent implements OnInit {
