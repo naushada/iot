@@ -25,6 +25,7 @@ SRC_URI = "\
     file://iot-openvpn-client.service \
     file://iot-vpn-cert.path \
     file://iot-vpn-cert.service \
+    file://iot-tun.conf \
     file://iot-net-router.service \
     file://iot-wifi-client.service \
     file://iot-httpd.service \
@@ -185,6 +186,9 @@ do_install() {
         install -m 0644 ${WORKDIR}/iot-vpn-cert.path          ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-vpn-cert.service       ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-net-router.service     ${D}${systemd_system_unitdir}/
+        # TUN driver autoload for openvpn-client.
+        install -d ${D}${sysconfdir}/modules-load.d
+        install -m 0644 ${WORKDIR}/iot-tun.conf               ${D}${sysconfdir}/modules-load.d/
         install -m 0644 ${WORKDIR}/iot-wifi-client.service    ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-httpd.service          ${D}${systemd_system_unitdir}/
 
@@ -275,8 +279,11 @@ FILES:${PN}-openvpn-client = "\
     ${systemd_system_unitdir}/iot-openvpn-client.service \
     ${systemd_system_unitdir}/iot-vpn-cert.path \
     ${systemd_system_unitdir}/iot-vpn-cert.service \
+    ${sysconfdir}/modules-load.d/iot-tun.conf \
 "
-RDEPENDS:${PN}-openvpn-client = "ace-tao openvpn"
+# kernel-module-tun provides the TUN driver; iot-tun.conf autoloads it so
+# /dev/net/tun exists before the client starts.
+RDEPENDS:${PN}-openvpn-client = "ace-tao openvpn kernel-module-tun"
 RRECOMMENDS:${PN}-openvpn-client = "\
     ${PN}-ds-server \
     ${PN}-config \
