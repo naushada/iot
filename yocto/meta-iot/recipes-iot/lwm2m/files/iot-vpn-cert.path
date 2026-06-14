@@ -1,0 +1,16 @@
+[Unit]
+Description=Watch the VPN client cert for cloud rotation (LwM2M Object 2048)
+Documentation=https://github.com/naushada/iot
+# Bare-metal equivalent of the docker cert-watcher sidecar: the lwm2m-client
+# materialises the cloud-pushed cert family into /etc/iot/vpn, and when the
+# cloud re-mints it (e.g. after a CA rotation) openvpn must re-read it. The
+# openvpn supervisor only watches the ds *path* keys (vpn.cert.path), not the
+# file contents, so without this a rotated cert is never picked up.
+
+[Path]
+# IN_CLOSE_WRITE on the leaf cert — it is rewritten on every rotation (the CA
+# rotates with it), so watching the one file is enough and avoids multi-firing.
+PathChanged=/etc/iot/vpn/client.crt
+
+[Install]
+WantedBy=multi-user.target

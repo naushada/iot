@@ -1,0 +1,13 @@
+[Unit]
+Description=Reload openvpn-client after a VPN cert rotation
+Documentation=https://github.com/naushada/iot
+# Triggered by iot-vpn-cert.path (same stem). No [Install]: it is activated by
+# the path unit, not enabled directly.
+After=iot-openvpn-client.service
+
+[Service]
+Type=oneshot
+# try-restart restarts the client only if it is already running — a cert that
+# lands before the client comes up is a no-op, and the supervisor re-reads the
+# new cert/CA on restart. Runs as root (no DynamicUser) so it can systemctl.
+ExecStart=/bin/systemctl try-restart iot-openvpn-client.service

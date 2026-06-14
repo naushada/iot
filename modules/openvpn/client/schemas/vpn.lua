@@ -4,9 +4,9 @@
 --   vpn.remote.host   - server hostname or IP (required)
 --   vpn.remote.port   - server port            (default 1194, 1..65535)
 --   vpn.remote.proto  - "tcp-client" or "udp"  (default "tcp-client")
---   vpn.cert.path     - client X.509 cert      (required, absolute path)
---   vpn.key.path      - client X.509 priv key  (required, absolute path)
---   vpn.ca.path       - server CA              (required, absolute path)
+--   vpn.cert.path     - client X.509 cert      (default /etc/iot/vpn/client.crt)
+--   vpn.key.path      - client X.509 priv key  (default /etc/iot/vpn/client.key)
+--   vpn.ca.path       - server CA              (default /etc/iot/vpn/ca.crt)
 --   vpn.cipher        - data-channel cipher    (default "AES-256-GCM")
 --   vpn.dev           - "tun" or "tap"         (default "tun")
 --   vpn.mgmt.port     - mgmt iface port        (default 7505, 1024..65535)
@@ -46,12 +46,16 @@ return {
     ["vpn.remote.proto"] = {
         access  = "Admin", type = "string",  default = "tcp-client" },
 
+    -- Default to where the lwm2m-client materialises the cloud-pushed cert
+    -- family (LwM2M Object 2048). This makes the openvpn client work on a
+    -- bare-metal/systemd RPi with no seed step — the docker stack's vpn-config
+    -- one-shot sets the same paths, so it stays a no-op override there.
     ["vpn.cert.path"]    = {
-        access  = "Admin", type = "string"  },
+        access  = "Admin", type = "string", default = "/etc/iot/vpn/client.crt" },
     ["vpn.key.path"]     = {
-        access  = "Admin", type = "string"  },
+        access  = "Admin", type = "string", default = "/etc/iot/vpn/client.key" },
     ["vpn.ca.path"]      = {
-        access  = "Admin", type = "string"  },
+        access  = "Admin", type = "string", default = "/etc/iot/vpn/ca.crt" },
 
     ["vpn.cipher"]       = {
         access  = "Admin", type = "string",  default = "AES-256-GCM" },
