@@ -76,7 +76,7 @@ interface EpCred {
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
           <clr-dg-cell>
             <a class="btn btn-sm" target="_blank" rel="noopener"
-               [href]="'https://' + windowHost + ':' + e.proxy_port + '/'"
+               [href]="'http://' + windowHost + ':' + e.proxy_port + '/'"
                *ngIf="e.registered && e.proxy_port">
               Launch UI <clr-icon shape="pop-out" size="12"></clr-icon>
             </a>

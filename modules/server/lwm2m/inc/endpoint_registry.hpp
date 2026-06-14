@@ -51,6 +51,14 @@ public:
     bool update_state(const std::string& ep, bool registered,
                       std::int64_t last_seen_unix);
 
+    /// Update the tunnel IP for an endpoint to the address openvpn actually
+    /// assigned it (learned from the server's management interface), so the
+    /// per-device DNAT targets the real IP rather than the registry's
+    /// pre-allocated one. Maintains the tun_ip→ep index. Returns true only if
+    /// the value changed (false if unknown ep, unchanged, or `ip` is held by a
+    /// different endpoint).
+    bool update_tun_ip(const std::string& ep, const std::string& ip);
+
     /// Lookup by endpoint name.  Returns nullptr when not found.
     const EndpointInfo* lookup_by_ep(const std::string& ep) const;
 

@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <csignal>
 #include <fstream>
+#include <map>
 #include <set>
 #include <thread>
 #include <unordered_map>
@@ -206,13 +207,17 @@ bool reconcile_registrations(data_store::Client& ds,
     return changed;
 }
 
-// Poll the openvpn server's management interface (127.0.0.1:mgmt_port) for
-// connected clients and return their device serials. The minted client CN is
-// rpi<serial>@cloud.local, so a connected client's CN appears in the `status`
-// output; we scan for that pattern and extract the serial. Best-effort —
-// returns empty on any connect/IO failure (e.g. openvpn not up yet).
-std::vector<std::string> poll_vpn_connected(std::uint16_t mgmt_port) {
-    std::vector<std::string> out;
+// Poll the openvpn server's management interface (127.0.0.1:mgmt_port) and
+// return each connected client's *assigned* tunnel IP, keyed by the serial
+// embedded in its CN (rpi<serial>@cloud.local). We parse the ROUTING TABLE
+// section of `status`, whose lines are `<virtual-ip>,<CN>,<real-addr>,<ref>`
+// — so this gives the address openvpn actually handed the device (the pool
+// assignment), which is what the per-device DNAT must target (the registry's
+// pre-allocated IP is not honored by openvpn). The serial here is already in
+// the cert-CN sanitized form (':' → '_'), matching sanitize_cn(endpoint).
+// Best-effort — empty map on any connect/IO failure (openvpn not up yet).
+std::map<std::string, std::string> poll_vpn_client_ips(std::uint16_t mgmt_port) {
+    std::map<std::string, std::string> out;   // sanitized-serial → virtual IP
     ACE_INET_Addr addr(mgmt_port, "127.0.0.1");
     ACE_SOCK_Connector conn;
     ACE_SOCK_Stream stream;
@@ -231,17 +236,29 @@ std::vector<std::string> poll_vpn_connected(std::uint16_t mgmt_port) {
     }
     stream.close();
 
+    // Scan only within the ROUTING TABLE (skip CLIENT LIST, whose lines lead
+    // with the real address, not the virtual IP).
     const std::string suffix = "@cloud.local";
-    std::set<std::string> seen;
-    for (std::size_t pos = 0; (pos = resp.find("rpi", pos)) != std::string::npos; ) {
+    std::size_t rt = resp.find("ROUTING TABLE");
+    if (rt == std::string::npos) return out;
+    std::size_t end = resp.find("GLOBAL STATS", rt);
+    if (end == std::string::npos) end = resp.size();
+    for (std::size_t pos = rt; (pos = resp.find("rpi", pos)) != std::string::npos
+                               && pos < end; ) {
         std::size_t at = resp.find(suffix, pos);
-        if (at == std::string::npos) break;
+        if (at == std::string::npos || at >= end) break;
         std::string serial = resp.substr(pos + 3, at - (pos + 3));
+        // Virtual IP = the first comma-field of this client's line.
+        std::size_t ls = resp.rfind('\n', pos);
+        std::size_t vstart = (ls == std::string::npos) ? 0 : ls + 1;
+        std::size_t comma = resp.find(',', vstart);
+        std::string vip = (comma != std::string::npos && comma < pos)
+                              ? resp.substr(vstart, comma - vstart) : std::string();
         pos = at + suffix.size();
-        if (!serial.empty() &&
+        if (!serial.empty() && !vip.empty() &&
             serial.find_first_of(",\n\r ") == std::string::npos &&
-            seen.insert(serial).second) {
-            out.push_back(std::move(serial));
+            vip.find_first_of(",\n\r ") == std::string::npos) {
+            out[serial] = vip;
         }
     }
     return out;
@@ -894,9 +911,26 @@ int main(int argc, char** argv) {
             // cert once the device's tunnel is up — the end-goal "done" signal,
             // and it needs no server→device request.
             {
+                auto ips = poll_vpn_client_ips(ovpn_cfg.mgmt_port);
                 nlohmann::json arr = nlohmann::json::array();
-                for (auto& s : poll_vpn_connected(ovpn_cfg.mgmt_port)) arr.push_back(s);
+                for (const auto& kv : ips) arr.push_back(kv.first);
                 ds.set("cloud.vpn.connected", data_store::Value{arr.dump()});
+
+                // Point each connected endpoint's tun_ip (and thus the DNAT) at
+                // the address openvpn actually assigned, so device-UI-over-VPN
+                // (Launch UI) reaches the device. Match the registry endpoint to
+                // a connected client via sanitize_cn(endpoint) == CN serial.
+                bool ip_changed = false;
+                for (const auto& e : ep_reg.list_all()) {
+                    auto it = ips.find(
+                        server::openvpn::CertAuthority::sanitize_cn(e.ep));
+                    if (it != ips.end())
+                        ip_changed |= ep_reg.update_tun_ip(e.ep, it->second);
+                }
+                if (ip_changed) {
+                    sync_endpoints_to_ds(ds, ep_reg);
+                    rebuild_device_dnat(ds, tun_dev);
+                }
             }
 
             if (++sync_tick >= 3) {
