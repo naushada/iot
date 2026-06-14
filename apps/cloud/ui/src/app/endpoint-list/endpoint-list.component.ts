@@ -77,12 +77,17 @@ interface EpCred {
           <clr-dg-cell><code>{{ e.dev_tun_ip || '—' }}</code></clr-dg-cell>
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
           <clr-dg-cell>
+            <!-- Launch UI only when the device's VPN tunnel is actually up
+                 (dev_tun_ip present). The DNAT target is the live tunnel IP, so
+                 a registered-but-VPN-down device has no reachable route — the
+                 cloud also drops its DNAT rule in that state. -->
             <a class="btn btn-sm" target="_blank" rel="noopener"
                [href]="'http://' + windowHost + ':' + e.proxy_port + '/'"
-               *ngIf="e.registered && e.proxy_port">
+               *ngIf="e.registered && e.proxy_port && e.dev_tun_ip">
               Launch UI <clr-icon shape="pop-out" size="12"></clr-icon>
             </a>
             <span *ngIf="!e.registered" class="hint">offline</span>
+            <span *ngIf="e.registered && !e.dev_tun_ip" class="hint">VPN down</span>
           </clr-dg-cell>
           <clr-dg-cell *ngIf="isAdmin">
             <button class="btn btn-sm btn-danger" (click)="deprovision(e.endpoint)">Remove</button>
@@ -100,8 +105,9 @@ interface EpCred {
             <dl class="cred-list" style="margin-bottom:16px;">
               <dt>VPN forwarding rule</dt>
               <dd>
-                <code>tcp dport {{ e.proxy_port }} &rarr; {{ e.tun_ip }}:{{ uiPort }}</code>
-                <span class="hint" style="margin-left:8px;">DNAT — device UI over VPN</span>
+                <code>tcp dport {{ e.proxy_port }} &rarr; {{ e.dev_tun_ip || e.tun_ip }}:{{ uiPort }}</code>
+                <span class="hint" style="margin-left:8px;" *ngIf="e.dev_tun_ip">DNAT — device UI over VPN</span>
+                <span class="hint" style="margin-left:8px;" *ngIf="!e.dev_tun_ip">VPN down — rule inactive</span>
               </dd>
             </dl>
             <ng-container *ngIf="credFor(e) as c; else noCred">

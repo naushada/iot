@@ -140,10 +140,13 @@ void rebuild_device_dnat(data_store::Client& ds, const std::string& tun_dev) {
         auto arr = nlohmann::json::parse(ds_str(ds, "cloud.endpoints", "[]"));
         if (arr.is_array()) for (const auto& e : arr) {
             if (!e.is_object()) continue;
-            // Prefer the openvpn-assigned address; fall back to the registry
-            // allocation before the device has connected (DNAT is moot then).
+            // Only the openvpn-assigned address (dev_tun_ip) — present iff the
+            // device's tunnel is currently up. We deliberately do NOT fall back
+            // to the registry-allocated tun_ip: before first connect / after a
+            // disconnect there is no live tunnel, so a DNAT to the allocation
+            // would just point at a dead vip (Launch UI would hang). No
+            // dev_tun_ip → no rule, matching the UI gating Launch UI off.
             std::string ip   = e.value("dev_tun_ip", std::string());
-            if (ip.empty()) ip = e.value("tun_ip", std::string());
             int         port = e.value("proxy_port", 0);
             if (ip.empty() || port <= 0) continue;
             in.devices.push_back({std::move(ip),
@@ -930,8 +933,15 @@ int main(int argc, char** argv) {
                 for (const auto& e : ep_reg.list_all()) {
                     auto it = ips.find(
                         server::openvpn::CertAuthority::sanitize_cn(e.ep));
-                    if (it != ips.end())
+                    if (it != ips.end()) {
                         ip_changed |= ep_reg.update_dev_tun_ip(e.ep, it->second);
+                    } else {
+                        // Tunnel down for this endpoint — clear the stale
+                        // assigned IP so the cloud UI gates Launch UI off and
+                        // the DNAT stops targeting a dead vip (dev_tun_ip is
+                        // the per-device "VPN up" signal the UI keys on).
+                        ip_changed |= ep_reg.update_dev_tun_ip(e.ep, "");
+                    }
                 }
                 if (ip_changed) {
                     sync_endpoints_to_ds(ds, ep_reg);
