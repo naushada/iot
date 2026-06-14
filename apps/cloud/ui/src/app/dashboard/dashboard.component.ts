@@ -3,7 +3,7 @@ import { HttpsvcService } from '../../common/httpsvc.service';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../environments/environment';
 
-interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered:boolean; }
+interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; proxy_port:number; registered:boolean; }
 
 @Component({
   selector: 'app-dashboard',
@@ -24,11 +24,13 @@ interface EpInfo { endpoint:string; tun_ip:string; proxy_port:number; registered
         <clr-dg-column>Endpoint</clr-dg-column>
         <clr-dg-column>State</clr-dg-column>
         <clr-dg-column>Tunnel IP</clr-dg-column>
+        <clr-dg-column>Device Tunnel IP</clr-dg-column>
         <clr-dg-column>Port</clr-dg-column>
         <clr-dg-row *clrDgItems="let e of endpoints">
           <clr-dg-cell><code>{{e.endpoint}}</code></clr-dg-cell>
           <clr-dg-cell><app-status-badge [label]="e.registered?'online':'offline'" [state]="e.registered?'connected':'exited'"></app-status-badge></clr-dg-cell>
           <clr-dg-cell>{{e.tun_ip}}</clr-dg-cell>
+          <clr-dg-cell>{{ e.dev_tun_ip || '—' }}</clr-dg-cell>
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
         </clr-dg-row>
         <clr-dg-footer>{{endpoints.length}} endpoints</clr-dg-footer>
