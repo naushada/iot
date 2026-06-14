@@ -62,6 +62,7 @@
       </div>
       <span class="live-date">{{ today }}</span>
 
+      <app-status-badge icon="cloud" [label]="'LwM2M ' + lwm2mState" [state]="lwm2mBadgeState"></app-status-badge>
       <app-status-badge icon="shield" [label]="'VPN ' + vpnState" [state]="vpnState"></app-status-badge>
       <app-status-badge icon="wifi" [label]="'WiFi ' + wifiState" [state]="wifiState"></app-status-badge>
       <span class="live-stat"><clr-icon shape="world"></clr-icon> {{ wanIface }}</span>
