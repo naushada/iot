@@ -249,6 +249,14 @@ The logs end immediately after handshake completion — there is no captured
 handshake has not been exercised in these traces. We'll need new captures
 once the ACE refactor lands to validate LwM2M flows.
 
+> **Note (historical):** the `97554878…/3894BEED…` identity/secret above is a
+> 2024 dev/interop capture using a single shared PSK passed on the CLI. The
+> cloud no longer hardcodes or shares a default PSK: each endpoint has its own
+> PSK in `cloud.endpoint.credentials`, the identity is *derived from the serial*
+> (BS `sha256(serial)[:32]`, DM `rpi<serial>@cloud.local`), and the server
+> resolves the key live from ds at the handshake. The shared CLI `identity=/
+> secret=` override survives only for this kind of manual interop test.
+
 ## 12. Known gaps / smells (carry into refactor)
 
 - `UDPAdapter::process_request` is dead code (called from a now-commented

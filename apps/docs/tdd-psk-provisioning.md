@@ -458,6 +458,15 @@ item #8). cloud-ui writes `cloud.provision.bs_psk` (carrier) + sets
 - **N3 Refactor:** one `apply_credentials(array, bsAdapter, dmAdapter)` used
   by both the initial load and the watch callback.
 
+> **Implemented (drift from plan):** the env-var PSK (`LWM2M_PSK_ID/KEY`) was
+> *removed entirely* — no hardcoded/shared default. Instead of a startup load +
+> watch populating `add_credential`, the server installs a **ds-backed PSK
+> resolver** (`DTLSAdapter::set_psk_resolver`, wired in `apps/src/main.cpp`)
+> that looks the key up *live* from `cloud.endpoint.credentials` for the
+> identity presented at each handshake (BS `sha256(serial)[:32]`, DM
+> `dm.psk.id`). This avoids a standing watch + map upkeep and is safe because
+> the callback runs on the handshake thread, not the ds listener thread.
+
 ### O. Cloud-ui — Endpoints tab + provision form [CLOUD/UI]
 
 - **O1 Red:** Angular specs (`apps/cloud/ui/src/app/...`):
