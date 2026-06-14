@@ -45,8 +45,8 @@ else
     IMAGE="${CLOUD_IMAGE:-docker.io/naushada/iot-cloud:latest}"
 fi
 # HTTPS=1 → iot-httpd terminates TLS on 443 with a self-signed cert
-# (auto-generated below), and a redirect container bounces :80 → :443.
-# Default (HTTPS=0) is plain http on port 80.
+# (auto-generated below). http://:80 is not served in this mode — browse
+# https:// directly. Default (HTTPS=0) is plain http on port 80.
 HTTPS="${HTTPS:-0}"
 if [ "$HTTPS" = "1" ]; then
     HTTP_SCHEME="https"
@@ -137,9 +137,10 @@ if [ "$HTTPS" = "1" ]; then
     log_info "HTTPS on — image will self-provision a self-signed cert for ${TLS_HOST}"
 fi
 
-# Compose profiles (additive): https redirect + autodeploy watchtower.
+# Compose profiles (additive): autodeploy watchtower. (HTTPS=1 no longer
+# needs a profile — the main iot-httpd terminates TLS on 443 directly; the
+# separate :80→:443 redirect container was removed.)
 COMPOSE_PROFILES=""
-[ "$HTTPS" = "1" ]      && COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}https"
 [ "$AUTODEPLOY" = "1" ] && COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}autodeploy"
 [ -n "$COMPOSE_PROFILES" ] && export COMPOSE_PROFILES
 
