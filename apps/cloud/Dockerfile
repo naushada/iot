@@ -43,6 +43,7 @@ RUN mkdir -p /etc/iot/vpn /etc/iot/vpn/ca && cd /tmp && \
     rm -f server.csr ca.srl && \
     echo "VPN PKI generated — CA valid 10 years, server valid 10 years"
 
+COPY VERSION /src/VERSION
 COPY modules/ /src/modules/
 COPY apps/ /src/apps/
 COPY apps/cloud/server/ /src/apps/cloud/server/

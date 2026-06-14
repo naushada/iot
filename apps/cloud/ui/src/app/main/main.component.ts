@@ -28,6 +28,8 @@ export class MainComponent implements OnInit {
     { id: 'software',  label: 'Software',  svg: 'assets/icons/software.svg' },
   ];
 
+  version = '';   // running release (iot.version), shown in the sidebar footer
+
   get isAdmin(): boolean { return this.session.isAdmin; }
 
   constructor(private http: HttpsvcService, private session: SessionService,
@@ -40,6 +42,12 @@ export class MainComponent implements OnInit {
     // config page paints instantly, and start watching for live changes.
     this.ds.prefetchAll();
     this.ds.startWatch();
+    // Running release version (written to ds by iot-httpd at startup).
+    this.http.dbGet(['iot.version']).subscribe({
+      next: (r) => {
+        if (r.ok && r.data) this.version = String((r.data as Record<string, unknown>)['iot.version'] || '');
+      }
+    });
   }
 
   onMenuSelect(id: string): void { this.selectedMenu = id; this.selectedSubNav = ''; }
