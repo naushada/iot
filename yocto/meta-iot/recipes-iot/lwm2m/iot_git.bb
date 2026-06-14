@@ -16,10 +16,10 @@ SECTION = "net"
 # fetch it from nlohmann/json. git:// fetches the committed files directly:
 #   apps/3rdparty/json/single_include  → nlohmann/json (used by the build)
 #   tinydtls headers + .a come from the separate tinydtls recipe (sysroot).
-# Branch/ref to build. Defaults to `main` (rolling dev image). For a frozen
-# release image, override (here on a release branch, or in local.conf):
-#   IOT_BRANCH = "release/v1.1.0"
-IOT_BRANCH ?= "main"
+# Branch/ref to build. This is the release/v1.1.0 branch: pin to itself so the
+# image is reproducible from the frozen release line (override in local.conf if
+# needed). main's recipe defaults this to "main" for rolling dev builds.
+IOT_BRANCH ?= "release/v1.1.0"
 SRC_URI = "\
     git://github.com/naushada/iot.git;protocol=https;branch=${IOT_BRANCH} \
     file://0001-cmake-use-yocto-sysroot-paths.patch \
