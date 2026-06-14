@@ -102,7 +102,11 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
     // 401 responses are short-lived and sent inline even when a worker pool is
     // configured — no point off-loading them.
     if (m_auth && m_auth->enabled() && !is_public_route(req.path)) {
-        std::string token = extract_session_cookie(req.headers);
+        // Use the configured cookie name (e.g. the cloud's "iot-cloud-session"),
+        // not the default — else the gate looks for the wrong cookie and 401s
+        // every /api/* request even with a valid session.
+        std::string token = extract_session_cookie(req.headers,
+                                                    m_auth->cookie_name());
         if (token.empty() || !m_auth->validate(token)) {
             HttpResponse unauth;
             unauth.status = 401;
