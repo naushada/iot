@@ -51,6 +51,20 @@ import { ToastService } from '../../common/toast.service';
           </div>
         </div>
         <p class="hint">Runs <code>opkg install</code> on the device and restarts the affected daemons. The URL may carry <code>?sha256=</code> &amp; <code>?version=</code>.</p>
+
+        <!-- Drag-and-drop local package -->
+        <h4>Or drop a package</h4>
+        <div class="dropzone" [class.over]="dragOver" [class.busy]="uploading"
+             (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)"
+             (drop)="onDrop($event)" (click)="fileInput.click()">
+          <input #fileInput type="file" accept=".ipk,.tar.gz,.tgz" hidden
+                 (change)="onPick($event)" />
+          <clr-icon shape="upload-cloud" size="28"></clr-icon>
+          <span *ngIf="!uploading">Drag &amp; drop a <code>.ipk</code> (or <code>.tar.gz</code> bundle) here, or click to browse</span>
+          <span *ngIf="uploading">Uploading {{ uploadName }}…</span>
+        </div>
+        <p class="hint">Uploaded to the device and installed via <code>opkg</code>.
+          Max 8&nbsp;MiB per upload — larger / full-image bundles use A/B image OTA (Phase 2).</p>
       </ng-container>
 
       <ng-template #noAccess><p class="hint">You need Admin access to update software.</p></ng-template>
@@ -63,6 +77,11 @@ import { ToastService } from '../../common/toast.service';
     .hint { color: #888; font-size: 12px; margin-top: 8px; }
     .btn-cell { display: flex; align-items: flex-end; }
     .btn-cell .btn-primary { white-space: nowrap; }
+    .dropzone { display: flex; align-items: center; gap: 12px; padding: 18px;
+      border: 2px dashed #b0bec5; border-radius: 8px; color: #607d8b;
+      cursor: pointer; font-size: 13px; transition: all 0.15s; background: #fafcfd; }
+    .dropzone:hover, .dropzone.over { border-color: #0072a3; color: #0072a3; background: #f0f8fc; }
+    .dropzone.busy { opacity: 0.6; pointer-events: none; }
   `]
 })
 export class SoftwareUpdateComponent implements OnInit, OnDestroy {
@@ -71,6 +90,9 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   result = 0;
   url = '';
   busy = false;
+  dragOver = false;
+  uploading = false;
+  uploadName = '';
   private sub = new Subscription();
 
   get isAdmin(): boolean { return this.session.isAdmin; }
@@ -115,6 +137,45 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
         else { this.toast.error(r.err || 'Update failed'); }
       },
       error: () => { this.busy = false; this.toast.error('Update failed'); }
+    });
+  }
+
+  // ── Drag-and-drop upload ──────────────────────────────────────────
+  onDragOver(e: DragEvent): void { e.preventDefault(); this.dragOver = true; }
+  onDragLeave(e: DragEvent): void { e.preventDefault(); this.dragOver = false; }
+  onDrop(e: DragEvent): void {
+    e.preventDefault();
+    this.dragOver = false;
+    const f = e.dataTransfer?.files?.[0];
+    if (f) this.uploadFile(f);
+  }
+  onPick(e: Event): void {
+    const input = e.target as HTMLInputElement;
+    const f = input.files?.[0];
+    if (f) this.uploadFile(f);
+    input.value = '';   // allow re-picking the same file
+  }
+
+  private uploadFile(file: File): void {
+    if (this.uploading) return;
+    if (!/\.(ipk|tar\.gz|tgz)$/i.test(file.name)) {
+      this.toast.error('Pick a .ipk, .tar.gz or .tgz file'); return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      this.toast.error('File exceeds the 8 MiB upload limit (use A/B image OTA for larger bundles)');
+      return;
+    }
+    this.uploading = true; this.uploadName = file.name;
+    this.http.uploadUpdate(file).subscribe({
+      next: (r) => {
+        this.uploading = false;
+        if (r.ok) this.toast.success('Uploaded — installing ' + file.name + '…');
+        else this.toast.error(r.err || 'Upload failed');
+      },
+      error: (e) => {
+        this.uploading = false;
+        this.toast.error((e?.error?.err) || 'Upload failed');
+      }
     });
   }
 

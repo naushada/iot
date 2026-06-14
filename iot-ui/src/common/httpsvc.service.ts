@@ -73,6 +73,16 @@ export class HttpsvcService {
       { headers: this.jsonHeaders(), withCredentials: true });
   }
 
+  // Drag-and-drop OTA: post a .ipk (or .tar.gz bundle) as the raw request body;
+  // iot-httpd stages it into the swupdate spool and triggers the install.
+  uploadUpdate(file: File): Observable<{ ok: boolean; err?: string }> {
+    return this.http.post<{ ok: boolean; err?: string }>(
+      `${this.api}/api/v1/update/upload?name=${encodeURIComponent(file.name)}`,
+      file,
+      { headers: new HttpHeaders({ 'Content-Type': 'application/octet-stream' }),
+        withCredentials: true });
+  }
+
   // Long-poll a single key.  Returns as soon as the value changes or
   // the timeout expires (no change → value reflects current state).
   dbGetLongPoll(key: string, timeoutSec = 30): Observable<{

@@ -8,8 +8,10 @@
 
 #include <ace/Log_Msg.h>
 
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -386,6 +388,81 @@ void install_handlers(Router& router,
             }
             r.body = R"({"ok":true})";
             r.headers["Set-Cookie"] = make_clear_cookie(cname);
+            return r;
+        });
+
+    // ── POST /api/v1/update/upload?name=<file.ipk> ────────────────
+    // Drag-and-drop OTA: the device-ui posts a .ipk (or small .tar.gz bundle) as
+    // the raw request body. Admin-only. Writes it into the swupdate spool
+    // (/run/iot/update) and trips the inotify trigger; iot-swupdate then installs
+    // it (Yocto/systemd only — the spool + iot-swupdate.path live there). Bounded
+    // by the parser's 8 MiB body cap; larger/full-image bundles use the Phase-2
+    // streaming path (apps/docs/tdd-ab-image-ota.md).
+    router.add("POST", "/api/v1/update/upload",
+        [ds, auth](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            // Admin gate.
+            std::string access_level = "Admin";
+            if (auth && auth->enabled()) {
+                std::string token = extract_session_cookie(req.headers,
+                                                           auth->cookie_name());
+                if (!token.empty()) {
+                    const auto* session = auth->validate(token);
+                    if (session) access_level = session->access;
+                }
+            }
+            if (access_level != "Admin") {
+                r.status = 403;
+                r.body = R"({"ok":false,"err":"admin required"})";
+                return r;
+            }
+            // Sanitise the filename from ?name= (basename, safe charset, known ext).
+            std::string name;
+            if (auto it = req.query.find("name"); it != req.query.end()) name = it->second;
+            if (auto p = name.find_last_of('/'); p != std::string::npos) name = name.substr(p + 1);
+            std::string safe;
+            for (char c : name) {
+                safe.push_back((std::isalnum(static_cast<unsigned char>(c)) ||
+                                c == '.' || c == '_' || c == '-') ? c : '_');
+            }
+            auto ends_with = [&](const char* e) {
+                std::string s(e);
+                return safe.size() >= s.size() &&
+                       safe.compare(safe.size() - s.size(), s.size(), s) == 0;
+            };
+            if (safe.empty() || !(ends_with(".ipk") || ends_with(".tar.gz") || ends_with(".tgz"))) {
+                r.status = 400;
+                r.body = R"({"ok":false,"err":"name must end in .ipk, .tar.gz or .tgz"})";
+                return r;
+            }
+            if (req.body.empty()) {
+                r.status = 400;
+                r.body = R"({"ok":false,"err":"empty upload"})";
+                return r;
+            }
+            const std::string spool = "/run/iot/update";
+            // Write the package, then trip the empty trigger (last, atomic-ish).
+            {
+                std::ofstream f(spool + "/" + safe, std::ios::binary | std::ios::trunc);
+                if (!f) {
+                    r.status = 500;
+                    r.body = R"({"ok":false,"err":"cannot write update spool - perms or non-Yocto host"})";
+                    return r;
+                }
+                f.write(req.body.data(), static_cast<std::streamsize>(req.body.size()));
+                if (!f) {
+                    r.status = 500;
+                    r.body = R"({"ok":false,"err":"spool write failed"})";
+                    return r;
+                }
+            }
+            if (ds) ds->set("iot.update.state", data_store::Value{static_cast<std::int32_t>(2)});
+            { std::ofstream trig(spool + "/update", std::ios::trunc); }  // arm iot-swupdate.path
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l OTA upload staged %C "
+                                "(%zu bytes); triggered iot-swupdate\n"),
+                       safe.c_str(), req.body.size()));
+            r.body = R"({"ok":true})";
             return r;
         });
 
