@@ -13,12 +13,12 @@ import { DataStoreService } from '../../common/datastore.service';
 
       <div class="info-card">
         <p>The device web UI / REST API is served by <code>iot-httpd</code>
-        from the <code>http.*</code> schema. Most keys hot-reload within ~2s
-        (no restart); <code>http.workers</code> needs a restart. The
-        <strong>listen port is fixed by the container</strong> (the cloud
-        reaches this UI through its VPN proxy on that port), so changing
-        <code>http.listen.port</code> here has no effect on a containerised
-        device.</p>
+        from the <code>http.*</code> schema. TLS paths + Auth hot-reload within
+        ~2s; <code>http.workers</code> needs a restart.
+        <strong>Listen IP / Port / Scheme are read-only</strong> — the device
+        container publishes a fixed port (and the cloud reaches this UI through
+        its VPN proxy on it); editing them would rebind the server into a
+        publish mismatch and lock the device UI out.</p>
       </div>
 
       <form [formGroup]="form" (ngSubmit)="save()" *ngIf="!loading">
@@ -135,6 +135,11 @@ export class HttpConfigComponent implements OnInit {
       key:     [''],
       ca:      [''],
     });
+    // Listener (ip/port/scheme) is DEPLOY-controlled: the device container
+    // publishes host:8081 -> container:8080 (fixed), but the httpd hot-reloads
+    // these from ds and rebinds — editing them in the UI rebinds into a
+    // publish mismatch and locks the device UI out. Read-only; never saved.
+    ['ip', 'port', 'scheme'].forEach(k => this.form.get(k)?.disable());
   }
 
   ngOnInit(): void {
@@ -180,10 +185,9 @@ export class HttpConfigComponent implements OnInit {
   save(): void {
     this.saving = true;
     const v = this.form.value;
+    // Listener (ip/port/scheme) is deploy-controlled + read-only here, so it
+    // is intentionally NOT written — only the safe runtime keys are saved.
     this.http.dbSet([
-      { key: 'http.listen.ip',     value: v.ip },
-      { key: 'http.listen.port',   value: v.port },
-      { key: 'http.listen.scheme', value: v.scheme },
       { key: 'http.workers',       value: v.workers },
       { key: 'http.tls.cert',      value: v.cert },
       { key: 'http.tls.key',       value: v.key },

@@ -12,9 +12,12 @@ import { DataStoreService } from '../../common/datastore.service';
       <h3>HTTP Server Configuration</h3>
 
       <div class="info-card">
-        <p>Reuses the same <code>http.*</code> schema as the device.
-        All keys except <code>http.workers</code> are hot-reloaded —
-        iot-httpd re-binds / rotates certs within ~2s, no restart.</p>
+        <p>Reuses the same <code>http.*</code> schema as the device. TLS paths
+        + Auth hot-reload within ~2s; <code>http.workers</code> needs a restart.
+        <strong>Listen IP / Port / Scheme are read-only</strong> — they're
+        fixed at deploy by the container's published port + <code>HTTPS=1</code>;
+        editing them here would just rebind the server into a publish mismatch
+        and lock you out.</p>
       </div>
 
       <form [formGroup]="form" (ngSubmit)="save()" *ngIf="!loading">
@@ -130,6 +133,12 @@ export class HttpConfigComponent implements OnInit {
       key:     [''],
       ca:      [''],
     });
+    // Listener (ip/port/scheme) is DEPLOY-controlled: the container's published
+    // port + HTTPS=1 are fixed at start, but the httpd hot-reloads these from
+    // ds and rebinds — editing them in the UI just rebinds into a publish
+    // mismatch and locks you out. Show them read-only; never write them in
+    // save(). They remain visible for reference.
+    ['ip', 'port', 'scheme'].forEach(k => this.form.get(k)?.disable());
   }
 
   ngOnInit(): void {
@@ -175,10 +184,9 @@ export class HttpConfigComponent implements OnInit {
   save(): void {
     this.saving = true;
     const v = this.form.value;
+    // Listener (ip/port/scheme) is deploy-controlled + read-only here, so it
+    // is intentionally NOT written — only the safe runtime keys are saved.
     this.http.dbSet([
-      { key: 'http.listen.ip',     value: v.ip },
-      { key: 'http.listen.port',   value: v.port },
-      { key: 'http.listen.scheme', value: v.scheme },
       { key: 'http.workers',       value: v.workers },
       { key: 'http.tls.cert',      value: v.cert },
       { key: 'http.tls.key',       value: v.key },
