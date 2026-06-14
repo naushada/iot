@@ -177,12 +177,10 @@ Override on the command line — they pass through to `docker-compose.yml`:
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `HTTPS` | `0` | `1` = serve https on 443 (self-signed cert auto-generated) + redirect 80→443 (see §5) |
+| `HTTPS` | `0` | `1` = serve https on 443 (self-signed cert auto-generated) |
 | `TLS_HOST` | host primary IP | Cert subject/SAN when `HTTPS=1` (set to your IP or domain) |
 | `HTTP_PORT` | `80` (`443` if `HTTPS=1`) | Cloud UI / REST port |
-| `VPN_SUBNET` | `10.9.0.0/24` | OpenVPN tunnel subnet |
-| `PROXY_START` / `PROXY_END` | `5001` / `6000` | Device-UI reverse-proxy port pool |
-| `HTTP_WORKERS` | `4` | iot-httpd handler threads |
+| `PROXY_START` / `PROXY_END` | `10000` / `10050` | Device-UI reverse-proxy port pool (published range; must cover the ds `cloud.vpn.proxy.port.*` range) |
 | `CLOUD_IMAGE` | `docker.io/naushada/iot-cloud:latest` | Image to run |
 | `PULL` | `1` | Pull the image on start. `0` = use a local `./run.sh build` as-is |
 | `PLATFORM` | auto (`uname -m`) | Image arch to pull. The published image is multi-arch (`linux/amd64` + `linux/arm64`), so the host arch is selected automatically; override e.g. `linux/amd64` |
@@ -191,8 +189,13 @@ Override on the command line — they pass through to `docker-compose.yml`:
 Example:
 
 ```bash
-HTTP_PORT=8443 VPN_SUBNET=10.8.0.0/24 ./run.sh
+HTTP_PORT=8443 ./run.sh
 ```
+
+Runtime config (VPN subnet, iot-httpd worker count, etc.) is **not** env —
+it lives in the data store so the cloud UI is the single source of truth.
+For example: `./run.sh ds set cloud.vpn.subnet '"10.8.0.0/24"'` or
+`./run.sh ds set http.workers 4` (schema defaults: `10.9.0.0/24`, `0`).
 
 ### LwM2M server URIs — devices must reach these
 

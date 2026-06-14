@@ -327,8 +327,6 @@ int main(int argc, char** argv) {
         std::string a{argv[i]};
         if (a.rfind("ds-socket=", 0) == 0)
             ds_path = a.substr(10);
-        else if (a.rfind("vpn-subnet=", 0) == 0)
-            vpn_subnet = a.substr(11);
         else if (a.rfind("proxy-start=", 0) == 0)
             proxy_port_start = std::stoi(a.substr(12));   // "proxy-start=" = 12 chars
         else if (a.rfind("proxy-end=", 0) == 0)
@@ -363,6 +361,13 @@ int main(int argc, char** argv) {
            data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
     ds.set("cloud.vpn.proxy.port.end",
            data_store::Value{static_cast<std::uint32_t>(proxy_port_end)});
+
+    // Tunnel subnet is ds-driven too (cloud.vpn.subnet, schema default
+    // 10.9.0.0/24) — no env/CLI needed. ds is the single source of truth so a
+    // VPN-page edit isn't clobbered on restart; seed the effective value back
+    // so it's visible/editable.
+    vpn_subnet = ds_str(ds, "cloud.vpn.subnet", vpn_subnet);
+    ds.set("cloud.vpn.subnet", data_store::Value{vpn_subnet});
 
     // ── Core services ─────────────────────────────────────────────
     server::openvpn::VpnRegistry vpn_reg(vpn_subnet,
@@ -422,8 +427,7 @@ int main(int argc, char** argv) {
                    ws_update.err.c_str()));
     }
 
-    // Seed initial VPN config in ds
-    ds.set("cloud.vpn.subnet", data_store::Value{vpn_subnet});
+    // Seed initial VPN config in ds (subnet already seeded above from ds).
     ds.set("cloud.vpn.port.next",
            data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
 
