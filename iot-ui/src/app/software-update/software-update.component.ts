@@ -52,19 +52,20 @@ import { ToastService } from '../../common/toast.service';
         </div>
         <p class="hint">Runs <code>opkg install</code> on the device and restarts the affected daemons. The URL may carry <code>?sha256=</code> &amp; <code>?version=</code>.</p>
 
-        <!-- Drag-and-drop local package -->
+        <!-- Drag-and-drop local package (chunked upload) -->
         <h4>Or drop a package</h4>
         <div class="dropzone" [class.over]="dragOver" [class.busy]="uploading"
              (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)"
              (drop)="onDrop($event)" (click)="fileInput.click()">
-          <input #fileInput type="file" accept=".ipk,.tar.gz,.tgz" hidden
+          <input #fileInput type="file" accept=".ipk,.tar.gz,.tgz,.raucb" hidden
                  (change)="onPick($event)" />
           <clr-icon shape="upload-cloud" size="28"></clr-icon>
-          <span *ngIf="!uploading">Drag &amp; drop a <code>.ipk</code> (or <code>.tar.gz</code> bundle) here, or click to browse</span>
-          <span *ngIf="uploading">Uploading {{ uploadName }}…</span>
+          <span *ngIf="!uploading">Drag &amp; drop a <code>.ipk</code> / <code>.tar.gz</code> / <code>.raucb</code>, or click to browse</span>
+          <span *ngIf="uploading">Uploading {{ uploadName }} — {{ uploadPct }}%…</span>
         </div>
-        <p class="hint">Uploaded to the device and installed via <code>opkg</code>.
-          Max 8&nbsp;MiB per upload — larger / full-image bundles use A/B image OTA (Phase 2).</p>
+        <p class="hint">Uploaded to the device in chunks and installed there:
+          <code>.ipk</code>/<code>.tar.gz</code> via <code>opkg</code>,
+          <code>.raucb</code> via <code>rauc</code> (A/B image — requires the RAUC-enabled image).</p>
       </ng-container>
 
       <ng-template #noAccess><p class="hint">You need Admin access to update software.</p></ng-template>
@@ -93,6 +94,7 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   dragOver = false;
   uploading = false;
   uploadName = '';
+  uploadPct = 0;
   private sub = new Subscription();
 
   get isAdmin(): boolean { return this.session.isAdmin; }
@@ -156,27 +158,31 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     input.value = '';   // allow re-picking the same file
   }
 
+  // ≤8 MiB chunks (under the server body cap); posted sequentially so an
+  // arbitrarily large .raucb bundle uploads without buffering it server-side.
+  private static readonly CHUNK = 4 * 1024 * 1024;
+
   private uploadFile(file: File): void {
     if (this.uploading) return;
-    if (!/\.(ipk|tar\.gz|tgz)$/i.test(file.name)) {
-      this.toast.error('Pick a .ipk, .tar.gz or .tgz file'); return;
+    if (!/\.(ipk|tar\.gz|tgz|raucb)$/i.test(file.name)) {
+      this.toast.error('Pick a .ipk, .tar.gz, .tgz or .raucb file'); return;
     }
-    if (file.size > 8 * 1024 * 1024) {
-      this.toast.error('File exceeds the 8 MiB upload limit (use A/B image OTA for larger bundles)');
-      return;
-    }
-    this.uploading = true; this.uploadName = file.name;
-    this.http.uploadUpdate(file).subscribe({
-      next: (r) => {
-        this.uploading = false;
-        if (r.ok) this.toast.success('Uploaded — installing ' + file.name + '…');
-        else this.toast.error(r.err || 'Upload failed');
-      },
-      error: (e) => {
-        this.uploading = false;
-        this.toast.error((e?.error?.err) || 'Upload failed');
-      }
-    });
+    this.uploading = true; this.uploadName = file.name; this.uploadPct = 0;
+    const total = file.size;
+    const sendFrom = (offset: number): void => {
+      const end = Math.min(offset + SoftwareUpdateComponent.CHUNK, total);
+      const final = end >= total;
+      this.sub.add(this.http.uploadUpdateChunk(file.name, file.slice(offset, end), offset, final).subscribe({
+        next: (r) => {
+          if (!r.ok) { this.uploading = false; this.toast.error(r.err || 'Upload failed'); return; }
+          this.uploadPct = total ? Math.round((end / total) * 100) : 100;
+          if (final) { this.uploading = false; this.toast.success('Uploaded — installing ' + file.name + '…'); }
+          else sendFrom(end);
+        },
+        error: (e) => { this.uploading = false; this.toast.error((e?.error?.err) || 'Upload failed'); }
+      }));
+    };
+    sendFrom(0);
   }
 
   ngOnDestroy(): void { this.sub.unsubscribe(); }

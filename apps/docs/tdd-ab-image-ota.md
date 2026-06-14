@@ -1,6 +1,13 @@
 # TDD — Phase-2 A/B (dual-bank) image OTA with rollback
 
-Status: **DESIGN (for review)** · Target: Yocto/RPi · Author: 2026-06-14
+Status: **IN PROGRESS** (RAUC chosen; incremental) · Target: Yocto/RPi
+· Author: 2026-06-14
+
+**Increment 1 (✅ shipped, verifiable here):** chunked-append upload (handles
+large `.raucb`), `iot-swupdate` `.raucb`→`rauc` routing (guarded), device-ui
+`.raucb` drop. **Remaining (device bring-up, untestable off-hardware):** the
+RAUC engine + u-boot + 4-partition `wic` + bundle signing + health-check
+rollback + CI — §§2–4, 7.
 
 ## 1. Why (what Phase 1 can't do)
 
@@ -76,16 +83,17 @@ is `rauc`, not `opkg`:
 
 - **Cloud push** — `iot.update.request` carries a `.raucb` URL; a Phase-2 stager
   variant pulls + verifies signature, then `rauc install`.
-- **Drag-and-drop (device-ui)** — the operator drops a `.raucb`. Because a full
-  bundle is **tens–hundreds of MB**, this needs a **streaming upload** (the
-  Phase-1 raw-body endpoint buffers in memory, capped at 8 MiB — unsuitable):
-  - `POST /api/v1/update/upload` streams the body **to disk** on the data
-    partition (chunked write, no full-buffer), reporting progress.
-  - Then `rauc install <file>.raucb` (signature-verified) writes the inactive
-    bank; reboot into it; health-check confirms or rolls back.
-
-Streaming upload is a prerequisite and is **out of scope for Phase 1** (which
-keeps the 8 MiB in-memory cap for `.ipk`).
+- **Drag-and-drop (device-ui)** — the operator drops a `.raucb`. A full bundle is
+  **tens–hundreds of MB**, so the upload is **chunked-append** (✅ shipped,
+  increment 1): the UI slices the file into ≤8 MiB chunks and POSTs them
+  sequentially to `POST /api/v1/update/upload?name&offset&final`; httpd appends
+  each chunk to the spool file (no full-buffer, stays under the body cap) and
+  trips the installer on the final chunk. `iot-swupdate` routes `.raucb` →
+  `rauc install` (vs `.ipk` → `opkg`) — ✅ shipped (guarded by `command -v rauc`,
+  so it's inert until the RAUC image lands).
+- What's **still needed** (device bring-up): `rauc install <file>.raucb`
+  (signature-verified) writing the inactive bank, reboot, health-check confirm /
+  bootloader rollback — i.e. everything in §3/§4/§7 below.
 
 ## 6. State / UI
 

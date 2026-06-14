@@ -435,33 +435,45 @@ void install_handlers(Router& router,
                 r.body = R"({"ok":false,"err":"name must end in .ipk, .tar.gz or .tgz"})";
                 return r;
             }
-            if (req.body.empty()) {
+            // Chunked append: large bundles (.raucb) exceed the 8 MiB body cap,
+            // so the UI slices the file and POSTs sequential chunks. offset=0
+            // truncates + starts; offset>0 appends; final=1 trips the installer.
+            // No params → single-shot (back-compatible) = offset 0 + final 1.
+            bool first = true, final = true;
+            if (auto it = req.query.find("offset"); it != req.query.end())
+                first = (it->second == "0" || it->second.empty());
+            if (auto it = req.query.find("final"); it != req.query.end())
+                final = (it->second == "1" || it->second == "true");
+            if (req.body.empty() && first) {
                 r.status = 400;
                 r.body = R"({"ok":false,"err":"empty upload"})";
                 return r;
             }
             const std::string spool = "/run/iot/update";
-            // Write the package, then trip the empty trigger (last, atomic-ish).
             {
-                std::ofstream f(spool + "/" + safe, std::ios::binary | std::ios::trunc);
+                std::ios::openmode mode = std::ios::binary | std::ios::out |
+                                          (first ? std::ios::trunc : std::ios::app);
+                std::ofstream f(spool + "/" + safe, mode);
                 if (!f) {
                     r.status = 500;
                     r.body = R"({"ok":false,"err":"cannot write update spool - perms or non-Yocto host"})";
                     return r;
                 }
-                f.write(req.body.data(), static_cast<std::streamsize>(req.body.size()));
+                if (!req.body.empty())
+                    f.write(req.body.data(), static_cast<std::streamsize>(req.body.size()));
                 if (!f) {
                     r.status = 500;
                     r.body = R"({"ok":false,"err":"spool write failed"})";
                     return r;
                 }
             }
-            if (ds) ds->set("iot.update.state", data_store::Value{static_cast<std::int32_t>(2)});
-            { std::ofstream trig(spool + "/update", std::ios::trunc); }  // arm iot-swupdate.path
-            ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D httpd:thread:%t %M %N:%l OTA upload staged %C "
-                                "(%zu bytes); triggered iot-swupdate\n"),
-                       safe.c_str(), req.body.size()));
+            if (final) {
+                if (ds) ds->set("iot.update.state", data_store::Value{static_cast<std::int32_t>(2)});
+                { std::ofstream trig(spool + "/update", std::ios::trunc); }  // arm iot-swupdate.path
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D httpd:thread:%t %M %N:%l OTA upload complete %C; "
+                                    "triggered iot-swupdate\n"), safe.c_str()));
+            }
             r.body = R"({"ok":true})";
             return r;
         });

@@ -73,12 +73,16 @@ export class HttpsvcService {
       { headers: this.jsonHeaders(), withCredentials: true });
   }
 
-  // Drag-and-drop OTA: post a .ipk (or .tar.gz bundle) as the raw request body;
-  // iot-httpd stages it into the swupdate spool and triggers the install.
-  uploadUpdate(file: File): Observable<{ ok: boolean; err?: string }> {
+  // Drag-and-drop OTA: post one chunk of a package (.ipk / .tar.gz / .raucb).
+  // The UI slices the file into ≤8 MiB chunks and posts them sequentially
+  // (offset=0 starts/truncates, final=1 trips the install) so large bundles
+  // fit under the server's per-request body cap.
+  uploadUpdateChunk(name: string, chunk: Blob, offset: number,
+                    final: boolean): Observable<{ ok: boolean; err?: string }> {
     return this.http.post<{ ok: boolean; err?: string }>(
-      `${this.api}/api/v1/update/upload?name=${encodeURIComponent(file.name)}`,
-      file,
+      `${this.api}/api/v1/update/upload?name=${encodeURIComponent(name)}` +
+        `&offset=${offset}&final=${final ? 1 : 0}`,
+      chunk,
       { headers: new HttpHeaders({ 'Content-Type': 'application/octet-stream' }),
         withCredentials: true });
   }

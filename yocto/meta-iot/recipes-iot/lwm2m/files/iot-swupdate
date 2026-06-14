@@ -108,6 +108,30 @@ fi
 
 # ── 3. install ─────────────────────────────────────────────────────
 set_state 3   # updating
+
+# A/B image bundle (.raucb, Phase 2): rauc writes the *inactive* bank, then we
+# reboot into it; a health check confirms or the bootloader rolls back to the
+# previous bank. Atomic + power-fail-safe (unlike the in-place opkg path below).
+# See apps/docs/tdd-ab-image-ota.md. Requires the RAUC-enabled image.
+RAUCB="$(ls "$WORK"/*.raucb 2>/dev/null | head -1)"
+if [ -n "$RAUCB" ]; then
+    if ! command -v rauc >/dev/null 2>&1; then
+        log "rauc not installed — cannot apply $(basename "$RAUCB") (needs the A/B image)"
+        set_result 9; set_state 0; rm -rf "$WORK"; exit 1
+    fi
+    log "rauc install $RAUCB"
+    if ! rauc install "$RAUCB" >"$LOG" 2>&1; then
+        log "$(tail -5 "$LOG" 2>/dev/null)"
+        set_result 9; set_state 0; rm -rf "$WORK"; exit 1
+    fi
+    [ -n "$VER" ] && set_version "$VER"
+    set_result 1; set_state 0
+    rm -rf "$WORK"
+    log "A/B bundle staged to the inactive bank; rebooting to activate"
+    systemctl reboot
+    exit 0
+fi
+
 log "opkg install $WORK/*.ipk"
 if ! opkg install --force-reinstall --force-downgrade "$WORK"/*.ipk >"$LOG" 2>&1; then
     log "$(tail -5 "$LOG" 2>/dev/null)"
