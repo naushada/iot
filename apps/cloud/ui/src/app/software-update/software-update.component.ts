@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../common/httpsvc.service';
+import { DataStoreService } from '../../common/datastore.service';
 import { SessionService } from '../../common/session.service';
 import { ToastService } from '../../common/toast.service';
 
@@ -106,14 +107,19 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, private session: SessionService,
-              private toast: ToastService) {}
+  constructor(private http: HttpsvcService, private ds: DataStoreService,
+              private session: SessionService, private toast: ToastService) {}
 
   ngOnInit(): void {
     if (!this.isAdmin) return;
     this.loadManifest();
     this.pollEndpoints();
-    this.pollStatus();
+    // Per-device OTA push progress live off the single shared /status stream
+    // (the long-poll wakes on cloud.update.status) — no per-page 5s self-poll.
+    this.sub.add(this.ds.observe('cloud.update.status').subscribe((v) => {
+      try { const a = JSON.parse(String(v ?? '[]')); this.status = Array.isArray(a) ? a : []; }
+      catch { this.status = []; }
+    }));
   }
 
   private loadManifest(): void {
@@ -135,19 +141,6 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     });
   }
 
-  private pollStatus(): void {
-    if (!this.active) return;
-    this.http.dbGet(['cloud.update.status']).subscribe({
-      next: (r) => {
-        if (r.ok && r.data) {
-          try { const a = JSON.parse(String((r.data as Record<string, unknown>)['cloud.update.status'] || '[]'));
-                this.status = Array.isArray(a) ? a : []; } catch { this.status = []; }
-        }
-        if (this.active) setTimeout(() => this.pollStatus(), 5000);
-      },
-      error: () => { if (this.active) setTimeout(() => this.pollStatus(), 5000); }
-    });
-  }
 
   installedVersion(serial: string): string {
     const s = this.status.find(x => x.serial === serial);

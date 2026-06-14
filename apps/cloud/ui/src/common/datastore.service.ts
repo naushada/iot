@@ -70,6 +70,8 @@ export class DataStoreService {
     'services.cloud.lwm2m.dm.cpu.permille', 'services.cloud.lwm2m.dm.cpu.count',
     'services.cloud.lwm2m.dm.mem.rss.kb', 'services.cloud.lwm2m.dm.fd.count',
     'services.cloud.lwm2m.dm.threads',
+    // Cloud OTA push status (per-device), rendered live on the Software page.
+    'cloud.update.status',
   ];
 
   private cache = new Map<string, unknown>();
