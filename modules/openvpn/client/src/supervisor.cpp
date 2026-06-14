@@ -294,6 +294,27 @@ bool Supervisor::serve_one_session(const std::string& iface) {
         if (n > 0) {
             parser.feed(std::string_view(buf, n));
             while (auto ev = parser.next()) {
+                // openvpn was spawned with `management-hold`, so it re-enters
+                // HOLD before EVERY (re)connection attempt — not just at
+                // startup. We release once at attach (above), but on a cloud
+                // VPN-server restart / link drop it holds again and emits a
+                // fresh >HOLD:. Without re-releasing, the client wedges in hold
+                // forever (device shows "reconnecting" but never reconnects).
+                // Re-release on each HOLD so reconnects actually proceed.
+                if (ev->kind == mgmt::Event::Kind::Hold) {
+                    static const char kHoldRelease[] = "hold release\r\n";
+                    if (stream.send_n(kHoldRelease, sizeof(kHoldRelease) - 1) < 0) {
+                        ACE_ERROR((LM_WARNING,
+                                   ACE_TEXT("%D [ovpn:%t] %M %N:%l mgmt re-'hold "
+                                            "release' on reconnect failed "
+                                            "errno=%d\n"), errno));
+                    } else {
+                        ACE_DEBUG((LM_INFO,
+                                   ACE_TEXT("%D [ovpn:%t] %M %N:%l openvpn "
+                                            "re-entered HOLD (server restart/link "
+                                            "drop); released to reconnect\n")));
+                    }
+                }
                 cli.step(*ev);
             }
             if (m_opt.once && cli.saw_push_reply()) break;

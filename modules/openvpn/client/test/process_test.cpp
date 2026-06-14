@@ -65,6 +65,10 @@ TEST(BuildOpenvpnConfig, EmitsExpectedDirectives) {
     // Held at startup so the supervisor subscribes before openvpn connects
     // (captures CONNECTED + PUSH_REPLY rather than racing them).
     EXPECT_NE(std::string::npos, body.find("\nmanagement-hold\n"));
+    // Reconnect resilience after a cloud VPN-server restart / link drop.
+    EXPECT_NE(std::string::npos, body.find("\nresolv-retry infinite\n"));
+    EXPECT_NE(std::string::npos, body.find("\npersist-tun\n"));
+    EXPECT_NE(std::string::npos, body.find("\npersist-key\n"));
 }
 
 TEST(BuildOpenvpnConfig, OverridesFlowThrough) {

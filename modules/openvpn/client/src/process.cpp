@@ -36,6 +36,14 @@ std::string build_openvpn_config(const OpenVpnConfig& c) {
     ss << "proto " << c.remote_proto << "\n";
     ss << "remote " << c.remote_host << " " << c.remote_port << "\n";
     ss << "nobind\n";
+    // Survive a cloud VPN-server restart / link drop: keep retrying DNS for an
+    // FQDN remote (vpn.remote.host is derived from the DM URI, which may be a
+    // name) and keep the tun device + keys across in-session restarts so the
+    // client re-dials on its own instead of exiting. Reconnect is also gated by
+    // `management-hold` — the supervisor re-releases the hold on each >HOLD:.
+    ss << "resolv-retry infinite\n";
+    ss << "persist-tun\n";
+    ss << "persist-key\n";
     ss << "ca   " << c.ca_path       << "\n";
     ss << "cert " << c.cert_path     << "\n";
     ss << "key  " << c.key_path      << "\n";
