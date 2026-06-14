@@ -53,6 +53,7 @@
         <app-routing-submenu (nav)="onSubNavSelect($event)"></app-routing-submenu>
         <div class="content-area">
           <app-port-forward *ngIf="!selectedSubNav || selectedSubNav==='ports' || selectedSubNav==='dnat'"></app-port-forward>
+          <app-device-forwarding *ngIf="selectedSubNav==='forward'"></app-device-forwarding>
           <app-custom-rules *ngIf="selectedSubNav==='rules'"></app-custom-rules>
         </div>
       </ng-container>
