@@ -14,6 +14,11 @@ import { Component, Output, EventEmitter } from '@angular/core';
         <clr-icon shape="target"></clr-icon>
         <span>DNAT Target</span>
       </a>
+      <a class="subnav-tab" [class.active]="active === 'forward'"
+         (click)="select('forward')">
+        <clr-icon shape="network-globe"></clr-icon>
+        <span>Forwarding</span>
+      </a>
       <a class="subnav-tab" [class.active]="active === 'rules'"
          (click)="select('rules')">
         <clr-icon shape="firewall"></clr-icon>
