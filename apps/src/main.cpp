@@ -1315,46 +1315,50 @@ int main(std::int32_t argc, char *argv[]) {
         }
     }
 
-    // Server role: (re)register per-device BS/DM PSKs from the cloud's
-    // cloud.endpoint.credentials array. BS identity = sha256(serial) — exactly
-    // what the device derives from its endpoint — and DM identity = dm.psk.id.
-    // add_credential() is a keyed store, so this is additive + idempotent.
-    // Reading the array requires gid:cloud-svc (the BS runs as cloud-svc).
-    auto register_endpoint_creds = [&](auto dtls) {   // dtls: shared_ptr<DTLSAdapter>
+    // Server role: resolve per-device BS/DM PSKs LIVE from the cloud's
+    // cloud.endpoint.credentials array for the identity the client presents at
+    // the DTLS handshake — no startup pre-load and no watch. The presented id
+    // is BS = sha256(serial)[:32] (exactly what the device derives from its
+    // endpoint) or DM = dm.psk.id. The resolver runs on the handshake/reactor
+    // thread (NOT the ds listener thread), so the blocking ds get() is safe;
+    // this mirrors the BS provisioning_resolver that already reads ds per /bs.
+    // Reading the array requires gid:cloud-svc (the servers run as cloud-svc).
+    // Net effect: a device provisioned after the server started authenticates
+    // immediately, and ds stays the single source of truth.
+    auto install_psk_resolver = [&](auto dtls) {   // dtls: shared_ptr<DTLSAdapter>
         if (!dtls || UDPAdapter::Role_t::SERVER != role || !ds.client()) return;
         const bool is_bs = argValueMap["lwm2m-instance"] == "bs";
-        std::vector<data_store::Client::GetResult> got;
-        auto rs = ds.client()->get({std::string("cloud.endpoint.credentials")}, got);
-        if (!rs.ok || got.empty() || !got[0].has_value) return;
-        auto s = data_store::to_string(got[0].value);
-        if (!s || s->empty()) return;
-        try {
-            auto arr = nlohmann::json::parse(*s);
-            if (!arr.is_array()) return;
-            int n = 0;
-            for (auto& e : arr) {
-                if (!e.is_object()) continue;
-                std::string ident, key;
-                if (is_bs) {
-                    const std::string serial = e.value("serial", std::string());
-                    key = e.value("bs.psk.key", std::string());
-                    // 128-bit identity (first 32 hex chars), matching the
-                    // device's iot::sha256_hex(endpoint).substr(0,32).
-                    if (!serial.empty()) ident = iot::sha256_hex(serial).substr(0, 32);
-                } else {
-                    ident = e.value("dm.psk.id", std::string());
-                    key   = e.value("dm.psk.key", std::string());
+        auto* cli = ds.client();
+        dtls->set_psk_resolver([cli, is_bs](const std::string& presented) -> std::string {
+            std::vector<data_store::Client::GetResult> got;
+            auto rs = cli->get({std::string("cloud.endpoint.credentials")}, got);
+            if (!rs.ok || got.empty() || !got[0].has_value) return std::string();
+            auto s = data_store::to_string(got[0].value);
+            if (!s || s->empty()) return std::string();
+            try {
+                auto arr = nlohmann::json::parse(*s);
+                if (!arr.is_array()) return std::string();
+                for (auto& e : arr) {
+                    if (!e.is_object()) continue;
+                    if (is_bs) {
+                        const std::string serial = e.value("serial", std::string());
+                        // 128-bit identity (first 32 hex chars), matching the
+                        // device's iot::sha256_hex(endpoint).substr(0,32).
+                        if (!serial.empty() &&
+                            iot::sha256_hex(serial).substr(0, 32) == presented)
+                            return e.value("bs.psk.key", std::string());
+                    } else if (e.value("dm.psk.id", std::string()) == presented) {
+                        return e.value("dm.psk.key", std::string());
+                    }
                 }
-                if (!ident.empty() && !key.empty()) { dtls->add_credential(ident, key); ++n; }
+            } catch (const std::exception& ex) {
+                ACE_ERROR((LM_ERROR,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l PSK resolver: "
+                                    "cloud.endpoint.credentials parse: %C\n"),
+                           ex.what()));
             }
-            ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l registered %d per-endpoint %C PSK(s)\n"),
-                       n, is_bs ? "BS" : "DM"));
-        } catch (const std::exception& ex) {
-            ACE_ERROR((LM_ERROR,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l cloud.endpoint.credentials parse: %C\n"),
-                       ex.what()));
-        }
+            return std::string();
+        });
     };
 
     if(UDPAdapter::Scheme_t::CoAPs == scheme) {
@@ -1366,10 +1370,10 @@ int main(std::int32_t argc, char *argv[]) {
             auto& ent = *it;
             // Only register a shared identity/secret when one was explicitly
             // provided (client: derived id + ds secret; dev server override).
-            // Empty → server relies solely on per-endpoint creds below.
+            // Empty → server relies solely on the ds-backed resolver below.
             if (!identity.empty() && !secret.empty())
                 ent.second->dtlsAdapter()->add_credential(identity, secret);
-            register_endpoint_creds(ent.second->dtlsAdapter());
+            install_psk_resolver(ent.second->dtlsAdapter());
         }
     }
 
