@@ -179,6 +179,19 @@ today's script, and ds (`/var/lib/iot`) is persistent so the result survives a
 reboot and the relaunched lwm2m client mirrors it back onto Object 5
 (`/5/0/3`, `/5/0/5`, `/5/0/7`).
 
+### 3.5 Local upload (drag-and-drop) — second source
+
+Besides the cloud URL (`iot.update.request` → stager), the device-ui
+**Software Update** page accepts a drag-and-dropped `.ipk` (or small `.tar.gz`
+bundle). iot-httpd's `POST /api/v1/update/upload?name=<f>` (admin-only) writes the
+raw body straight into the spool (`/run/iot/update/<f>`) and trips the trigger —
+the same `iot-swupdate.path` install path, no stager/download. Yocto/systemd only.
+
+Perms: iot-httpd runs `DynamicUser=yes`, so the spool is `0775 root:iot` and the
+unit gets `SupplementaryGroups=iot`; root `iot-swupdate` installs. Bounded by the
+HTTP parser's 8 MiB body cap (`kMaxBody`) — larger / full-image bundles need the
+streaming upload + A/B image OTA in `apps/docs/tdd-ab-image-ota.md`.
+
 ## 4. Reboot-vs-restart decision (requirement 5 — decided here)
 
 **Policy = `auto` by default.** After a successful `opkg install`:
