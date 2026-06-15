@@ -24,7 +24,6 @@ import { WifiConfigComponent } from './wan/wifi-config/wifi-config.component';
 import { WifiScanComponent } from './wan/wifi-scan/wifi-scan.component';
 import { IfacePriorityComponent } from './wan/iface-priority/iface-priority.component';
 import { RoutingSubmenuComponent } from './routing/routing-submenu/routing-submenu.component';
-import { PortForwardComponent } from './routing/port-forward/port-forward.component';
 import { CustomRulesComponent } from './routing/custom-rules/custom-rules.component';
 import { DeviceForwardingComponent } from './routing/device-forwarding/device-forwarding.component';
 import { Lwm2mSubmenuComponent } from './lwm2m/lwm2m-submenu/lwm2m-submenu.component';
@@ -47,7 +46,7 @@ import { DsDebugDirective } from '../common/ds-debug.directive';
     DashboardComponent, EndpointListComponent, StatusBadgeComponent, ToastComponent, LogViewerComponent,
     VpnSubmenuComponent, VpnConfigComponent, VpnStatusComponent,
     WanSubmenuComponent, WifiConfigComponent, WifiScanComponent, IfacePriorityComponent,
-    RoutingSubmenuComponent, PortForwardComponent, CustomRulesComponent, DeviceForwardingComponent,
+    RoutingSubmenuComponent, CustomRulesComponent, DeviceForwardingComponent,
     Lwm2mSubmenuComponent, Lwm2mConfigComponent, BsConfigComponent,
     ServicesSubmenuComponent, ServicesListComponent, HttpConfigComponent,
     UsersComponent, SoftwareUpdateComponent,

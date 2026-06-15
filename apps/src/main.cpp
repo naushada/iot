@@ -11,6 +11,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <unordered_map>
@@ -352,6 +353,21 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     // (via registry->expire in the tick below). `publish_regs` stays null for
     // non-DM instances, which skips publishing entirely.
     std::shared_ptr<std::function<void()>> publish_regs;
+
+    // Installed firmware version per endpoint, captured from server-initiated
+    // Read /3/0/3 (Firmware Version = iot.version) replies and merged into
+    // cloud.lwm2m.registrations by publish_regs. `seqToEp` correlates an async
+    // reply back to the endpoint it was read from — the reply only echoes our
+    // token, so the tick stamps a 0x06-tagged 24-bit sequence into the token
+    // and the response handler maps it back. Mutex-guarded because the tick
+    // (writer) and the response handler (reader) may run on different reactor
+    // threads. Allocated for every instance but only wired for dm (publish_regs
+    // null elsewhere), so non-DM instances issue no version reads.
+    auto epVersions = std::make_shared<std::unordered_map<std::string, std::string>>();
+    auto seqToEp    = std::make_shared<std::unordered_map<std::uint32_t, std::string>>();
+    auto verMtx     = std::make_shared<std::mutex>();
+    auto verSeq     = std::make_shared<std::uint32_t>(0);
+
     if (lwm2mInstance == "dm") {
         auto* dsClient = ds.client();
         auto lastSeen =
@@ -363,7 +379,7 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                     .count());
         };
         publish_regs = std::make_shared<std::function<void()>>(
-            [registry, dsClient, lastSeen, now_unix]() {
+            [registry, dsClient, lastSeen, now_unix, epVersions, verMtx]() {
                 if (!dsClient) return;
                 const std::int64_t nowUnix = now_unix();
                 nlohmann::json arr = nlohmann::json::array();
@@ -375,9 +391,17 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                     const std::int64_t ls =
                         (it != lastSeen->end()) ? it->second : nowUnix;
                     kept[ep] = ls;
-                    arr.push_back({{"endpoint", ep},
-                                   {"registered", true},
-                                   {"last_seen_unix", ls}});
+                    nlohmann::json row = {{"endpoint", ep},
+                                          {"registered", true},
+                                          {"last_seen_unix", ls}};
+                    // Carry the last-read installed version, if any.
+                    {
+                        std::lock_guard<std::mutex> lk(*verMtx);
+                        auto vit = epVersions->find(ep);
+                        if (vit != epVersions->end() && !vit->second.empty())
+                            row["version"] = vit->second;
+                    }
+                    arr.push_back(std::move(row));
                 }
                 *lastSeen = std::move(kept);
                 dsClient->set(std::string("cloud.lwm2m.registrations"),
@@ -398,6 +422,40 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
 
         // Seed an initial (empty) snapshot so iot-cloudd starts clean.
         (*publish_regs)();
+
+        // Capture server-initiated Read /3/0/3 replies → installed version.
+        // A reply is a response-class CoAP code; processRequest routes it here
+        // (m_dmRspHandler) instead of dispatching it as a request. The reply
+        // echoes our token (0x06 tag + 24-bit seq); map the seq back to its
+        // endpoint, record the plain-text payload (the Firmware Version
+        // string), and republish so iot-cloudd + the UI pick it up.
+        for (auto& [type, ctx] : services) {
+            (void)type;
+            ctx->coapAdapter()->dmResponseHandler(
+                [epVersions, seqToEp, verMtx, publish_regs]
+                (const CoAPAdapter::CoAPMessage& m) {
+                    const auto& tok = m.tokens;
+                    if (tok.size() < 4 || tok[0] != 0x06) return;
+                    const std::uint32_t seq =
+                        (static_cast<std::uint32_t>(tok[1]) << 16) |
+                        (static_cast<std::uint32_t>(tok[2]) << 8)  |
+                         static_cast<std::uint32_t>(tok[3]);
+                    bool changed = false;
+                    {
+                        std::lock_guard<std::mutex> lk(*verMtx);
+                        auto it = seqToEp->find(seq);
+                        if (it == seqToEp->end()) return;
+                        const std::string ep = it->second;
+                        seqToEp->erase(it);
+                        if (!m.payload.empty() &&
+                            (*epVersions)[ep] != m.payload) {
+                            (*epVersions)[ep] = m.payload;
+                            changed = true;
+                        }
+                    }
+                    if (changed && publish_regs) (*publish_regs)();
+                });
+        }
     }
 
     // L9 stub 4 — periodic server-side DM driver. Once per
@@ -426,7 +484,8 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     auto otaSent = std::make_shared<std::set<std::string>>();
 
     app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll,
-                                       publish_regs, dsCertPush, otaSent]() {
+                                       publish_regs, dsCertPush, otaSent,
+                                       seqToEp, verMtx, verSeq]() {
         // Local constexpr inside the lambda body — gcc 11 wouldn't let
         // us reference an outer-scope constexpr without an explicit
         // capture even though it's a constant expression.
@@ -527,6 +586,14 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
             }
         }
 
+        // Drop last tick's unanswered version-read correlations before issuing
+        // fresh ones — replies arrive within seconds, so a 30s-old seq is stale
+        // (this also bounds seqToEp for never-replying offline endpoints).
+        if (publish_regs && seqToEp && verMtx) {
+            std::lock_guard<std::mutex> lk(*verMtx);
+            seqToEp->clear();
+        }
+
         // Walk services to find the DeviceMgmtServer ServiceContext;
         // its send_async takes an explicit peer so one outbound socket
         // serves every registered client.
@@ -544,6 +611,29 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                     /*oid*/ 3, /*iid*/ 0, /*rid*/ 0,
                     /*accept*/ -1);
                 ctx->send_async(req, reg.peerHost, reg.peerPort);
+
+                // Read /3/0/3 (Firmware Version) → installed version for the
+                // cloud Software-Update "Installed" column. dm only. The reply
+                // only echoes our token, so stamp a 0x06 tag + 24-bit seq and
+                // map the seq back to this endpoint in the dmResponseHandler.
+                if (publish_regs && verSeq && seqToEp && verMtx) {
+                    std::uint32_t seq;
+                    {
+                        std::lock_guard<std::mutex> lk(*verMtx);
+                        seq = (++(*verSeq)) & 0x00FFFFFFu;
+                        (*seqToEp)[seq] = reg.endpoint;
+                    }
+                    std::string vtok;
+                    vtok.push_back(static_cast<char>(0x06));
+                    vtok.push_back(static_cast<char>((seq >> 16) & 0xFF));
+                    vtok.push_back(static_cast<char>((seq >> 8)  & 0xFF));
+                    vtok.push_back(static_cast<char>( seq        & 0xFF));
+                    auto vreq = ::lwm2m::dmsrv::build_read(
+                        next_msgid(), vtok,
+                        /*oid*/ 3, /*iid*/ 0, /*rid*/ 3,
+                        /*accept*/ -1);
+                    ctx->send_async(vreq, reg.peerHost, reg.peerPort);
+                }
 
                 // OTA: push a pending firmware update over Object 5 (Package
                 // URI WRITE /5/0/1 then Update EXECUTE /5/0/2), at-most-once
@@ -774,7 +864,20 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         if (!proto.empty()) dsc->set("vpn.remote.proto", data_store::Value{proto});
         return 0;
     };
-    ::lwm2m::objects::install_canonical_objects(*plumb.store, configDir, {},
+    // Device object (OID 3): bind RID 3 Firmware Version to the running
+    // release (iot.version, written by httpd = IOT_VERSION) so a server Read
+    // /3/0/3 surfaces what the device is actually running — the cloud uses
+    // this for the Software-Update "Installed" column.
+    ::lwm2m::objects::DeviceHooks deviceHooks;
+    deviceHooks.firmwareVersion = [dsc]() -> std::string {
+        std::vector<data_store::Client::GetResult> got;
+        if (dsc && dsc->get({"iot.version"}, got).ok && !got.empty() && got[0].has_value)
+            if (auto s = data_store::to_string(got[0].value))
+                if (!s->empty()) return *s;
+        return {};
+    };
+    ::lwm2m::objects::install_canonical_objects(*plumb.store, configDir,
+                                                std::move(deviceHooks),
                                                 std::move(fwHooks), std::move(certHooks));
 
     // device-ui self-update: a write to iot.update.request launches the same

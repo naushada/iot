@@ -180,7 +180,7 @@ Override on the command line — they pass through to `docker-compose.yml`:
 | `HTTPS` | `0` | `1` = serve https on 443 (self-signed cert auto-generated) |
 | `TLS_HOST` | host primary IP | Cert subject/SAN when `HTTPS=1` (set to your IP or domain) |
 | `HTTP_PORT` | `80` (`443` if `HTTPS=1`) | Cloud UI / REST port |
-| `PROXY_START` / `PROXY_END` | `10000` / `10050` | Device-UI reverse-proxy port pool (published range; must cover the ds `cloud.vpn.proxy.port.*` range) |
+| `PROXY_START` / `PROXY_END` | `10000` / `10050` | Port-based device-UI DNAT range — now a **transition fallback**. Primary access is the path-scoped proxy (`/dev/<endpoint>/`) served by iot-httpd in iot-cloudd's shared netns. Still published; must cover the ds `cloud.vpn.proxy.port.*` range |
 | `CLOUD_IMAGE` | `docker.io/naushada/iot-cloud:latest` | Image to run |
 | `PULL` | `1` | Pull the image on start. `0` = use a local `./run.sh build` as-is |
 | `PLATFORM` | auto (`uname -m`) | Image arch to pull. The published image is multi-arch (`linux/amd64` + `linux/arm64`), so the host arch is selected automatically; override e.g. `linux/amd64` |

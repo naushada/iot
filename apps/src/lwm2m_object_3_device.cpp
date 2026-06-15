@@ -158,8 +158,19 @@ int install_device(ObjectStore& store,
                           override_or(overrides, 1, defs.modelNumber));
     inst.resources[2]  = read_only_string(2,  "Serial Number",
                           override_or(overrides, 2, defs.serialNumber));
-    inst.resources[3]  = read_only_string(3,  "Firmware Version",
-                          override_or(overrides, 3, defs.firmwareVer));
+    // RID 3 Firmware Version — live from the hook (iot.version) when wired,
+    // else the 0.lua override / compiled fallback (static metadata).
+    if (hooks.firmwareVersion) {
+        Resource fw;
+        fw.rid = 3; fw.name = "Firmware Version";
+        fw.type = ResourceType::String;
+        fw.ops  = Operations::R;
+        fw.read = std::move(hooks.firmwareVersion);
+        inst.resources[3] = std::move(fw);
+    } else {
+        inst.resources[3]  = read_only_string(3,  "Firmware Version",
+                              override_or(overrides, 3, defs.firmwareVer));
+    }
     inst.resources[4]  = executable(4, "Reboot",
                           hooks.reboot ? std::move(hooks.reboot)
                                        : [](const std::string&) { return 0; });

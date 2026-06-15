@@ -99,8 +99,8 @@ export class HttpsvcService {
 
   // ── Cloud API (L21) ──────────────────────────────────────────────
 
-  getCloudEndpoints(): Observable<Array<{endpoint:string;tun_ip:string;proxy_port:number;registered:boolean}>> {
-    return this.http.get<{ok:boolean;endpoints:Array<{endpoint:string;tun_ip:string;proxy_port:number;registered:boolean}>}>(
+  getCloudEndpoints(): Observable<Array<{endpoint:string;tun_ip:string;proxy_port:number;registered:boolean;installed_version?:string}>> {
+    return this.http.get<{ok:boolean;endpoints:Array<{endpoint:string;tun_ip:string;proxy_port:number;registered:boolean;installed_version?:string}>}>(
       `${this.api}/api/v1/cloud/endpoints`, { withCredentials: true })
       .pipe(map(r => r.endpoints || []), catchError(() => of([])));
   }

@@ -6,7 +6,7 @@ import { SessionService } from '../../common/session.service';
 import { ToastService } from '../../common/toast.service';
 
 interface FwPkg { pkg: string; version: string; arch: string; ipk_url: string; sha256: string; }
-interface Ep { endpoint: string; tun_ip: string; proxy_port: number; registered: boolean; }
+interface Ep { endpoint: string; tun_ip: string; proxy_port: number; registered: boolean; installed_version?: string; }
 interface UpdStatus { serial: string; state: number; result: number; version: string; ts: number; }
 
 @Component({
@@ -52,7 +52,7 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
                 [state]="e.registered ? 'connected' : 'exited'"></app-status-badge>
             </clr-dg-cell>
             <clr-dg-cell><code>{{ e.tun_ip }}</code></clr-dg-cell>
-            <clr-dg-cell>{{ installedVersion(e.endpoint) || '—' }}</clr-dg-cell>
+            <clr-dg-cell>{{ e.installed_version || '—' }}</clr-dg-cell>
           </clr-dg-row>
 
           <clr-dg-footer>{{ endpoints.length }} device{{ endpoints.length===1?'':'s' }}</clr-dg-footer>
@@ -141,11 +141,6 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     });
   }
 
-
-  installedVersion(serial: string): string {
-    const s = this.status.find(x => x.serial === serial);
-    return s ? s.version : '';
-  }
 
   stateLabel(s: number): string {
     return ['idle', 'downloading', 'downloaded', 'updating'][s] || 'unknown';
