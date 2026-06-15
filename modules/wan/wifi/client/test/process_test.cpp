@@ -30,6 +30,7 @@
 
 using wifi_client::Process;
 using wifi_client::WifiNetwork;
+using wifi_client::build_dhcp_argv;
 using wifi_client::build_wpa_supplicant_config;
 using wifi_client::parse_wifi_networks;
 using wifi_client::pick_dhcp_client;
@@ -229,6 +230,41 @@ TEST(WIFI_REQ_WIFI_017_dhcp_picker_honours_schema_key,
     // Even when scheme says dhclient, override still wins.
     p = pick_dhcp_client("dhclient", "/opt/local/bin/my-dhcp");
     EXPECT_EQ("/opt/local/bin/my-dhcp", p);
+}
+
+TEST(WIFI_REQ_WIFI_017_dhcp_picker_honours_schema_key,
+     udhcpc_argv_appends_lease_hook_when_script_given) {
+    auto a = build_dhcp_argv("/sbin/udhcpc", "wlan0",
+                             "/usr/share/iot/udhcpc-ds.script");
+    // udhcpc -i wlan0 -f -q -s <script>
+    ASSERT_GE(a.size(), 7u);
+    EXPECT_EQ("/sbin/udhcpc", a[0]);
+    EXPECT_EQ("-i", a[1]);
+    EXPECT_EQ("wlan0", a[2]);
+    EXPECT_EQ("-f", a[3]);
+    EXPECT_EQ("-q", a[4]);
+    EXPECT_EQ("-s", a[5]);
+    EXPECT_EQ("/usr/share/iot/udhcpc-ds.script", a[6]);
+}
+
+TEST(WIFI_REQ_WIFI_017_dhcp_picker_honours_schema_key,
+     udhcpc_argv_omits_hook_when_script_empty) {
+    auto a = build_dhcp_argv("/sbin/udhcpc", "wlan0", "");
+    for (const auto& tok : a)
+        EXPECT_NE("-s", tok) << "no -s expected when script is empty";
+    EXPECT_EQ(5u, a.size());  // path -i wlan0 -f -q
+}
+
+TEST(WIFI_REQ_WIFI_017_dhcp_picker_honours_schema_key,
+     dhclient_ignores_lease_hook_script) {
+    auto a = build_dhcp_argv("/sbin/dhclient", "wlan0",
+                             "/usr/share/iot/udhcpc-ds.script");
+    // dhclient -d wlan0 — never -s.
+    ASSERT_EQ(3u, a.size());
+    EXPECT_EQ("/sbin/dhclient", a[0]);
+    EXPECT_EQ("-d", a[1]);
+    EXPECT_EQ("wlan0", a[2]);
+    for (const auto& tok : a) EXPECT_NE("-s", tok);
 }
 
 TEST(WIFI_REQ_WIFI_017_dhcp_picker_honours_schema_key,
