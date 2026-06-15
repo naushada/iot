@@ -181,6 +181,16 @@ return {
         type    = "boolean",
         default = false,
     },
+
+    -- data-store self-benchmark summary (JSON), written by ds-bench at the end
+    -- of a run: { config, mem:{rss_kb,hwm_kb}, per-op {ops,p50,p95,p99} }.
+    -- Read via `ds-cli get ds.bench.summary` or surfaced in the UI.
+    -- See modules/data-store/docs/benchmark.md.
+    ["ds.bench.summary"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
     ["iot.update.version"] = {      -- installed package version after apply
         access  = "Admin",
         type    = "string",
