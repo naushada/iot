@@ -1,0 +1,35 @@
+#!/bin/sh
+# iot-set-hostname — derive a stable, collision-safe hostname from the RPi
+# serial and apply it so Avahi advertises <hostname>.local for zero-touch
+# device-UI discovery (http://iot-<serial>.local:8080).
+#
+# Run once at boot by iot-hostname.service, before avahi-daemon. Idempotent:
+# re-running sets the same name. See apps/docs/tdd-wifi-zero-touch-mdns.md.
+set -eu
+
+serial=""
+
+# Preferred: device-tree serial-number (NUL-terminated string).
+if [ -r /sys/firmware/devicetree/base/serial-number ]; then
+    serial=$(tr -d '\000' < /sys/firmware/devicetree/base/serial-number || true)
+fi
+
+# Fallback: /proc/cpuinfo "Serial" line.
+if [ -z "$serial" ] && [ -r /proc/cpuinfo ]; then
+    serial=$(awk -F': ' '/^Serial/ { print $2; exit }' /proc/cpuinfo || true)
+fi
+
+# Sanitize to a valid hostname label: lowercase, keep [a-z0-9], last 8 chars.
+suffix=$(printf '%s' "$serial" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9' | tail -c 8)
+[ -n "$suffix" ] || suffix="device"
+name="iot-${suffix}"
+
+if command -v hostnamectl >/dev/null 2>&1 && hostnamectl set-hostname "$name" 2>/dev/null; then
+    :
+else
+    # Fallback when hostnamectl/dbus is unavailable.
+    printf '%s\n' "$name" > /etc/hostname
+    hostname "$name" 2>/dev/null || true
+fi
+
+echo "iot-set-hostname: hostname set to ${name}"

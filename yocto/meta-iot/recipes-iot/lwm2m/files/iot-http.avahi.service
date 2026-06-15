@@ -1,0 +1,16 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- Advertises the iot-httpd device UI over mDNS as _http._tcp so a laptop on
+     the same LAN can find it with no IP lookup. Installed to
+     /etc/avahi/services/iot-http.service. %h expands to the system hostname
+     (iot-<serial>, set by iot-set-hostname), so the UI is reachable at
+     http://iot-<serial>.local:8080. Port is the iot-httpd default
+     (http.listen.port); if an operator changes that key this advert is stale.
+     See apps/docs/tdd-wifi-zero-touch-mdns.md. -->
+<service-group>
+  <name replace-wildcards="yes">IoT Device UI on %h</name>
+  <service>
+    <type>_http._tcp</type>
+    <port>8080</port>
+  </service>
+</service-group>
