@@ -51,7 +51,18 @@ SRC_URI = "\
     file://iot-ota-confirm.service \
     file://migrations/README.md \
     file://migrations/0000-template.sh.example \
+    file://gen_wifi_default.py \
 "
+
+# Optional, gitignored WiFi credential seed. When an integrator drops
+# files/wifi_credentials.lua into this layer, bake it into the wifi.networks
+# schema default at build time (see do_install:append + apps/docs/
+# tdd-wifi-credentials-seed.md). Adding it to SRC_URI only when present keeps
+# it optional AND part of the recipe signature, so changing the credentials
+# triggers a rebuild. Absent => no-op, the committed "changeme" placeholder
+# stands.
+SRC_URI += "${@'file://wifi_credentials.lua' if os.path.exists(d.getVar('THISDIR') + '/files/wifi_credentials.lua') else ''}"
+
 SRCREV = "${AUTOREV}"
 
 # Package version. Keep the leading semver in sync with the repo-root /VERSION
@@ -239,6 +250,22 @@ do_install() {
         install -m 0644 ${WORKDIR}/net-router.env     ${D}${sysconfdir}/iot/
         install -m 0644 ${WORKDIR}/wifi-client.env    ${D}${sysconfdir}/iot/
         install -m 0644 ${WORKDIR}/httpd.env          ${D}${sysconfdir}/iot/
+    fi
+}
+
+# Bake an optional WiFi credential seed into the wifi.networks schema default.
+# cmake_do_install has already placed wifi.lua under ds-schemas/; rewrite it in
+# place from files/wifi_credentials.lua when that file was fetched. No-op (and
+# the "changeme" placeholder default stands) when it is absent.
+# python3-native gives the do_install task a python3 on PATH for the generator.
+do_install[depends] += "python3-native:do_populate_sysroot"
+do_install:append() {
+    if [ -f ${WORKDIR}/wifi_credentials.lua ]; then
+        python3 ${WORKDIR}/gen_wifi_default.py \
+            ${WORKDIR}/wifi_credentials.lua \
+            ${D}${sysconfdir}/iot/ds-schemas/wifi.lua \
+            || bbfatal "gen_wifi_default.py failed on wifi_credentials.lua"
+        bbnote "wifi-client: seeded wifi.networks default from wifi_credentials.lua"
     fi
 }
 
