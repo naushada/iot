@@ -36,7 +36,6 @@ export class DataStoreService {
     'wifi.scan.interval.sec', 'wifi.scan.max.results',
     'wifi.dhcp.client', 'wifi.networks',
     // Net / routing
-    'net.lwm2m.target.ip', 'net.lwm2m.target.port', 'net.forward.ports',
     'net.custom.rules', 'net.iface.priority', 'net.iface.eth.name',
     'net.iface.wifi.name', 'net.iface.cellular.name', 'net.poll.interval.sec',
     'net.state', 'net.rules.applied.count', 'net.last.apply.unix',

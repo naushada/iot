@@ -46,6 +46,11 @@ struct DeviceHooks {
     std::function<std::string()> memTotalKb;
     /// Same for current time (epoch seconds as decimal string).
     std::function<std::string()> currentTime;
+    /// Optional reader for RID 3 (Firmware Version). When set, /3/0/3
+    /// returns its result live (e.g. iot.version from ds) instead of the
+    /// deviceObject/0.lua value or the compiled-in fallback. Leave nullptr
+    /// to keep the static metadata behaviour.
+    std::function<std::string()> firmwareVersion;
 };
 
 /// Install OID 3 into `store`. `configDir` is the path under which the

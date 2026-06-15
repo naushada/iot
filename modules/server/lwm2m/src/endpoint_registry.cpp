@@ -61,6 +61,17 @@ bool EndpointRegistry::update_dev_tun_ip(const std::string& ep,
     return true;
 }
 
+bool EndpointRegistry::update_version(const std::string& ep,
+                                      const std::string& version) {
+    std::lock_guard<std::mutex> lk(m_mutex);
+
+    auto it = m_by_ep.find(ep);
+    if (it == m_by_ep.end()) return false;                  // unknown endpoint
+    if (it->second.installed_version == version) return false;  // unchanged
+    it->second.installed_version = version;
+    return true;
+}
+
 const EndpointInfo* EndpointRegistry::lookup_by_ep(const std::string& ep) const {
     std::lock_guard<std::mutex> lk(m_mutex);
     auto it = m_by_ep.find(ep);

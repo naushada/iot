@@ -113,6 +113,7 @@ void sync_endpoints_to_ds(data_store::Client& ds,
         item["proxy_port"]    = ep.proxy_port;
         item["registered"]    = ep.registered;
         item["last_seen_unix"] = ep.last_seen_unix;
+        item["installed_version"] = ep.installed_version;  // device /3/0/3
         arr.push_back(item);
     }
     ds.set("cloud.endpoints", data_store::Value{arr.dump()});
@@ -178,6 +179,7 @@ bool reconcile_registrations(data_store::Client& ds,
                              server::lwm2m::EndpointRegistry& reg) {
     const std::string js = ds_str(ds, "cloud.lwm2m.registrations", "[]");
     std::unordered_map<std::string, std::int64_t> online;  // ep → last_seen_unix
+    std::unordered_map<std::string, std::string>  versions;  // ep → /3/0/3
     try {
         auto arr = nlohmann::json::parse(js);
         if (arr.is_array()) {
@@ -186,6 +188,8 @@ bool reconcile_registrations(data_store::Client& ds,
                 if (!e.value("registered", false)) continue;
                 auto ep = e.value("endpoint", std::string());
                 if (ep.empty()) continue;
+                auto ver = e.value("version", std::string());
+                if (!ver.empty()) versions[ep] = std::move(ver);
                 online[std::move(ep)] = e.value("last_seen_unix",
                                                 std::int64_t{0});
             }
@@ -199,6 +203,11 @@ bool reconcile_registrations(data_store::Client& ds,
     }
     bool changed = false;
     for (const auto& ep : reg.list_all()) {
+        // Record the reported installed version regardless of online state
+        // (a device read once but now offline keeps its last-known version).
+        auto vit = versions.find(ep.ep);
+        if (vit != versions.end() && reg.update_version(ep.ep, vit->second))
+            changed = true;
         auto it = online.find(ep.ep);
         if (it != online.end()) {
             // Online — refresh the registered flag + last-seen timestamp.
@@ -302,6 +311,8 @@ std::size_t rehydrate_registry(data_store::Client& ds,
                     e.value("registered", false));
                 info.dev_tun_ip     = e.value("dev_tun_ip", std::string());
                 info.last_seen_unix = e.value("last_seen_unix", std::int64_t{0});
+                info.installed_version =
+                    e.value("installed_version", std::string());
                 if (reg.add(info)) {
                     vpn.reserve(info.ep, info.tun_ip, info.proxy_port);
                     ++restored;

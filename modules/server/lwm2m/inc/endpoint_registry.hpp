@@ -25,6 +25,9 @@ struct EndpointInfo {
     std::uint16_t proxy_port = 0;  // 5001+
     bool registered = false;       // LwM2M registration active
     std::int64_t last_seen_unix = 0;  // last Register/Update, 0 = never
+    std::string installed_version;    // device's running firmware (LwM2M
+                                      // /3/0/3 = iot.version), learned from
+                                      // lwm2m-dm; empty until first read
 
     EndpointInfo() = default;
     EndpointInfo(std::string ep_, std::string tun_ip_,
@@ -60,6 +63,12 @@ public:
     /// targets this `dev_tun_ip`. Returns true only if the value changed
     /// (false if unknown ep or unchanged).
     bool update_dev_tun_ip(const std::string& ep, const std::string& ip);
+
+    /// Record the device's running firmware version (LwM2M /3/0/3), learned
+    /// from lwm2m-dm via cloud.lwm2m.registrations. Stored for display only (no
+    /// reverse index). Returns true only if the value changed (false if unknown
+    /// ep or unchanged).
+    bool update_version(const std::string& ep, const std::string& version);
 
     /// Lookup by endpoint name.  Returns nullptr when not found.
     const EndpointInfo* lookup_by_ep(const std::string& ep) const;

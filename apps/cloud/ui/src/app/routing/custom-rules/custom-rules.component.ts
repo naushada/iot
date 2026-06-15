@@ -98,20 +98,6 @@ interface CustomRule {
 
         <clr-dg-footer>{{ rules.length }} rule{{ rules.length===1?'':'s' }}</clr-dg-footer>
       </clr-datagrid>
-
-      <!-- Forwarding rules (derived, read-only) -->
-      <h4 style="margin-top:28px;">Port Forwarding <span class="hint">(net.forward.ports → DNAT target)</span></h4>
-      <clr-datagrid>
-        <clr-dg-column>Port</clr-dg-column>
-        <clr-dg-column>DNAT To</clr-dg-column>
-
-        <clr-dg-row *clrDgItems="let p of forwardPorts">
-          <clr-dg-cell>{{ p }}</clr-dg-cell>
-          <clr-dg-cell>{{ (targetIp || 'target IP') + ':' + targetPort }}</clr-dg-cell>
-        </clr-dg-row>
-
-        <clr-dg-footer>{{ forwardPorts.length }} port{{ forwardPorts.length===1?'':'s' }}</clr-dg-footer>
-      </clr-datagrid>
     </div>
   `,
   styles: [`
@@ -125,9 +111,6 @@ interface CustomRule {
 })
 export class CustomRulesComponent implements OnInit {
   rules: CustomRule[] = [];
-  forwardPorts: string[] = [];
-  targetIp = '';
-  targetPort = 5684;
   routeState = '';
 
   // Add-rule form state
@@ -149,8 +132,7 @@ export class CustomRulesComponent implements OnInit {
   ngOnInit(): void {
     // Instant paint from the prefetched cache, then refresh from the wire.
     this.applyData(this.ds.snapshot());
-    this.http.dbGet(['net.custom.rules', 'net.forward.ports',
-      'net.lwm2m.target.ip', 'net.lwm2m.target.port', 'net.state']).subscribe({
+    this.http.dbGet(['net.custom.rules', 'net.state']).subscribe({
       next: (r) => { if (r.ok && r.data) this.applyData(r.data as Record<string, unknown>); }
     });
   }
@@ -160,12 +142,7 @@ export class CustomRulesComponent implements OnInit {
       try { const arr = JSON.parse(String(d['net.custom.rules'])); this.rules = Array.isArray(arr) ? arr : []; }
       catch { this.rules = []; }
     }
-    if (d['net.lwm2m.target.ip'] != null)   this.targetIp   = String(d['net.lwm2m.target.ip']);
-    if (d['net.lwm2m.target.port'] != null) this.targetPort = Number(d['net.lwm2m.target.port']) || 5684;
     if (d['net.state'] != null)             this.routeState = String(d['net.state']);
-    if (d['net.forward.ports'] != null) {
-      this.forwardPorts = String(d['net.forward.ports']).split(',').map(s => s.trim()).filter(Boolean);
-    }
   }
 
   addRule(): void {

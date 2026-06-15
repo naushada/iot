@@ -193,9 +193,6 @@ export interface Lwm2mConfig {
 // ── Net / routing config ────────────────────────────────────────────
 
 export interface NetConfig {
-  lwm2m_target_ip?: string;
-  lwm2m_target_port?: number;
-  forward_ports?: string;    // comma-joined
   iface_priority?: string;   // comma-joined
   custom_rules?: string;     // JSON array
 }
