@@ -571,7 +571,9 @@ void install_handlers(Router& router,
                 "vpn.exit_code", "vpn.gate.reason", "vpn.bound.iface",
                 // WiFi
                 "wifi.assoc.state", "wifi.assoc.ssid", "wifi.signal.rssi",
-                "wifi.dhcp.state", "wifi.dhcp.ip",
+                "wifi.dhcp.state", "wifi.dhcp.ip", "wifi.dhcp.mask",
+                "wifi.dhcp.gateway", "wifi.dhcp.dns", "wifi.dhcp.lease.sec",
+                "wifi.dhcp.domain", "wifi.dhcp.obtained.unix",
                 // WAN / net
                 "net.iface.active", "net.state", "net.tun.ip",
                 "net.rules.applied.count", "net.last.apply.unix",
@@ -691,6 +693,12 @@ void install_handlers(Router& router,
                 else if (k == "wifi.signal.rssi")      wifi["rssi"] = iv();
                 else if (k == "wifi.dhcp.state")       wifi["dhcp_state"] = sv();
                 else if (k == "wifi.dhcp.ip")          wifi["dhcp_ip"] = sv();
+                else if (k == "wifi.dhcp.mask")        wifi["dhcp_mask"] = sv();
+                else if (k == "wifi.dhcp.gateway")     wifi["dhcp_gateway"] = sv();
+                else if (k == "wifi.dhcp.dns")         wifi["dhcp_dns"] = sv();
+                else if (k == "wifi.dhcp.lease.sec")   wifi["dhcp_lease_sec"] = iv();
+                else if (k == "wifi.dhcp.domain")      wifi["dhcp_domain"] = sv();
+                else if (k == "wifi.dhcp.obtained.unix") wifi["dhcp_obtained_unix"] = iv();
 
                 else if (k == "net.iface.active")            wan["active_iface"] = sv();
                 else if (k == "net.iface.priority")          wan["iface_priority"] = sv();

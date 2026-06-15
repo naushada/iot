@@ -222,6 +222,12 @@ do_install() {
     install -m 0644 ${WORKDIR}/migrations/0000-template.sh.example \
         ${D}${datadir}/iot/migrations/0000-template.sh.example
 
+    # udhcpc lease hook — wifi-client points udhcpc at this (-s) to mirror the
+    # DHCP lease (ip/mask/gateway/dns/lease/domain) into ds for the device UI.
+    # See apps/docs/tdd-wifi-dhcp-lease.md.
+    install -m 0755 ${S}/modules/wan/wifi/client/scripts/udhcpc-ds.script \
+        ${D}${datadir}/iot/udhcpc-ds.script
+
     # ── systemd units (overwrite cmake-installed copies) ──────────
     if ${@bb.utils.contains('PACKAGECONFIG', 'systemd', 'true', 'false', d)}; then
         install -d ${D}${systemd_system_unitdir}
@@ -386,11 +392,14 @@ RRECOMMENDS:${PN}-net-router = "\
 # wifi-client — wpa_supplicant + DHCP supervisor
 FILES:${PN}-wifi-client = "\
     ${bindir}/wifi-client \
+    ${datadir}/iot/udhcpc-ds.script \
     ${systemd_system_unitdir}/iot-wifi-client.service \
 "
+# iot-ds-cli: the udhcpc lease hook writes the lease via ds-cli.
 RDEPENDS:${PN}-wifi-client = "\
     ace-tao \
     wpa-supplicant \
+    ${PN}-ds-cli \
 "
 RRECOMMENDS:${PN}-wifi-client = "\
     ${PN}-ds-server \
