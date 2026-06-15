@@ -1,0 +1,58 @@
+#!/bin/sh
+# iot-ota-confirm — A/B (RAUC) boot confirmation + rollback gate (Phase 2).
+#
+# Runs once per boot. After a RAUC update the bootloader boots the new bank with
+# a try-counter; this service health-checks the running system and, if healthy,
+# `rauc status mark-good` (clears the counter → the bank sticks). If it does NOT
+# confirm within the window, the bank stays "tried" and the bootloader rolls
+# back to the previous bank on the next boot. Publishes iot.boot.bank /
+# iot.boot.confirmed for the device-ui. No-op on a non-RAUC (single-rootfs) image.
+#
+# See apps/docs/tdd-ab-image-ota.md.
+
+set -u
+
+SOCK="/run/iot/data_store.sock"
+DSCLI="ds-cli --socket=${SOCK}"
+log()    { logger -t iot-ota-confirm "$*" 2>/dev/null; echo "iot-ota-confirm: $*"; }
+set_ds() { $DSCLI set "$1" "$2" >/dev/null 2>&1 || true; }
+
+if ! command -v rauc >/dev/null 2>&1; then
+    log "rauc absent — non-A/B image, nothing to confirm"
+    exit 0
+fi
+
+# Which rootfs bank booted (e.g. "rootfs.0"/"A"). Publish for the UI.
+BANK="$(rauc status --output-format=shell 2>/dev/null \
+        | sed -n 's/^RAUC_SYSTEM_BOOTED_SLOT=\(.*\)/\1/p' | tr -d "\"'")"
+[ -n "$BANK" ] && set_ds iot.boot.bank "\"$BANK\""
+
+# Healthy = ds answers AND the core daemons are active. (Deliberately NOT gating
+# on LwM2M registration — a transient cloud outage must not trigger a rollback
+# of an otherwise-good image; daemon liveness is what proves the new bank boots.)
+healthy() {
+    $DSCLI get log.version >/dev/null 2>&1 || return 1
+    for u in iot-ds iot-httpd iot-lwm2m-client; do
+        systemctl is-active --quiet "${u}.service" || return 1
+    done
+    return 0
+}
+
+i=0
+while [ "$i" -lt 90 ]; do          # up to ~90 s for the stack to come up
+    if healthy; then
+        rauc status mark-good >/dev/null 2>&1 || true
+        set_ds iot.boot.confirmed true
+        set_ds iot.update.result 1     # success
+        set_ds iot.update.state  0     # idle
+        log "boot ${BANK:-?} confirmed good (marked good)"
+        exit 0
+    fi
+    i=$((i + 1)); sleep 1
+done
+
+# Not confirmed: leave the try-counter set so the bootloader reverts on next boot.
+set_ds iot.boot.confirmed false
+set_ds iot.update.result 2             # rolled-back (pending next boot)
+log "boot ${BANK:-?} NOT confirmed within window — bootloader will roll back on next boot"
+exit 1

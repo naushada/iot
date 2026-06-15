@@ -1,0 +1,16 @@
+[Unit]
+Description=Confirm the A/B (RAUC) boot once healthy, else allow rollback
+Documentation=https://github.com/naushada/iot
+After=iot-ds.service iot-httpd.service iot-lwm2m-client.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/iot-ota-confirm
+# Runs as root (rauc mark-good + systemctl). Bounded by the script's own ~90 s
+# health-check loop.
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

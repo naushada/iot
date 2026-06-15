@@ -1,0 +1,16 @@
+# A/B (dual-bank) partition layout for the IoT RPi image (RAUC, Phase 2).
+# See apps/docs/tdd-ab-image-ota.md §2.  device-bring-up scaffold — validate on HW.
+#
+#   p1 boot   (FAT)  bootloader + per-bank kernel/dtb + boot-select env
+#   p2 rootA  (ext4) rootfs bank A   ─┐ only the INACTIVE bank is written on update
+#   p3 rootB  (ext4) rootfs bank B   ─┘ (atomic + power-fail-safe; active keeps running)
+#   p4 data   (ext4) persistent: /var/lib/iot (ds store), certs, /etc/iot overrides
+#
+# Build with: WKS_FILE = "iot-ab.wks.in" (and IMAGE_FSTYPES += "wic.bz2").
+
+part /boot --source bootimg-partition --fstype=vfat --label boot --active --align 4096 --size 64M
+part /     --source rootfs --fstype=ext4 --label rootA --align 4096 --size 768M
+part /     --source rootfs --fstype=ext4 --label rootB --align 4096 --size 768M
+part /var/lib/iot --fstype=ext4 --label data --align 4096 --size 256M
+
+bootloader --ptable msdos

@@ -156,15 +156,30 @@ return {
     -- Apply progress, written by iot-ota-apply, read by device-ui and
     -- mirrored into Object 5 (/5/0/3, /5/0/5) on client (re)start so a
     -- post-restart server readback reflects the outcome.
-    ["iot.update.state"] = {        -- 0 idle,1 downloading,2 downloaded,3 updating
-        access  = "Admin",
+    ["iot.update.state"] = {        -- 0 idle,1 downloading,2 downloaded,3 updating,
+        access  = "Admin",          -- 4 writing-bank,5 awaiting-confirm (A/B, Phase 2)
         type    = "integer",
         default = 0,
     },
-    ["iot.update.result"] = {       -- 0 initial,1 success,5 integrity,8 uri,9 install
-        access  = "Admin",
+    ["iot.update.result"] = {       -- 0 initial,1 success,2 rolled-back (A/B),
+        access  = "Admin",          -- 5 integrity,8 uri,9 install
         type    = "integer",
         default = 0,
+    },
+
+    -- A/B image OTA (Phase 2). Which rootfs bank is running, and whether this
+    -- boot has been health-checked + confirmed good (else the bootloader rolls
+    -- back to the other bank on the next boot). Written by iot-ota-confirm.
+    -- See apps/docs/tdd-ab-image-ota.md.
+    ["iot.boot.bank"] = {           -- "A" | "B" | "" (single-rootfs / non-RAUC)
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
+    ["iot.boot.confirmed"] = {      -- this boot marked good (mark-good done)
+        access  = "Admin",
+        type    = "boolean",
+        default = false,
     },
     ["iot.update.version"] = {      -- installed package version after apply
         access  = "Admin",
