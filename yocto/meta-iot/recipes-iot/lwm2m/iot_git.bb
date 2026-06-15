@@ -52,6 +52,9 @@ SRC_URI = "\
     file://migrations/README.md \
     file://migrations/0000-template.sh.example \
     file://gen_wifi_default.py \
+    file://iot-set-hostname \
+    file://iot-hostname.service \
+    file://iot-http.avahi.service \
 "
 
 # Optional, gitignored WiFi credential seed. When an integrator drops
@@ -250,6 +253,14 @@ do_install() {
         install -m 0644 ${WORKDIR}/net-router.env     ${D}${sysconfdir}/iot/
         install -m 0644 ${WORKDIR}/wifi-client.env    ${D}${sysconfdir}/iot/
         install -m 0644 ${WORKDIR}/httpd.env          ${D}${sysconfdir}/iot/
+
+        # Zero-touch mDNS device-UI discovery: derive iot-<serial> hostname at
+        # boot and advertise iot-httpd (_http._tcp:8080) via Avahi. See
+        # apps/docs/tdd-wifi-zero-touch-mdns.md.
+        install -m 0755 ${WORKDIR}/iot-set-hostname           ${D}${bindir}/iot-set-hostname
+        install -m 0644 ${WORKDIR}/iot-hostname.service       ${D}${systemd_system_unitdir}/
+        install -d ${D}${sysconfdir}/avahi/services
+        install -m 0644 ${WORKDIR}/iot-http.avahi.service     ${D}${sysconfdir}/avahi/services/iot-http.service
     fi
 }
 
@@ -392,10 +403,15 @@ RRECOMMENDS:${PN}-wifi-client = "\
 # iot-httpd via www-dir. Built by do_build_ui above.
 FILES:${PN}-httpd = "\
     ${bindir}/iot-httpd \
+    ${bindir}/iot-set-hostname \
     ${systemd_system_unitdir}/iot-httpd.service \
+    ${systemd_system_unitdir}/iot-hostname.service \
+    ${sysconfdir}/avahi/services/iot-http.service \
     ${datadir}/iot/www \
 "
-RDEPENDS:${PN}-httpd = "ace-tao"
+# avahi-daemon provides the mDNS responder that advertises the device UI
+# (_http._tcp on iot-<serial>.local) for zero-touch discovery.
+RDEPENDS:${PN}-httpd = "ace-tao avahi-daemon"
 RRECOMMENDS:${PN}-httpd = "\
     ${PN}-ds-server \
     ${PN}-config \
@@ -421,7 +437,9 @@ SYSTEMD_SERVICE:${PN}-lwm2m = "iot-lwm2m-client.service iot-lwm2m-server.service
 SYSTEMD_SERVICE:${PN}-openvpn-client = "iot-openvpn-client.service iot-vpn-cert.path"
 SYSTEMD_SERVICE:${PN}-net-router = "iot-net-router.service"
 SYSTEMD_SERVICE:${PN}-wifi-client = "iot-wifi-client.service"
-SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service"
+# httpd also carries the boot-time hostname unit (iot-<serial>) that makes the
+# Avahi advert resolvable — zero-touch device-UI discovery.
+SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service"
 
 # ds-server and wifi-client auto-start. wifi-client comes up on every boot
 # and reads wifi.networks from the data-store (schema default seeds a
@@ -434,7 +452,11 @@ SYSTEMD_AUTO_ENABLE:${PN}-lwm2m = "disable"
 SYSTEMD_AUTO_ENABLE:${PN}-openvpn-client = "disable"
 SYSTEMD_AUTO_ENABLE:${PN}-net-router = "disable"
 SYSTEMD_AUTO_ENABLE:${PN}-wifi-client = "enable"
-SYSTEMD_AUTO_ENABLE:${PN}-httpd = "disable"
+# httpd auto-starts for zero-touch device-UI access (mDNS discovery via Avahi).
+# Enabling this exposes the UI + REST API on 0.0.0.0:8080 to the LAN by default;
+# lock down via http.listen.ip / auth for untrusted networks. Also enables the
+# iot-hostname oneshot (sets iot-<serial> so Avahi advertises a stable name).
+SYSTEMD_AUTO_ENABLE:${PN}-httpd = "enable"
 
 # ── Sanity checks ──────────────────────────────────────────────────
 # Inhibit the "binary already stripped" QA warning — we build with -g

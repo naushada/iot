@@ -1,0 +1,17 @@
+[Unit]
+Description=Derive iot-<serial> hostname for mDNS device-UI discovery
+Documentation=https://github.com/naushada/iot
+After=local-fs.target
+# Set the hostname before Avahi advertises so it announces iot-<serial>.local.
+Before=avahi-daemon.service
+ConditionPathExists=/usr/bin/iot-set-hostname
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/iot-set-hostname
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
