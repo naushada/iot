@@ -72,3 +72,11 @@ build/
 
 # Image export tarballs
 iot-cloud.tar.gz
+
+# Real WiFi credential seed baked into the image at build time — never commit.
+# Commit wifi_credentials.lua.sample instead. See apps/docs/tdd-wifi-credentials-seed.md
+yocto/meta-iot/recipes-iot/lwm2m/files/wifi_credentials.lua
+
+# Python bytecode cache (e.g. from the gen_wifi_default.py tests)
+__pycache__/
+*.pyc

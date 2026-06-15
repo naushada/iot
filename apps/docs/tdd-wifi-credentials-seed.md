@@ -1,17 +1,19 @@
 # TDD Plan — Build-time WiFi Credential Seed (`wifi_credentials.lua`)
 
-Status: **IN PROGRESS** — design agreed. Builds on the auto-start/EAP work
-(PR #204, merged). Device/Yocto side only. The new logic is a small build-time
-generator, unit-tested in pure Python (no ACE/podman needed).
+Status: **COMPLETE** (implementable scope) — design + impl done. Builds on the
+auto-start/EAP work (PR #204, merged). Device/Yocto side only. The new logic is
+a small build-time generator, unit-tested in pure Python — **20/20 green**.
+On-target verification (a real Yocto build with a dropped-in
+`wifi_credentials.lua`) is deferred (needs the kas/RPi build environment).
 
 ### Implementation progress
 
 | Task | State | Notes |
 | --- | --- | --- |
-| A — `gen_wifi_default.py` generator | ⬜ TODO | Parse the lua credential file → `wifi.networks` JSON → rewrite the default in the staged `wifi.lua`. |
-| B — Python unit tests | ⬜ TODO | `test_gen_wifi_default.py`: parse PSK/EAP, single/list, `password`→`psk`, malformed→error, schema rewrite, escaping. |
-| C — recipe wiring | ⬜ TODO | `iot_git.bb`: conditional `SRC_URI` + `do_install:append` running the generator on the staged `wifi.lua` iff the file exists. |
-| D — gitignore + sample | ⬜ TODO | `.gitignore` the real file; commit `wifi_credentials.lua.sample`. |
+| A — `gen_wifi_default.py` generator | ✅ DONE | Tokenizer + parser for the lua subset → `wifi.networks` JSON (`password`→`psk`; EAP passthrough) → in-place rewrite of the staged `wifi.lua` default. Safe single-quoted-lua escaping (round-trips `\`, `'`, `"`). |
+| B — Python unit tests | ✅ DONE | `test_gen_wifi_default.py`, 20 tests: PSK/EAP/open, single/list, mapping, hard-error cases, comments, control-char rejection, schema rewrite isolates wifi.networks, escaping round-trip. |
+| C — recipe wiring | ✅ DONE | `iot_git.bb`: `gen_wifi_default.py` in `SRC_URI`; conditional `file://wifi_credentials.lua` (present-only, so it's both optional and signature-tracked); `do_install:append` runs the generator on the staged `wifi.lua`; `do_install[depends] += python3-native`. |
+| D — gitignore + sample | ✅ DONE | `.gitignore` the real file (+ `__pycache__/`); committed `wifi_credentials.lua.sample`. |
 
 Test cmd: `python3 -m unittest discover -s yocto/meta-iot/recipes-iot/lwm2m/files -p 'test_gen_wifi_default.py'` (host-side, no toolchain).
 
