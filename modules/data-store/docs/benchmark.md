@@ -13,8 +13,13 @@ g++ -std=c++17 -O2 -Imodules/data-store/inc -I$ACE_ROOT/include \
 # or: cmake modules/data-store -DBUILD_DS_BENCH=ON && ninja ds-bench
 
 ds-server --socket=/run/iot/data_store.sock --schema-dir=<dir> --persist-dir=<dir> &
-ds-bench socket=/run/iot/data_store.sock n=20000 vsize=64 batch=50
+ds-bench socket=/run/iot/data_store.sock n=20000 vsize=64 batch=50 pid=$!
 ```
+
+`pid=<ds-server-pid>` lets the bench read the server's `/proc/<pid>/status`
+(RSS + peak `VmHWM`). At the end the bench writes a JSON summary to the ds key
+**`ds.bench.summary`** (`config`, `mem`, and per-op `{ops,p50,p95,p99}`), so the
+latest result is queryable: `ds-cli get ds.bench.summary` (or surfaced in the UI).
 
 ## Results (indicative)
 
@@ -28,7 +33,10 @@ Single client thread; each op is a synchronous request→response round-trip.
 | `set` (volatile, no fsync) | 14.0k ops/s | 71 µs | 67 µs | 112 µs | 159 µs | 2.0 ms |
 | `get` | 15.6k ops/s | 64 µs | 66 µs | 100 µs | 143 µs | 1.6 ms |
 | `set` (batch ×50) | **248k keys/s** | 198 µs/call | 119 µs | 154 µs | 207 µs | 31 ms |
-| `watch`→notify delivery | — | 761 µs | 728 µs | 1.0 ms | 1.5 ms | 6.4 ms |
+| `watch`→notify delivery | — | 737 µs | 732 µs | 774 µs | 847 µs | 4.8 ms |
+
+**ds-server memory:** RSS **~5.2 MB → ~6.7 MB** after the run (≈ +1.5 MB holding
+~1000+ keys), peak `VmHWM` ~6.7 MB. A small, flat footprint — fine for an RPi.
 
 ## Reading the numbers
 
