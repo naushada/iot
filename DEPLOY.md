@@ -469,6 +469,50 @@ maps `password` → `psk`.
 
 See `apps/docs/tdd-wifi-credentials-seed.md` for the full design.
 
+#### Zero-touch: open the device UI without knowing the IP (mDNS)
+
+With the credential seed above baked in, a flashed image needs **no operator
+interaction**: it boots, joins the AP, gets a DHCP IP, and advertises its web
+UI over mDNS. On a Mac/Linux/Windows machine on the same LAN, open:
+
+```
+http://iot-<serial>.local:8080
+```
+
+`<serial>` is the last 8 hex chars of the RPi serial (so two devices on one LAN
+don't collide). If you don't know it, browse the advertised service — it shows
+up as **"IoT Device UI on iot-<serial>"**:
+
+```sh
+avahi-browse -rt _http._tcp        # Linux
+dns-sd -B _http._tcp               # macOS
+```
+
+How it works on the image:
+
+- **`iot-httpd` auto-starts** (`SYSTEMD_AUTO_ENABLE=enable`), serving the
+  Angular device UI on `0.0.0.0:8080` (`http.listen.port`).
+- **`iot-hostname.service`** runs once at boot (`iot-set-hostname`), deriving
+  `iot-<serial>` from the device-tree serial and applying it before Avahi
+  starts.
+- **Avahi** (`avahi-daemon`, pulled in by `iot-httpd`) advertises
+  `_http._tcp` on port 8080 via `/etc/avahi/services/iot-http.service`, so the
+  device resolves as `iot-<serial>.local`.
+
+> ⚠️ **Security:** auto-starting httpd exposes the UI **and** the `/api/v1/*`
+> REST API on `0.0.0.0:8080` to everyone on the LAN. That's the point for a
+> zero-touch appliance on a trusted home/lab network — but for an untrusted
+> network, restrict `http.listen.ip` (bind to localhost / the VPN iface) or
+> front it with auth.
+
+Notes / limits:
+- The advert hardcodes port **8080**; if you change `http.listen.port` the
+  mDNS record is stale (edit `/etc/avahi/services/iot-http.service` to match).
+- The device's own leased IP is not yet recorded in the data store
+  (`wifi.dhcp.ip` is defined but unpopulated) — mDNS sidesteps needing it.
+
+See `apps/docs/tdd-wifi-zero-touch-mdns.md` for the full design.
+
 `wifi.networks` is a JSON array; each entry is one of:
 
 ```jsonc
