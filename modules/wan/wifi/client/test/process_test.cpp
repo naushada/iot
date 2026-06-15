@@ -134,6 +134,18 @@ TEST(WIFI_REQ_WIFI_015_wpa_conf_writer_orders_by_priority,
 }
 
 TEST(WIFI_REQ_WIFI_015_wpa_conf_writer_orders_by_priority,
+     ssid_quote_chars_escaped) {
+    std::vector<WifiNetwork> nets = {
+        { "My\"AP\\x", "psk", 0, "WPA-PSK" },
+    };
+    auto body = build_wpa_supplicant_config(
+        "wlan0", "/run/wpa_supplicant", nets);
+    // " and \\ in the SSID must be backslash-escaped so wpa_supplicant's
+    // parser doesn't see them as terminators.
+    EXPECT_NE(std::string::npos, body.find("ssid=\"My\\\"AP\\\\x\""));
+}
+
+TEST(WIFI_REQ_WIFI_015_wpa_conf_writer_orders_by_priority,
      psk_quote_chars_escaped) {
     std::vector<WifiNetwork> nets = {
         { "Net", "p\"sk\\with\"quotes", 0, "WPA-PSK" },

@@ -190,8 +190,10 @@ std::string build_wpa_supplicant_config(const std::string&             iface,
         // ssid is always quoted; psk may be quoted (passphrase)
         // or a 64-char hex pre-shared key — we always quote here
         // because operators typing PSKs into ds-cli will use the
-        // passphrase form, not pre-computed hex.
-        ss << "    ssid=\"" << n.ssid << "\"\n";
+        // passphrase form, not pre-computed hex. esc() the ssid too:
+        // SSIDs may legitimately contain " or \ which would otherwise
+        // break the conf parser.
+        ss << "    ssid=\"" << esc(n.ssid) << "\"\n";
         if (n.key_mgmt == "NONE") {
             ss << "    key_mgmt=NONE\n";
         } else if (n.key_mgmt == "WPA-EAP") {
