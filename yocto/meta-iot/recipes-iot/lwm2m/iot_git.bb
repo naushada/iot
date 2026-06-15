@@ -454,12 +454,19 @@ SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service"
 # and reads wifi.networks from the data-store (schema default seeds a
 # placeholder network); it parks in "disconnected" until provisioned. The
 # unit already orders After=iot-ds.service network-online.target, so the
-# schema default resolves before its first read. Other role units are
-# enabled by the operator after writing the matching .env file — see DEPLOY.md.
+# schema default resolves before its first read.
+#
+# lwm2m, openvpn-client and net-router also auto-start so a freshly flashed
+# device brings up the full DM/VPN chain with zero SSH. Each daemon self-gates
+# on its `services.<name>.enable` data-store key and parks (rather than doing
+# work) until provisioned, so the device-UI Services page can pause/resume them
+# without touching systemd. Caveat: until certs (/etc/iot/vpn/*), PSK and
+# vpn.remote.port/proto are provisioned, openvpn-client/lwm2m may Restart=on-
+# failure loop; that is expected on an un-provisioned boot. See DEPLOY.md.
 SYSTEMD_AUTO_ENABLE:${PN}-ds-server = "enable"
-SYSTEMD_AUTO_ENABLE:${PN}-lwm2m = "disable"
-SYSTEMD_AUTO_ENABLE:${PN}-openvpn-client = "disable"
-SYSTEMD_AUTO_ENABLE:${PN}-net-router = "disable"
+SYSTEMD_AUTO_ENABLE:${PN}-lwm2m = "enable"
+SYSTEMD_AUTO_ENABLE:${PN}-openvpn-client = "enable"
+SYSTEMD_AUTO_ENABLE:${PN}-net-router = "enable"
 SYSTEMD_AUTO_ENABLE:${PN}-wifi-client = "enable"
 # httpd auto-starts for zero-touch device-UI access (mDNS discovery via Avahi).
 # Enabling this exposes the UI + REST API on 0.0.0.0:8080 to the LAN by default;

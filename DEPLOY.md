@@ -428,6 +428,18 @@ refuses to spawn wpa_supplicant if NM is active.
 > `wifi.networks` set below to associate. The `systemctl enable`
 > step is unnecessary on the image; it remains required on bare-metal
 > hosts where the unit ships disabled.
+>
+> **As of the zero-touch image, `lwm2m-client`, `openvpn-client` and
+> `net-router` are also auto-enabled** (`SYSTEMD_AUTO_ENABLE=enable`),
+> so the full DM/VPN chain comes up on first boot with no SSH. Each
+> daemon self-gates on its `services.<name>.enable` data-store key and
+> parks until provisioned, so the device-UI **Services** page can
+> pause/resume them without touching systemd. Until certs
+> (`/etc/iot/vpn/*`), the DM PSK and `vpn.remote.port`/`proto` are
+> provisioned, `openvpn-client`/`lwm2m-client` will `Restart=on-failure`
+> loop — expected on an un-provisioned boot. The `systemctl enable`
+> commands below remain required only on bare-metal hosts where the
+> units ship disabled.
 
 #### Bake WiFi credentials into the image at build time (optional)
 
