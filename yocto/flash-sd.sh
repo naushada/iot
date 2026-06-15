@@ -47,18 +47,42 @@ usage() { awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"; }
 OS="$(uname -s)"
 
 # ── List removable disks (read-only) ─────────────────────────────────
+# macOS: a card in the built-in SD reader is reported with Device Location
+# "Internal" even though its media is Removable, so filtering on "external"
+# alone misses it. Instead walk every physical disk and keep those that are
+# External OR have Removable media — the same rule the write-time check uses.
+darwin_sd_disks() {
+    diskutil list physical 2>/dev/null \
+        | awk '/^\/dev\/disk[0-9]+ \(/{print $1}' \
+        | while read -r d; do
+            info="$(diskutil info "$d" 2>/dev/null)" || continue
+            loc="$(echo "$info" | awk -F: '/Device Location/{print $2; exit}' | xargs)"
+            rem="$(echo "$info" | awk -F: '/Removable Media/{print $2; exit}' | xargs)"
+            if [ "$loc" = "External" ] || [ "$rem" = "Removable" ]; then
+                echo "$d"
+            fi
+        done
+}
+
 list_disks() {
     log_section "Candidate removable disks"
-    local out
+    local out=""
     if [ "$OS" = "Darwin" ]; then
-        out="$(diskutil list external physical 2>/dev/null || true)"
+        local d info size name
+        while read -r d; do
+            [ -n "$d" ] || continue
+            info="$(diskutil info "$d" 2>/dev/null || true)"
+            size="$(echo "$info" | awk -F: '/Disk Size/{print $2; exit}' | xargs)"
+            name="$(echo "$info" | awk -F: '/Device \/ Media Name/{print $2; exit}' | xargs)"
+            out+="  $d  ${size}  ${name}"$'\n'
+        done < <(darwin_sd_disks)
     else
         # RM=1 → removable. Show size/model so the right one is obvious.
         out="$(lsblk -dno NAME,SIZE,RM,TYPE,MODEL 2>/dev/null \
             | awk '$3==1{printf "  /dev/%s  %s  %s\n",$1,$2,$5}')"
     fi
     if [ -n "$out" ]; then
-        echo "$out"
+        printf '%s\n' "${out%$'\n'}"
     else
         log_info "No removable disks detected. Insert the SD card and retry."
     fi
@@ -67,9 +91,7 @@ list_disks() {
 # Print the device path(s) of removable/external whole disks, one per line.
 detect_sd() {
     if [ "$OS" = "Darwin" ]; then
-        # Section headers look like: "/dev/disk4 (external, physical):"
-        diskutil list external physical 2>/dev/null \
-            | awk '/^\/dev\/disk[0-9]+ \(external/{print $1}'
+        darwin_sd_disks
     else
         lsblk -dno NAME,RM,TYPE 2>/dev/null \
             | awk '$2==1 && $3=="disk"{print "/dev/"$1}'
