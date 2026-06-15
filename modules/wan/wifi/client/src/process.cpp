@@ -24,6 +24,21 @@
 
 namespace wifi_client {
 
+namespace {
+
+// wpa_supplicant.conf is line-oriented and has no escape for control
+// characters; a stray '\n' in any emitted value would break the conf
+// or inject a directive (the conf writer's esc() only handles " and \).
+// Reject control characters at parse time instead.
+bool has_control_char(const std::string& s) {
+    for (unsigned char c : s) {
+        if (c < 0x20 || c == 0x7f) return true;
+    }
+    return false;
+}
+
+} // namespace
+
 // ─────────────────────── Pure helpers ───────────────────────────────
 
 std::vector<WifiNetwork>
@@ -79,9 +94,10 @@ parse_wifi_networks(const std::string& json, std::string* err_out) {
                         + " missing non-empty 'identity' for key_mgmt=WPA-EAP");
                 return {};
             }
-            if (!e.contains("password") || !e["password"].is_string()) {
+            if (!e.contains("password") || !e["password"].is_string() ||
+                e["password"].get<std::string>().empty()) {
                 set_err("bad_networks_json: entry " + std::to_string(i)
-                        + " missing 'password' for key_mgmt=WPA-EAP");
+                        + " missing non-empty 'password' for key_mgmt=WPA-EAP");
                 return {};
             }
             n.identity = e["identity"].get<std::string>();
@@ -119,6 +135,17 @@ parse_wifi_networks(const std::string& json, std::string* err_out) {
                 return {};
             }
             n.priority = e["priority"].get<int>();
+        }
+        // Every value below is emitted verbatim into wpa_supplicant.conf;
+        // reject control characters so a newline can't break the conf or
+        // inject a directive.
+        for (const auto* f : {&n.ssid, &n.psk, &n.identity, &n.password,
+                              &n.eap, &n.phase2, &n.ca_cert}) {
+            if (has_control_char(*f)) {
+                set_err("bad_networks_json: entry " + std::to_string(i)
+                        + " field contains control characters");
+                return {};
+            }
         }
         out.push_back(std::move(n));
     }

@@ -289,6 +289,41 @@ TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
 }
 
 TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     parse_rejects_eap_empty_password) {
+    std::string err;
+    auto nets = parse_wifi_networks(
+        R"([{"ssid":"CorpAP","key_mgmt":"WPA-EAP","identity":"u","password":""}])",
+        &err);
+    EXPECT_TRUE(nets.empty());
+    EXPECT_NE(std::string::npos, err.find("bad_networks_json"));
+    EXPECT_NE(std::string::npos, err.find("password"));
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     parse_rejects_control_chars_in_eap_fields) {
+    // A newline in any emitted field would break wpa_supplicant.conf or
+    // inject a directive; parse must reject it rather than pass it to esc().
+    std::string err;
+    auto nets = parse_wifi_networks(
+        "[{\"ssid\":\"CorpAP\",\"key_mgmt\":\"WPA-EAP\","
+        "\"identity\":\"user\\nkey_mgmt=NONE\",\"password\":\"p\"}]",
+        &err);
+    EXPECT_TRUE(nets.empty());
+    EXPECT_NE(std::string::npos, err.find("bad_networks_json"));
+    EXPECT_NE(std::string::npos, err.find("control characters"));
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     parse_rejects_control_chars_in_psk) {
+    // Same guard applies to PSK networks (shared emit path).
+    std::string err;
+    auto nets = parse_wifi_networks(
+        "[{\"ssid\":\"Home\",\"psk\":\"pass\\nword\"}]", &err);
+    EXPECT_TRUE(nets.empty());
+    EXPECT_NE(std::string::npos, err.find("control characters"));
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
      parse_eap_does_not_require_psk) {
     std::string err;
     auto nets = parse_wifi_networks(

@@ -89,8 +89,10 @@ overridable at runtime (cloud-UI / `ds-cli`).
 
 Field rules:
 - `ssid` — required, non-empty (unchanged).
-- `key_mgmt` — optional, default `"WPA-PSK"`. Recognised: `WPA-PSK`, `NONE`,
-  `WPA-EAP` (alias `IEEE8021X` accepted, propagated verbatim).
+- `key_mgmt` — optional, default `"WPA-PSK"`. Only the exact value `WPA-EAP`
+  triggers the WPA-Enterprise branch; `NONE` is an open network; any other
+  value (incl. `WPA-PSK`) is PSK-style — `psk` is required and the `key_mgmt`
+  string is propagated verbatim to wpa_supplicant.conf.
 - `psk` — required iff `key_mgmt` is PSK-like (not `NONE`, not `WPA-EAP`).
 - `identity`, `password` — required iff `key_mgmt == WPA-EAP`.
 - `eap` — optional, default `"PEAP"`. (`PEAP` / `TTLS` / `TLS` …)

@@ -88,8 +88,10 @@ DsBridge::DsBridge(std::string socketPath)
     // Prime the snapshot with one initial get. Every read key has a
     // schema default (per schemas/wifi.lua) so the cache is fully
     // populated as soon as ds-server returns. wifi.networks defaults
-    // to "[]" — empty JSON array — which the Supervisor treats as
-    // "no networks configured" (parks in disconnected).
+    // to a placeholder PSK network (ssid "changeme"); the Supervisor
+    // tries to associate and parks in disconnected until that AP is
+    // found or an operator overrides wifi.networks. An operator-set
+    // empty "[]" is treated as "no networks configured".
     const std::vector<std::string> read_keys = {
         kIface, kCtrlDir, kWpaPath, kNetworks,
         kScanIntervalSec, kScanMaxResults, kScanRequest,
