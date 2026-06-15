@@ -79,6 +79,16 @@ std::string build_wpa_supplicant_config(const std::string&             iface,
                                         const std::string&             ctrl_dir,
                                         const std::vector<WifiNetwork>& networks);
 
+/// Build the DHCP-client argv for `dhcp_path` against `iface`. Shape is
+/// chosen by the binary basename:
+///   udhcpc:   <path> -i <iface> -f -q [-s <script>]
+///   dhclient: <path> -d <iface>
+/// `script` (udhcpc only, when non-empty) is the `-s` lease hook. Factored
+/// out of spawn_dhcp so the argv shaping is unit-testable without a spawn.
+std::vector<std::string> build_dhcp_argv(const std::string& dhcp_path,
+                                         const std::string& iface,
+                                         const std::string& script = "");
+
 /// Write `body` to a fresh /tmp/wpa-XXXXXX.conf and return the path.
 /// Throws std::runtime_error on mkstemps / write failure. Same
 /// $TMPDIR → /tmp → cwd fallback chain openvpn-client uses.
@@ -126,13 +136,18 @@ public:
     /// Spawn a DHCP client child against `iface`. `dhcp_path` is
     /// the absolute path to udhcpc or dhclient as picked by
     /// pick_dhcp_client(). The argv is shaped per the client:
-    ///   udhcpc:   -i <iface> -f -q
+    ///   udhcpc:   -i <iface> -f -q [-s <script>]
     ///   dhclient: -d <iface>
     /// The picker baseline is the binary's *basename* — anything
     /// containing "udhcpc" gets the udhcpc shape; anything else
     /// falls to dhclient shape.
+    /// `script` (when non-empty AND udhcpc) is passed as `-s <script>`,
+    /// the lease hook that mirrors the lease into the data-store
+    /// (udhcpc-ds.script). Empty = udhcpc's built-in default script.
+    /// dhclient ignores `script` (different hook mechanism).
     bool spawn_dhcp(const std::string& dhcp_path,
-                    const std::string& iface);
+                    const std::string& iface,
+                    const std::string& script = "");
 
     /// Subprocess pid (0 if no spawn yet).
     pid_t pid() const { return m_pid; }

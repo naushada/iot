@@ -508,10 +508,29 @@ How it works on the image:
 Notes / limits:
 - The advert hardcodes port **8080**; if you change `http.listen.port` the
   mDNS record is stale (edit `/etc/avahi/services/iot-http.service` to match).
-- The device's own leased IP is not yet recorded in the data store
-  (`wifi.dhcp.ip` is defined but unpopulated) — mDNS sidesteps needing it.
+- mDNS sidesteps needing the device IP at all, but the IP (and the rest of the
+  lease) is now also recorded in ds and shown in the UI — see below.
 
 See `apps/docs/tdd-wifi-zero-touch-mdns.md` for the full design.
+
+#### DHCP lease details in ds + the device UI
+
+The full DHCP lease is mirrored into the data store and rendered on the device
+UI dashboard (IP / mask / gateway / DNS / lease time / domain). A custom
+**udhcpc lease hook** (`/usr/share/iot/udhcpc-ds.script`) — which the
+wifi-client points udhcpc at with `-s` — does the normal interface config and
+then `ds-cli set`s the lease keys:
+
+```sh
+ds-cli --socket=/run/iot/data_store.sock get \
+    wifi.dhcp.state wifi.dhcp.ip wifi.dhcp.mask wifi.dhcp.gateway \
+    wifi.dhcp.dns wifi.dhcp.lease.sec wifi.dhcp.domain
+```
+
+`wifi.dhcp.state` is owned by the daemon (`requesting`/`exited`); the hook adds
+`bound` plus the data keys, and clears them on lease loss. The REST status
+endpoint exposes them as `wifi.dhcp_ip/_mask/_gateway/_dns/_lease_sec/_domain`.
+See `apps/docs/tdd-wifi-dhcp-lease.md`.
 
 `wifi.networks` is a JSON array; each entry is one of:
 

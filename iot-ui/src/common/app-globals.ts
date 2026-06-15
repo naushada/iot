@@ -52,6 +52,12 @@ export interface WifiStatus {
   rssi?: number;
   dhcp_state?: string;
   dhcp_ip?: string;
+  dhcp_mask?: string;
+  dhcp_gateway?: string;
+  dhcp_dns?: string;
+  dhcp_lease_sec?: number;
+  dhcp_domain?: string;
+  dhcp_obtained_unix?: number;
 }
 
 export interface WanStatus {

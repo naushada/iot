@@ -1,0 +1,72 @@
+#!/bin/sh
+# udhcpc-ds.script — udhcpc lease hook for wifi-client.
+#
+# udhcpc delivers the full lease ONLY to its -s hook via environment variables
+# (lease time and DNS aren't readable back from the interface). This hook does
+# two things on each lease event:
+#   1. delegates the actual interface configuration to the system default
+#      udhcpc script (so connectivity is unchanged), then
+#   2. mirrors the lease into the data-store via ds-cli so the device-iot UI
+#      can render IP / mask / gateway / DNS / lease-time / domain.
+#
+# The wifi-client daemon points udhcpc at this script with `-s` only when it is
+# installed (see supervisor.cpp). See apps/docs/tdd-wifi-dhcp-lease.md.
+#
+# Key ownership: the daemon owns wifi.dhcp.state ("requesting"/"exited"); this
+# hook adds the one state it alone knows — "bound" — and the lease data keys.
+# On deconfig it clears the data keys but does NOT touch wifi.dhcp.state (udhcpc
+# fires deconfig at startup, racing the daemon's "requesting").
+
+DS_SOCK="${IOT_DS_SOCK:-/run/iot/data_store.sock}"
+DS_CLI="${IOT_DS_CLI:-ds-cli}"
+
+# Locate the distro default udhcpc script to do the real ifconfig.
+DEFAULT_SCRIPT=""
+for c in /usr/share/udhcpc/default.script /etc/udhcpc/default.script; do
+    if [ -x "$c" ]; then DEFAULT_SCRIPT="$c"; break; fi
+done
+
+dsset() {
+    # Best-effort: a ds write must never break DHCP / connectivity.
+    "$DS_CLI" --socket="$DS_SOCK" set "$1" "$2" >/dev/null 2>&1 || true
+}
+
+# JSON-string-quote a value (escape \ and ") for ds-cli string keys.
+jq_str() {
+    printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+}
+
+# 1) Real networking config (unchanged behaviour).
+if [ -n "$DEFAULT_SCRIPT" ]; then
+    "$DEFAULT_SCRIPT" "$1" || true
+fi
+
+# 2) Mirror the lease to the data-store.
+case "$1" in
+    bound|renew)
+        dsset wifi.dhcp.ip            "$(jq_str "${ip:-}")"
+        dsset wifi.dhcp.mask          "$(jq_str "${subnet:-}")"
+        dsset wifi.dhcp.gateway       "$(jq_str "${router:-}")"
+        dsset wifi.dhcp.dns           "$(jq_str "${dns:-}")"
+        dsset wifi.dhcp.domain        "$(jq_str "${domain:-}")"
+        dsset wifi.dhcp.lease.sec     "${lease:-0}"
+        dsset wifi.dhcp.obtained.unix "$(date +%s 2>/dev/null || echo 0)"
+        dsset wifi.dhcp.state         '"bound"'
+        ;;
+    deconfig)
+        # Lease gone (also fired once at startup). Clear data; leave
+        # wifi.dhcp.state to the daemon to avoid racing "requesting".
+        dsset wifi.dhcp.ip            '""'
+        dsset wifi.dhcp.mask          '""'
+        dsset wifi.dhcp.gateway       '""'
+        dsset wifi.dhcp.dns           '""'
+        dsset wifi.dhcp.domain        '""'
+        dsset wifi.dhcp.lease.sec     0
+        dsset wifi.dhcp.obtained.unix 0
+        ;;
+    leasefail|nak)
+        # Daemon owns the failure state; nothing to mirror.
+        ;;
+esac
+
+exit 0

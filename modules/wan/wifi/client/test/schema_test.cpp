@@ -169,6 +169,8 @@ TEST_F(WIFI_REQ_WIFI_006_write_keys_typed, integer_keys_typed_integer) {
         "wifi.scan.last.unix",
         "wifi.pid.wpa",
         "wifi.pid.dhcp",
+        "wifi.dhcp.lease.sec",
+        "wifi.dhcp.obtained.unix",
     };
     for (const auto& k : int_keys) {
         auto body = entry_body(schema, k);
@@ -186,6 +188,10 @@ TEST_F(WIFI_REQ_WIFI_006_write_keys_typed, string_keys_typed_string) {
         "wifi.scan.results",
         "wifi.dhcp.state",
         "wifi.dhcp.ip",
+        "wifi.dhcp.mask",
+        "wifi.dhcp.gateway",
+        "wifi.dhcp.dns",
+        "wifi.dhcp.domain",
         "wifi.last.error",
     };
     for (const auto& k : str_keys) {

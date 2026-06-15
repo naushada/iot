@@ -45,6 +45,15 @@
 --   wifi.dhcp.state         - "idle" / "requesting" / "bound" / "rebinding"
 --                             / "exited"
 --   wifi.dhcp.ip            - IPv4 leased on the iface (empty when not bound)
+--   wifi.dhcp.mask          - subnet mask of the lease (udhcpc $subnet)
+--   wifi.dhcp.gateway       - default gateway(s) (udhcpc $router)
+--   wifi.dhcp.dns           - nameserver(s), space-separated (udhcpc $dns)
+--   wifi.dhcp.lease.sec     - lease time in seconds (udhcpc $lease)
+--   wifi.dhcp.domain        - DNS domain (udhcpc $domain)
+--   wifi.dhcp.obtained.unix - unix time the lease was bound (UI countdown)
+--                             wifi.dhcp.{mask,gateway,dns,lease.sec,domain,
+--                             obtained.unix} are written by the udhcpc hook
+--                             (udhcpc-ds.script) via ds-cli, not the daemon.
 --   wifi.pid.wpa            - live wpa_supplicant pid (0 when not running)
 --   wifi.pid.dhcp           - live DHCP-client pid (0 when not running)
 --   wifi.last.error         - last non-fatal error message (auth reject,
@@ -117,6 +126,21 @@ return {
         access  = "Viewer", type = "string" },
     ["wifi.dhcp.ip"]            = {
         access  = "Viewer", type = "string" },
+    -- Lease detail mirrored from the udhcpc hook (udhcpc-ds.script) so the
+    -- device-iot UI can render the full network config. Written by the hook
+    -- via ds-cli, not by the daemon.
+    ["wifi.dhcp.mask"]          = {
+        access  = "Viewer", type = "string" },
+    ["wifi.dhcp.gateway"]       = {
+        access  = "Viewer", type = "string" },
+    ["wifi.dhcp.dns"]           = {
+        access  = "Viewer", type = "string" },
+    ["wifi.dhcp.lease.sec"]     = {
+        access  = "Viewer", type = "integer", min = 0 },
+    ["wifi.dhcp.domain"]        = {
+        access  = "Viewer", type = "string" },
+    ["wifi.dhcp.obtained.unix"] = {
+        access  = "Viewer", type = "integer", min = 0 },
     ["wifi.pid.wpa"]            = {
         access  = "Viewer", type = "integer", min = 0 },
     ["wifi.pid.dhcp"]           = {

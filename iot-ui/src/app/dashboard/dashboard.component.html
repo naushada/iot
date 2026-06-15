@@ -31,6 +31,23 @@
             </span>
           </span>
         </div>
+        <!-- DHCP lease detail (written by the udhcpc-ds hook). -->
+        <div class="card-detail" *ngIf="status?.wifi?.dhcp_ip">
+          IP {{ status?.wifi?.dhcp_ip
+          }}<span *ngIf="status?.wifi?.dhcp_mask"> / {{ status?.wifi?.dhcp_mask }}</span>
+        </div>
+        <div class="card-detail" *ngIf="status?.wifi?.dhcp_gateway">
+          GW {{ status?.wifi?.dhcp_gateway }}
+        </div>
+        <div class="card-detail" *ngIf="status?.wifi?.dhcp_dns">
+          DNS {{ status?.wifi?.dhcp_dns }}
+        </div>
+        <div class="card-detail" *ngIf="status?.wifi?.dhcp_domain">
+          Domain {{ status?.wifi?.dhcp_domain }}
+        </div>
+        <div class="card-detail" *ngIf="status?.wifi?.dhcp_lease_sec">
+          Lease {{ status?.wifi?.dhcp_lease_sec }} s
+        </div>
       </div>
     </div>
 

@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <ace/Log_Msg.h>
 #include <nlohmann/json.hpp>
@@ -404,7 +405,14 @@ int Supervisor::run() {
                 m_ds.dhcp_client().value_or("auto"),
                 m_ds.dhcp_path().value_or(""));
             if (!dhcp_path.empty()) {
-                if (m_dhcp.spawn_dhcp(dhcp_path, m_opt.iface)) {
+                // Point udhcpc at the lease hook (mirrors the lease into ds for
+                // the device UI) only when it is installed — dev/test hosts
+                // without it keep udhcpc's built-in default script.
+                static constexpr const char* kDhcpHookScript =
+                    "/usr/share/iot/udhcpc-ds.script";
+                std::string hook;
+                if (::access(kDhcpHookScript, F_OK) == 0) hook = kDhcpHookScript;
+                if (m_dhcp.spawn_dhcp(dhcp_path, m_opt.iface, hook)) {
                     m_ds.set_dhcp_state("requesting");
                     m_ds.set_pid_dhcp(static_cast<std::uint32_t>(m_dhcp.pid()));
                 }

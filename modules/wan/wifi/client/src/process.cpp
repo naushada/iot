@@ -380,8 +380,9 @@ bool Process::spawn_wpa_supplicant(const std::string&             wpa_path,
     return spawn(wpa_path, argv);
 }
 
-bool Process::spawn_dhcp(const std::string& dhcp_path,
-                         const std::string& iface) {
+std::vector<std::string> build_dhcp_argv(const std::string& dhcp_path,
+                                         const std::string& iface,
+                                         const std::string& script) {
     std::vector<std::string> argv;
     argv.push_back(dhcp_path);
     // Detect udhcpc vs dhclient by basename. The picker hands us
@@ -395,12 +396,24 @@ bool Process::spawn_dhcp(const std::string& dhcp_path,
         argv.push_back(iface);
         argv.push_back("-f");
         argv.push_back("-q");
+        // -s <hook> mirrors the lease to the data-store (udhcpc-ds.script).
+        if (!script.empty()) {
+            argv.push_back("-s");
+            argv.push_back(script);
+        }
     } else {
-        // dhclient -d (no daemonise) <iface>
+        // dhclient -d (no daemonise) <iface> — different hook mechanism,
+        // so `script` is intentionally ignored here.
         argv.push_back("-d");
         argv.push_back(iface);
     }
-    return spawn(dhcp_path, argv);
+    return argv;
+}
+
+bool Process::spawn_dhcp(const std::string& dhcp_path,
+                         const std::string& iface,
+                         const std::string& script) {
+    return spawn(dhcp_path, build_dhcp_argv(dhcp_path, iface, script));
 }
 
 bool Process::running() {
