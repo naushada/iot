@@ -33,6 +33,12 @@ import { ToastService } from '../../common/toast.service';
             <clr-dg-cell><app-status-badge [label]="resultLabel"
               [state]="result===1 ? 'connected' : (result>=5 ? 'exited' : 'idle')"></app-status-badge></clr-dg-cell>
           </clr-dg-row>
+          <clr-dg-row *ngIf="bank">
+            <clr-dg-cell>Running Bank <span class="hint">(A/B image)</span>
+              <app-ds-hint *dsDebug key="iot.boot.bank"></app-ds-hint></clr-dg-cell>
+            <clr-dg-cell><app-status-badge [label]="bank + (confirmed ? ' · confirmed' : ' · unconfirmed')"
+              [state]="confirmed ? 'connected' : 'starting'"></app-status-badge></clr-dg-cell>
+          </clr-dg-row>
         </clr-datagrid>
 
         <!-- Self-update trigger -->
@@ -89,6 +95,8 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   version = '';
   state = 0;
   result = 0;
+  bank = '';          // iot.boot.bank — running A/B rootfs bank (empty = single-rootfs)
+  confirmed = false;  // iot.boot.confirmed — this boot marked good
   url = '';
   busy = false;
   dragOver = false;
@@ -126,6 +134,14 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     }));
     this.sub.add(this.ds.observe('iot.update.result').subscribe(v => {
       this.result = Number(v) || 0;
+    }));
+    // A/B boot status changes only once per boot — read it once.
+    this.sub.add(this.http.dbGet(['iot.boot.bank', 'iot.boot.confirmed']).subscribe(r => {
+      if (r.ok && r.data) {
+        const d = r.data as Record<string, unknown>;
+        this.bank = d['iot.boot.bank'] != null ? String(d['iot.boot.bank']) : '';
+        this.confirmed = d['iot.boot.confirmed'] === true;
+      }
     }));
   }
 

@@ -47,6 +47,8 @@ SRC_URI = "\
     file://iot-swupdate \
     file://iot-swupdate.path \
     file://iot-swupdate.service \
+    file://iot-ota-confirm \
+    file://iot-ota-confirm.service \
     file://migrations/README.md \
     file://migrations/0000-template.sh.example \
 "
@@ -195,8 +197,9 @@ do_install() {
     # systemd-run by the lwm2m client) and iot-swupdate (the inotify-triggered
     # installer, run by iot-swupdate.service). See apps/docs/tdd-yocto-swupdate.md.
     install -d ${D}${bindir}
-    install -m 0755 ${WORKDIR}/iot-ota-stage ${D}${bindir}/iot-ota-stage
-    install -m 0755 ${WORKDIR}/iot-swupdate  ${D}${bindir}/iot-swupdate
+    install -m 0755 ${WORKDIR}/iot-ota-stage    ${D}${bindir}/iot-ota-stage
+    install -m 0755 ${WORKDIR}/iot-swupdate     ${D}${bindir}/iot-swupdate
+    install -m 0755 ${WORKDIR}/iot-ota-confirm  ${D}${bindir}/iot-ota-confirm
 
     # Config/schema migration scripts (§11), run by iot-swupdate after opkg.
     install -d ${D}${datadir}/iot/migrations
@@ -216,6 +219,7 @@ do_install() {
         install -m 0644 ${WORKDIR}/iot-vpn-cert.service       ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-swupdate.path          ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-swupdate.service       ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-ota-confirm.service    ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-net-router.service     ${D}${systemd_system_unitdir}/
         # TUN driver autoload for openvpn-client.
         install -d ${D}${sysconfdir}/modules-load.d
@@ -286,11 +290,13 @@ FILES:${PN}-lwm2m = "\
     ${bindir}/lwm2m \
     ${bindir}/iot-ota-stage \
     ${bindir}/iot-swupdate \
+    ${bindir}/iot-ota-confirm \
     ${datadir}/iot/migrations \
     ${systemd_system_unitdir}/iot-lwm2m-client.service \
     ${systemd_system_unitdir}/iot-lwm2m-server.service \
     ${systemd_system_unitdir}/iot-swupdate.path \
     ${systemd_system_unitdir}/iot-swupdate.service \
+    ${systemd_system_unitdir}/iot-ota-confirm.service \
 "
 RDEPENDS:${PN}-lwm2m = "\
     ace-tao \
@@ -382,7 +388,7 @@ FILES:${PN}-config = "\
 SYSTEMD_SERVICE:${PN}-ds-server = "iot-ds.service"
 # iot-swupdate.path is enabled (watches the OTA spool trigger); iot-swupdate.service
 # is activated by the path unit, not enabled directly (it has no [Install]).
-SYSTEMD_SERVICE:${PN}-lwm2m = "iot-lwm2m-client.service iot-lwm2m-server.service iot-swupdate.path"
+SYSTEMD_SERVICE:${PN}-lwm2m = "iot-lwm2m-client.service iot-lwm2m-server.service iot-swupdate.path iot-ota-confirm.service"
 # iot-vpn-cert.path is enabled (watches the cert); iot-vpn-cert.service is
 # activated by the path unit, not enabled directly (it has no [Install]).
 SYSTEMD_SERVICE:${PN}-openvpn-client = "iot-openvpn-client.service iot-vpn-cert.path"
