@@ -91,6 +91,16 @@ target_link_libraries(ds-cli
     pthread)
 
 # --------------------------------------------------------------------
+# ds-bench — throughput/latency benchmark (off by default). Links the client.
+# Build with -DBUILD_DS_BENCH=ON; run against a live ds-server.
+# --------------------------------------------------------------------
+option(BUILD_DS_BENCH "Build the ds throughput/latency benchmark" OFF)
+if(BUILD_DS_BENCH)
+    add_executable(ds-bench bench/ds_bench.cpp)
+    target_link_libraries(ds-bench datastore_client pthread)
+endif()
+
+# --------------------------------------------------------------------
 # Tests — same gtest target as the iot suite. ACE + client lib both
 # in scope because integration tests construct a server in-process.
 # --------------------------------------------------------------------
