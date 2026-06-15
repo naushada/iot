@@ -116,7 +116,6 @@ TEST_F(WIFI_REQ_WIFI_005_read_keys_have_defaults, documented_defaults_match) {
         {"wifi.iface",             "wlan0"},
         {"wifi.ctrl.dir",          "/run/wpa_supplicant"},
         {"wifi.wpa.path",          "/usr/sbin/wpa_supplicant"},
-        {"wifi.networks",          "\\[\\]"},   // escape brackets for regex
         {"wifi.scan.interval.sec", "60"},
         {"wifi.scan.max.results",  "20"},
         {"wifi.scan.request",      "0"},
@@ -128,6 +127,20 @@ TEST_F(WIFI_REQ_WIFI_005_read_keys_have_defaults, documented_defaults_match) {
         EXPECT_TRUE(has_default(body, p.deflt))
             << p.key << " default expected " << p.deflt << ", body was:\n  " << body;
     }
+
+    // wifi.networks is special-cased: its default is a JSON array whose
+    // embedded { } and quotes defeat the brace-naive entry_body() helper.
+    // Assert against the full schema text instead. The default must seed
+    // one placeholder PSK network (autostart-on-boot, REQ-WIFI-024), NOT
+    // the old empty "[]".
+    EXPECT_EQ(std::string::npos, schema.find(R"(default = "[]")"))
+        << "wifi.networks must no longer default to empty []";
+    EXPECT_NE(std::string::npos,
+              schema.find(R"("ssid":"changeme")"))
+        << "wifi.networks default must seed a placeholder network";
+    EXPECT_NE(std::string::npos,
+              schema.find(R"("key_mgmt":"WPA-PSK")"))
+        << "seeded default network must be a WPA-PSK entry";
 }
 
 // ─────────────────────────── REQ-WIFI-006 ───────────────────────────

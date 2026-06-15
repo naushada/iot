@@ -396,13 +396,17 @@ SYSTEMD_SERVICE:${PN}-net-router = "iot-net-router.service"
 SYSTEMD_SERVICE:${PN}-wifi-client = "iot-wifi-client.service"
 SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service"
 
-# Only ds-server auto-starts. Role units are enabled by the operator
-# after writing the matching .env file — see DEPLOY.md.
+# ds-server and wifi-client auto-start. wifi-client comes up on every boot
+# and reads wifi.networks from the data-store (schema default seeds a
+# placeholder network); it parks in "disconnected" until provisioned. The
+# unit already orders After=iot-ds.service network-online.target, so the
+# schema default resolves before its first read. Other role units are
+# enabled by the operator after writing the matching .env file — see DEPLOY.md.
 SYSTEMD_AUTO_ENABLE:${PN}-ds-server = "enable"
 SYSTEMD_AUTO_ENABLE:${PN}-lwm2m = "disable"
 SYSTEMD_AUTO_ENABLE:${PN}-openvpn-client = "disable"
 SYSTEMD_AUTO_ENABLE:${PN}-net-router = "disable"
-SYSTEMD_AUTO_ENABLE:${PN}-wifi-client = "disable"
+SYSTEMD_AUTO_ENABLE:${PN}-wifi-client = "enable"
 SYSTEMD_AUTO_ENABLE:${PN}-httpd = "disable"
 
 # ── Sanity checks ──────────────────────────────────────────────────

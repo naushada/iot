@@ -1,25 +1,42 @@
 # TDD Plan — WiFi Client Auto-start on Boot + WPA-Enterprise Support
 
-Status: **IN PROGRESS** — design + scope agreed. Device side only (Yocto
-image + wifi-client daemon); no cloud/UI changes. Build/test via the existing
-host-side gtest harness under `modules/wan/wifi/client/`.
+Status: **COMPLETE** (implementable scope) — device side only (Yocto image +
+wifi-client daemon); no cloud/UI changes. Unit + build verified in podman:
+wifi-client suite **103/103** green. The new WPA-Enterprise surface is tracked
+as **REQ-WIFI-024** (014–023, 026 were already taken).
 
 ### Implementation progress
 
 | Task | State | Notes |
 | --- | --- | --- |
-| A — WifiNetwork struct gains EAP fields | ⬜ TODO | `process.hpp`: `identity`, `password`, `eap`, `phase2`, `ca_cert`. |
-| B — parse_networks parses/validates EAP | ⬜ TODO | `process.cpp`: when `key_mgmt=WPA-EAP`, require `identity`+`password`, parse optional `eap`/`phase2`/`ca_cert`; do **not** require `psk`. |
-| C — build_wpa_supplicant_config emits EAP | ⬜ TODO | `process.cpp`: EAP `network={}` block (no `psk`); PSK/NONE branches unchanged. |
-| D — unit tests | ⬜ TODO | `test/process_test.cpp`: EAP parse OK, missing identity/password rejected, EAP conf-gen, PSK regression. |
-| E — seed default in schema | ⬜ TODO | `schemas/wifi.lua`: `wifi.networks` default `[]` → default network; doc comment extended with EAP shape. |
-| F — auto-enable service | ⬜ TODO | `yocto/meta-iot/recipes-iot/lwm2m/iot_git.bb`: `SYSTEMD_AUTO_ENABLE:${PN}-wifi-client` `disable` → `enable`. |
-| G — docs | ⬜ TODO | `DEPLOY.md` wifi section: both JSON shapes + auto-start note. |
+| A — WifiNetwork struct gains EAP fields | ✅ DONE | `process.hpp`: `eap`, `identity`, `password`, `phase2`, `ca_cert` added after `key_mgmt` (positional aggregate inits stay valid). |
+| B — parse_networks parses/validates EAP | ✅ DONE | `process.cpp`: `key_mgmt=WPA-EAP` requires non-empty `identity`+`password`; `eap` defaults `PEAP`, `phase2` defaults `auth=MSCHAPV2`; `ca_cert` optional; `psk` not required. |
+| C — build_wpa_supplicant_config emits EAP | ✅ DONE | `process.cpp`: shared quote-escape lambda; EAP `network={}` block emits `key_mgmt=WPA-EAP`/`eap`/`identity`/`password`/`phase2`/`ca_cert` and **no** `psk`. PSK/NONE output byte-identical. |
+| D — unit tests | ✅ DONE | `test/process_test.cpp` REQ-WIFI-024: 8 EAP tests (parse OK, missing id/pw rejected, defaults, conf-gen no-psk, ca_cert-only-when-present, quote-escape) + seeded-default round-trip; PSK/NONE regressions green. |
+| E — seed default in schema | ✅ DONE | `schemas/wifi.lua`: `wifi.networks` default `[]` → `[{"ssid":"changeme","key_mgmt":"WPA-PSK","psk":"changeme","priority":10}]`; doc comment extended with EAP shape. `schema_test.cpp` `documented_defaults_match` updated (JSON braces defeat the brace-naive `entry_body` helper → asserted against full schema text). |
+| F — auto-enable service | ✅ DONE | `iot_git.bb`: `SYSTEMD_AUTO_ENABLE:${PN}-wifi-client` `disable` → `enable`. Ships `wifi-client.env`; unit already orders `After=iot-ds.service network-online.target`. |
+| G — docs | ✅ DONE | `DEPLOY.md` wifi section: auto-start-on-image note + all three JSON shapes (PSK / open / WPA-EAP). |
 
-Test cmd (wifi-client): host-side gtest
-`cmake .. -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 && make -j wifi_client_test && ./wifi_client_test`
-(exact target name confirmed at implementation time from the module
-`CMakeLists.txt`).
+Test cmd (wifi-client), podman:
+```sh
+podman run --rm -v "$PWD":/src:Z -w /src/modules/wan/wifi/client \
+  localhost/iot-cloud-builder:authfix bash -lc '
+    apt-get update && apt-get install -y libgtest-dev
+    mkdir -p build && cd build
+    cmake .. -DACE_ROOT=/usr/local/ACE_TAO-7.0.0 -DBUILD_WIFI_CLIENT_TESTS=ON
+    make -j4 wifi-client-tests && ./wifi-client-tests'
+```
+(`libgtest-dev` is not pre-installed in `iot-cloud-builder`; `apt-get update`
+first or `find_package(GTest)` fails. The `:lp` httpd image has it baked in.)
+
+## 6. Deferred / not done
+
+- **On-device boot verification** on real RPi hardware (service comes up,
+  `wifi.assoc.state` → `connected`, `wifi.dhcp.ip` populated). Needs hardware
+  + a real AP; cannot be verified in podman.
+- Cloud-UI / device-UI EAP form fields (keys already flow through ds).
+- Per-device secure WiFi credential provisioning (placeholder default is
+  world-readable in the image — fine for lab, not production).
 
 ## 1. Goal
 

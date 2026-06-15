@@ -6,8 +6,17 @@
 --                             (default "/run/wpa_supplicant")
 --   wifi.wpa.path           - path to wpa_supplicant(8)
 --                             (default "/usr/sbin/wpa_supplicant")
---   wifi.networks           - JSON array of {ssid, psk, priority, key_mgmt}
---                             entries (default "[]"; validated in code, not lua)
+--   wifi.networks           - JSON array of network entries (validated in
+--                             code, not lua). Two shapes per entry:
+--                               PSK : {ssid, psk, priority, key_mgmt}
+--                                     key_mgmt "WPA-PSK" (default) or "NONE"
+--                               EAP : {ssid, key_mgmt="WPA-EAP", eap,
+--                                     identity, password, phase2, ca_cert,
+--                                     priority}  (WPA-Enterprise; eap
+--                                     defaults "PEAP", phase2 "auth=MSCHAPV2")
+--                             Default seeds one placeholder PSK network so a
+--                             fresh image auto-associates once provisioned;
+--                             operators override via ds-cli / cloud-ui.
 --   wifi.scan.interval.sec  - periodic background scan cadence in seconds
 --                             (default 60; 0 disables periodic scans)
 --   wifi.scan.max.results   - cap on the length of wifi.scan.results
@@ -68,8 +77,15 @@ return {
     ["wifi.wpa.path"]           = {
         access  = "Admin", type = "string",
                                     default = "/usr/sbin/wpa_supplicant" },
+    -- Default seeds one placeholder PSK network. wifi-client auto-starts
+    -- on boot (SYSTEMD_AUTO_ENABLE=enable) and reads this default until an
+    -- operator overrides wifi.networks. Replace ssid/psk per deployment;
+    -- the placeholder parks the daemon in "disconnected" (no such AP) until
+    -- then. NOTE: this value lives in the world-readable image schema — do
+    -- not commit a real secret here; provision per-device for production.
     ["wifi.networks"]           = {
-        access  = "Admin", type = "string",  default = "[]" },
+        access  = "Admin", type = "string",
+        default = '[{"ssid":"changeme","key_mgmt":"WPA-PSK","psk":"changeme","priority":10}]' },
     ["wifi.scan.interval.sec"]  = {
         access  = "Admin", type = "integer", default = 60,
                                     min = 0, max = 86400 },
