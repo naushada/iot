@@ -429,6 +429,46 @@ refuses to spawn wpa_supplicant if NM is active.
 > step is unnecessary on the image; it remains required on bare-metal
 > hosts where the unit ships disabled.
 
+#### Bake WiFi credentials into the image at build time (optional)
+
+Instead of running `ds-cli set wifi.networks …` on every device, you can
+seed the credentials at **build time** so a freshly-flashed image associates
+to your AP with no runtime step. Drop a `wifi_credentials.lua` into the
+recipe's `files/` directory **before building**:
+
+```
+yocto/meta-iot/recipes-iot/lwm2m/files/wifi_credentials.lua
+```
+
+Copy the committed template and edit it:
+
+```sh
+cd <repo-root>
+cp yocto/meta-iot/recipes-iot/lwm2m/files/wifi_credentials.lua.sample \
+   yocto/meta-iot/recipes-iot/lwm2m/files/wifi_credentials.lua
+# edit, e.g.:  return { ssid = "cordoba_2G", password = "whatever" }
+```
+
+The build (`iot_git.bb` → `gen_wifi_default.py`) converts it to the
+`wifi.networks` JSON below and bakes it into the shipped
+`/etc/iot/ds-schemas/wifi.lua` default. Accepted shapes (PSK / open /
+WPA-EAP) are documented in `wifi_credentials.lua.sample`. The simple form
+maps `password` → `psk`.
+
+- **Optional & safe:** the file is **gitignored** — real passwords never land
+  in source control (only the `.sample` is tracked). Absent file ⇒ build is a
+  no-op and the `changeme` placeholder default stands.
+- **Rebuild on change:** it is wired into `SRC_URI` only when present, so
+  editing it triggers a recipe rebuild (no stale sstate).
+- **Caveats:** the credential is still **plaintext on the device image**
+  (this keeps it out of *git*, not off the *device*), and one build = the
+  same credential for every device flashed from that image (fine for a shared
+  default AP; per-device provisioning is separate).
+- **Verify on device:** `ds-cli get wifi.networks` should show your seeded
+  value. Operators can still override it at runtime with `ds-cli set`.
+
+See `apps/docs/tdd-wifi-credentials-seed.md` for the full design.
+
 `wifi.networks` is a JSON array; each entry is one of:
 
 ```jsonc
