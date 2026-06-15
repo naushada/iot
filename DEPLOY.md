@@ -421,17 +421,45 @@ NetworkManager MUST be masked on hosts running wifi-client — the
 daemon's startup probe writes `wifi.assoc.state="conflict"` and
 refuses to spawn wpa_supplicant if NM is active.
 
+> **Yocto / RPi image:** wifi-client is **auto-enabled on boot**
+> (`SYSTEMD_AUTO_ENABLE=enable`) and the `wifi.networks` schema
+> default seeds a placeholder PSK network (`ssid="changeme"`), so a
+> fresh image starts the daemon automatically and only needs the
+> `wifi.networks` set below to associate. The `systemctl enable`
+> step is unnecessary on the image; it remains required on bare-metal
+> hosts where the unit ships disabled.
+
+`wifi.networks` is a JSON array; each entry is one of:
+
+```jsonc
+// WPA-PSK (home/personal) — key_mgmt defaults to WPA-PSK when omitted
+{ "ssid": "HomeAP", "psk": "correcthorse", "priority": 10 }
+
+// Open network
+{ "ssid": "GuestAP", "key_mgmt": "NONE" }
+
+// WPA-Enterprise (identity + password). eap defaults "PEAP",
+// phase2 defaults "auth=MSCHAPV2"; ca_cert is optional.
+{ "ssid": "CorpAP", "key_mgmt": "WPA-EAP", "eap": "PEAP",
+  "identity": "user@corp", "password": "secret",
+  "phase2": "auth=MSCHAPV2", "priority": 20 }
+```
+
 ```sh
 sudo systemctl mask NetworkManager   # avoid the conflict gate
 
 ds-cli --socket=/run/iot/data_store.sock set wifi.networks \
     '[{"ssid":"HomeAP","psk":"correcthorse","priority":10}]'
 
+# WPA-Enterprise example:
+# ds-cli ... set wifi.networks \
+#   '[{"ssid":"CorpAP","key_mgmt":"WPA-EAP","identity":"user@corp","password":"secret"}]'
+
 # Optional: pick a different iface or DHCP client.
 ds-cli --socket=/run/iot/data_store.sock set wifi.iface       '"wlan0"'
 ds-cli --socket=/run/iot/data_store.sock set wifi.dhcp.client '"udhcpc"'
 
-sudo systemctl enable --now iot-wifi-client.service
+sudo systemctl enable --now iot-wifi-client.service   # bare-metal only; pre-enabled on the image
 journalctl -u iot-wifi-client.service -f | grep "ctrl attached\|assoc\|connected\|dhcp"
 
 # Observe the published wifi.* keys.

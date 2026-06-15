@@ -134,6 +134,18 @@ TEST(WIFI_REQ_WIFI_015_wpa_conf_writer_orders_by_priority,
 }
 
 TEST(WIFI_REQ_WIFI_015_wpa_conf_writer_orders_by_priority,
+     ssid_quote_chars_escaped) {
+    std::vector<WifiNetwork> nets = {
+        { "My\"AP\\x", "psk", 0, "WPA-PSK" },
+    };
+    auto body = build_wpa_supplicant_config(
+        "wlan0", "/run/wpa_supplicant", nets);
+    // " and \\ in the SSID must be backslash-escaped so wpa_supplicant's
+    // parser doesn't see them as terminators.
+    EXPECT_NE(std::string::npos, body.find("ssid=\"My\\\"AP\\\\x\""));
+}
+
+TEST(WIFI_REQ_WIFI_015_wpa_conf_writer_orders_by_priority,
      psk_quote_chars_escaped) {
     std::vector<WifiNetwork> nets = {
         { "Net", "p\"sk\\with\"quotes", 0, "WPA-PSK" },
@@ -228,6 +240,183 @@ TEST(WIFI_REQ_WIFI_017_dhcp_picker_honours_schema_key,
     auto p = pick_dhcp_client("invalid", "");
     // Just check the function doesn't throw or crash.
     SUCCEED() << "result: '" << p << "'";
+}
+
+// ───────────────────── REQ-WIFI-024 (WPA-Enterprise) ────────────────
+//
+// WPA-EAP networks carry identity + password (and optional eap/phase2/
+// ca_cert) instead of a psk. parse_wifi_networks must accept them and
+// reject entries missing identity/password; build_wpa_supplicant_config
+// must emit an EAP network={} block with NO psk= line.
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     parse_accepts_full_eap_entry) {
+    std::string err;
+    auto nets = parse_wifi_networks(
+        R"([{"ssid":"CorpAP","key_mgmt":"WPA-EAP","eap":"PEAP",)"
+        R"("identity":"user@corp","password":"secret",)"
+        R"("phase2":"auth=MSCHAPV2","priority":20}])", &err);
+    EXPECT_TRUE(err.empty()) << err;
+    ASSERT_EQ(1u, nets.size());
+    EXPECT_EQ("CorpAP",          nets[0].ssid);
+    EXPECT_EQ("WPA-EAP",         nets[0].key_mgmt);
+    EXPECT_EQ("PEAP",            nets[0].eap);
+    EXPECT_EQ("user@corp",       nets[0].identity);
+    EXPECT_EQ("secret",          nets[0].password);
+    EXPECT_EQ("auth=MSCHAPV2",   nets[0].phase2);
+    EXPECT_EQ(20,                nets[0].priority);
+    EXPECT_TRUE(nets[0].psk.empty());
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     parse_eap_defaults_eap_and_phase2) {
+    std::string err;
+    auto nets = parse_wifi_networks(
+        R"([{"ssid":"CorpAP","key_mgmt":"WPA-EAP",)"
+        R"("identity":"u","password":"p"}])", &err);
+    EXPECT_TRUE(err.empty()) << err;
+    ASSERT_EQ(1u, nets.size());
+    EXPECT_EQ("PEAP",          nets[0].eap)    << "eap should default to PEAP";
+    EXPECT_EQ("auth=MSCHAPV2", nets[0].phase2) << "phase2 should default";
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     parse_rejects_eap_missing_identity) {
+    std::string err;
+    auto nets = parse_wifi_networks(
+        R"([{"ssid":"CorpAP","key_mgmt":"WPA-EAP","password":"p"}])", &err);
+    EXPECT_TRUE(nets.empty());
+    EXPECT_NE(std::string::npos, err.find("bad_networks_json"));
+    EXPECT_NE(std::string::npos, err.find("identity"));
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     parse_rejects_eap_missing_password) {
+    std::string err;
+    auto nets = parse_wifi_networks(
+        R"([{"ssid":"CorpAP","key_mgmt":"WPA-EAP","identity":"u"}])", &err);
+    EXPECT_TRUE(nets.empty());
+    EXPECT_NE(std::string::npos, err.find("bad_networks_json"));
+    EXPECT_NE(std::string::npos, err.find("password"));
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     parse_rejects_eap_empty_password) {
+    std::string err;
+    auto nets = parse_wifi_networks(
+        R"([{"ssid":"CorpAP","key_mgmt":"WPA-EAP","identity":"u","password":""}])",
+        &err);
+    EXPECT_TRUE(nets.empty());
+    EXPECT_NE(std::string::npos, err.find("bad_networks_json"));
+    EXPECT_NE(std::string::npos, err.find("password"));
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     parse_rejects_control_chars_in_eap_fields) {
+    // A newline in any emitted field would break wpa_supplicant.conf or
+    // inject a directive; parse must reject it rather than pass it to esc().
+    std::string err;
+    auto nets = parse_wifi_networks(
+        "[{\"ssid\":\"CorpAP\",\"key_mgmt\":\"WPA-EAP\","
+        "\"identity\":\"user\\nkey_mgmt=NONE\",\"password\":\"p\"}]",
+        &err);
+    EXPECT_TRUE(nets.empty());
+    EXPECT_NE(std::string::npos, err.find("bad_networks_json"));
+    EXPECT_NE(std::string::npos, err.find("control characters"));
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     parse_rejects_control_chars_in_psk) {
+    // Same guard applies to PSK networks (shared emit path).
+    std::string err;
+    auto nets = parse_wifi_networks(
+        "[{\"ssid\":\"Home\",\"psk\":\"pass\\nword\"}]", &err);
+    EXPECT_TRUE(nets.empty());
+    EXPECT_NE(std::string::npos, err.find("control characters"));
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     parse_eap_does_not_require_psk) {
+    std::string err;
+    auto nets = parse_wifi_networks(
+        R"([{"ssid":"CorpAP","key_mgmt":"WPA-EAP",)"
+        R"("identity":"u","password":"p"}])", &err);
+    EXPECT_TRUE(err.empty()) << err;
+    ASSERT_EQ(1u, nets.size());
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     build_emits_eap_block_without_psk) {
+    WifiNetwork n;
+    n.ssid     = "CorpAP";
+    n.key_mgmt = "WPA-EAP";
+    n.eap      = "PEAP";
+    n.identity = "user@corp";
+    n.password = "secret";
+    n.phase2   = "auth=MSCHAPV2";
+    n.priority = 20;
+    auto body = build_wpa_supplicant_config(
+        "wlan0", "/run/wpa_supplicant", {n});
+    EXPECT_NE(std::string::npos, body.find("ssid=\"CorpAP\""));
+    EXPECT_NE(std::string::npos, body.find("key_mgmt=WPA-EAP"));
+    EXPECT_NE(std::string::npos, body.find("eap=PEAP"));
+    EXPECT_NE(std::string::npos, body.find("identity=\"user@corp\""));
+    EXPECT_NE(std::string::npos, body.find("password=\"secret\""));
+    EXPECT_NE(std::string::npos, body.find("phase2=\"auth=MSCHAPV2\""));
+    EXPECT_NE(std::string::npos, body.find("priority=20"));
+    EXPECT_EQ(std::string::npos, body.find("psk="))
+        << "EAP network MUST NOT emit psk=, body:\n" << body;
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     build_emits_ca_cert_only_when_present) {
+    WifiNetwork bare;
+    bare.ssid     = "CorpAP";
+    bare.key_mgmt = "WPA-EAP";
+    bare.eap      = "PEAP";
+    bare.identity = "u";
+    bare.password = "p";
+    auto body_bare = build_wpa_supplicant_config(
+        "wlan0", "/run/wpa_supplicant", {bare});
+    EXPECT_EQ(std::string::npos, body_bare.find("ca_cert="));
+
+    WifiNetwork with_ca = bare;
+    with_ca.ca_cert = "/etc/iot/certs/corp-ca.pem";
+    auto body_ca = build_wpa_supplicant_config(
+        "wlan0", "/run/wpa_supplicant", {with_ca});
+    EXPECT_NE(std::string::npos,
+              body_ca.find("ca_cert=\"/etc/iot/certs/corp-ca.pem\""));
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     build_escapes_quotes_in_identity_and_password) {
+    WifiNetwork n;
+    n.ssid     = "CorpAP";
+    n.key_mgmt = "WPA-EAP";
+    n.eap      = "PEAP";
+    n.identity = "us\"er";
+    n.password = "pa\\ss\"wd";
+    auto body = build_wpa_supplicant_config(
+        "wlan0", "/run/wpa_supplicant", {n});
+    EXPECT_NE(std::string::npos, body.find("identity=\"us\\\"er\""));
+    EXPECT_NE(std::string::npos, body.find("password=\"pa\\\\ss\\\"wd\""));
+}
+
+TEST(WIFI_REQ_WIFI_024_wpa_enterprise_eap,
+     seeded_schema_default_parses_cleanly) {
+    // Mirrors the wifi.networks default shipped in schemas/wifi.lua.
+    // A fresh image relies on this parsing into exactly one PSK network
+    // so wifi-client autostart has a valid (placeholder) config to load.
+    const char* kSeededDefault =
+        R"([{"ssid":"changeme","key_mgmt":"WPA-PSK","psk":"changeme","priority":10}])";
+    std::string err;
+    auto nets = parse_wifi_networks(kSeededDefault, &err);
+    EXPECT_TRUE(err.empty()) << err;
+    ASSERT_EQ(1u, nets.size());
+    EXPECT_EQ("changeme", nets[0].ssid);
+    EXPECT_EQ("WPA-PSK",  nets[0].key_mgmt);
+    EXPECT_EQ("changeme", nets[0].psk);
+    EXPECT_EQ(10,         nets[0].priority);
 }
 
 // ─────────────────────────── write_temp_config ──────────────────────

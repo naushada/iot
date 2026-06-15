@@ -35,10 +35,20 @@ struct WifiNetwork {
     std::string  ssid;
     std::string  psk;
     int          priority = 0;
-    /// "WPA-PSK" (default) or "NONE" (open network). Anything else
-    /// is propagated verbatim to wpa_supplicant.conf so future key
-    /// management modes don't need a code change here.
+    /// "WPA-PSK" (default), "NONE" (open network), or "WPA-EAP"
+    /// (WPA-Enterprise). Anything else is propagated verbatim to
+    /// wpa_supplicant.conf so future key management modes don't need
+    /// a code change here.
     std::string  key_mgmt = "WPA-PSK";
+
+    // ───── WPA-Enterprise (key_mgmt == "WPA-EAP") fields ─────
+    // Populated by parse_wifi_networks only for EAP entries; ignored
+    // for WPA-PSK / NONE. The config writer emits them in place of psk.
+    std::string  eap;        ///< "PEAP" (default) / "TTLS" / "TLS" / …
+    std::string  identity;   ///< EAP identity (username)
+    std::string  password;   ///< EAP password
+    std::string  phase2;     ///< inner auth, e.g. "auth=MSCHAPV2"
+    std::string  ca_cert;    ///< optional CA-cert path (emitted iff set)
 };
 
 /// Parse a wifi.networks JSON string into a vector of WifiNetwork.
@@ -48,7 +58,11 @@ struct WifiNetwork {
 /// an empty vector. Validates:
 ///   - root must be a JSON array
 ///   - each entry must have "ssid" (non-empty string)
-///   - each entry must have "psk" unless "key_mgmt"=="NONE"
+///   - each entry must have "psk" unless "key_mgmt" is "NONE" or
+///     "WPA-EAP"
+///   - WPA-EAP entries must have "identity" and "password"; "eap"
+///     defaults to "PEAP" and "phase2" to "auth=MSCHAPV2"; "ca_cert"
+///     is optional
 ///   - "priority" is optional, defaults to 0
 ///   - "key_mgmt" is optional, defaults to "WPA-PSK"
 std::vector<WifiNetwork> parse_wifi_networks(const std::string& json,

@@ -24,6 +24,21 @@
 
 namespace wifi_client {
 
+namespace {
+
+// wpa_supplicant.conf is line-oriented and has no escape for control
+// characters; a stray '\n' in any emitted value would break the conf
+// or inject a directive (the conf writer's esc() only handles " and \).
+// Reject control characters at parse time instead.
+bool has_control_char(const std::string& s) {
+    for (unsigned char c : s) {
+        if (c < 0x20 || c == 0x7f) return true;
+    }
+    return false;
+}
+
+} // namespace
+
 // ─────────────────────── Pure helpers ───────────────────────────────
 
 std::vector<WifiNetwork>
@@ -71,8 +86,36 @@ parse_wifi_networks(const std::string& json, std::string* err_out) {
             }
             n.key_mgmt = e["key_mgmt"].get<std::string>();
         }
-        // psk (required unless key_mgmt == NONE)
-        if (n.key_mgmt != "NONE") {
+        if (n.key_mgmt == "WPA-EAP") {
+            // WPA-Enterprise: identity + password instead of psk.
+            if (!e.contains("identity") || !e["identity"].is_string() ||
+                e["identity"].get<std::string>().empty()) {
+                set_err("bad_networks_json: entry " + std::to_string(i)
+                        + " missing non-empty 'identity' for key_mgmt=WPA-EAP");
+                return {};
+            }
+            if (!e.contains("password") || !e["password"].is_string() ||
+                e["password"].get<std::string>().empty()) {
+                set_err("bad_networks_json: entry " + std::to_string(i)
+                        + " missing non-empty 'password' for key_mgmt=WPA-EAP");
+                return {};
+            }
+            n.identity = e["identity"].get<std::string>();
+            n.password = e["password"].get<std::string>();
+            // eap defaults to PEAP, phase2 to MSCHAPV2; ca_cert optional.
+            n.eap    = (e.contains("eap") && e["eap"].is_string() &&
+                        !e["eap"].get<std::string>().empty())
+                           ? e["eap"].get<std::string>()
+                           : "PEAP";
+            n.phase2 = (e.contains("phase2") && e["phase2"].is_string() &&
+                        !e["phase2"].get<std::string>().empty())
+                           ? e["phase2"].get<std::string>()
+                           : "auth=MSCHAPV2";
+            if (e.contains("ca_cert") && e["ca_cert"].is_string()) {
+                n.ca_cert = e["ca_cert"].get<std::string>();
+            }
+        } else if (n.key_mgmt != "NONE") {
+            // psk (required unless key_mgmt == NONE)
             if (!e.contains("psk") || !e["psk"].is_string()) {
                 set_err("bad_networks_json: entry " + std::to_string(i)
                         + " missing 'psk' for key_mgmt=" + n.key_mgmt);
@@ -92,6 +135,17 @@ parse_wifi_networks(const std::string& json, std::string* err_out) {
                 return {};
             }
             n.priority = e["priority"].get<int>();
+        }
+        // Every value below is emitted verbatim into wpa_supplicant.conf;
+        // reject control characters so a newline can't break the conf or
+        // inject a directive.
+        for (const auto* f : {&n.ssid, &n.psk, &n.identity, &n.password,
+                              &n.eap, &n.phase2, &n.ca_cert}) {
+            if (has_control_char(*f)) {
+                set_err("bad_networks_json: entry " + std::to_string(i)
+                        + " field contains control characters");
+                return {};
+            }
         }
         out.push_back(std::move(n));
     }
@@ -119,25 +173,43 @@ std::string build_wpa_supplicant_config(const std::string&             iface,
                   return a.priority > b.priority;
               });
 
+    // Quote-escape any literal " or \\ inside a value so a mischievous
+    // passphrase / identity / password can't break the conf parser.
+    auto esc = [](const std::string& in) {
+        std::string out;
+        out.reserve(in.size() + 2);
+        for (char c : in) {
+            if (c == '"' || c == '\\') out.push_back('\\');
+            out.push_back(c);
+        }
+        return out;
+    };
+
     for (const auto& n : sorted) {
         ss << "network={\n";
         // ssid is always quoted; psk may be quoted (passphrase)
         // or a 64-char hex pre-shared key — we always quote here
         // because operators typing PSKs into ds-cli will use the
-        // passphrase form, not pre-computed hex.
-        ss << "    ssid=\"" << n.ssid << "\"\n";
+        // passphrase form, not pre-computed hex. esc() the ssid too:
+        // SSIDs may legitimately contain " or \ which would otherwise
+        // break the conf parser.
+        ss << "    ssid=\"" << esc(n.ssid) << "\"\n";
         if (n.key_mgmt == "NONE") {
             ss << "    key_mgmt=NONE\n";
-        } else {
-            // Quote-escape any literal " or \\ in the PSK so a
-            // mischievous passphrase can't break the conf parser.
-            std::string esc;
-            esc.reserve(n.psk.size() + 2);
-            for (char c : n.psk) {
-                if (c == '"' || c == '\\') esc.push_back('\\');
-                esc.push_back(c);
+        } else if (n.key_mgmt == "WPA-EAP") {
+            // WPA-Enterprise: no psk — emit EAP method + credentials.
+            ss << "    key_mgmt=WPA-EAP\n";
+            ss << "    eap=" << (n.eap.empty() ? "PEAP" : n.eap) << "\n";
+            ss << "    identity=\"" << esc(n.identity) << "\"\n";
+            ss << "    password=\"" << esc(n.password) << "\"\n";
+            if (!n.phase2.empty()) {
+                ss << "    phase2=\"" << esc(n.phase2) << "\"\n";
             }
-            ss << "    psk=\"" << esc << "\"\n";
+            if (!n.ca_cert.empty()) {
+                ss << "    ca_cert=\"" << esc(n.ca_cert) << "\"\n";
+            }
+        } else {
+            ss << "    psk=\"" << esc(n.psk) << "\"\n";
             if (n.key_mgmt != "WPA-PSK") {
                 ss << "    key_mgmt=" << n.key_mgmt << "\n";
             }
