@@ -14,7 +14,7 @@ import { WifiNetwork } from '../../../common/app-globals';
 export class WifiConfigComponent implements OnInit, OnDestroy {
   form: FormGroup;
   networks: WifiNetwork[] = [];
-  loading = true; saving = false; msg = '';
+  saving = false; msg = '';
   private sub = new Subscription();
   private readonly KEYS = [
     'wifi.iface', 'wifi.wpa.path', 'wifi.ctrl.dir',
@@ -42,7 +42,6 @@ export class WifiConfigComponent implements OnInit, OnDestroy {
     // then stay live off the appglobal store. Re-apply only while the form is
     // pristine so a late prefetch fills the fields without clobbering edits.
     this.applyData(this.ds.snapshot());
-    this.loading = false;
     for (const k of this.KEYS)
       this.sub.add(this.ds.observe(k).subscribe(() => {
         if (!this.form.dirty) this.applyData(this.ds.snapshot());
