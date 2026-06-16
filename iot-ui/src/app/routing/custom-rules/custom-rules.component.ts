@@ -1,5 +1,5 @@
-import { Component, OnInit } from '@angular/core';
-import { HttpsvcService } from '../../../common/httpsvc.service';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
 import { DataStoreService } from '../../../common/datastore.service';
@@ -113,9 +113,10 @@ interface CustomRule {
     .add-rule-btn { margin-top: 20px; }
   `]
 })
-export class CustomRulesComponent implements OnInit {
+export class CustomRulesComponent implements OnInit, OnDestroy {
   rules: CustomRule[] = [];
   routeState = '';
+  private sub = new Subscription();
 
   // Add-rule form state
   nAction = 'accept';
@@ -130,16 +131,20 @@ export class CustomRulesComponent implements OnInit {
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, private session: SessionService,
+  constructor(private session: SessionService,
               private toast: ToastService, private ds: DataStoreService) {}
 
   ngOnInit(): void {
-    // Instant paint from the prefetched cache, then refresh from the wire.
+    // Paint instantly from the shared prefetched cache, then stay live off the
+    // appglobal store. net.custom.rules is edited only here (persisted on each
+    // add/delete) and isn't republished by /status, so it fires once when the
+    // prefetch lands; net.state is the live router-state badge.
     this.applyData(this.ds.snapshot());
-    this.http.dbGet(['net.custom.rules', 'net.state']).subscribe({
-      next: (r) => { if (r.ok && r.data) this.applyData(r.data as Record<string, unknown>); }
-    });
+    this.sub.add(this.ds.observe('net.custom.rules').subscribe(() => this.applyData(this.ds.snapshot())));
+    this.sub.add(this.ds.observe('net.state').subscribe(v => { if (v != null) this.routeState = String(v); }));
   }
+
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
 
   private applyData(d: Record<string, unknown>): void {
     if (d['net.custom.rules'] != null) {
@@ -169,7 +174,7 @@ export class CustomRulesComponent implements OnInit {
 
   private persist(next: CustomRule[], okMsg: string): void {
     this.saving = true;
-    this.http.dbSet([{ key: 'net.custom.rules', value: JSON.stringify(next) }]).subscribe({
+    this.ds.write([{ key: 'net.custom.rules', value: JSON.stringify(next) }]).subscribe({
       next: (r) => {
         this.saving = false;
         if (r.ok) { this.rules = next; this.toast.success(okMsg); this.resetForm(); }

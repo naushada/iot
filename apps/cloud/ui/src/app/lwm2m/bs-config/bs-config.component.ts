@@ -1,8 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { FormBuilder, FormGroup } from '@angular/forms';
-import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
+import { DataStoreService } from '../../../common/datastore.service';
 
 @Component({
   selector: 'app-bs-config',
@@ -15,18 +16,20 @@ import { ToastService } from '../../../common/toast.service';
     .hint { color: #888; font-weight: normal; font-size: 11px; }
   `]
 })
-export class BsConfigComponent implements OnInit {
+export class BsConfigComponent implements OnInit, OnDestroy {
   bsForm: FormGroup;
   loading = true;
   savingBs = false;
+  private sub = new Subscription();
+  private readonly KEYS = ['cloud.bs.uri', 'cloud.dm.uri'];
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
   constructor(
-    private http: HttpsvcService,
     fb: FormBuilder,
     private session: SessionService,
-    private toast: ToastService
+    private toast: ToastService,
+    private ds: DataStoreService
   ) {
     // Only the keys the bootstrap server actually consumes at /bs:
     // cloud.bs.uri (Security/0 RID0) and cloud.dm.uri (Security/1 RID0).
@@ -39,27 +42,30 @@ export class BsConfigComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.http.dbGet([
-      'cloud.bs.uri', 'cloud.dm.uri'
-    ]).subscribe({
-      next: (r) => {
-        if (r.ok && r.data) {
-          const d = r.data as Record<string, unknown>;
-          this.bsForm.patchValue({
-            bs_uri:        d['cloud.bs.uri']           || 'coaps://0.0.0.0:5684',
-            dm_uri:        d['cloud.dm.uri']           || 'coaps://0.0.0.0:5683',
-          });
-        }
-        this.loading = false;
-      },
-      error: () => { this.loading = false; }
+    // Paint instantly from the shared prefetched cache (no per-page round-trip),
+    // then stay live off the appglobal store; re-apply only while the form is
+    // pristine so a late prefetch fills the fields without clobbering edits.
+    this.applyData(this.ds.snapshot());
+    this.loading = false;
+    for (const k of this.KEYS)
+      this.sub.add(this.ds.observe(k).subscribe(() => {
+        if (!this.bsForm.dirty) this.applyData(this.ds.snapshot());
+      }));
+  }
+
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
+
+  private applyData(d: Record<string, unknown>): void {
+    this.bsForm.patchValue({
+      bs_uri: d['cloud.bs.uri'] || 'coaps://0.0.0.0:5684',
+      dm_uri: d['cloud.dm.uri'] || 'coaps://0.0.0.0:5683',
     });
   }
 
   saveBs(): void {
     this.savingBs = true;
     const v = this.bsForm.value;
-    this.http.dbSet([
+    this.ds.write([
       { key: 'cloud.bs.uri',           value: v.bs_uri },
       { key: 'cloud.dm.uri',           value: v.dm_uri },
     ]).subscribe({
