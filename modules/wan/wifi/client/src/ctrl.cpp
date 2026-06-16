@@ -196,12 +196,21 @@ bool Client::connect(const std::string& server_sock_path) {
 bool Client::request(const std::string& cmd, std::string& reply) {
     if (!connected()) return false;
 
-    std::string framed = cmd;
-    if (framed.empty() || framed.back() != '\n') framed.push_back('\n');
+    // Send the command verbatim — NO trailing terminator. wpa_supplicant's
+    // control protocol matches verbs with an exact os_strcmp() (ATTACH,
+    // PING, SCAN, DETACH, …), and wpa_ctrl(3) puts no newline on the wire.
+    // A trailing '\n' makes the exact match miss and wpa replies
+    // "UNKNOWN COMMAND" — which silently broke ATTACH against real
+    // wpa_supplicant (the smoke fake rstrip'd it, so the bug hid until
+    // hardware). Defensively strip any caller-supplied EOL.
+    std::string wire = cmd;
+    while (!wire.empty() && (wire.back() == '\n' || wire.back() == '\r')) {
+        wire.pop_back();
+    }
 
-    ssize_t n = m_impl->sock.send(framed.data(), framed.size(),
+    ssize_t n = m_impl->sock.send(wire.data(), wire.size(),
                                   m_impl->peer);
-    if (n != static_cast<ssize_t>(framed.size())) {
+    if (n != static_cast<ssize_t>(wire.size())) {
         ACE_ERROR((LM_WARNING,
                    ACE_TEXT("%D [wifi:%t] %M %N:%l send('%C') n=%d errno=%d\n"),
                    cmd.c_str(), static_cast<int>(n), errno));

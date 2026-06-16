@@ -21,9 +21,16 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <thread>
+
+#include <cstring>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 #include "ctrl.hpp"
 
+using wifi_client::ctrl::Client;
 using wifi_client::ctrl::CtrlEvent;
 using wifi_client::ctrl::Parser;
 
@@ -214,4 +221,51 @@ TEST(WIFI_NFR_WIFI_005_parser_bounded_per_line,
     auto ev = Parser::classify(huge);
     EXPECT_EQ(CtrlEvent::Kind::Unknown, ev.kind);
     EXPECT_GT(ev.raw.size(), 1000u);  // priority stripped, body kept
+}
+
+// ─────────────────────────── REQ-WIFI-010 ───────────────────────────
+// Wire-level: connect() must put "ATTACH" on the socket with NO trailing
+// terminator. Real wpa_supplicant matches control verbs with an exact
+// os_strcmp(), so a trailing '\n' comes back "UNKNOWN COMMAND" and the
+// daemon never attaches (the bug that wedged WiFi on hardware; the
+// line-based smoke fake rstrip'd the newline so it never surfaced there).
+
+TEST(WIFI_REQ_WIFI_010_ctrl_attach_wire,
+     attach_sent_without_trailing_newline) {
+    char dir[] = "/tmp/wpa_ctrl_wire_XXXXXX";
+    ASSERT_NE(nullptr, ::mkdtemp(dir));
+    const std::string srv_path = std::string(dir) + "/wlan0";
+
+    int srv = ::socket(AF_UNIX, SOCK_DGRAM, 0);
+    ASSERT_GE(srv, 0);
+    sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    ::strncpy(addr.sun_path, srv_path.c_str(), sizeof(addr.sun_path) - 1);
+    ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)));
+
+    // Fake wpa: recv the ATTACH datagram verbatim, reply "OK".
+    std::string got;
+    std::thread wpa([&] {
+        char buf[256];
+        sockaddr_un from{};
+        socklen_t   fl = sizeof(from);
+        ssize_t n = ::recvfrom(srv, buf, sizeof(buf), 0,
+                               reinterpret_cast<sockaddr*>(&from), &fl);
+        if (n > 0) {
+            got.assign(buf, static_cast<std::size_t>(n));
+            ::sendto(srv, "OK\n", 3, 0,
+                     reinterpret_cast<sockaddr*>(&from), fl);
+        }
+    });
+
+    Client c;
+    const bool attached = c.connect(srv_path);
+    wpa.join();
+    ::close(srv);
+    ::unlink(srv_path.c_str());
+    ::rmdir(dir);
+
+    EXPECT_TRUE(attached) << "connect() must accept an OK reply to ATTACH";
+    EXPECT_EQ("ATTACH", got)
+        << "ATTACH must hit the wire with no trailing newline";
 }
