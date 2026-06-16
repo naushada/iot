@@ -1,5 +1,5 @@
-import { Component, OnInit } from '@angular/core';
-import { HttpsvcService } from '../../../common/httpsvc.service';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
 import { DataStoreService } from '../../../common/datastore.service';
@@ -59,24 +59,34 @@ import { DataStoreService } from '../../../common/datastore.service';
     .active-iface { font-size: 16px; font-weight: 600; color: #2e7d32; display: block; margin-top: 2px; }
   `]
 })
-export class IfacePriorityComponent implements OnInit {
+export class IfacePriorityComponent implements OnInit, OnDestroy {
   priority = 'eth,wifi,cellular'; ethName = 'eth0'; wifiName = 'wlan0';
   cellName = 'wwan0'; pollInterval = 5; activeIface = '';
   saving = false; msg = '';
+  private sub = new Subscription();
+  private readonly CFG_KEYS = [
+    'net.iface.priority', 'net.iface.eth.name', 'net.iface.wifi.name',
+    'net.iface.cellular.name', 'net.poll.interval.sec',
+  ];
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, private session: SessionService,
+  constructor(private session: SessionService,
               private toast: ToastService, private ds: DataStoreService) {}
 
   ngOnInit(): void {
-    // Instant paint from the prefetched cache, then refresh from the wire.
+    // Paint instantly from the shared prefetched cache, then stay live off the
+    // appglobal store. The editable config keys change only here and aren't
+    // republished by /status (they fire once when the prefetch lands);
+    // net.iface.active is live telemetry off the shared long-poll.
     this.applyData(this.ds.snapshot());
-    this.http.dbGet(['net.iface.priority', 'net.iface.eth.name', 'net.iface.wifi.name',
-      'net.iface.cellular.name', 'net.poll.interval.sec', 'net.iface.active']).subscribe({
-      next: (r) => { if (r.ok && r.data) this.applyData(r.data as Record<string, unknown>); }
-    });
+    for (const k of this.CFG_KEYS)
+      this.sub.add(this.ds.observe(k).subscribe(() => this.applyData(this.ds.snapshot())));
+    this.sub.add(this.ds.observe('net.iface.active')
+      .subscribe(v => { if (v != null) this.activeIface = String(v); }));
   }
+
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
 
   private applyData(d: Record<string, unknown>): void {
     if (d['net.iface.priority'] != null)      this.priority     = String(d['net.iface.priority']);
@@ -89,7 +99,7 @@ export class IfacePriorityComponent implements OnInit {
 
   save(): void {
     this.saving = true; this.msg = '';
-    this.http.dbSet([
+    this.ds.write([
       { key: 'net.iface.priority', value: this.priority },
       { key: 'net.iface.eth.name', value: this.ethName },
       { key: 'net.iface.wifi.name', value: this.wifiName },

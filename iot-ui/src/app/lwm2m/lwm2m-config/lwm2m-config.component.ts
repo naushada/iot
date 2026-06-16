@@ -27,6 +27,9 @@ export class Lwm2mConfigComponent implements OnInit, OnDestroy {
   generatingPsk = false;
 
   private sub = new Subscription();
+  private readonly CFG_KEYS = [
+    'iot.serial', 'iot.dev.mode', 'iot.bs.uri', 'iot.binding', 'iot.lifetime',
+  ];
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
@@ -42,46 +45,47 @@ export class Lwm2mConfigComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    this.http.dbGet([
-      'iot.serial', 'iot.dev.mode', 'iot.bs.uri',
-      'iot.dm.uri', 'iot.server.uri', 'iot.binding', 'iot.lifetime'
-    ]).subscribe({
-      next: (r) => {
-        if (r.ok && r.data) {
-          const d = r.data as Record<string, unknown>;
-          const serial = (d['iot.serial'] as string) || '';
-          // A serial already in the store means the RPi client auto-filled
-          // it → present it read-only. Empty → installer enters it.
-          this.serialAutoDetected = serial.length > 0;
-          this.devMode = d['iot.dev.mode'] === true;
-          this.serverForm.patchValue({
-            serial:     serial,
-            bs_uri:     d['iot.bs.uri']    || 'coaps://',
-            // DM Server URI: prefer the actual bootstrap-delivered URI the
-            // client persisted (iot.dm.uri); fall back to the legacy
-            // ds-driven server.uri, then to the placeholder when both empty.
-            server_uri: (d['iot.dm.uri'] as string)
-                        || (d['iot.server.uri'] as string)
-                        || '(set by bootstrap)',
-            binding:    d['iot.binding']    || 'U',
-            lifetime:   d['iot.lifetime']   || 86400,
-          });
-        }
-        this.loading = false;
-      },
-      error: () => { this.loading = false; }
-    });
+    // Paint instantly from the shared prefetched cache (no per-page round-trip),
+    // then stay live off the appglobal store.
+    this.applyData(this.ds.snapshot());
+    this.loading = false;
+    // The Security tab is an editable form; re-apply the commissioning fields
+    // only while pristine so a late prefetch fills them without clobbering
+    // in-progress edits. These keys aren't republished by /status, so they
+    // fire once when the prefetch lands.
+    for (const k of this.CFG_KEYS)
+      this.sub.add(this.ds.observe(k).subscribe(() => {
+        if (!this.serverForm.dirty) this.applyData(this.ds.snapshot());
+      }));
 
     // The Server (Device Management) tab is read-only STATUS — the DM URI is
-    // pushed by the bootstrap server after the client registers. Subscribe to
-    // the shared store so it renders live (off the single /status long-poll)
-    // and never shows a stale "(set by bootstrap)" once iot.dm.uri is written.
-    // The Security tab is an editable form, so it stays load-once (no live
-    // subscription that could clobber in-progress edits).
+    // pushed by the bootstrap server after the client registers. Keep it live
+    // off the shared store (single /status long-poll) so it never shows a
+    // stale "(set by bootstrap)" once iot.dm.uri is written.
     if (this.mode === 'server') {
       this.sub.add(this.ds.observe('iot.dm.uri').subscribe(() => this.refreshDmUri()));
       this.sub.add(this.ds.observe('iot.server.uri').subscribe(() => this.refreshDmUri()));
     }
+  }
+
+  private applyData(d: Record<string, unknown>): void {
+    const serial = (d['iot.serial'] as string) || '';
+    // A serial already in the store means the RPi client auto-filled it →
+    // present it read-only. Empty → installer enters it.
+    this.serialAutoDetected = serial.length > 0;
+    this.devMode = d['iot.dev.mode'] === true;
+    this.serverForm.patchValue({
+      serial:     serial,
+      bs_uri:     d['iot.bs.uri']    || 'coaps://',
+      // DM Server URI: prefer the actual bootstrap-delivered URI the client
+      // persisted (iot.dm.uri); fall back to the legacy ds-driven server.uri,
+      // then to the placeholder when both empty.
+      server_uri: (d['iot.dm.uri'] as string)
+                  || (d['iot.server.uri'] as string)
+                  || '(set by bootstrap)',
+      binding:    d['iot.binding']    || 'U',
+      lifetime:   d['iot.lifetime']   || 86400,
+    });
   }
 
   ngOnDestroy(): void { this.sub.unsubscribe(); }
@@ -104,7 +108,7 @@ export class Lwm2mConfigComponent implements OnInit, OnDestroy {
     if (!this.serialAutoDetected && v.serial) {
       pairs.push({ key: 'iot.serial', value: v.serial });
     }
-    this.http.dbSet(pairs).subscribe({
+    this.ds.write(pairs).subscribe({
       next: (r) => { this.saving = false; if(r.ok) this.toast.success('Commissioning saved'); else this.toast.error(r.err||'Save failed'); },
       error: () => { this.saving = false; this.toast.error('Save failed'); }
     });

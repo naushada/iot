@@ -1,8 +1,8 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { filter } from 'rxjs/operators';
+import { filter, tap } from 'rxjs/operators';
 import { HttpsvcService } from './httpsvc.service';
-import { StatusSnapshot } from './app-globals';
+import { StatusSnapshot, DbSetResponse } from './app-globals';
 
 /// Shared, prefetched view of the data store.
 ///
@@ -93,6 +93,20 @@ export class DataStoreService {
       },
       error: () => { /* pages fall back to their own dbGet */ }
     });
+  }
+
+  /// Write keys through the shared store. Persists to ds-server via the REST
+  /// API and, on success, mirrors the new values into the local cache so
+  /// snapshot()/observe() stay consistent on revisit WITHOUT re-running
+  /// prefetchAll — config keys are written only here and are NOT carried by
+  /// the /status long-poll, so without this a page would show pre-save values
+  /// the next time it mounts. Config pages call this instead of
+  /// HttpsvcService.dbSet for any key they also read back. (Secrets that are
+  /// deliberately excluded from the cache keep using dbSet directly.)
+  write(pairs: { key: string; value: unknown }[]): Observable<DbSetResponse> {
+    return this.http.dbSet(pairs).pipe(
+      tap(r => { if (r && r.ok) for (const p of pairs) this.set(p.key, p.value); })
+    );
   }
 
   /// Keep volatile telemetry fresh via the aggregated /status long-poll.

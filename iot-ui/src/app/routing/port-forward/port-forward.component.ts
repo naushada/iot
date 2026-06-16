@@ -1,6 +1,5 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
-import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
 import { PubSubService } from '../../../common/pubsubsvc.service';
 import { ToastService } from '../../../common/toast.service';
@@ -84,23 +83,34 @@ export class PortForwardComponent implements OnInit, OnDestroy {
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
-  constructor(private http: HttpsvcService, private session: SessionService,
+  constructor(private session: SessionService,
               private toast: ToastService, private pubsub: PubSubService,
               private ds: DataStoreService) {}
 
   ngOnInit(): void {
-    // Instant paint from the prefetched cache, then refresh from the wire.
+    // Paint instantly from the shared prefetched cache, then stay live off the
+    // appglobal store. The DNAT/ports keys are edited only here and aren't
+    // republished by /status (they fire once when the prefetch lands); the
+    // state/rules/last-apply rows are live telemetry off the shared long-poll.
     this.applyData(this.ds.snapshot());
-    this.http.dbGet(['net.lwm2m.target.ip', 'net.lwm2m.target.port', 'net.forward.ports',
-      'net.state', 'net.rules.applied.count', 'net.last.apply.unix']).subscribe({
-      next: (r) => { if (r.ok && r.data) this.applyData(r.data as Record<string, unknown>); }
-    });
+    for (const k of ['net.lwm2m.target.ip', 'net.lwm2m.target.port', 'net.forward.ports'])
+      this.sub.add(this.ds.observe(k).subscribe(() => this.applyEditable(this.ds.snapshot())));
+    for (const k of ['net.state', 'net.rules.applied.count', 'net.last.apply.unix'])
+      this.sub.add(this.ds.observe(k).subscribe(() => this.applyLive(this.ds.snapshot())));
   }
 
   private applyData(d: Record<string, unknown>): void {
+    this.applyEditable(d);
+    this.applyLive(d);
+  }
+
+  private applyEditable(d: Record<string, unknown>): void {
     if (d['net.lwm2m.target.ip'] != null)      this.targetIp     = String(d['net.lwm2m.target.ip']);
     if (d['net.lwm2m.target.port'] != null)    this.targetPort   = Number(d['net.lwm2m.target.port']) || 5684;
     if (d['net.forward.ports'] != null)        this.forwardPorts = String(d['net.forward.ports']);
+  }
+
+  private applyLive(d: Record<string, unknown>): void {
     if (d['net.state'] != null)                this.routeState   = String(d['net.state']);
     if (d['net.rules.applied.count'] != null)  this.rulesApplied = Number(d['net.rules.applied.count']) || 0;
     if (d['net.last.apply.unix'] != null) {
@@ -111,7 +121,7 @@ export class PortForwardComponent implements OnInit, OnDestroy {
 
   saveDnat(): void {
     this.savingDnat = true;
-    this.http.dbSet([
+    this.ds.write([
       { key: 'net.lwm2m.target.ip',   value: this.targetIp },
       { key: 'net.lwm2m.target.port', value: this.targetPort },
     ]).subscribe({
@@ -122,7 +132,7 @@ export class PortForwardComponent implements OnInit, OnDestroy {
 
   savePorts(): void {
     this.savingPorts = true;
-    this.http.dbSet([
+    this.ds.write([
       { key: 'net.forward.ports', value: this.forwardPorts },
     ]).subscribe({
       next: (r) => { this.savingPorts = false; if(r.ok) this.toast.success('Ports saved'); else this.toast.error(r.err||'Port save failed'); },

@@ -1,6 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { FormBuilder, FormGroup } from '@angular/forms';
-import { HttpsvcService } from '../../../common/httpsvc.service';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
 import { DataStoreService } from '../../../common/datastore.service';
@@ -10,14 +10,20 @@ import { DataStoreService } from '../../../common/datastore.service';
   templateUrl: './vpn-config.component.html',
   styleUrls: ['./vpn-config.component.scss']
 })
-export class VpnConfigComponent implements OnInit {
+export class VpnConfigComponent implements OnInit, OnDestroy {
   form: FormGroup;
   loading = true;
   get isAdmin(): boolean { return this.session.isAdmin; }
   saving = false;
   msg = '';
+  private sub = new Subscription();
+  private readonly KEYS = [
+    'vpn.remote.host', 'vpn.remote.port', 'vpn.remote.proto',
+    'vpn.cert.path', 'vpn.key.path', 'vpn.ca.path',
+    'vpn.cipher', 'vpn.dev', 'vpn.mgmt.port',
+  ];
 
-  constructor(private http: HttpsvcService, fb: FormBuilder,
+  constructor(fb: FormBuilder,
     private session: SessionService, private toast: ToastService,
     private ds: DataStoreService) {
     this.form = fb.group({
@@ -34,20 +40,18 @@ export class VpnConfigComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    // Instant paint from the prefetched cache, then refresh from the wire.
-    if (this.ds.has('vpn.remote.host')) { this.applyData(this.ds.snapshot()); this.loading = false; }
-    this.http.dbGet([
-      'vpn.remote.host', 'vpn.remote.port', 'vpn.remote.proto',
-      'vpn.cert.path', 'vpn.key.path', 'vpn.ca.path',
-      'vpn.cipher', 'vpn.dev', 'vpn.mgmt.port'
-    ]).subscribe({
-      next: (r) => {
-        if (r.ok && r.data) this.applyData(r.data as Record<string, unknown>);
-        this.loading = false;
-      },
-      error: () => { this.loading = false; }
-    });
+    // Paint instantly from the shared prefetched cache (no per-page round-trip),
+    // then stay live off the appglobal store; re-apply only while the form is
+    // pristine so a late prefetch fills the fields without clobbering edits.
+    this.applyData(this.ds.snapshot());
+    this.loading = false;
+    for (const k of this.KEYS)
+      this.sub.add(this.ds.observe(k).subscribe(() => {
+        if (!this.form.dirty) this.applyData(this.ds.snapshot());
+      }));
   }
+
+  ngOnDestroy(): void { this.sub.unsubscribe(); }
 
   private applyData(d: Record<string, unknown>): void {
     this.form.patchValue({
@@ -66,7 +70,7 @@ export class VpnConfigComponent implements OnInit {
   save(): void {
     this.saving = true; this.msg = '';
     const v = this.form.value;
-    this.http.dbSet([
+    this.ds.write([
       { key: 'vpn.remote.host',  value: v.remote_host },
       { key: 'vpn.remote.port',  value: v.remote_port },
       { key: 'vpn.remote.proto', value: v.remote_proto },
