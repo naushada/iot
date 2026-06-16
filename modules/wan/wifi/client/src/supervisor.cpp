@@ -235,9 +235,15 @@ Supervisor::Supervisor(DsBridge& ds, SupervisorOptions opt)
         m_svc = std::make_unique<data_store::ServiceGate>(*cli, "wifi.client");
         m_svc->publish_state("running");
 
-        // L17a/D4 — dependency watch for net.router.
-        m_dep = std::make_unique<data_store::DepWatch>(
-            *cli, std::vector<std::string>{"net.router"});
+        // wifi-client is the WAN uplink — it must NOT depend on net.router.
+        // Routing (net-router) layers ON TOP of the uplink, not before it, so
+        // the inverse dependency deadlocked WiFi whenever net-router wasn't
+        // healthy: on an un-provisioned device net-router refuses to start
+        // until net.lwm2m.target.ip is set, so it never publishes
+        // services.net.router.state="running", and wifi-client parked here
+        // forever (assoc.state=disconnected, wpa_supplicant never spawned).
+        // m_dep stays null → the run-loop dep checks are skipped and
+        // wifi-client associates + DHCPs independently.
     }
 }
 

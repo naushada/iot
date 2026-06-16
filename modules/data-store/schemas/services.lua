@@ -60,10 +60,12 @@ local keys = {
     ["services.lwm2m.server.state"]        = {
         access  = "Viewer", type = "string",  default = "stopped" },
 
-    -- wifi-client
+    -- wifi-client — the WAN uplink, so NO dependency on net.router (routing
+    -- layers on top of the uplink; the inverse dep deadlocked WiFi whenever
+    -- net-router was down). Matches the (lack of) DepWatch in supervisor.cpp.
     ["services.wifi.client.enable"]        = {
         access  = "Admin", type = "boolean", default = true,
-                                               depends_on = {"net.router"},
+                                               depends_on = {},
                                                write_acl = {"uid:0"} },
     ["services.wifi.client.state"]         = {
         access  = "Viewer", type = "string",  default = "stopped" },
