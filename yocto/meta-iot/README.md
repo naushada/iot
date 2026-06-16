@@ -223,6 +223,34 @@ Override in `local.conf` or kas config:
 PACKAGECONFIG:remove:pn-iot = "mongo"
 ```
 
+## systemd unit architecture
+
+The daemons share one Unix socket (`/run/iot/data_store.sock`, created by
+ds-server, mode `0660` group `iot`). Three invariants make the set come up
+zero-touch; breaking any one of them strands the whole stack (each was a real
+bring-up failure — see the git history around PR #212):
+
+- **`/run/iot` is owned solely by `tmpfiles.d/iot.conf`** (`2775 root:iot` —
+  setgid + group-writable), **not** by `RuntimeDirectory=iot`. systemd removes
+  a unit's `RuntimeDirectory` when it stops, so multiple units sharing
+  `RuntimeDirectory=iot` would delete `/run/iot` (and the live socket) whenever
+  any of them stopped or crash-looped — and ds-server's own restart would die in
+  pre-exec dir setup. **Do not add `RuntimeDirectory=iot` to any unit.**
+- **Every daemon that talks to ds-server has `SupplementaryGroups=iot`.** The
+  socket is `0660 root:iot`; without group `iot` a `DynamicUser` gets EACCES on
+  connect and crash-loops. (lwm2m-client runs as the static `engineer` user,
+  also in `iot`.)
+- **ds-server owns `/var/lib/iot` via `StateDirectory=iot`** — `tmpfiles` must
+  **not** pre-create it, or systemd migrates it `→ /var/lib/private/iot` on
+  every boot (DynamicUser state churn).
+
+Auto-enable needs **both** `SYSTEMD_AUTO_ENABLE = "enable"` **and** the shipped
+`90-iot.preset`. The image runs `systemctl preset-all` on first boot, which
+resets every unit to its preset policy (default *disable*) — without the preset
+file the build-time enables are silently undone and units come up
+`preset: disabled`. Keep `90-iot.preset` in sync with the `SYSTEMD_AUTO_ENABLE:*`
+assignments in `iot_git.bb`.
+
 ## Using on a target
 
 Once the `.ipk` packages are installed on the target:
@@ -231,7 +259,7 @@ Once the `.ipk` packages are installed on the target:
 # Edit env files to point at your LwM2M server
 vi /etc/iot/lwm2m-client.env
 
-# Enable and start
+# Enable and start (full image: already enabled via 90-iot.preset — skip this)
 systemctl enable --now iot-ds.service iot-lwm2m-client.service
 
 # Verify

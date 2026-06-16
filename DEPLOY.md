@@ -422,12 +422,14 @@ daemon's startup probe writes `wifi.assoc.state="conflict"` and
 refuses to spawn wpa_supplicant if NM is active.
 
 > **Yocto / RPi image:** wifi-client is **auto-enabled on boot**
-> (`SYSTEMD_AUTO_ENABLE=enable`) and the `wifi.networks` schema
-> default seeds a placeholder PSK network (`ssid="changeme"`), so a
-> fresh image starts the daemon automatically and only needs the
-> `wifi.networks` set below to associate. The `systemctl enable`
-> step is unnecessary on the image; it remains required on bare-metal
-> hosts where the unit ships disabled.
+> (`SYSTEMD_AUTO_ENABLE=enable` **plus** the shipped `90-iot.preset` —
+> the preset is required because the image runs `systemctl preset-all`
+> on first boot, which otherwise resets the unit to `preset: disabled`)
+> and the `wifi.networks` schema default seeds a placeholder PSK network
+> (`ssid="changeme"`), so a fresh image starts the daemon automatically
+> and only needs the `wifi.networks` set below to associate. The
+> `systemctl enable` step is unnecessary on the image; it remains
+> required on bare-metal hosts where the unit ships disabled.
 >
 > **As of the zero-touch image, `lwm2m-client`, `openvpn-client` and
 > `net-router` are also auto-enabled** (`SYSTEMD_AUTO_ENABLE=enable`),
@@ -440,6 +442,17 @@ refuses to spawn wpa_supplicant if NM is active.
 > loop — expected on an un-provisioned boot. The `systemctl enable`
 > commands below remain required only on bare-metal hosts where the
 > units ship disabled.
+>
+> **Troubleshooting (older images / regressions).** If the stack is dead
+> on boot, check these three invariants (all fixed in PR #212):
+> - `systemctl is-enabled iot-ds.service` → if `disabled` with
+>   `preset: disabled`, the `90-iot.preset` is missing/overridden.
+> - `ls -ld /run/iot` → must be `drwxrwsr-x root iot` (`2775`). If it
+>   keeps disappearing, a unit still declares `RuntimeDirectory=iot`
+>   (it gets wiped on that unit's stop, taking the ds socket with it).
+> - ds socket errors `connect(...): No such file or directory` after
+>   ds-server is up usually mean a client lacks `SupplementaryGroups=iot`
+>   and crash-loops; `Permission denied` means the same group is missing.
 
 #### Bake WiFi credentials into the image at build time (optional)
 
