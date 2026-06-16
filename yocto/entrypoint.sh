@@ -125,6 +125,20 @@ fi
 echo 'SSTATE_MIRRORS += "file://.* http://sstate.yoctoproject.org/all/PATH;downloadfilename=PATH"' \
     >> conf/local.conf
 
+# ── 4b. Force-refresh the iot recipe (opt-in: IOT_FRESH=1) ─────────
+# SRCREV = "${AUTOREV}" on IOT_BRANCH is meant to track the branch tip, but a
+# cached git mirror / the recipe's sstate (and the baked own-mirrors dl-mirror
+# used by IOT_USE_CACHE builds) can serve a STALE iot checkout — so a reflash
+# silently ships pre-fix code. IOT_FRESH=1 runs `cleanall` on just the iot
+# recipe: it wipes that recipe's downloads + sstate + WORKDIR so do_fetch
+# re-clones the real tip of $IOT_BRANCH from GitHub and the C++/Angular build
+# recompiles. Only the iot recipe is affected; every dependency still restores
+# from sstate, so the extra cost is one small clone + the iot rebuild.
+if [ -n "${IOT_FRESH:-}" ]; then
+    echo "→ IOT_FRESH set: forcing fresh fetch + rebuild of the iot recipe ..."
+    bitbake -c cleanall iot
+fi
+
 # ── 5. Run bitbake ─────────────────────────────────────────────────
 echo ""
 echo "→ Starting bitbake for $MACHINE: $@ ..."
