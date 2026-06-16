@@ -70,6 +70,10 @@ apps/test/build/
 yocto/build/
 build/
 
+# Ad-hoc CMake build dirs under modules (e.g. build-chk, build-test)
+modules/**/build-chk/
+modules/**/build-test/
+
 # Image export tarballs
 iot-cloud.tar.gz
 
