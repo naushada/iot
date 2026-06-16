@@ -56,6 +56,7 @@ SRC_URI = "\
     file://iot-set-hostname \
     file://iot-hostname.service \
     file://iot-http.avahi.service \
+    file://iot-dump \
 "
 
 # Optional, gitignored WiFi credential seed. When an integrator drops
@@ -216,6 +217,10 @@ do_install() {
     install -m 0755 ${WORKDIR}/iot-swupdate     ${D}${bindir}/iot-swupdate
     install -m 0755 ${WORKDIR}/iot-ota-confirm  ${D}${bindir}/iot-ota-confirm
 
+    # iot-dump: operator/debug tool — dumps all data-store keys + values for
+    # a module (e.g. `iot-dump iot-wifi-client`). Ships with ds-cli.
+    install -m 0755 ${WORKDIR}/iot-dump         ${D}${bindir}/iot-dump
+
     # Config/schema migration scripts (§11), run by iot-swupdate after opkg.
     install -d ${D}${datadir}/iot/migrations
     install -m 0644 ${WORKDIR}/migrations/README.md \
@@ -330,9 +335,10 @@ RDEPENDS:${PN}-ds-server = "\
     lua \
 "
 
-# ds-cli — operator debug/admin CLI
+# ds-cli — operator debug/admin CLI (+ iot-dump key-dump helper)
 FILES:${PN}-ds-cli = "\
     ${bindir}/ds-cli \
+    ${bindir}/iot-dump \
 "
 RDEPENDS:${PN}-ds-cli = "ace-tao"
 

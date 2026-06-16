@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <sstream>
 #include <string>
@@ -10,6 +11,9 @@
 #include <unistd.h>
 
 #include <ace/Log_Msg.h>
+#include <ace/LSOCK_Dgram.h>
+#include <ace/Time_Value.h>
+#include <ace/UNIX_Addr.h>
 #include <nlohmann/json.hpp>
 
 #include "data_store/service_gate.hpp"
@@ -160,6 +164,56 @@ select_best_network(const std::vector<WifiNetwork>& parsed_networks,
     return best_idx;
 }
 
+// Probe a wpa_supplicant control socket for a LIVE peer, using the same
+// ACE local-DGRAM primitive ctrl::Client speaks (ACE_LSOCK_Dgram +
+// ACE_UNIX_Addr) and wpa_supplicant's own liveness command: send "PING",
+// expect "PONG". A live wpa answers within milliseconds; a STALE leftover
+// node (wpa crashed / was SIGKILLed / exited without unlinking its socket)
+// has no receiver, so the send fails with ECONNREFUSED (or the recv times
+// out). That is exactly what tells a real conflict from a dead socket.
+//
+// Conservative on its own setup errors: if we can't stand up the probe
+// socket we assume "live" so we never unlink a socket that might be in use.
+// REQ-WIFI-022.
+bool wpa_ctrl_socket_is_live(const std::string& server_path) {
+    // ACE_LSOCK needs a bound local rendezvous path to send/recv a reply
+    // — same throwaway-name idiom ctrl::Client::connect() uses.
+    char tmpl[64];
+    std::snprintf(tmpl, sizeof(tmpl),
+                  "/tmp/wpa_probe_iot_%d_XXXXXX",
+                  static_cast<int>(::getpid()));
+    int fd = ::mkstemp(tmpl);
+    if (fd < 0) return true;                        // can't probe → assume live
+    ::close(fd);
+    ::unlink(tmpl);                                 // need a socket node, not a file
+
+    ACE_UNIX_Addr   local(tmpl);
+    ACE_LSOCK_Dgram sock;
+    if (sock.open(local) != 0) {
+        ::unlink(tmpl);
+        return true;                                // can't probe → assume live
+    }
+
+    bool live = false;
+    ACE_UNIX_Addr peer(server_path.c_str());
+    static const char kPing[] = "PING\n";
+    ssize_t sent = sock.send(kPing, sizeof(kPing) - 1, peer);
+    if (sent == static_cast<ssize_t>(sizeof(kPing) - 1)) {
+        char buf[64];
+        ACE_UNIX_Addr  src;
+        ACE_Time_Value tv(0, 300 * 1000);           // 300 ms is ample locally
+        ssize_t got = sock.recv(buf, sizeof(buf) - 1, src, 0, &tv);
+        if (got > 0) {
+            buf[got] = '\0';
+            live = std::strncmp(buf, "PONG", 4) == 0;
+        }
+    }
+    // sent < 0 (ECONNREFUSED on a dead node) → live stays false.
+    sock.close();
+    ::unlink(tmpl);
+    return live;
+}
+
 bool nm_conflict_detected(const std::string& iface,
                           const std::string& ctrl_dir) {
     // (1) systemctl is-active NetworkManager → "active" means yes.
@@ -173,12 +227,26 @@ bool nm_conflict_detected(const std::string& iface,
         ::pclose(fp);
         if (n >= 6 && std::string(buf, 6) == "active") return true;
     }
-    // (2) Existing ctrl socket at <ctrl_dir>/<iface> → conflict.
+    // (2) Existing ctrl socket at <ctrl_dir>/<iface>. A LIVE
+    // wpa_supplicant there is a genuine conflict — refuse to start a
+    // second one on the same iface. But a STALE leftover (wpa crashed,
+    // was SIGKILLed, or exited uncleanly without unlinking its socket)
+    // is NOT a conflict, and treating it as one permanently wedges every
+    // restart into "conflict" — the daemon never recovers without manual
+    // `rm`. So probe the socket: reclaim (unlink) a dead one and proceed.
     std::string path = ctrl_dir;
     if (!path.empty() && path.back() != '/') path.push_back('/');
     path += iface;
     struct ::stat st;
-    if (::stat(path.c_str(), &st) == 0) return true;
+    if (::stat(path.c_str(), &st) == 0) {
+        if (wpa_ctrl_socket_is_live(path)) return true;   // live peer → conflict
+        // Orphaned node: clear it so spawn_wpa_supplicant can re-bind.
+        ::unlink(path.c_str());
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D [wifi:%t] %M %N:%l reclaimed stale wpa ctrl "
+                            "socket %C (no live peer; not a conflict)\n"),
+                   path.c_str()));
+    }
     return false;
 }
 
@@ -295,6 +363,13 @@ bool Supervisor::initialize() {
         ::usleep(50 * 1000);
     }
     if (!m_ctrl.connect(sock_path)) {
+        // Reap the wpa_supplicant we just spawned instead of orphaning it.
+        // An orphaned wpa keeps its ctrl socket bound, which would make the
+        // next start trip nm_conflict_detected() — the exact deadlock the
+        // stale-socket reclaim above guards against. terminate() SIGTERMs
+        // wpa, which unlinks its own ctrl socket on the way out.
+        m_wpa.terminate();
+        m_ds.set_pid_wpa(0u);
         m_ds.set_assoc_state("exited");
         m_ds.set_last_error("ctrl connect/ATTACH failed");
         return false;

@@ -1,0 +1,94 @@
+#!/bin/sh
+# iot-dump — dump every data-store key + value for an iot module/daemon.
+#
+# Usage:
+#   iot-dump <module>          e.g.  iot-dump iot-wifi-client
+#   iot-dump all               dump every key in every schema
+#   iot-dump --list            list the known modules
+#
+# Resolves the module to its data-store key prefix(es), enumerates the
+# matching keys straight from the installed schema files
+# (/etc/iot/ds-schemas/*.lua — the on-device source of truth, so the key
+# list can never drift from the daemons), and prints each via `ds-cli get`.
+# Read-only; safe to run anytime.
+#
+# Env overrides: IOT_SCHEMA_DIR, IOT_DS_SOCKET, DS_CLI.
+
+set -eu
+
+SCHEMA_DIR="${IOT_SCHEMA_DIR:-/etc/iot/ds-schemas}"
+DS_CLI="${DS_CLI:-ds-cli}"
+SOCKET="${IOT_DS_SOCKET:-}"
+
+dscli() {
+    if [ -n "$SOCKET" ]; then "$DS_CLI" --socket="$SOCKET" "$@"
+    else                      "$DS_CLI" "$@"; fi
+}
+
+usage() {
+    cat >&2 <<EOF
+Usage: iot-dump <module>
+Dump all data-store keys + values for an iot module. Read-only.
+
+  iot-wifi-client | wifi        ->  wifi.*  + services.wifi.client.*
+  iot-net-router  | net-router  ->  net.*   + services.net.router.*
+  iot-openvpn-client | openvpn  ->  vpn.*   + services.openvpn.client.*
+  iot-lwm2m-client | lwm2m       ->  iot.* lwm2m.* cloud.* + services.lwm2m.*
+  iot-httpd | httpd             ->  http.* auth.* + services.httpd.*
+  iot-ds | ds | all             ->  every key
+EOF
+}
+
+[ $# -ge 1 ] || { usage; exit 2; }
+
+case "$1" in
+    -h|--help|--list) usage; exit 0 ;;
+esac
+
+module="$1"
+case "$module" in
+    *wifi*)               prefixes="wifi. services.wifi.client." ;;
+    *net*router*|net-router|net)
+                          prefixes="net. services.net.router." ;;
+    *openvpn*|*vpn*)      prefixes="vpn. services.openvpn.client." ;;
+    *lwm2m*)              prefixes="iot. lwm2m. cloud. services.lwm2m." ;;
+    *http*)               prefixes="http. auth. services.httpd." ;;
+    all|ds|iot-ds)        prefixes="" ;;   # everything
+    *) echo "iot-dump: unknown module '$module'" >&2; usage; exit 2 ;;
+esac
+
+[ -d "$SCHEMA_DIR" ] || {
+    echo "iot-dump: schema dir not found: $SCHEMA_DIR" >&2; exit 1; }
+
+# Every key is declared in a schema as a line like:  ["wifi.iface"] = {
+# Pull the quoted names out of all schema files at once.
+all_keys=$(grep -hoE '\["[^"]+"\]' "$SCHEMA_DIR"/*.lua 2>/dev/null \
+           | sed 's/^\["//; s/"\]$//' | sort -u)
+
+[ -n "$all_keys" ] || {
+    echo "iot-dump: no keys found under $SCHEMA_DIR" >&2; exit 1; }
+
+# Filter by the module's prefixes (empty => keep all keys).
+if [ -z "$prefixes" ]; then
+    keys="$all_keys"
+else
+    keys=$(for k in $all_keys; do
+               for p in $prefixes; do
+                   # ${k#$p} strips prefix $p; if it changed, k starts with p.
+                   if [ "${k#$p}" != "$k" ]; then echo "$k"; break; fi
+               done
+           done)
+fi
+
+[ -n "$keys" ] || {
+    echo "iot-dump: no keys match module '$module'" >&2; exit 1; }
+
+# One ds-cli get per key so a single write-only / unreadable key can't
+# abort the whole dump (and the output stays in schema-sorted order).
+for k in $keys; do
+    if v=$(dscli get "$k" 2>/dev/null); then
+        echo "$v"
+    else
+        echo "$k=<unreadable>"
+    fi
+done

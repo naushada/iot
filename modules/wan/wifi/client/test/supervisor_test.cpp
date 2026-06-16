@@ -6,8 +6,14 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <string>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
+
+#include <ace/LSOCK_Dgram.h>
+#include <ace/UNIX_Addr.h>
 
 #include "supervisor.hpp"
 
@@ -207,6 +213,39 @@ TEST(WIFI_REQ_WIFI_022_nm_active_or_socket_exists_yields_conflict,
     // completes and returns a boolean.
     bool r = nm_conflict_detected("wlan-nonexistent", "/run/no-such");
     EXPECT_TRUE(r == true || r == false);  // tautology by type
+}
+
+TEST(WIFI_REQ_WIFI_022_nm_active_or_socket_exists_yields_conflict,
+     stale_ctrl_socket_is_reclaimed_not_a_conflict) {
+    // A LEFTOVER ctrl socket with no live wpa_supplicant behind it must
+    // NOT count as a conflict: nm_conflict_detected probes it, finds no
+    // peer, unlinks the dead node, and returns false so the daemon can
+    // re-spawn. Regression for the "stale socket wedges every restart into
+    // conflict" deadlock. (Assumes NetworkManager isn't active in the test
+    // env — same caveat as the sibling test above; if it were, the NM
+    // branch would short-circuit before the socket probe.)
+    char dir_tmpl[] = "/tmp/wifi_ctrl_test_XXXXXX";
+    ASSERT_NE(::mkdtemp(dir_tmpl), nullptr);
+    const std::string iface     = "wlan-test";
+    const std::string sock_path = std::string(dir_tmpl) + "/" + iface;
+
+    // Bind an ACE local DGRAM socket then close WITHOUT removing it → a node
+    // on disk with no receiver, exactly what an unclean wpa exit leaves
+    // behind (ACE_LSOCK_Dgram::close() shuts the handle but does not unlink
+    // the rendezvous — same reason ctrl.cpp unlinks its bind path by hand).
+    {
+        ACE_UNIX_Addr   bind_addr(sock_path.c_str());
+        ACE_LSOCK_Dgram dead;
+        ASSERT_EQ(dead.open(bind_addr), 0);
+        dead.close();
+    }
+    struct ::stat st;
+    ASSERT_EQ(::stat(sock_path.c_str(), &st), 0);     // dead node present
+
+    EXPECT_FALSE(nm_conflict_detected(iface, dir_tmpl));   // reclaimed, not conflict
+    EXPECT_NE(::stat(sock_path.c_str(), &st), 0);          // dead node unlinked
+
+    ::rmdir(dir_tmpl);
 }
 
 // ─────────────────────── NFR-WIFI-002 ────────────────────────
