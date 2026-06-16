@@ -13,6 +13,12 @@
 # Default target is the full bootable distribution `iot-image`. Override:
 #   TARGET=packagegroup-iot ./build.sh   # build just the .ipk feed
 #
+# Guarantee the image carries the latest commit on IOT_BRANCH (main). The iot
+# recipe is AUTOREV, but a cached git mirror / sstate can serve a stale checkout
+# so a reflash ships old code. Force a fresh re-clone + recompile of just the
+# iot recipe (deps still restore from sstate, so it stays fast):
+#   IOT_FRESH=1 ./build.sh
+#
 # Output per machine:
 #   yocto/build/<machine>/images/<machine>/*.wic.bz2   flashable SD image
 #   yocto/build/<machine>/ipk/                          *.ipk feed (opkg)
@@ -165,6 +171,7 @@ build_machine() {
     # recipe fix only applies after `podman build` re-COPYs meta-iot.)
     $CR run --name "$container" \
         -e "MACHINE=$machine" \
+        -e "IOT_FRESH=${IOT_FRESH:-}" \
         -v "$SCRIPT_DIR/meta-iot:/home/builduser/yocto/meta-iot:ro" \
         -v "${DOWNLOADS_VOLUME}:/home/builduser/yocto/build/downloads:U" \
         -v "${SSTATE_VOLUME}:/home/builduser/yocto/build/sstate-cache:U" \
