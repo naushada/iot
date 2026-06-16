@@ -262,8 +262,9 @@ else
         sudo wipefs -a "$DEV" || true
     fi
     # Zero the first 16 MiB to clear MBR/GPT + any leftover superblocks.
-    sudo dd if=/dev/zero of="$TARGET" bs="$BS" count=4 conv=fsync 2>/dev/null \
-        || sudo dd if=/dev/zero of="$TARGET" bs="$BS" count=4
+    # On macOS, we need to use the raw disk node for dd, which requires sudo.
+    sudo dd if=/dev/zero of="$DEV" bs="$BS" count=4 conv=fsync 2>/dev/null \
+        || sudo dd if=/dev/zero of="$DEV" bs="$BS" count=4
     sync
     log_info "Partition table cleared."
 fi
