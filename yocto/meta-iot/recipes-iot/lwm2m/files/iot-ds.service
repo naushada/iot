@@ -18,8 +18,12 @@ DynamicUser=yes
 # chgrp its 0660 socket to `iot` (ds-socket-group= above); the static
 # `engineer` client is also in `iot` and can then connect.
 SupplementaryGroups=iot
-RuntimeDirectory=iot
-RuntimeDirectoryMode=0755
+# /run/iot is created once by tmpfiles.d/iot.conf (2775 root:iot) — deliberately
+# NOT via RuntimeDirectory=iot. systemd removes a RuntimeDirectory= when the unit
+# (or any other unit that also declared the same name) stops, which would delete
+# the live socket out from under running clients and break ds-server's own
+# restart (pre-exec dir setup churn). The setgid tmpfiles dir lets this
+# DynamicUser (in group iot) create the 0660 group-iot socket.
 StateDirectory=iot
 StateDirectoryMode=0750
 

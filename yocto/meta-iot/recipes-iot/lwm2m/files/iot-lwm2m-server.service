@@ -12,8 +12,11 @@ EnvironmentFile=/etc/iot/lwm2m-server.env
 ExecStart=/usr/bin/lwm2m $LWM2M_ARGS
 
 DynamicUser=yes
-RuntimeDirectory=iot
-RuntimeDirectoryMode=0755
+# Join the `iot` group to open ds-server's 0660 group-iot socket.
+SupplementaryGroups=iot
+
+# No RuntimeDirectory=iot: /run/iot is owned by tmpfiles.d/iot.conf. Declaring
+# it here would delete the shared dir (and ds-server's socket) on stop/restart.
 
 Restart=on-failure
 RestartSec=5s
