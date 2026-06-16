@@ -37,6 +37,7 @@ SRC_URI = "\
     file://iot-wifi-client.service \
     file://iot-httpd.service \
     file://iot.conf \
+    file://90-iot.preset \
     file://lwm2m-client.env \
     file://lwm2m-server.env \
     file://openvpn-client.env \
@@ -247,9 +248,15 @@ do_install() {
         install -m 0644 ${WORKDIR}/iot-wifi-client.service    ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-httpd.service          ${D}${systemd_system_unitdir}/
 
-        # tmpfiles.d fallback
+        # tmpfiles.d: sole owner of /run/iot (units no longer use RuntimeDirectory=iot)
         install -d ${D}${nonarch_libdir}/tmpfiles.d
         install -m 0644 ${WORKDIR}/iot.conf ${D}${nonarch_libdir}/tmpfiles.d/
+
+        # systemd preset: keep SYSTEMD_AUTO_ENABLE enables across `preset-all`
+        # (which the image runs on first boot — without this they get reset to
+        # the default "disable" policy).
+        install -d ${D}${nonarch_libdir}/systemd/system-preset
+        install -m 0644 ${WORKDIR}/90-iot.preset ${D}${nonarch_libdir}/systemd/system-preset/
 
         # EnvironmentFile for each daemon
         install -d ${D}${sysconfdir}/iot
@@ -434,6 +441,7 @@ RRECOMMENDS:${PN}-httpd = "\
 FILES:${PN}-config = "\
     ${sysconfdir}/iot \
     ${nonarch_libdir}/tmpfiles.d/iot.conf \
+    ${nonarch_libdir}/systemd/system-preset/90-iot.preset \
 "
 
 # ── systemd ─────────────────────────────────────────────────────────

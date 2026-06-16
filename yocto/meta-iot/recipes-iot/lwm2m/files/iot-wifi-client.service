@@ -12,13 +12,17 @@ EnvironmentFile=/etc/iot/wifi-client.env
 ExecStart=/usr/bin/wifi-client $WIFI_CLIENT_ARGS
 
 DynamicUser=yes
+# Join the `iot` group to open ds-server's 0660 group-iot socket
+# (/run/iot/data_store.sock).
+SupplementaryGroups=iot
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
 
 DeviceAllow=/dev/rfkill rw
 
-RuntimeDirectory=iot
-RuntimeDirectoryMode=0755
+# No RuntimeDirectory=iot: /run/iot is owned by tmpfiles.d/iot.conf. Declaring
+# it here would delete the shared dir (and ds-server's socket) on every
+# stop/restart of this unit.
 
 Restart=on-failure
 RestartSec=5s

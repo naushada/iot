@@ -13,11 +13,12 @@ EnvironmentFile=-/etc/iot/httpd.env
 ExecStart=/usr/bin/iot-httpd $HTTPD_ARGS
 
 DynamicUser=yes
-RuntimeDirectory=iot
-RuntimeDirectoryMode=0755
 # Join the `iot` group so the dynamic user can write the drag-and-drop OTA spool
 # (/run/iot/update, 0775 root:iot) — iot-httpd drops the uploaded .ipk + trigger,
 # root iot-swupdate installs it. (Also the group that owns the ds socket.)
+# /run/iot itself is created by tmpfiles.d/iot.conf, not RuntimeDirectory=iot:
+# a RuntimeDirectory= here is removed on stop/restart, taking the shared dir
+# (ds socket + OTA spool) with it.
 SupplementaryGroups=iot
 
 # Lets the dynamic user bind :80/:443 when http.listen.port is set low.

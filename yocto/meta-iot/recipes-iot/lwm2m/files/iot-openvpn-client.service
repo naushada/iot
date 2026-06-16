@@ -12,12 +12,14 @@ EnvironmentFile=/etc/iot/openvpn-client.env
 ExecStart=/usr/bin/openvpn-client $OPENVPN_CLIENT_ARGS
 
 DynamicUser=yes
+# Join the `iot` group to open ds-server's 0660 group-iot socket.
+SupplementaryGroups=iot
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 DeviceAllow=/dev/net/tun rw
 
-RuntimeDirectory=iot
-RuntimeDirectoryMode=0755
+# No RuntimeDirectory=iot: /run/iot is owned by tmpfiles.d/iot.conf. Declaring
+# it here would delete the shared dir (and ds-server's socket) on stop/restart.
 
 Restart=on-failure
 RestartSec=5s

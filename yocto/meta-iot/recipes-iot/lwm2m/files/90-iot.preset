@@ -1,0 +1,22 @@
+# systemd preset policy for the iot gateway stack.
+#
+# Why this exists: SYSTEMD_AUTO_ENABLE creates the WantedBy symlinks at image
+# build time, but the image runs `systemctl preset-all` on first boot, which
+# resets every unit to its preset policy. With no matching preset the built-in
+# default is "disable", so the build-time enables were silently undone — units
+# came up `disabled` with `preset: disabled` and the whole stack stayed dead
+# until hand-enabled. Shipping this preset makes the enablement stick across
+# preset-all.
+#
+# Order matters: the first matching rule wins. Keep this list in sync with the
+# SYSTEMD_AUTO_ENABLE:* assignments in iot_git.bb.
+enable iot-ds.service
+enable iot-httpd.service
+enable iot-hostname.service
+enable iot-wifi-client.service
+enable iot-lwm2m-client.service
+enable iot-openvpn-client.service
+enable iot-net-router.service
+enable iot-swupdate.path
+enable iot-vpn-cert.path
+enable iot-ota-confirm.service
