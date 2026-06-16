@@ -37,6 +37,35 @@ void parse_link_show(const std::string& body, State& out) {
     }
 }
 
+// True for an address that can carry WAN traffic: not loopback and not
+// an IPv4 link-local (169.254.0.0/16, auto-assigned when DHCP fails —
+// the very case where the iface is "up" but unusable).
+bool is_routable_v4(const std::string& ip) {
+    if (ip.rfind("127.", 0) == 0)     return false;
+    if (ip.rfind("169.254.", 0) == 0) return false;
+    return !ip.empty();
+}
+
+void parse_addr_show(const std::string& body, State& out) {
+    if (body.empty()) return;
+    try {
+        auto j = json::parse(body);
+        if (!j.is_array() || j.empty()) return;
+        const auto& e = j[0];
+        if (!e.contains("addr_info") || !e["addr_info"].is_array()) return;
+        for (const auto& a : e["addr_info"]) {
+            if (!a.contains("family") || a["family"] != "inet") continue;
+            if (!a.contains("local") || !a["local"].is_string()) continue;
+            if (is_routable_v4(a["local"].get<std::string>())) {
+                out.addr = true;
+                return;
+            }
+        }
+    } catch (const std::exception&) {
+        // Leave defaults; caller treats as not-usable.
+    }
+}
+
 void parse_route_default(const std::string& body, State& out) {
     if (body.empty()) return;
     try {
@@ -63,6 +92,9 @@ State probe(const std::string& name, shell::Runner runner) {
     if (rc != 0) return s;          // iface absent
     parse_link_show(link, s);
 
+    auto addr = runner({"ip", "-j", "addr", "show", name}, nullptr);
+    parse_addr_show(addr, s);
+
     auto route = runner({"ip", "-j", "route", "show", "default", "dev", name},
                         nullptr);
     parse_route_default(route, s);
@@ -79,7 +111,10 @@ std::vector<State> probe_all(const std::vector<std::string>& names,
 
 std::optional<std::size_t> pick_active(const std::vector<State>& states) {
     for (std::size_t i = 0; i < states.size(); ++i) {
-        if (states[i].present && states[i].up) return i;
+        // A link that's OPER-UP but has no routable IPv4 (e.g. eth0 with
+        // the cable in but no DHCP lease) can't carry WAN traffic — skip
+        // it so net.iface.active reflects a genuinely usable path.
+        if (states[i].present && states[i].up && states[i].addr) return i;
     }
     return std::nullopt;
 }

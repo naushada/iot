@@ -49,7 +49,8 @@ struct Capture {
 };
 
 State up(const std::string& n, const std::string& gw = "10.0.0.1") {
-    State s; s.name = n; s.present = true; s.up = true; s.gateway = gw;
+    State s; s.name = n; s.present = true; s.up = true; s.addr = true;
+    s.gateway = gw;
     return s;
 }
 State down(const std::string& n) {
