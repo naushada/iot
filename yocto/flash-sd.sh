@@ -276,8 +276,22 @@ if command -v pv >/dev/null 2>&1; then
 elif [ "$OS" != "Darwin" ]; then
     bzcat "$IMG" | sudo dd of="$TARGET" bs="$BS" status=progress conv=fsync
 else
-    log_info "No 'pv' for a progress bar — press Ctrl-T to see dd status."
+    # BSD dd has no status=progress and pv isn't installed. Auto-print progress
+    # by sending SIGINFO to dd every few seconds (exactly what Ctrl-T does) from
+    # a background ticker. The write pipeline stays in the FOREGROUND so
+    # set -e/pipefail still abort on a failed bzcat (no silent truncation).
+    log_info "No 'pv'; auto-printing dd progress every 5s (brew install pv for a bar)."
+    (
+        # Wait for dd to start (sudo may prompt first), then tick until it exits.
+        while ! pgrep -f "dd of=$TARGET" >/dev/null 2>&1; do sleep 1; done
+        while pgrep -f "dd of=$TARGET" >/dev/null 2>&1; do
+            sudo pkill -INFO -f "dd of=$TARGET" 2>/dev/null || true
+            sleep 5
+        done
+    ) &
+    progress_ticker=$!
     bzcat "$IMG" | sudo dd of="$TARGET" bs="$BS"
+    kill "$progress_ticker" 2>/dev/null || true
 fi
 
 # ── 4. Flush + eject ──────────────────────────────────────────────────
