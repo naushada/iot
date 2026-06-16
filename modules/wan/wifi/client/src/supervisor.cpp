@@ -196,7 +196,11 @@ bool wpa_ctrl_socket_is_live(const std::string& server_path) {
 
     bool live = false;
     ACE_UNIX_Addr peer(server_path.c_str());
-    static const char kPing[] = "PING\n";
+    // No trailing newline — wpa matches "PING" with exact os_strcmp; a
+    // "PING\n" comes back "UNKNOWN COMMAND", which would make a LIVE wpa
+    // look dead and get its socket wrongly reclaimed. Same wire rule as
+    // ctrl::Client::request().
+    static const char kPing[] = "PING";
     ssize_t sent = sock.send(kPing, sizeof(kPing) - 1, peer);
     if (sent == static_cast<ssize_t>(sizeof(kPing) - 1)) {
         char buf[64];
