@@ -79,6 +79,31 @@ const char* kDefRouteEth0 = R"([{
   "dev": "eth0", "protocol": "dhcp"
 }])";
 
+// `ip -j addr show eth0` with a leased global IPv4.
+const char* kAddrEth0Routable = R"([{
+  "ifindex": 2, "ifname": "eth0",
+  "addr_info": [
+    {"family": "inet", "local": "192.168.1.50", "prefixlen": 24, "scope": "global"},
+    {"family": "inet6", "local": "fe80::1", "prefixlen": 64, "scope": "link"}
+  ]
+}])";
+
+// Cable in but DHCP never leased — kernel auto-assigns a 169.254 link-local.
+const char* kAddrEth0LinkLocalOnly = R"([{
+  "ifindex": 2, "ifname": "eth0",
+  "addr_info": [
+    {"family": "inet", "local": "169.254.7.3", "prefixlen": 16, "scope": "link"}
+  ]
+}])";
+
+// No IPv4 at all — only the link-local IPv6.
+const char* kAddrEth0NoV4 = R"([{
+  "ifindex": 2, "ifname": "eth0",
+  "addr_info": [
+    {"family": "inet6", "local": "fe80::1", "prefixlen": 64, "scope": "link"}
+  ]
+}])";
+
 } // namespace
 
 /* ─────────────────────── probe() ─────────────────────────────── */
@@ -95,13 +120,36 @@ TEST(IfaceProbe, ReturnsZeroInitForEmptyName) {
 TEST(IfaceProbe, UpInterfaceWithGatewayPopulated) {
     FakeRunner fr;
     fr.on({"ip","-j","link","show","eth0"}, kEth0Up);
+    fr.on({"ip","-j","addr","show","eth0"}, kAddrEth0Routable);
     fr.on({"ip","-j","route","show","default","dev","eth0"}, kDefRouteEth0);
     auto s = probe("eth0", fr.make());
     EXPECT_TRUE(s.present);
     EXPECT_TRUE(s.up);
+    EXPECT_TRUE(s.addr);
     EXPECT_EQ("192.168.1.1", s.gateway);
     EXPECT_EQ("eth0", s.name);
-    ASSERT_EQ(2u, fr.calls.size());     // link + route
+    ASSERT_EQ(3u, fr.calls.size());     // link + addr + route
+}
+
+TEST(IfaceProbe, UpInterfaceWithOnlyLinkLocalV4HasNoAddr) {
+    // Cable in, OPER-UP, but DHCP never leased: only a 169.254 address.
+    FakeRunner fr;
+    fr.on({"ip","-j","link","show","eth0"}, kEth0Up);
+    fr.on({"ip","-j","addr","show","eth0"}, kAddrEth0LinkLocalOnly);
+    fr.on({"ip","-j","route","show","default","dev","eth0"}, "[]");
+    auto s = probe("eth0", fr.make());
+    EXPECT_TRUE(s.up);
+    EXPECT_FALSE(s.addr);
+}
+
+TEST(IfaceProbe, UpInterfaceWithNoV4HasNoAddr) {
+    FakeRunner fr;
+    fr.on({"ip","-j","link","show","eth0"}, kEth0Up);
+    fr.on({"ip","-j","addr","show","eth0"}, kAddrEth0NoV4);
+    fr.on({"ip","-j","route","show","default","dev","eth0"}, "[]");
+    auto s = probe("eth0", fr.make());
+    EXPECT_TRUE(s.up);
+    EXPECT_FALSE(s.addr);
 }
 
 TEST(IfaceProbe, DownInterfaceMarkedNotUp) {
@@ -146,11 +194,11 @@ TEST(IfaceProbe, GarbageJsonLeavesStateUntouched) {
 
 /* ─────────────────────── probe_all + pick_active ─────────────── */
 
-TEST(PickActive, FirstUpInterfaceWins) {
+TEST(PickActive, FirstUpInterfaceWithAddrWins) {
     std::vector<State> ss(3);
-    ss[0].name = "eth0";     ss[0].present = true; ss[0].up = false;
-    ss[1].name = "wlan0";    ss[1].present = true; ss[1].up = true;
-    ss[2].name = "wwan0";    ss[2].present = true; ss[2].up = true;
+    ss[0].name = "eth0";  ss[0].present = true; ss[0].up = false;
+    ss[1].name = "wlan0"; ss[1].present = true; ss[1].up = true; ss[1].addr = true;
+    ss[2].name = "wwan0"; ss[2].present = true; ss[2].up = true; ss[2].addr = true;
     auto idx = pick_active(ss);
     ASSERT_TRUE(idx.has_value());
     EXPECT_EQ(1u, *idx);
@@ -163,10 +211,26 @@ TEST(PickActive, NoneUpReturnsNullopt) {
     EXPECT_FALSE(pick_active(ss).has_value());
 }
 
+TEST(PickActive, UpWithoutAddrIsSkipped) {
+    // eth0 OPER-UP but no routable IPv4 (cable in, no DHCP lease) must be
+    // skipped in favour of the next iface that actually holds an address.
+    std::vector<State> ss(2);
+    ss[0].name = "eth0";  ss[0].present = true; ss[0].up = true; ss[0].addr = false;
+    ss[1].name = "wlan0"; ss[1].present = true; ss[1].up = true; ss[1].addr = true;
+    EXPECT_EQ(1u, *pick_active(ss));
+}
+
+TEST(PickActive, AllUpButNoneAddrReturnsNullopt) {
+    std::vector<State> ss(2);
+    ss[0].present = true; ss[0].up = true; ss[0].addr = false;
+    ss[1].present = true; ss[1].up = true; ss[1].addr = false;
+    EXPECT_FALSE(pick_active(ss).has_value());
+}
+
 TEST(PickActive, AbsentInterfaceIgnoredEvenIfUpFieldSet) {
     std::vector<State> ss(2);
-    ss[0].present = false; ss[0].up = true;   // can't happen in practice
-    ss[1].present = true;  ss[1].up = true;
+    ss[0].present = false; ss[0].up = true; ss[0].addr = true;  // can't happen
+    ss[1].present = true;  ss[1].up = true; ss[1].addr = true;
     EXPECT_EQ(1u, *pick_active(ss));
 }
 
