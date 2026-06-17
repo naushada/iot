@@ -28,6 +28,10 @@ struct EndpointInfo {
     std::string installed_version;    // device's running firmware (LwM2M
                                       // /3/0/3 = iot.version), learned from
                                       // lwm2m-dm; empty until first read
+    std::uint32_t lifetime = 0;       // LwM2M registration lifetime (s) = the
+                                      // heartbeat interval; next heartbeat is
+                                      // due by last_seen_unix + lifetime
+    std::string location;             // assigned /rd/<id> registration path
 
     EndpointInfo() = default;
     EndpointInfo(std::string ep_, std::string tun_ip_,
@@ -56,6 +60,12 @@ public:
     /// endpoint is not in the registry.
     bool update_state(const std::string& ep, bool registered,
                       std::int64_t last_seen_unix);
+
+    /// Record the registration heartbeat metadata (lifetime + /rd/<id>
+    /// location) learned from cloud.lwm2m.registrations. Returns true only
+    /// if a value changed; false when the endpoint is absent or unchanged.
+    bool update_reg_meta(const std::string& ep, std::uint32_t lifetime,
+                         const std::string& location);
 
     /// Record the address openvpn actually assigned an endpoint (learned from
     /// the server's management interface). Stored separately from the

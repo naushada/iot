@@ -114,6 +114,8 @@ void sync_endpoints_to_ds(data_store::Client& ds,
         item["registered"]    = ep.registered;
         item["last_seen_unix"] = ep.last_seen_unix;
         item["installed_version"] = ep.installed_version;  // device /3/0/3
+        item["lifetime"]      = ep.lifetime;     // heartbeat interval (s)
+        item["location"]      = ep.location;     // /rd/<id> registration path
         arr.push_back(item);
     }
     ds.set("cloud.endpoints", data_store::Value{arr.dump()});
@@ -180,6 +182,8 @@ bool reconcile_registrations(data_store::Client& ds,
     const std::string js = ds_str(ds, "cloud.lwm2m.registrations", "[]");
     std::unordered_map<std::string, std::int64_t> online;  // ep → last_seen_unix
     std::unordered_map<std::string, std::string>  versions;  // ep → /3/0/3
+    std::unordered_map<std::string, std::uint32_t> lifetimes; // ep → lifetime(s)
+    std::unordered_map<std::string, std::string>  locations;  // ep → /rd/<id>
     try {
         auto arr = nlohmann::json::parse(js);
         if (arr.is_array()) {
@@ -190,6 +194,10 @@ bool reconcile_registrations(data_store::Client& ds,
                 if (ep.empty()) continue;
                 auto ver = e.value("version", std::string());
                 if (!ver.empty()) versions[ep] = std::move(ver);
+                if (auto lt = e.value("lifetime", std::uint32_t{0}); lt != 0)
+                    lifetimes[ep] = lt;
+                if (auto loc = e.value("location", std::string()); !loc.empty())
+                    locations[ep] = std::move(loc);
                 online[std::move(ep)] = e.value("last_seen_unix",
                                                 std::int64_t{0});
             }
@@ -208,6 +216,14 @@ bool reconcile_registrations(data_store::Client& ds,
         auto vit = versions.find(ep.ep);
         if (vit != versions.end() && reg.update_version(ep.ep, vit->second))
             changed = true;
+        // Heartbeat interval + /rd location (Endpoints table columns).
+        {
+            std::uint32_t lt = 0; std::string loc;
+            if (auto lit = lifetimes.find(ep.ep); lit != lifetimes.end()) lt = lit->second;
+            if (auto qit = locations.find(ep.ep); qit != locations.end()) loc = qit->second;
+            if ((lt != 0 || !loc.empty()) && reg.update_reg_meta(ep.ep, lt, loc))
+                changed = true;
+        }
         auto it = online.find(ep.ep);
         if (it != online.end()) {
             // Online — refresh the registered flag + last-seen timestamp.

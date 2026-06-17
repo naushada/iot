@@ -393,7 +393,13 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                     kept[ep] = ls;
                     nlohmann::json row = {{"endpoint", ep},
                                           {"registered", true},
-                                          {"last_seen_unix", ls}};
+                                          {"last_seen_unix", ls},
+                                          // Heartbeat interval (registration
+                                          // lifetime, seconds) + the assigned
+                                          // /rd/<id> location — surfaced in the
+                                          // cloud-UI Endpoints table.
+                                          {"lifetime", kv.second.lifetime},
+                                          {"location", kv.second.location}};
                     // Carry the last-read installed version, if any.
                     {
                         std::lock_guard<std::mutex> lk(*verMtx);
