@@ -141,11 +141,21 @@ std::optional<VpnCertFamily> vpn_cert_for(const std::string& array_json,
 }
 
 std::string remove_credential(const std::string& array_json,
-                              const std::string& serial) {
+                              const std::string& key) {
     json arr = parse_array(array_json);
     json out = json::array();
     for (auto& e : arr) {
-        if (e.is_object() && e.value("serial", "") == serial) continue;
+        // Match the endpoint the cloud-ui passes (the "Endpoint" column)
+        // against ANY identity form the record carries — raw serial, the
+        // formatted identity (rpi<serial>@cloud.local), or the DM PSK id —
+        // mirroring the UI's credFor() lookup. Matching only `serial` left an
+        // identity-keyed row behind, which rehydrate_registry() then healed
+        // back into the registry on the next iot-cloudd restart, so Remove
+        // "didn't stick".
+        if (e.is_object() &&
+            (e.value("serial", "")    == key ||
+             e.value("identity", "")  == key ||
+             e.value("dm.psk.id", "") == key)) continue;
         out.push_back(e);
     }
     return out.dump();

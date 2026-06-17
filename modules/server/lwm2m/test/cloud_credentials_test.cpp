@@ -57,6 +57,15 @@ TEST(CloudCredentials, RemoveAbsentIsNoop) {
     EXPECT_EQ(1u, json::parse(out).size());
 }
 
+TEST(CloudCredentials, RemoveMatchesIdentityForm) {
+    // The cloud-ui passes the displayed endpoint, which may be the formatted
+    // DM identity (rpi<serial>@cloud.local) rather than the raw serial. Remove
+    // must still drop the record — else it is healed back on the next restart.
+    auto out = upsert_credential("[]", "SER1", "bbbb", "dddd");
+    out = remove_credential(out, "rpiSER1@cloud.local");
+    EXPECT_EQ(0u, json::parse(out).size());
+}
+
 TEST(CloudCredentials, EmptyStringTreatedAsEmptyArray) {
     auto out = upsert_credential("", "SER1", "bbbb", "dddd");
     EXPECT_EQ(1u, json::parse(out).size());

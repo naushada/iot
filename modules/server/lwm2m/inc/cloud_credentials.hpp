@@ -45,9 +45,10 @@ std::string upsert_credential(const std::string& array_json,
                               const std::string& bs_psk_hex,
                               const std::string& dm_psk_hex);
 
-/// Remove the record for `serial`. No-op if absent. Returns the updated array.
+/// Remove the record matching `key` against any of its identity forms
+/// (serial / identity / dm.psk.id). No-op if absent. Returns the updated array.
 std::string remove_credential(const std::string& array_json,
-                              const std::string& serial);
+                              const std::string& key);
 
 /// Merge a minted VPN client credential family (PEM) into the record for
 /// `serial`, adding/updating the "vpn.ca.cert" + "vpn.client.cert" +
