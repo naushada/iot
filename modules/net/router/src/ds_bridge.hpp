@@ -18,7 +18,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 namespace data_store { class Client; }   // forward decl
 
@@ -61,12 +60,6 @@ public:
     std::optional<std::string>   forward_ports()        const;
     std::optional<std::string>   custom_rules()         const;
     std::optional<std::uint32_t> poll_interval_sec()    const;
-
-    /// Returns nullopt if net.lwm2m.target_ip is present; otherwise
-    /// returns the one-element list {"net.lwm2m.target_ip"} so the
-    /// caller's missing-required diagnostic is uniform with the
-    /// other DsBridges.
-    std::optional<std::vector<std::string>> missing_required() const;
 
     // ─────────── Write side ───────────
     void set_state(const std::string& s);

@@ -2,7 +2,9 @@
 --
 -- Read keys (operator → daemon):
 --   net.tun.dev               - tun interface to monitor (default "tun0")
---   net.lwm2m.target.ip       - DNAT target (required; lwm2m client IP)
+--   net.lwm2m.target.ip       - DNAT target (optional; lwm2m client IP). When
+--                               unset the router still runs — it just skips the
+--                               port-forward/DNAT rules until a target is given.
 --   net.lwm2m.target.port     - DNAT target port (default 5684)
 --   net.iface.priority        - comma-joined outgoing priority list
 --                               (default "eth,wifi,cellular")

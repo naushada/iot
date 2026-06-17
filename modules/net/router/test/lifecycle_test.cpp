@@ -72,7 +72,10 @@ Lifecycle::Inputs configured(std::vector<State> ifaces = {up("eth0")}) {
 
 /* ─────────────── Init / NeedConfig ─────────────── */
 
-TEST(Lifecycle, EmptyTargetIpYieldsNeedConfigAndNoApplyAttempt) {
+TEST(Lifecycle, EmptyTargetIpStillRunsWithBaseRulesetAndNoDnat) {
+    // net.lwm2m.target.ip is optional now: with a usable WAN iface the
+    // router reaches Steady, installs the base ruleset (NO DNAT chain),
+    // applies routes, and elects the uplink — it no longer parks.
     Capture cap;
     Lifecycle lc(cap.make_sinks());
 
@@ -80,12 +83,35 @@ TEST(Lifecycle, EmptyTargetIpYieldsNeedConfigAndNoApplyAttempt) {
     in.tun_dev = "tun0";   // target_ip deliberately empty
     in.ifaces_in_priority_order = {up("eth0")};
 
+    EXPECT_EQ(Lifecycle::State::Steady, lc.step(in));
+    ASSERT_EQ(1u, cap.nft_rulesets.size());
+    EXPECT_EQ(1u, cap.route_calls.size());
+
+    // Base ruleset is present, but with no target there is no DNAT rule.
+    const auto& rs = cap.nft_rulesets[0];
+    EXPECT_NE(std::string::npos, rs.find("flush table inet iot_router"));
+    EXPECT_EQ(std::string::npos, rs.find("dnat to "));
+
+    ASSERT_EQ(1u, cap.iface_writes.size());
+    EXPECT_EQ("eth0", cap.iface_writes[0]);
+    ASSERT_EQ(1u, cap.state_writes.size());
+    EXPECT_EQ("steady", cap.state_writes[0]);
+}
+
+TEST(Lifecycle, NoUsableWanYieldsNeedConfig) {
+    // No iface up → no uplink to elect. The router still applies the base
+    // ruleset but reports need-config (waiting for WAN). The active iface
+    // stays empty (== its initial value) so nothing is published.
+    Capture cap;
+    Lifecycle lc(cap.make_sinks());
+
+    Lifecycle::Inputs in = configured();             // target set…
+    in.ifaces_in_priority_order = {down("eth0")};    // …but nothing is up
+
     EXPECT_EQ(Lifecycle::State::NeedConfig, lc.step(in));
-    EXPECT_TRUE(cap.nft_rulesets.empty());
-    EXPECT_TRUE(cap.route_calls.empty());
-    // Init → NeedConfig emits a state write.
     ASSERT_EQ(1u, cap.state_writes.size());
     EXPECT_EQ("need-config", cap.state_writes[0]);
+    EXPECT_TRUE(cap.iface_writes.empty());           // stays "" → no change
 }
 
 /* ─────────────── First successful apply ─────────────── */

@@ -19,13 +19,16 @@ void Lifecycle::transition(State next) {
 }
 
 Lifecycle::State Lifecycle::step(const Inputs& in) {
-    // 1) Required-config gate.
-    if (in.lwm2m_target_ip.empty()) {
-        transition(State::NeedConfig);
-        return m_state;
-    }
+    // net.lwm2m.target.ip is OPTIONAL. It only gates the DNAT/forward
+    // rules — build_nft_ruleset() omits that chain when the target (or
+    // the port list) is empty — NOT whether the router runs. The router's
+    // real job (WAN election, base firewall, route metrics) proceeds with
+    // or without a DNAT target, so an unprovisioned device still gets an
+    // uplink and dependent services (lwm2m/openvpn) come up instead of
+    // being wedged behind a config key. State now tracks the WAN uplink:
+    // NeedConfig means "no usable WAN yet", Steady means "uplink up".
 
-    // 2) Build the ruleset. Re-apply only when text actually changed —
+    // 1) Build the ruleset. Re-apply only when text actually changed —
     //    nft -f is idempotent but a no-op apply still incurs the
     //    parser + transaction cost.
     nft::State ns;
@@ -52,14 +55,14 @@ Lifecycle::State Lifecycle::step(const Inputs& in) {
         }
     }
 
-    // 3) Route metrics. Always run — apply_priorities is idempotent
+    // 2) Route metrics. Always run — apply_priorities is idempotent
     //    per-iface (ip route replace is a no-op when target == current).
     bool route_ok = true;
     if (m_sinks.apply_routes) {
         route_ok = m_sinks.apply_routes(in.ifaces_in_priority_order);
     }
 
-    // 4) Emit net.iface.active if the pick changed (empty string when
+    // 3) Emit net.iface.active if the pick changed (empty string when
     //    nothing is up — operator-visible signal that we're offline).
     std::string new_active;
     if (auto idx = iface::pick_active(in.ifaces_in_priority_order)) {
@@ -70,7 +73,13 @@ Lifecycle::State Lifecycle::step(const Inputs& in) {
         if (m_sinks.set_iface_active) m_sinks.set_iface_active(new_active);
     }
 
-    transition((nft_ok && route_ok) ? State::Steady : State::Failed);
+    // 4) State: apply failure dominates; otherwise track the WAN uplink —
+    //    NeedConfig while no iface is usable (waiting for an uplink),
+    //    Steady once one is up.
+    State next = (!nft_ok || !route_ok) ? State::Failed
+               : new_active.empty()     ? State::NeedConfig
+               :                          State::Steady;
+    transition(next);
     return m_state;
 }
 

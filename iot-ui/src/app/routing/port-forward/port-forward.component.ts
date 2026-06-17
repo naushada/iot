@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, Input } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { SessionService } from '../../../common/session.service';
 import { PubSubService } from '../../../common/pubsubsvc.service';
@@ -75,7 +75,11 @@ import { DataStoreService } from '../../../common/datastore.service';
   `]
 })
 export class PortForwardComponent implements OnInit, OnDestroy {
-  view = 'ports';  // 'ports' | 'dnat'
+  // Driven by the left-nav sub-item (Port Forward vs DNAT Target). Both
+  // tabs render this same component; the binding flips which view shows.
+  // Without the @Input the DNAT Target tab silently showed the Port Forward
+  // view, leaving net.lwm2m.target.ip unreachable from the UI.
+  @Input() view: 'ports' | 'dnat' = 'ports';
   targetIp = ''; targetPort = 5684; forwardPorts = '80,443,5684';
   savingDnat = false; savingPorts = false;
   routeState = ''; rulesApplied = 0; lastApply = '';

@@ -201,16 +201,6 @@ std::optional<std::uint32_t> DsBridge::poll_interval_sec() const {
     return m_impl->poll_interval_sec;
 }
 
-std::optional<std::vector<std::string>>
-DsBridge::missing_required() const {
-    if (!m_ok) {
-        return std::vector<std::string>{kLwM2MTargetIp};
-    }
-    std::lock_guard<std::mutex> g(m_impl->mtx);
-    if (m_impl->lwm2m_target_ip.has_value()) return std::nullopt;
-    return std::vector<std::string>{kLwM2MTargetIp};
-}
-
 // ───────────────────────── Write side ──────────────────────────────
 
 void DsBridge::set_state(const std::string& s) {
