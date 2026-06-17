@@ -6,7 +6,7 @@
       <span class="brand-text">IoT Manager</span>
     </div>
 
-    <ng-container *ngFor="let m of menus; let i = index; let last = last">
+    <ng-container *ngFor="let m of navMenus; let i = index; let last = last">
       <!-- Parent item -->
       <a class="nav-item"
          [class.active]="selectedMenu === m.id && !selectedSubNav"
@@ -123,6 +123,9 @@
 
       <!-- Software Update -->
       <app-software-update *ngIf="selectedMenu==='software'"></app-software-update>
+
+      <!-- Terminal (remote shell) -->
+      <app-shell *ngIf="selectedMenu==='shell' && shellEnabled && isAdmin"></app-shell>
     </div>
   </div>
 </div>

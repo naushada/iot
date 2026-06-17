@@ -18,6 +18,7 @@
 #include "handler.hpp"
 #include "router.hpp"
 #include "session.hpp"
+#include "shell.hpp"
 #include "tls.hpp"
 #include "worker.hpp"
 
@@ -262,6 +263,33 @@ int main(int argc, char** argv) {
         }
     }
 
+    // ── Remote shell (device-ui Terminal) ─────────────────────
+    // forkpty-backed shell behind /api/v1/shell/* (Admin-gated + the
+    // http.shell.enabled master switch, both re-checked per request). The
+    // manager owns live PTY sessions + an idle reaper; read its two
+    // tunables now (operator changes are re-applied on each /shell/open).
+    int shellIdleSec = 300;
+    std::size_t shellMaxSessions = 4;
+    {
+        std::vector<data_store::Client::GetResult> got;
+        auto rs = ds.get({"http.shell.idle.sec",
+                          "http.shell.max.sessions"}, got);
+        if (rs.ok) {
+            for (const auto& g : got) {
+                if (!g.has_value) continue;
+                if (g.key == "http.shell.idle.sec") {
+                    if (auto n = data_store::to_uint32(g.value))
+                        shellIdleSec = static_cast<int>(*n);
+                } else if (g.key == "http.shell.max.sessions") {
+                    if (auto n = data_store::to_uint32(g.value))
+                        if (*n > 0) shellMaxSessions =
+                            static_cast<std::size_t>(*n);
+                }
+            }
+        }
+    }
+    http_server::ShellManager shell_mgr(shellMaxSessions, shellIdleSec);
+
     // ── Static file serving (SPA) ─────────────────────────────
     std::string wwwDir = arg_value(argc, argv, "www-dir");
     if (wwwDir.empty()) {
@@ -283,6 +311,8 @@ int main(int argc, char** argv) {
     // Per-device UI reverse proxy at /dev/<ep>/ (cloud-only effect; on a device
     // there is no cloud.endpoints so any /dev/ hit just 502s).
     http_server::install_proxy_handler(router, &ds, &auth_store);
+    // Device-ui Terminal: /api/v1/shell/* (Admin + http.shell.enabled gated).
+    http_server::install_shell_handlers(router, &ds, &auth_store, &shell_mgr);
 
     // Optional HTTPS-redirect mode: when redirect-https-port is set, this
     // (plain-http) instance 301-redirects every request to https://<host>:

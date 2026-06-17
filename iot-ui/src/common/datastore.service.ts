@@ -43,6 +43,8 @@ export class DataStoreService {
     // Log levels
     'log.level', 'log.level.httpd', 'log.level.lwm2m',
     'log.level.vpn', 'log.level.dtls',
+    // HTTP server — remote shell master switch (gates the Terminal page)
+    'http.shell.enabled',
   ];
 
   private cache = new Map<string, unknown>();

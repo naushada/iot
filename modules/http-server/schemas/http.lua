@@ -50,5 +50,30 @@ return {
     ["http.workers"]       = {
         access  = "Admin", type = "integer", default = 0, min = 0, max = 64 },
 
+    -- ── Remote shell (device-ui Terminal page) ──────────────────────
+    -- Master switch for the forkpty-backed shell at /api/v1/shell/*.
+    -- OFF by default: this is a remote ROOT shell on the device, the
+    -- single largest attack surface here, so an operator must opt in
+    -- explicitly. Read on every /api/v1/shell/* request, so flipping it
+    -- off kills new sessions immediately and existing ones on next poll.
+    -- Always Admin-gated regardless of this flag. Each open terminal
+    -- holds one blocking long-poll worker, so run http.workers >= 2 when
+    -- enabling. NOTE: a retype (bool↔other) needs a schema bump on-device
+    -- (opkg overwrites ds-schemas/*.lua); leave as bool.
+    ["http.shell.enabled"] = {
+        access  = "Admin", type = "boolean", default = false },
+
+    -- Idle timeout (seconds): a shell session whose output is not polled
+    -- for this long is reaped (SIGHUP'd + waited). Guards against orphaned
+    -- shells when a browser tab is closed without a clean /close.
+    ["http.shell.idle.sec"] = {
+        access  = "Admin", type = "integer", default = 300,
+                               min = 30, max = 3600 },
+
+    -- Hard cap on concurrent shell sessions (each ties up one long-poll
+    -- worker). Keeps a runaway client from exhausting the worker pool.
+    ["http.shell.max.sessions"] = {
+        access  = "Admin", type = "integer", default = 4, min = 1, max = 32 },
+
   },
 }

@@ -135,4 +135,49 @@ export class HttpsvcService {
       `${this.api}/api/v1/users?id=${encodeURIComponent(id)}`,
       { withCredentials: true });
   }
+
+  // ── Remote shell (Terminal page) ──────────────────────────────────
+  // forkpty-backed shell on the device, behind http.shell.enabled + Admin.
+  // Output is base64 (raw PTY bytes aren't valid UTF-8); the component
+  // keeps one shellOutput() long-poll outstanding and re-subscribes on each
+  // response. All routes work both same-origin and through the cloud proxy
+  // because they're plain request/response (no WebSocket).
+
+  shellOpen(cols: number, rows: number):
+      Observable<{ ok: boolean; sid?: string; err?: string }> {
+    return this.http.post<{ ok: boolean; sid?: string; err?: string }>(
+      `${this.api}/api/v1/shell/open`, { cols, rows },
+      { headers: this.jsonHeaders(), withCredentials: true });
+  }
+
+  // Long-poll PTY output. Blocks up to timeoutSec (server caps at 30) or
+  // until bytes arrive; `closed` signals the child exited.
+  shellOutput(sid: string, timeoutSec = 25):
+      Observable<{ ok: boolean; sid: string; data: string; closed: boolean }> {
+    const params = new HttpParams()
+      .set('sid', sid)
+      .set('timeout', timeoutSec.toString());
+    return this.http.get<{ ok: boolean; sid: string; data: string; closed: boolean }>(
+      `${this.api}/api/v1/shell/output`, { params, withCredentials: true });
+  }
+
+  shellInput(sid: string, dataB64: string):
+      Observable<{ ok: boolean; err?: string }> {
+    return this.http.post<{ ok: boolean; err?: string }>(
+      `${this.api}/api/v1/shell/input`, { sid, data: dataB64 },
+      { headers: this.jsonHeaders(), withCredentials: true });
+  }
+
+  shellResize(sid: string, cols: number, rows: number):
+      Observable<{ ok: boolean }> {
+    return this.http.post<{ ok: boolean }>(
+      `${this.api}/api/v1/shell/resize`, { sid, cols, rows },
+      { headers: this.jsonHeaders(), withCredentials: true });
+  }
+
+  shellClose(sid: string): Observable<{ ok: boolean }> {
+    return this.http.post<{ ok: boolean }>(
+      `${this.api}/api/v1/shell/close`, { sid },
+      { headers: this.jsonHeaders(), withCredentials: true });
+  }
 }
