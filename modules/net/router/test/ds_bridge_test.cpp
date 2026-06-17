@@ -27,14 +27,6 @@ TEST(DsBridge, AccessorsReturnNulloptWhenDisconnected) {
     EXPECT_FALSE(ds.custom_rules().has_value());
 }
 
-TEST(DsBridge, MissingRequiredReportsTargetIpWhenDisconnected) {
-    DsBridge ds(kBogus);
-    auto missing = ds.missing_required();
-    ASSERT_TRUE(missing.has_value());
-    ASSERT_EQ(1u, missing->size());
-    EXPECT_EQ("net.lwm2m.target.ip", (*missing)[0]);
-}
-
 TEST(DsBridge, SettersAreNoopWhenDisconnected) {
     DsBridge ds(kBogus);
     ds.set_state("monitoring");

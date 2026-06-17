@@ -109,20 +109,11 @@ Status run_daemon(const std::string& socketPath,
         Status s; s.ok = false; s.code = 1;
         s.err = "data-store connect failed"; return s;
     }
-    if (auto missing = ds.missing_required()) {
-        std::ostringstream joined;
-        for (std::size_t i = 0; i < missing->size(); ++i) {
-            if (i) joined << ", ";
-            joined << (*missing)[i];
-        }
-        ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [netr:%t] %M %N:%l refuse to start; "
-                            "required keys missing: %C\n"),
-                   joined.str().c_str()));
-        Status s; s.ok = false; s.code = 2;
-        s.err = "missing required net.* keys"; return s;
-    }
-
+    // No hard config gate: net-router starts on boot regardless of
+    // net.lwm2m.target.ip. It elects the WAN iface, installs the base
+    // firewall + route metrics, and publishes services.net.router.state=
+    // "running" so dependent services (lwm2m/openvpn) come up. The DNAT
+    // target only governs the optional port-forward rules (see Lifecycle).
     install_signals();
 
     // Build sinks. Shell + apply runners use the popen()-backed
