@@ -1,0 +1,47 @@
+#!/bin/sh
+# iot-ds-seed — first-boot data-store seed for device-only defaults.
+#
+# Writes ds values that must differ from the shared schema defaults on a
+# device, ONCE, before iot-httpd starts (ordered After=iot-ds, Before=iot-httpd
+# in iot-ds-seed.service). Guarded by a flag file kept alongside the ds persist
+# file (/var/lib/iot), so it runs exactly once per device lifetime and never
+# re-clobbers operator changes made later via the UI / ds-cli — including across
+# an OS update (the flag lives with the persisted state, not in the rootfs).
+#
+# Current seed:
+#   http.workers = 2
+#     The schema default is 0 (handlers run inline on the reactor thread). The
+#     device-ui relies on blocking long-polls (the shared /status poll, and the
+#     Terminal shell's /api/v1/shell/output) which would stall an inline server,
+#     so a fresh device needs a worker pool. 2 is enough for the status poll +
+#     one shell session; bump via the HTTP Config page (restart required —
+#     http.workers is not hot-reloaded).
+set -eu
+
+SOCK="${IOT_DS_SOCK:-/run/iot/data_store.sock}"
+STATE="${IOT_DS_STATE:-/var/lib/iot}"
+FLAG="$STATE/.seeded"
+DSCLI="ds-cli --socket=$SOCK"
+
+# Already seeded → nothing to do (idempotent, preserves operator changes).
+[ -f "$FLAG" ] && exit 0
+
+# After=iot-ds orders start, not readiness — wait for the socket to appear.
+i=0
+while [ ! -S "$SOCK" ] && [ "$i" -lt 30 ]; do
+    sleep 1
+    i=$((i + 1))
+done
+if [ ! -S "$SOCK" ]; then
+    echo "iot-ds-seed: ds socket $SOCK not ready after ${i}s; will retry next boot" >&2
+    exit 0   # don't fail the boot; no flag written, so it retries
+fi
+
+if $DSCLI set http.workers 2; then
+    mkdir -p "$STATE"
+    : > "$FLAG"
+    echo "iot-ds-seed: set http.workers=2 (first boot)"
+else
+    echo "iot-ds-seed: failed to set http.workers; will retry next boot" >&2
+    exit 0   # leave the flag unwritten so the next boot retries
+fi

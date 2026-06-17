@@ -57,6 +57,8 @@ SRC_URI = "\
     file://iot-hostname.service \
     file://iot-http.avahi.service \
     file://iot-dump \
+    file://iot-ds-seed \
+    file://iot-ds-seed.service \
 "
 
 # Optional, gitignored WiFi credential seed. When an integrator drops
@@ -221,6 +223,12 @@ do_install() {
     # a module (e.g. `iot-dump iot-wifi-client`). Ships with ds-cli.
     install -m 0755 ${WORKDIR}/iot-dump         ${D}${bindir}/iot-dump
 
+    # iot-ds-seed: first-boot ds seed (http.workers=2 so the device-ui
+    # long-poll endpoints — /status and the Terminal shell — have worker
+    # threads instead of stalling the inline reactor). Runs once, before
+    # iot-httpd. Needs ds-cli at runtime (RDEPENDS below).
+    install -m 0755 ${WORKDIR}/iot-ds-seed      ${D}${bindir}/iot-ds-seed
+
     # Config/schema migration scripts (§11), run by iot-swupdate after opkg.
     install -d ${D}${datadir}/iot/migrations
     install -m 0644 ${WORKDIR}/migrations/README.md \
@@ -252,6 +260,7 @@ do_install() {
         install -m 0644 ${WORKDIR}/iot-tun.conf               ${D}${sysconfdir}/modules-load.d/
         install -m 0644 ${WORKDIR}/iot-wifi-client.service    ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-httpd.service          ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-ds-seed.service        ${D}${systemd_system_unitdir}/
 
         # tmpfiles.d: sole owner of /run/iot (units no longer use RuntimeDirectory=iot)
         install -d ${D}${nonarch_libdir}/tmpfiles.d
@@ -426,14 +435,17 @@ RRECOMMENDS:${PN}-wifi-client = "\
 FILES:${PN}-httpd = "\
     ${bindir}/iot-httpd \
     ${bindir}/iot-set-hostname \
+    ${bindir}/iot-ds-seed \
     ${systemd_system_unitdir}/iot-httpd.service \
     ${systemd_system_unitdir}/iot-hostname.service \
+    ${systemd_system_unitdir}/iot-ds-seed.service \
     ${sysconfdir}/avahi/services/iot-http.service \
     ${datadir}/iot/www \
 "
 # avahi-daemon provides the mDNS responder that advertises the device UI
 # (_http._tcp on iot-<serial>.local) for zero-touch discovery.
-RDEPENDS:${PN}-httpd = "ace-tao avahi-daemon"
+# ${PN}-ds-cli supplies ds-cli, used by iot-ds-seed.service at first boot.
+RDEPENDS:${PN}-httpd = "ace-tao avahi-daemon ${PN}-ds-cli"
 RRECOMMENDS:${PN}-httpd = "\
     ${PN}-ds-server \
     ${PN}-config \
@@ -462,7 +474,7 @@ SYSTEMD_SERVICE:${PN}-net-router = "iot-net-router.service"
 SYSTEMD_SERVICE:${PN}-wifi-client = "iot-wifi-client.service"
 # httpd also carries the boot-time hostname unit (iot-<serial>) that makes the
 # Avahi advert resolvable — zero-touch device-UI discovery.
-SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service"
+SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service iot-ds-seed.service"
 
 # ds-server and wifi-client auto-start. wifi-client comes up on every boot
 # and reads wifi.networks from the data-store (schema default seeds a

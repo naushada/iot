@@ -11,6 +11,7 @@
 # Order matters: the first matching rule wins. Keep this list in sync with the
 # SYSTEMD_AUTO_ENABLE:* assignments in iot_git.bb.
 enable iot-ds.service
+enable iot-ds-seed.service
 enable iot-httpd.service
 enable iot-hostname.service
 enable iot-wifi-client.service

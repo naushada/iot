@@ -1,0 +1,19 @@
+[Unit]
+Description=Seed first-boot device-only data-store defaults (http.workers)
+Documentation=https://github.com/naushada/iot
+# Run after ds-server is up so ds-cli can connect, and BEFORE iot-httpd so the
+# server reads the seeded http.workers at startup (it is not hot-reloaded).
+After=iot-ds.service
+Requires=iot-ds.service
+Before=iot-httpd.service
+# Fast skip once seeded; the script also self-guards with the same flag.
+ConditionPathExists=!/var/lib/iot/.seeded
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# root: reach the 0660 root:iot ds socket and write the flag into ds state.
+ExecStart=/usr/bin/iot-ds-seed
+
+[Install]
+WantedBy=multi-user.target
