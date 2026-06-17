@@ -49,7 +49,10 @@ const char* default_filename(const std::string& type) {
 }
 
 /// Default store_artifact: atomically write <certDir>/<file> (temp + rename),
-/// 0600 for the private key, 0644 otherwise.
+/// 0640 for the private key, 0644 otherwise. The key is group-readable (not
+/// 0600) so openvpn-client — a separate DynamicUser sharing group `iot` via the
+/// 2750 engineer:iot certDir — can read it; the writer (lwm2m client, `engineer`)
+/// owns it. World still has no access to the key.
 int default_store(const std::string& certDir,
                   const std::string& type,
                   const std::string& pem) {
@@ -63,7 +66,7 @@ int default_store(const std::string& certDir,
     if (!dir.empty() && dir.back() != '/') dir.push_back('/');
     const std::string path = dir + file;
     const std::string tmp  = path + ".tmp";
-    const mode_t mode = (type == "key") ? 0600 : 0644;
+    const mode_t mode = (type == "key") ? 0640 : 0644;
 
     int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, mode);
     if (fd < 0) {

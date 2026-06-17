@@ -22,6 +22,10 @@ DynamicUser=yes
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 DeviceAllow=/dev/net/tun rw
+# Join the `iot` group so the DynamicUser can read the VPN credentials the
+# lwm2m client (engineer) drops in /etc/iot/vpn (2750 engineer:iot, key 0640).
+# ca.crt/client.crt/client.key are vpn.{ca,cert,key}.path.
+SupplementaryGroups=iot
 
 # Same RuntimeDirectory=iot as iot-ds.service so the daemon sees
 # the same /run/iot/data_store.sock socket file.
