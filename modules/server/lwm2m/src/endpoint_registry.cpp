@@ -72,6 +72,25 @@ bool EndpointRegistry::update_version(const std::string& ep,
     return true;
 }
 
+bool EndpointRegistry::update_reg_meta(const std::string& ep,
+                                       std::uint32_t lifetime,
+                                       const std::string& location) {
+    std::lock_guard<std::mutex> lk(m_mutex);
+
+    auto it = m_by_ep.find(ep);
+    if (it == m_by_ep.end()) return false;                  // unknown endpoint
+    bool changed = false;
+    if (lifetime != 0 && it->second.lifetime != lifetime) {
+        it->second.lifetime = lifetime;
+        changed = true;
+    }
+    if (!location.empty() && it->second.location != location) {
+        it->second.location = location;
+        changed = true;
+    }
+    return changed;
+}
+
 const EndpointInfo* EndpointRegistry::lookup_by_ep(const std::string& ep) const {
     std::lock_guard<std::mutex> lk(m_mutex);
     auto it = m_by_ep.find(ep);

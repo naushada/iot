@@ -3,8 +3,10 @@ import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../common/httpsvc.service';
 import { SessionService } from '../../common/session.service';
 import { ToastService } from '../../common/toast.service';
+import { DebugService } from '../../common/debug.service';
 
-interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; proxy_port:number; registered:boolean; }
+interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; proxy_port:number; registered:boolean;
+                   last_seen_unix?:number; lifetime?:number; location?:string; }
 
 /** Per-endpoint credential record, as minted by iot-cloudd into the
  *  cloud.endpoint.credentials ds key (JSON array). Field names follow the
@@ -64,6 +66,8 @@ interface EpCred {
         <clr-dg-column>Tunnel IP</clr-dg-column>
         <clr-dg-column>Device Tunnel IP</clr-dg-column>
         <clr-dg-column>Proxy Port</clr-dg-column>
+        <clr-dg-column>Next Heart Beat in</clr-dg-column>
+        <clr-dg-column>Location</clr-dg-column>
         <clr-dg-column>Device UI</clr-dg-column>
         <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
 
@@ -76,6 +80,18 @@ interface EpCred {
           <clr-dg-cell><code>{{ serverTunIp || '—' }}</code></clr-dg-cell>
           <clr-dg-cell><code>{{ e.dev_tun_ip || '—' }}</code></clr-dg-cell>
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
+          <clr-dg-cell>
+            <code>{{ nextHeartbeat(e) }}</code>
+            <!-- Debug mode: reveal the raw ds values the countdown derives from
+                 (cloud.endpoints[].lifetime + .last_seen_unix), mirroring the
+                 *dsDebug hint convention used on the config forms. -->
+            <span *ngIf="debug.on" class="hint">
+              (lt {{ e.lifetime || 0 }}s · seen {{ e.last_seen_unix || 0 }})
+            </span>
+          </clr-dg-cell>
+          <clr-dg-cell>
+            <code>{{ e.location || '—' }}</code>
+          </clr-dg-cell>
           <clr-dg-cell>
             <!-- Launch UI only when the device's VPN tunnel is up (dev_tun_ip).
                  Same-origin path-scoped reverse proxy: iot-httpd proxies
@@ -147,6 +163,10 @@ interface EpCred {
 export class EndpointListComponent implements OnInit, OnDestroy {
   endpoints: EpInfo[] = [];
   creds: EpCred[] = [];
+  // Live wall-clock (unix s), ticked every second so the "Next Heart Beat in"
+  // countdown re-renders without re-fetching the endpoint list.
+  now = Math.floor(Date.now() / 1000);
+  private ticker?: ReturnType<typeof setInterval>;
   windowHost = window.location.hostname;
   // Device UI port reached over the VPN (cloud.proxy.device.ui.port,
   // default 80). Shown in the per-endpoint "VPN forwarding rule" line.
@@ -175,9 +195,29 @@ export class EndpointListComponent implements OnInit, OnDestroy {
     return o.join('.');
   }
 
-  constructor(private http: HttpsvcService, private session: SessionService, private toast: ToastService) {}
+  constructor(private http: HttpsvcService, private session: SessionService,
+              private toast: ToastService, public debug: DebugService) {}
+
+  /** Format a non-negative second count as HH:MM:SS (hours uncapped). */
+  private hhmmss(total: number): string {
+    const s = Math.max(0, Math.floor(total));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${p(h)}:${p(m)}:${p(sec)}`;
+  }
+
+  /** Time until the device's next expected registration refresh, HH:MM:SS:
+   *  (last_seen + lifetime) - now. '—' when we have no lifetime yet;
+   *  '00:00:00' once overdue (the registration has lapsed). */
+  nextHeartbeat(e: EpInfo): string {
+    if (!e.lifetime || !e.last_seen_unix) return '—';
+    return this.hhmmss(e.last_seen_unix + e.lifetime - this.now);
+  }
 
   ngOnInit(): void {
+    this.ticker = setInterval(() => { this.now = Math.floor(Date.now() / 1000); }, 1000);
     this.startLongPoll();
     this.http.dbGet(['cloud.dev.mode', 'cloud.endpoint.credentials',
                      'cloud.proxy.device.ui.port', 'cloud.vpn.subnet']).subscribe({
@@ -257,5 +297,9 @@ export class EndpointListComponent implements OnInit, OnDestroy {
     });
   }
 
-  ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
+  ngOnDestroy(): void {
+    this.active = false;
+    if (this.ticker) clearInterval(this.ticker);
+    this.sub.unsubscribe();
+  }
 }
