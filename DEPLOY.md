@@ -395,10 +395,13 @@ bound iface in `vpn.bound.iface`. See
 § "WAN gate" for the state machine.
 
 For the **net-router** unit (L13: nftables DNAT + iface priority),
-seed the only required key and enable:
+just enable it — **`net.lwm2m.target.ip` is optional**:
 
 ```sh
-ds-cli --socket=/run/iot/data_store.sock set net.lwm2m.target.ip '"192.168.10.5"'
+# Optional: a DNAT target only matters for a GATEWAY that forwards inbound
+# LwM2M to a DOWNSTREAM device. A device that is its OWN LwM2M client needs
+# none — leave it unset and net-router still runs.
+ds-cli --socket=/run/iot/data_store.sock set net.lwm2m.target.ip '"192.168.10.5"'  # gateway topology only
 # Optional: rename per-class iface keys to match your host
 ds-cli --socket=/run/iot/data_store.sock set net.iface.eth.name      '"eth0"'
 ds-cli --socket=/run/iot/data_store.sock set net.iface.wifi.name     '"wlan0"'
@@ -408,12 +411,21 @@ sudo systemctl enable --now iot-net-router.service
 journalctl -u iot-net-router.service -f | grep "ruleset applied\|metric\|active"
 ```
 
-The unit ships with `AmbientCapabilities=CAP_NET_ADMIN`; that's
-enough for `nft -f` and `ip route replace` under DynamicUser. Default
-forwarded ports are `80,443,5684` (HTTP/HTTPS + LwM2M/CoAP-over-DTLS)
-DNAT'd to `net.lwm2m.target.ip`. Override via `net.forward.ports`
-and add operator drops/forwards via the JSON `net.custom.rules`
-schema key (see `/etc/iot/ds-schemas/net.lua`).
+net-router starts on boot regardless of config: it elects the
+highest-priority OPER-up WAN iface (publishes `net.iface.active`),
+installs the base firewall + route metrics, and publishes
+`services.net.router.state="running"` so dependent services
+(`openvpn-client`, `lwm2m-client`) unpark. Its lifecycle state
+(`net.state`) tracks the uplink — `need-config` while no usable WAN
+iface is present, `steady` once one is up. The DNAT/port-forward rules
+are installed **only** when `net.lwm2m.target.ip` is set (default
+forwarded ports `80,443,5684`, HTTP/HTTPS + LwM2M/CoAP-over-DTLS,
+overridable via `net.forward.ports`); set them in the device-UI under
+**Routing → DNAT Target / Port Forward**, or via the keys directly. Add
+operator drops/forwards via the JSON `net.custom.rules` schema key (see
+`/etc/iot/ds-schemas/net.lua`). The unit ships with
+`AmbientCapabilities=CAP_NET_ADMIN` — enough for `nft -f` and
+`ip route replace` under DynamicUser.
 
 For the **wifi-client** unit (L15: wpa_supplicant + DHCP-client
 supervisor; publishes `wifi.*`), seed the network list and enable.
@@ -433,15 +445,23 @@ refuses to spawn wpa_supplicant if NM is active.
 >
 > **As of the zero-touch image, `lwm2m-client`, `openvpn-client` and
 > `net-router` are also auto-enabled** (`SYSTEMD_AUTO_ENABLE=enable`),
-> so the full DM/VPN chain comes up on first boot with no SSH. Each
-> daemon self-gates on its `services.<name>.enable` data-store key and
-> parks until provisioned, so the device-UI **Services** page can
-> pause/resume them without touching systemd. Until certs
-> (`/etc/iot/vpn/*`), the DM PSK and `vpn.remote.port`/`proto` are
-> provisioned, `openvpn-client`/`lwm2m-client` will `Restart=on-failure`
-> loop — expected on an un-provisioned boot. The `systemctl enable`
-> commands below remain required only on bare-metal hosts where the
-> units ship disabled.
+> so the full DM/VPN chain comes up on first boot with no SSH.
+> `net-router` runs immediately (no `net.lwm2m.target.ip` needed) and
+> publishes the WAN iface; `lwm2m-client` and `openvpn-client` unpark
+> once it is `running`. The operator's only step is **commissioning the
+> LwM2M bootstrap** (device-UI **LwM2M → Security**: set the Bootstrap
+> Server URI + **Generate BS PSK**, then paste the serial + key into the
+> cloud-UI Endpoints page). After that the VPN credentials (CA + client
+> cert/key) are **delivered automatically over LwM2M bootstrap**
+> (Object 2048) and persisted to `/etc/iot/vpn/` — the image creates
+> that dir (`2750 engineer:iot`, via tmpfiles) so the `engineer`-run
+> lwm2m client can write it and the `openvpn-client` DynamicUser
+> (SupplementaryGroups=iot) can read it; no manual cert placement. Until
+> the bootstrap PSK is commissioned, `lwm2m-client` parks in its
+> provisioning wait-loop (shows `services.lwm2m.client.state="stopped"`
+> with no CPU/FD stats — it is alive, just pre-ServiceGate) and
+> `openvpn-client` stays down. The `systemctl enable` commands below
+> remain required only on bare-metal hosts where the units ship disabled.
 >
 > **Troubleshooting (older images / regressions).** If the stack is dead
 > on boot, check these three invariants (all fixed in PR #212):

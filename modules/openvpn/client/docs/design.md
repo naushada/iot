@@ -168,7 +168,13 @@ watching `/etc/iot/vpn`:
    (instances 0/1/2 = ca/cert/key) and EXECUTEs RID 3 (Apply).
 2. On the device, `install_cert` (`apps/src/lwm2m_object_stubs.cpp`)
    materialises `/etc/iot/vpn/{ca.crt,client.crt,client.key}`, then
-   calls its `CertHooks::apply`.
+   calls its `CertHooks::apply`. The image **must** ship `/etc/iot/vpn`
+   (created by tmpfiles, `2750 engineer:iot`) — the lwm2m client runs as
+   `engineer` and can't `mkdir` under root-owned `/etc/iot`, so without
+   it the write fails `ENOENT` and no certs land. The key is written
+   `0640` (group `iot`) so the `openvpn-client` DynamicUser
+   (`SupplementaryGroups=iot`) can read it; `ca.crt`/`client.crt` are
+   `0644`.
 3. The client wiring (`apps/src/main.cpp`) supplies that hook as a
    **ds gate-flip**: it `set`s `services.openvpn.client.enable`
    `false` then `true`. ds watches fire on *change*, so the deliberate
