@@ -46,10 +46,10 @@
       <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
 
       <clr-dg-row *clrDgItems="let n of networks; let i=index">
-        <clr-dg-cell><input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="n.ssid" [name]="'ssid-'+i" placeholder="MyWiFi" /></clr-dg-cell>
-        <clr-dg-cell><input class="clr-input" [disabled]="!isAdmin" type="password" [(ngModel)]="n.psk" [name]="'psk-'+i" placeholder="passphrase" /></clr-dg-cell>
-        <clr-dg-cell><input class="clr-input" [disabled]="!isAdmin" type="number" [(ngModel)]="n.priority" [name]="'pri-'+i" style="width:80px;" /></clr-dg-cell>
-        <clr-dg-cell><select class="clr-select" [disabled]="!isAdmin" [(ngModel)]="n.key_mgmt" [name]="'km-'+i">
+        <clr-dg-cell><input class="clr-input" [disabled]="!isAdmin" [(ngModel)]="n.ssid" [ngModelOptions]="{standalone: true}" [name]="'ssid-'+i" placeholder="MyWiFi" /></clr-dg-cell>
+        <clr-dg-cell><input class="clr-input" [disabled]="!isAdmin" type="password" [(ngModel)]="n.psk" [ngModelOptions]="{standalone: true}" [name]="'psk-'+i" placeholder="passphrase" /></clr-dg-cell>
+        <clr-dg-cell><input class="clr-input" [disabled]="!isAdmin" type="number" [(ngModel)]="n.priority" [ngModelOptions]="{standalone: true}" [name]="'pri-'+i" style="width:80px;" /></clr-dg-cell>
+        <clr-dg-cell><select class="clr-select" [disabled]="!isAdmin" [(ngModel)]="n.key_mgmt" [ngModelOptions]="{standalone: true}" [name]="'km-'+i">
           <option value="WPA2-PSK">WPA2-PSK</option><option value="WPA-PSK">WPA-PSK</option><option value="NONE">Open</option>
         </select></clr-dg-cell>
         <clr-dg-cell *ngIf="isAdmin"><button type="button" class="btn btn-sm btn-danger" (click)="removeNetwork(i)">Remove</button></clr-dg-cell>
