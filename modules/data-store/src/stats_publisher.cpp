@@ -354,6 +354,21 @@ StatsSample StatsPublisher::sample() {
     StatsSample s;
     s.mem_rss_kb = stats_detail::read_mem_kb(m_roots, m_cg);
     s.threads    = stats_detail::read_pids(m_roots, m_cg);
+    // Fall back to the daemon's own /proc/self when the cgroup memory/pids
+    // controllers aren't accounted for this unit. cgroups aren't a container
+    // thing — systemd puts every service in its own cgroup on bare metal too —
+    // but CPU is accounted by default while memory+pids often are not, and on
+    // Raspberry Pi the kernel memory cgroup is disabled unless cgroup_enable=
+    // memory is on the boot cmdline. The cgroup figure would also fold in child
+    // procs (e.g. wifi-client's wpa_supplicant), so this self-only number is a
+    // slight under-count — but far better than reporting 0.
+    if (s.mem_rss_kb == 0)
+        s.mem_rss_kb = stats_detail::read_proc_mem_kb(m_roots.proc_self);
+    if (s.threads == 0) {
+        unsigned long long j = 0; std::int32_t th = 0;
+        if (stats_detail::read_proc_stat(m_roots.proc_self, j, th))
+            s.threads = th;
+    }
     s.fd_count   = stats_detail::count_fds(m_roots);
     s.cpu_count  = stats_detail::read_ncpu(m_roots, m_cg);
 

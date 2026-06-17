@@ -196,6 +196,19 @@ TEST(StatsSample, none_cgroup_all_zero) {
     EXPECT_EQ(s.fd_count, 0);
 }
 
+TEST(StatsSample, cgroup_absent_mem_threads_fall_back_to_proc_self) {
+    // No cgroup memory/pids accounting (empty cgroup dir) but proc_self points
+    // at the real /proc/self — the bare-metal-RPi case where the kernel memory
+    // cgroup is off. mem + threads must come from /proc/self, not report 0.
+    ds::StatsRoots r;
+    r.cgroup_root = make_tmpdir();   // no memory.current / pids.current
+    r.proc_self   = "/proc/self";
+    ds::StatsPublisher pub("services.test", nullptr, r);
+    auto s = pub.sample();
+    EXPECT_GT(s.mem_rss_kb, 0);
+    EXPECT_GE(s.threads, 1);
+}
+
 // ── publish (sink — no server, no reactor) ──────────────────────────
 TEST(StatsPublish, sink_receives_four_metrics_plus_version) {
     auto dir = make_tmpdir();
