@@ -51,9 +51,15 @@ Move DTLS PSK credentials and the LwM2M endpoint out of CLI args / Lua
 config and into the data-store, with the following behaviour:
 
 1. On a Raspberry Pi, the lwm2m client reads the hardware serial number at
-   startup and writes it to the serial/endpoint key (auto-fill). On non-RPi
-   the client leaves it empty and the **installer** types it in the device-ui
-   Configuration page. The serial is the LwM2M **endpoint** and the DTLS PSK
+   startup and writes it to the serial/endpoint key (auto-fill). This runs
+   **before the client's provisioning park** (the wait-loop for `iot.bs.uri` +
+   BS PSK): the serial is what the operator reads from the device-ui to
+   generate the BS PSK and commission the device, so it must be live *before*
+   commissioning, not after. On non-RPi the client leaves it empty and the
+   **installer** types it in the device-ui Configuration page. The auto-filled
+   value is the **raw** device serial (`read_rpi_serial`, device-tree/cpuinfo),
+   not the `iot-<serial>` hostname, and `resolve_endpoint` never overwrites an
+   already-set serial. The serial is the LwM2M **endpoint** and the DTLS PSK
    **identity (raw, on the wire)** for the Bootstrap (BS) handshake.
 2. **device-ui** generates a 32-byte BS PSK key, shows it in an input field
    (so the engineer can copy it), and stores it in the data-store

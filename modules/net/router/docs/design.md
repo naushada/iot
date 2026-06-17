@@ -60,10 +60,15 @@ An iptables fallback is FUP only if a target without nftables surfaces.
 ## Schema layout
 
 `schemas/net.lua` (installed to `/etc/iot/ds-schemas/net.lua` by D7's
-install rule). 9 read keys + 6 write keys; the only required read
-key is `net.lwm2m.target_ip`. Custom rules ship as a JSON-encoded
-string in `net.custom.rules`; shape is validated at the JSON-parse
-step in the daemon (the schema can't json-parse).
+install rule). 9 read keys + 6 write keys; **all are optional** — the
+daemon starts on boot regardless of config. `net.lwm2m.target.ip` (once
+required) now only gates the optional DNAT/port-forward chain
+(`build_nft_ruleset` omits it when the target/ports are empty); the
+lifecycle reaches `steady` as soon as a WAN iface is up and `need-config`
+while none is, so dependent services (lwm2m/openvpn) come up without it.
+Custom rules ship as a JSON-encoded string in `net.custom.rules`; shape
+is validated at the JSON-parse step in the daemon (the schema can't
+json-parse).
 
 See [L13 plan §2.D1](../../../../log/L13/plan.md) for the full
 key list; the schema file itself is the canonical reference.
