@@ -1318,6 +1318,26 @@ int main(std::int32_t argc, char *argv[]) {
     dtls_set_log_sink(&iot_dtls_log_sink);   // DTLS (tinydtls) logs → UI
     if (auto* cli = ds.client()) { g_log.apply_level(*cli); g_log.open(*cli, 5, 1); }
 
+    // RPi serial auto-fill — MUST run BEFORE the provisioning park below.
+    // The serial IS the endpoint + BS PSK identity, and the operator reads
+    // it off the device-ui to generate the BS PSK and commission the device.
+    // If this waited until after the park (which blocks on iot.bs.uri + the
+    // BS PSK), iot.serial would still be empty exactly when the operator is
+    // trying to read it — which is why the field showed blank and had to be
+    // typed by hand. Resolve + persist it up front so it is live immediately.
+    const bool rpi = iot::is_rpi();
+    iot::EndpointResolution epres = iot::resolve_endpoint(
+        argValueMap["ep"], ds.serial(), rpi,
+        rpi ? iot::read_rpi_serial() : std::string());
+    if (!epres.serial_to_write.empty()) {
+        if (ds.set_serial(epres.serial_to_write)) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l RPi serial auto-filled "
+                                "to data-store: %C\n"),
+                       epres.serial_to_write.c_str()));
+        }
+    }
+
     // Bootstrap URI + BS PSK (client only): ds-driven from iot.bs.uri /
     // iot.bs.psk.* (commissioned via device-ui), with bs=/identity=/secret=
     // CLI fallback. PARK here until commissioned rather than exiting — an
@@ -1347,19 +1367,6 @@ int main(std::int32_t argc, char *argv[]) {
         }
         UDPAdapter::Scheme_t bsScheme;
         parsePeerOption(bsUri, bsScheme, bsHost, bsPort);
-    }
-
-    const bool rpi = iot::is_rpi();
-    iot::EndpointResolution epres = iot::resolve_endpoint(
-        argValueMap["ep"], ds.serial(), rpi,
-        rpi ? iot::read_rpi_serial() : std::string());
-    if (!epres.serial_to_write.empty()) {
-        if (ds.set_serial(epres.serial_to_write)) {
-            ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l RPi serial auto-filled "
-                                "to data-store: %C\n"),
-                       epres.serial_to_write.c_str()));
-        }
     }
 
     // Endpoint (CLI ep= / data-store serial / RPi auto-detect). Declared here
