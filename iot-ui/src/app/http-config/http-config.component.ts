@@ -90,6 +90,27 @@ import { DataStoreService } from '../../common/datastore.service';
           </clr-checkbox-container>
         </div>
 
+        <h4 style="margin-top:32px;">Remote Shell
+          <span class="hint">(device-ui Terminal page)</span></h4>
+        <div class="warn-card">
+          A remote <strong>root shell</strong> on this device — the largest
+          attack surface here. Admin-only, idle-reaped. Leave OFF unless you
+          need it. Each open terminal holds one HTTP worker, so set Worker
+          Threads ≥ 2 (and restart) before enabling.
+        </div>
+        <div class="form-grid">
+          <clr-checkbox-container>
+            <clr-checkbox-wrapper>
+              <input type="checkbox" clrCheckbox [disabled]="!isAdmin"
+                     [ngModel]="shellEnabled"
+                     (ngModelChange)="toggleShell($event)"
+                     [ngModelOptions]="{standalone: true}" />
+              <label>Enable Remote Shell (Terminal)</label>
+            </clr-checkbox-wrapper>
+            <clr-control-helper *dsDebug><app-ds-hint key="http.shell.enabled"></app-ds-hint></clr-control-helper>
+          </clr-checkbox-container>
+        </div>
+
         <div style="margin-top:24px;" *ngIf="isAdmin">
           <button type="submit" class="btn btn-primary" [disabled]="saving">
             {{ saving ? 'Saving…' : 'Save' }}
@@ -109,6 +130,10 @@ import { DataStoreService } from '../../common/datastore.service';
       padding: 12px 16px; font-size: 13px; color: #333;
     }
     .info-card code { background: #d0e4ff; padding: 1px 4px; border-radius: 2px; font-size: 12px; }
+    .warn-card {
+      background: #fff7e6; border: 1px solid #ffd591; border-radius: 4px;
+      padding: 12px 16px; font-size: 13px; color: #663c00; margin-bottom: 12px;
+    }
   `]
 })
 export class HttpConfigComponent implements OnInit, OnDestroy {
@@ -116,11 +141,12 @@ export class HttpConfigComponent implements OnInit, OnDestroy {
   loading = true;
   saving = false;
   authEnabled = true;
+  shellEnabled = false;
   private sub = new Subscription();
   private readonly KEYS = [
     'http.listen.ip', 'http.listen.port', 'http.listen.scheme',
     'http.workers', 'http.tls.cert', 'http.tls.key', 'http.tls.ca',
-    'http.auth.enabled',
+    'http.auth.enabled', 'http.shell.enabled',
   ];
 
   get isAdmin(): boolean { return this.session.isAdmin; }
@@ -173,12 +199,24 @@ export class HttpConfigComponent implements OnInit, OnDestroy {
     });
     const ae = d['http.auth.enabled'];
     if (typeof ae === 'boolean') this.authEnabled = ae;
+    const se = d['http.shell.enabled'];
+    if (typeof se === 'boolean') this.shellEnabled = se;
   }
 
   toggleAuth(v: boolean): void {
     this.ds.write([{ key: 'http.auth.enabled', value: v }]).subscribe({
       next: (r) => {
         if (r.ok) { this.authEnabled = v; this.toast.success('Auth ' + (v ? 'enabled' : 'disabled')); }
+        else this.toast.error(r.err || 'Toggle failed');
+      },
+      error: () => this.toast.error('Toggle failed')
+    });
+  }
+
+  toggleShell(v: boolean): void {
+    this.ds.write([{ key: 'http.shell.enabled', value: v }]).subscribe({
+      next: (r) => {
+        if (r.ok) { this.shellEnabled = v; this.toast.success('Remote shell ' + (v ? 'enabled' : 'disabled')); }
         else this.toast.error(r.err || 'Toggle failed');
       },
       error: () => this.toast.error('Toggle failed')

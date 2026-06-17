@@ -40,12 +40,22 @@ export class MainComponent {
     { id: 'logs',      label: 'Logs',      svg: 'assets/icons/logs.svg', children: [] as {id:string,label:string}[] },
     { id: 'users',     label: 'Users',     svg: 'assets/icons/users.svg', children: [] as {id:string,label:string}[] },
     { id: 'software',  label: 'Software',  svg: 'assets/icons/software.svg', children: [] as {id:string,label:string}[] },
+    { id: 'shell',     label: 'Terminal',  svg: 'assets/icons/services.svg', children: [] as {id:string,label:string}[] },
   ];
 
   expandedMenu: string | null = null;  // which menu is expanded in sidebar
   version = '';                         // running release (iot.version)
+  shellEnabled = false;                 // http.shell.enabled (gates Terminal)
 
   get isAdmin(): boolean { return this.session.isAdmin; }
+
+  // Terminal is a remote root shell: only surface it to Admins when the
+  // operator has switched on http.shell.enabled. Everything else is always
+  // shown (each page enforces its own access).
+  get navMenus() {
+    return this.menus.filter(m =>
+      m.id !== 'shell' || (this.shellEnabled && this.isAdmin));
+  }
 
   constructor(
     private http: HttpsvcService,
@@ -71,6 +81,12 @@ export class MainComponent {
       next: (r) => {
         if (r.ok && r.data) this.version = String((r.data as Record<string, unknown>)['iot.version'] || '');
       }
+    });
+    // Terminal availability: observe http.shell.enabled off the shared store
+    // (prefetched in ALL_KEYS) so toggling it on the HTTP Config page shows /
+    // hides the Terminal sidebar item live, without a reload.
+    this.ds.observe('http.shell.enabled').subscribe((v) => {
+      this.shellEnabled = v === true || v === 'true';
     });
   }
 

@@ -43,6 +43,8 @@ add_library(http_server_lib STATIC
     src/handler.cpp
     src/handler_cloud.cpp
     src/handler_proxy.cpp
+    src/handler_shell.cpp
+    src/shell.cpp
     src/auth.cpp
     src/tls.cpp
     src/worker.cpp)
@@ -50,6 +52,12 @@ add_library(http_server_lib STATIC
 target_include_directories(http_server_lib PUBLIC src)
 target_link_libraries(http_server_lib
     PUBLIC datastore_client ACE pthread OpenSSL::SSL OpenSSL::Crypto)
+
+# forkpty(3) for the device-ui Terminal lives in libutil on glibc/Linux
+# (it's in libSystem on macOS/BSD, so only link it on Linux).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(http_server_lib PUBLIC util)
+endif()
 
 # ─────────────────────────── Binary ────────────────────────────
 add_executable(iot-httpd src/main.cpp)
