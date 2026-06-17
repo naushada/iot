@@ -131,23 +131,35 @@ void VpnRegistry::release(const std::string& ep) {
     auto it = m_ep_to_alloc.find(ep);
     if (it == m_ep_to_alloc.end()) return;
 
-    release_ip(it->second.tun_ip);
-    release_port(it->second.proxy_port);
+    // Use the lock-free variants — m_mutex is already held here. Calling the
+    // public release_ip()/release_port() would re-lock the non-recursive
+    // m_mutex and self-deadlock the whole iot-cloudd main loop (every
+    // endpoint deprovision goes through here).
+    release_ip_locked(it->second.tun_ip);
+    release_port_locked(it->second.proxy_port);
     m_ep_to_alloc.erase(it);
 }
 
-void VpnRegistry::release_ip(const std::string& ip) {
-    std::lock_guard<std::mutex> lk(m_mutex);
+void VpnRegistry::release_ip_locked(const std::string& ip) {
     if (m_allocated_ips.erase(ip)) {
         m_free_ips.insert(ip);
     }
 }
 
-void VpnRegistry::release_port(std::uint16_t port) {
-    std::lock_guard<std::mutex> lk(m_mutex);
+void VpnRegistry::release_port_locked(std::uint16_t port) {
     if (m_allocated_ports.erase(port)) {
         m_free_ports.insert(port);
     }
+}
+
+void VpnRegistry::release_ip(const std::string& ip) {
+    std::lock_guard<std::mutex> lk(m_mutex);
+    release_ip_locked(ip);
+}
+
+void VpnRegistry::release_port(std::uint16_t port) {
+    std::lock_guard<std::mutex> lk(m_mutex);
+    release_port_locked(port);
 }
 
 // ── Queries ────────────────────────────────────────────────────────
