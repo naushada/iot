@@ -7,6 +7,8 @@
 #include <nlohmann/json.hpp>
 
 #include <ace/Log_Msg.h>
+#include <ace/OS_NS_unistd.h>
+#include <ace/Time_Value.h>
 
 #include <cctype>
 #include <chrono>
@@ -1026,11 +1028,48 @@ void install_handlers(Router& router,
             auto sr = ds->set("cloud.deprovision.request",
                               data_store::Value{ep});
             json resp;
-            resp["ok"]       = sr.ok;
             resp["endpoint"] = ep;
             if (!sr.ok) {
+                resp["ok"]  = false;
                 resp["err"] = sr.err;
-                r.status = 500;
+                r.status    = 500;
+                r.body      = resp.dump();
+                return r;
+            }
+
+            // Don't report success on the mere trigger write — that lied when a
+            // stale/duplicate request or a wedged iot-cloudd left the endpoint in
+            // place (the UI showed a green toast, then the row repopulated from
+            // iot-cloudd's in-memory registry on the next sync). Poll cloud.endpoints
+            // until the endpoint is actually gone (iot-cloudd processed the
+            // deprovision and removed the in-memory row → sync rewrote the key), or
+            // time out and report failure honestly.
+            auto endpoint_present = [&](const std::string& want) -> bool {
+                std::vector<data_store::Client::GetResult> got;
+                if (!ds->get({"cloud.endpoints"}, got).ok || got.empty() ||
+                    !got[0].has_value)
+                    return false;
+                auto s = data_store::to_string(got[0].value);
+                if (!s) return false;
+                try {
+                    auto arr = json::parse(*s);
+                    if (arr.is_array())
+                        for (const auto& e : arr)
+                            if (e.value("endpoint", std::string()) == want)
+                                return true;
+                } catch (const std::exception&) {}
+                return false;
+            };
+            bool removed = false;
+            for (int i = 0; i < 50; ++i) {           // ~5s (50 × 100ms)
+                if (!endpoint_present(ep)) { removed = true; break; }
+                ACE_OS::sleep(ACE_Time_Value(0, 100 * 1000));  // 100ms
+            }
+            resp["ok"] = removed;
+            if (!removed) {
+                resp["err"] = "deprovision not confirmed (iot-cloudd did not "
+                              "remove the endpoint within timeout)";
+                r.status = 504;
             }
             r.body = resp.dump();
             return r;
