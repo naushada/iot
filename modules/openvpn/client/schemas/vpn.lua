@@ -26,6 +26,8 @@
 --   vpn.assigned.gateway  - pushed VPN gateway
 --   vpn.assigned.netmask  - pushed netmask
 --   vpn.assigned.dns      - comma-joined DNS list (array variant: FUP)
+--   vpn.connected.unix    - epoch secs the tunnel reached CONNECTED (0 = down);
+--                           UI derives tunnel uptime = now - this
 --   vpn.pid               - live openvpn subprocess pid
 --   vpn.exit_code         - last openvpn exit code (set when state=exited)
 --   vpn.gate.reason       - "ok" while running, "wan_down" while gated on
@@ -86,6 +88,8 @@ return {
         access  = "Viewer", type = "string" },
     ["vpn.assigned.dns"]     = {
         access  = "Viewer", type = "string" },
+    ["vpn.connected.unix"]   = {
+        access  = "Viewer", type = "integer", min = 0, default = 0 },
     ["vpn.pid"]              = {
         access  = "Viewer", type = "integer", min = 0 },
     ["vpn.exit_code"]        = {

@@ -171,6 +171,11 @@ private:
     ctrl::Client          m_ctrl;
     Lifecycle             m_fsm;
 
+    /// BSSID of the currently-associated AP (from the CONNECTED ctrl event).
+    /// Used to pick our AP's signal out of each SCAN_RESULTS batch and publish
+    /// wifi.signal.rssi. Empty while not associated.
+    std::string           m_assoc_bssid;
+
     /// L16/D6 — services.wifi.client.enable gate. Composes with the
     /// NM-conflict gate; disable dominates conflict (the daemon
     /// returns "disabled" even if NM would otherwise refuse start).
