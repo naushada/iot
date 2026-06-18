@@ -6,7 +6,8 @@ Status: **WIRED — pending HW validation** (RAUC) · Target: Yocto/RPi
 **Increment 1 (✅ shipped):** chunked-append upload (handles large `.raucb`),
 `iot-swupdate` `.raucb`→`rauc` routing (guarded), device-ui `.raucb` drop.
 **Increment 2 (✅ wired, build/bootloader — §§2–4, 7):** `meta-rauc` +
-`meta-rauc-raspberrypi` layers, u-boot boot-select, `WKS_FILE=iot-ab.wks.in`
+`meta-lts-mixins` (scarthgap/u-boot) + `meta-rauc-raspberrypi` layers, u-boot
+boot-select, `WKS_FILE=iot-ab.wks.in`
 (4-partition wic), `rauc_%.bbappend` (system.conf + keyring), `update-bundle.bb`
 (signed `.raucb`), dev/prod signing keys, and the `rauc-bundle.yml` CI workflow —
 all behind the `IOT_AB=1` build switch (default build stays single-rootfs). See

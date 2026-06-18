@@ -1,21 +1,36 @@
 # RAUC A/B image OTA — device bring-up checklist
 
-Status: **wired — pending hardware validation.** The build/bootloader pieces
-below are now in the tree (behind the `IOT_AB=1` build switch); what remains is
-running a Yocto build + booting an RPi to verify the boot-select/rollback
-round-trip (the **Acceptance** section). The runtime hooks (chunked `.raucb`
-upload, `iot-swupdate` → `rauc install` routing, `iot-ota-confirm`
-mark-good/rollback, the `iot.boot.*` ds keys, device-ui bank status) were
-already present.
+Status: **wired; build-side validation in progress — pending hardware
+validation.** The build/bootloader pieces below are in the tree (behind the
+`IOT_AB=1` switch). The A/B layer config now **parses cleanly** for
+`raspberrypi3-64` (all of meta-rauc / meta-lts-mixins / meta-rauc-raspberrypi
+load, no MACHINE-compat skip); a full `IOT_AB=1 ./build.sh` is being run to
+confirm the image + signed `.raucb` assemble. What then remains is booting an
+RPi to verify the boot-select/rollback round-trip (the **Acceptance** section).
+The runtime hooks (chunked `.raucb` upload, `iot-swupdate` → `rauc install`
+routing, `iot-ota-confirm` mark-good/rollback, the `iot.boot.*` ds keys,
+device-ui bank status) were already present.
 
 **Build it:** `IOT_AB=1 ./build.sh` (or `kas build yocto/kas-ab.yml`). The plain
 `./build.sh` still makes the proven single-rootfs image — the A/B path is opt-in
 so an unvalidated bootloader never becomes the default.
 
 ## 1. Layers ✅
-- `meta-rauc` + `meta-rauc-community/meta-rauc-raspberrypi` are cloned in
-  `yocto/Containerfile` and added to `bblayers` only for `IOT_AB=1` builds
-  (`entrypoint.sh`); the kas path adds them via `yocto/kas-ab.yml`.
+- Three layers are cloned in `yocto/Containerfile` and added to `bblayers` only
+  for `IOT_AB=1` builds (`entrypoint.sh`); the kas path adds them via
+  `yocto/kas-ab.yml`:
+  - **`meta-rauc`** — the updater + the `bundle` class.
+  - **`meta-lts-mixins`** (branch `scarthgap/u-boot`, collection
+    `lts-u-boot-mixin`) — the newer u-boot 2024.04 that the next layer
+    hard-depends on. **Must be added before `meta-rauc-raspberrypi`** or layer
+    parsing fails (`depends on layer 'lts-u-boot-mixin' … not enabled`).
+  - **`meta-rauc-community/meta-rauc-raspberrypi`** — the RPi u-boot
+    boot-select integration (`rpi-u-boot-scr` `boot.cmd`).
+- Add order in `entrypoint.sh`: `meta-rauc` → `meta-lts-mixins` →
+  `meta-rauc-raspberrypi`.
+- Note: the published sstate cache image (`IOT_USE_CACHE=1`) predates these
+  layers, so a cold A/B build must rebuild the builder image (plain
+  `IOT_AB=1 ./build.sh`, no cache) to clone them.
 
 ## 2. Bootloader (u-boot) ✅
 - `RPI_USE_U_BOOT = "1"` is set in the A/B local.conf block. The community
