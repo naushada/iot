@@ -709,7 +709,15 @@ void install_handlers(Router& router,
                 else if (k == "net.rules.applied.count")     routing["rules_applied"] = iv();
                 else if (k == "net.last.apply.unix")         routing["last_apply_unix"] = iv();
 
-                else if (k == "services.ds.state")                services["ds"]["state"] = sv();
+                // ds-server keys feed BOTH the nested `services` block (device-ui
+                // reads s.services.ds) AND the flat `cloud` passthrough (cloud-ui
+                // reads the flat d['services.ds.state']). The services.ds.* keys
+                // are matched by these explicit branches BEFORE the generic
+                // services.cloud.* passthrough below, so without dual-emitting into
+                // `cloud` here the cloud Services page never streams ds-server live
+                // off /status — it then relies only on the one-shot prefetch, loses
+                // the race, and shows a stale "stopped" + "—" telemetry.
+                else if (k == "services.ds.state")                { services["ds"]["state"] = sv(); cloud[k] = sv(); }
                 else if (k == "services.ds.uptime.sec")           services["ds"]["uptime_sec"] = iv();
                 else if (k == "services.net.router.enable")       services["net_router"]["enable"] = bv(true);
                 else if (k == "services.net.router.state")        services["net_router"]["state"] = sv();
@@ -723,11 +731,11 @@ void install_handlers(Router& router,
                 else if (k == "services.wifi.client.state")       services["wifi_client"]["state"] = sv();
 
                 // L22 — resource telemetry per service.
-                else if (k == "services.ds.cpu.permille")             services["ds"]["cpu_permille"] = iv();
-                else if (k == "services.ds.cpu.count")                services["ds"]["cpu_count"] = iv();
-                else if (k == "services.ds.mem.rss.kb")               services["ds"]["mem_kb"] = iv();
-                else if (k == "services.ds.fd.count")                 services["ds"]["fd_count"] = iv();
-                else if (k == "services.ds.threads")                  services["ds"]["threads"] = iv();
+                else if (k == "services.ds.cpu.permille")             { services["ds"]["cpu_permille"] = iv(); cloud[k] = iv(); }
+                else if (k == "services.ds.cpu.count")                { services["ds"]["cpu_count"] = iv(); cloud[k] = iv(); }
+                else if (k == "services.ds.mem.rss.kb")               { services["ds"]["mem_kb"] = iv(); cloud[k] = iv(); }
+                else if (k == "services.ds.fd.count")                 { services["ds"]["fd_count"] = iv(); cloud[k] = iv(); }
+                else if (k == "services.ds.threads")                  { services["ds"]["threads"] = iv(); cloud[k] = iv(); }
                 else if (k == "services.net.router.cpu.permille")     services["net_router"]["cpu_permille"] = iv();
                 else if (k == "services.net.router.cpu.count")        services["net_router"]["cpu_count"] = iv();
                 else if (k == "services.net.router.mem.rss.kb")       services["net_router"]["mem_kb"] = iv();
