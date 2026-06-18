@@ -88,12 +88,47 @@ SSTATE_HARDLINK = "0"
 # reruns fast, so this costs little. The image recipe is auto-excluded.
 INHERIT += "rm_work"
 
-# Limit parallelism for constrained VMs (4 GB RAM default).
-# Override at run time with -e BB_NUMBER_THREADS=4 and
-# -e PARALLEL_MAKE=-j4.
-BB_NUMBER_THREADS ?= "2"
-PARALLEL_MAKE ?= "-j2"
+# BB_NUMBER_THREADS / PARALLEL_MAKE + memory-pressure regulation are appended
+# below at run time (RAM-aware) — see the "resource guards" block.
 YOCONF
+
+# ── Build-host resource guards (avoid OOM-killed compiles) ─────────
+# Cross-gcc and nodejs-native compiles peak around ~2 GB per job, and the
+# default podman VM has no swap, so two heavy recipes building at once OOM-kill
+# cc1plus (classic victim: gcc do_compile insn-emit.o — the failure shows up as
+# bogus assembler ".cfi_"/"missing .cfi_endproc" errors from the truncated
+# output). Two layers of defence:
+#
+#   1. RAM-aware concurrency — cap BB_NUMBER_THREADS (recipes built in parallel)
+#      to what RAM can hold (~6 GB headroom per concurrent recipe) and clamp by
+#      CPU count. This is deterministic and is the REAL fix: on a swapless host
+#      memory pressure (PSI) often stays near zero right up until the OOM kill,
+#      so the pressure knob below can miss it on its own. An explicit
+#      `-e BB_NUMBER_THREADS=` / `-e PARALLEL_MAKE=` still wins (the := default).
+#   2. PSI pressure regulation — when /proc/pressure exists, also let bitbake
+#      defer starting new tasks while the host is under memory/CPU pressure.
+_mem_gb=$(awk '/MemTotal/{printf "%d", $2/1024/1024}' /proc/meminfo 2>/dev/null || echo 4)
+_cpus=$(nproc 2>/dev/null || echo 2)
+_bb=$(( _mem_gb / 6 )); [ "$_bb"    -lt 1 ] && _bb=1;        [ "$_bb"    -gt "$_cpus" ] && _bb=$_cpus
+_pm=$(( _mem_gb / 3 )); [ "$_pm"    -lt 1 ] && _pm=1;        [ "$_pm"    -gt "$_cpus" ] && _pm=$_cpus
+: "${BB_NUMBER_THREADS:=$_bb}"
+: "${PARALLEL_MAKE:=-j$_pm}"
+echo "→ resource guards: ${_mem_gb}GB RAM, ${_cpus} CPU → BB_NUMBER_THREADS=${BB_NUMBER_THREADS} PARALLEL_MAKE=${PARALLEL_MAKE}"
+{
+    echo ""
+    echo "# ── Build-host resource guards (entrypoint.sh) ──"
+    echo "BB_NUMBER_THREADS = \"${BB_NUMBER_THREADS}\""
+    echo "PARALLEL_MAKE = \"${PARALLEL_MAKE}\""
+} >> conf/local.conf
+if [ -r /proc/pressure/memory ]; then
+    echo "→ resource guards: PSI present — enabling bitbake pressure regulation"
+    cat >> conf/local.conf <<'PRESSURE'
+# Defer starting new tasks while the host is under memory / CPU pressure (PSI).
+# Values are the per-poll stall delta (µs); lower = throttle sooner. Tunable.
+BB_PRESSURE_MAX_MEMORY = "5000"
+BB_PRESSURE_MAX_CPU = "15000"
+PRESSURE
+fi
 
 # ── 4. Override MACHINE ────────────────────────────────────────────
 if [ "$MACHINE" != "qemux86-64" ]; then
