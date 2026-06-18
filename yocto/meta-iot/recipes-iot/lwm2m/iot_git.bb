@@ -34,6 +34,7 @@ SRC_URI = "\
     file://iot-vpn-cert.service \
     file://iot-tun.conf \
     file://iot-net-router.service \
+    file://10-iot-wired.network \
     file://iot-wifi-client.service \
     file://iot-httpd.service \
     file://iot.conf \
@@ -255,6 +256,11 @@ do_install() {
         install -m 0644 ${WORKDIR}/iot-swupdate.service       ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-ota-confirm.service    ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-net-router.service     ${D}${systemd_system_unitdir}/
+        # networkd wired profile: RequiredForOnline=no so a cable-less eth0 does
+        # not pin the system "offline" and park systemd-timesyncd on a WiFi-only
+        # unit (no-RTC clock would stay stale → TLS/VPN fails). See the file header.
+        install -d ${D}${sysconfdir}/systemd/network
+        install -m 0644 ${WORKDIR}/10-iot-wired.network       ${D}${sysconfdir}/systemd/network/
         # TUN driver autoload for openvpn-client.
         install -d ${D}${sysconfdir}/modules-load.d
         install -m 0644 ${WORKDIR}/iot-tun.conf               ${D}${sysconfdir}/modules-load.d/
@@ -400,6 +406,7 @@ RRECOMMENDS:${PN}-openvpn-client = "\
 FILES:${PN}-net-router = "\
     ${bindir}/net-router \
     ${systemd_system_unitdir}/iot-net-router.service \
+    ${sysconfdir}/systemd/network/10-iot-wired.network \
 "
 RDEPENDS:${PN}-net-router = "\
     ace-tao \
