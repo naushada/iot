@@ -16,6 +16,12 @@
 #     so a fresh device needs a worker pool. 2 is enough for the status poll +
 #     one shell session; bump via the HTTP Config page (restart required —
 #     http.workers is not hot-reloaded).
+#   auth.users.accounts = [ engineer / Viewer ]
+#     Seed a read-only "engineer" device-ui login (password "engineer") next to
+#     the built-in admin (admin/admin), so a field engineer can view the device
+#     without holding the full-access admin credential. Operators add/remove/
+#     re-level accounts later via the Users page; this is only the first-boot
+#     default (and is preserved by the .seeded flag, like every other seed).
 set -eu
 
 SOCK="${IOT_DS_SOCK:-/run/iot/data_store.sock}"
@@ -37,11 +43,28 @@ if [ ! -S "$SOCK" ]; then
     exit 0   # don't fail the boot; no flag written, so it retries
 fi
 
-if $DSCLI set http.workers 2; then
+# Default read-only "engineer" device-ui account, seeded alongside the built-in
+# admin (admin/admin). access=Viewer (view-only; cannot change config, run the
+# Terminal, or provision). Password is "engineer", stored as its SHA-256 — the
+# same scheme as auth.users.admin.password.hash:
+#   printf '%s' engineer | sha256sum
+ENGINEER_HASH="7826b958b79c70626801b880405eb5111557dadceb2fee2b1ed69a18eed0c6dc"
+ENGINEER_ACCOUNTS="[{\"id\":\"engineer\",\"hash\":\"$ENGINEER_HASH\",\"access\":\"Viewer\"}]"
+
+# Seed all device-only defaults; write the flag only if EVERY step succeeds, so
+# a partial failure retries cleanly on the next boot (|| guards keep `set -e`
+# from aborting before we can report which step failed).
+ok=1
+$DSCLI set http.workers 2 \
+    || { ok=0; echo "iot-ds-seed: failed to set http.workers" >&2; }
+$DSCLI set auth.users.accounts "$ENGINEER_ACCOUNTS" \
+    || { ok=0; echo "iot-ds-seed: failed to set auth.users.accounts" >&2; }
+
+if [ "$ok" = 1 ]; then
     mkdir -p "$STATE"
     : > "$FLAG"
-    echo "iot-ds-seed: set http.workers=2 (first boot)"
+    echo "iot-ds-seed: seeded http.workers=2 + engineer (Viewer) account (first boot)"
 else
-    echo "iot-ds-seed: failed to set http.workers; will retry next boot" >&2
+    echo "iot-ds-seed: a seed step failed; will retry next boot" >&2
     exit 0   # leave the flag unwritten so the next boot retries
 fi
