@@ -43,6 +43,14 @@ export class DataStoreService {
     // Log levels
     'log.level', 'log.level.httpd', 'log.level.lwm2m',
     'log.level.vpn', 'log.level.dtls',
+    // HTTP server config — the HTTP Config page reads these back on a cold
+    // load. Without them in the prefetch, a fresh page (re-launch) finds no
+    // cached value and falls back to the form defaults — e.g. http.workers
+    // shows 0 even though ds holds the saved value (the value only "stuck"
+    // within the session that wrote it, via write()'s cache mirror).
+    'http.listen.ip', 'http.listen.port', 'http.listen.scheme',
+    'http.workers', 'http.tls.cert', 'http.tls.key', 'http.tls.ca',
+    'http.auth.enabled',
     // HTTP server — remote shell master switch (gates the Terminal page)
     'http.shell.enabled',
   ];
