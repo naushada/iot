@@ -143,6 +143,10 @@ private:
     std::unique_ptr<Impl> m_impl;
     std::string           m_path;
     bool                  m_ok = false;
+    // Last vpn.state we published — lets set_state() stamp vpn.connected.unix
+    // exactly on the transition INTO "connected" (and clear it on the way out)
+    // so the UI can show a stable tunnel uptime that doesn't reset every poll.
+    std::string           m_prev_state;
 };
 
 } // namespace openvpn_client

@@ -6,7 +6,7 @@ import { PubSubService } from '../../common/pubsubsvc.service';
 import { ThemeService } from '../../common/theme.service';
 import { DebugService } from '../../common/debug.service';
 import { DataStoreService } from '../../common/datastore.service';
-import { StatusSnapshot } from '../../common/app-globals';
+import { StatusSnapshot, fmtDuration } from '../../common/app-globals';
 
 @Component({
   selector: 'app-main',
@@ -157,6 +157,12 @@ export class MainComponent {
     return 'starting';   // bootstrapping / bootstrapped / dm-* in progress
   }
   get wanIface(): string { return this.status?.wan?.active_iface || '-'; }
+  /// Host uptime since boot (status.device.uptime_sec), humanised. Empty on
+  /// older firmware that doesn't publish it → the top-bar stat hides via *ngIf.
+  get deviceUptime(): string {
+    const u = this.status?.device?.uptime_sec;
+    return (u && u > 0) ? fmtDuration(u) : '';
+  }
   get serviceCount(): number {
     if (!this.status?.services) return 0;
     let n = 0;

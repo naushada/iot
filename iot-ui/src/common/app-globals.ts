@@ -1,5 +1,18 @@
 // ── TypeScript interfaces mirroring the iot data-store schemas ──────
 
+/// Humanise a duration in seconds → "3d 4h", "2h 13m", "5m 12s", "42s".
+export function fmtDuration(sec: number): string {
+  sec = Math.max(0, Math.floor(sec));
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
 export interface StatusSnapshot {
   ok: boolean;
   lwm2m:    Lwm2mStatus;
@@ -9,6 +22,8 @@ export interface StatusSnapshot {
   wan:      WanStatus;
   routing:  RoutingStatus;
   services: ServicesStatus;
+  /// Host (this device / cloud container) runtime info — e.g. uptime since boot.
+  device?:  DeviceStatus;
   /// Flat passthrough of ds keys the SPA caches verbatim (domain bump keys
   /// like log.version / services.stats.version, shared with the cloud build).
   cloud?:   Record<string, unknown>;
@@ -44,6 +59,14 @@ export interface VpnStatus {
   exit_code?: number;
   gate_reason?: string;
   bound_iface?: string;
+  /// Unix epoch (seconds) when the tunnel last reached CONNECTED. 0/absent =
+  /// not connected. The UI derives "uptime" = now − connected_unix.
+  connected_unix?: number;
+}
+
+export interface DeviceStatus {
+  /// Seconds since the host booted (from /proc/uptime).
+  uptime_sec?: number;
 }
 
 export interface WifiStatus {

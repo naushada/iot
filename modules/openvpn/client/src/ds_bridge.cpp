@@ -1,5 +1,6 @@
 #include "ds_bridge.hpp"
 
+#include <ctime>
 #include <mutex>
 #include <type_traits>
 #include <utility>
@@ -36,6 +37,7 @@ constexpr const char* kAssignedIp      = "vpn.assigned.ip";
 constexpr const char* kAssignedGateway = "vpn.assigned.gateway";
 constexpr const char* kAssignedNetmask = "vpn.assigned.netmask";
 constexpr const char* kAssignedDns     = "vpn.assigned.dns";
+constexpr const char* kConnectedUnix   = "vpn.connected.unix";
 constexpr const char* kPid             = "vpn.pid";
 constexpr const char* kExitCode        = "vpn.exit_code";
 constexpr const char* kGateReason      = "vpn.gate.reason";
@@ -300,6 +302,20 @@ void DsBridge::set_state(const std::string& s) {
         ACE_ERROR((LM_WARNING,
                    ACE_TEXT("%D [ovpn:%t] %M %N:%l set %C='%C' failed: %C\n"),
                    kState, s.c_str(), rs.err.c_str()));
+    }
+    // Stamp the tunnel connect time exactly on the transition INTO "connected"
+    // (so the UI can show uptime = now − vpn.connected.unix), and clear it to 0
+    // on the way out so a disconnected tunnel reports no uptime. Only fire on a
+    // real transition — set_state() is called for every mgmt STATE line, and
+    // re-stamping on each "connected" event would reset the uptime each poll.
+    if (s != m_prev_state) {
+        if (s == "connected") {
+            m_impl->client.set(kConnectedUnix,
+                static_cast<std::int32_t>(std::time(nullptr)));
+        } else if (m_prev_state == "connected") {
+            m_impl->client.set(kConnectedUnix, std::int32_t{0});
+        }
+        m_prev_state = s;
     }
 }
 void DsBridge::set_assigned_ip(const std::string& s) {

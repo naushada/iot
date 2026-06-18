@@ -2,7 +2,7 @@ import { Component, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { DataStoreService } from '../../common/datastore.service';
 import { PubSubService } from '../../common/pubsubsvc.service';
-import { StatusSnapshot } from '../../common/app-globals';
+import { StatusSnapshot, fmtDuration } from '../../common/app-globals';
 
 @Component({
   selector: 'app-dashboard',
@@ -58,6 +58,14 @@ export class DashboardComponent implements OnDestroy {
     if (s === 'connected') return 'connected';
     if (!s || s === 'disconnected' || s === 'exited') return 'disconnected';
     return 'starting';
+  }
+  /// Tunnel uptime = now − vpn.connected.unix, humanised. Empty when the tunnel
+  /// is not connected or the connect timestamp isn't published yet (older
+  /// firmware), so the row simply hides via *ngIf.
+  vpnUptime(): string {
+    const t = this.status?.vpn?.connected_unix;
+    if (!t || (this.status?.vpn?.state || '').toLowerCase() !== 'connected') return '';
+    return fmtDuration(Math.floor(Date.now() / 1000) - t);
   }
 
   // ── LwM2M connection lifecycle (iot.conn.state) ───────────────────

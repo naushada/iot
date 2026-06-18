@@ -569,7 +569,8 @@ void install_handlers(Router& router,
                 "iot.update.version", "iot.update.state", "iot.update.result",
                 // VPN
                 "vpn.state", "vpn.assigned.ip", "vpn.assigned.gateway",
-                "vpn.assigned.netmask", "vpn.assigned.dns", "vpn.pid",
+                "vpn.assigned.netmask", "vpn.assigned.dns", "vpn.connected.unix",
+                "vpn.pid",
                 "vpn.exit_code", "vpn.gate.reason", "vpn.bound.iface",
                 // WiFi
                 "wifi.assoc.state", "wifi.assoc.ssid", "wifi.signal.rssi",
@@ -685,6 +686,7 @@ void install_handlers(Router& router,
                 else if (k == "vpn.assigned.gateway")  vpn["gateway"] = sv();
                 else if (k == "vpn.assigned.netmask")  vpn["netmask"] = sv();
                 else if (k == "vpn.assigned.dns")      vpn["dns"] = sv();
+                else if (k == "vpn.connected.unix")    vpn["connected_unix"] = iv();
                 else if (k == "vpn.pid")               vpn["pid"] = iv();
                 else if (k == "vpn.exit_code")         vpn["exit_code"] = iv();
                 else if (k == "vpn.gate.reason")       vpn["gate_reason"] = sv();
@@ -787,6 +789,16 @@ void install_handlers(Router& router,
             resp["routing"]  = routing;
             resp["services"] = services;
             resp["cloud"]    = cloud;
+            // Host uptime (this device / cloud container) from /proc/uptime —
+            // first token is seconds since boot. Surfaced in the top status bar.
+            {
+                json device = json::object();
+                std::ifstream upf("/proc/uptime");
+                double up = 0.0;
+                if (upf >> up)
+                    device["uptime_sec"] = static_cast<long long>(up);
+                resp["device"] = device;
+            }
             r.body = resp.dump();
             return r;
         });

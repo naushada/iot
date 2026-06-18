@@ -461,6 +461,8 @@ int Supervisor::run() {
             if (!m_wpa.running()) {
                 m_ds.set_assoc_state("exited");
                 m_ds.set_pid_wpa(0u);
+                m_assoc_bssid.clear();
+                m_ds.set_signal_rssi(0);   // no association → no signal
                 return 0;
             }
             continue;
@@ -476,6 +478,20 @@ int Supervisor::run() {
             std::string reply;
             if (m_ctrl.request("SCAN_RESULTS", reply)) {
                 auto rows = parse_scan_results(reply);
+                // Publish the associated AP's signal as wifi.signal.rssi so the
+                // UI shows live signal strength instead of the schema default 0.
+                // (SCAN_RESULTS works on drivers whose SIGNAL_POLL doesn't, e.g.
+                // RPi brcmfmac.) Rate-limited via the RSSI coalescer; read here
+                // before `rows` is moved into the serializer below.
+                if (!m_assoc_bssid.empty()) {
+                    for (const auto& e : rows) {
+                        if (e.bssid == m_assoc_bssid) {
+                            if (m_rssi.should_publish(e.signal))
+                                m_ds.set_signal_rssi(e.signal);
+                            break;
+                        }
+                    }
+                }
                 auto cap  = m_ds.scan_max_results().value_or(20u);
                 m_ds.set_scan_results(
                     cap_and_serialize_scan_results(std::move(rows),
@@ -486,6 +502,7 @@ int Supervisor::run() {
         } else if (ev->kind == ctrl::CtrlEvent::Kind::Connected) {
             m_ds.set_assoc_ssid(ev->ssid);
             m_ds.set_assoc_bssid(ev->bssid);
+            m_assoc_bssid = ev->bssid;
             auto dhcp_path = pick_dhcp_client(
                 m_ds.dhcp_client().value_or("auto"),
                 m_ds.dhcp_path().value_or(""));
