@@ -94,6 +94,13 @@ private:
 
     /// Populate the free pool for the given subnet range.
     void init_pool();
+
+    /// Lock-free release helpers — caller MUST already hold m_mutex.
+    /// release() holds the lock for the whole endpoint teardown, so it
+    /// must NOT call the public release_ip()/release_port() (which re-lock
+    /// the non-recursive m_mutex → self-deadlock); it calls these instead.
+    void release_ip_locked(const std::string& ip);
+    void release_port_locked(std::uint16_t port);
 };
 
 } // namespace openvpn
