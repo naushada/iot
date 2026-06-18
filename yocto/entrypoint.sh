@@ -48,6 +48,10 @@ bitbake-layers add-layer ../meta-raspberrypi
 if [ -n "${IOT_AB:-}" ] && case "$MACHINE" in raspberrypi*) true;; *) false;; esac; then
     echo "→ IOT_AB set: adding RAUC A/B layers ..."
     bitbake-layers add-layer ../meta-rauc
+    # meta-rauc-raspberrypi (scarthgap) hard-depends on the lts-u-boot-mixin
+    # layer (newer u-boot 2024.04 with the RAUC boot-select integration); add it
+    # before meta-rauc-raspberrypi or layer parsing fails.
+    bitbake-layers add-layer ../meta-lts-mixins
     bitbake-layers add-layer ../meta-rauc-community/meta-rauc-raspberrypi
 fi
 bitbake-layers add-layer ../meta-iot

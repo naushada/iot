@@ -56,9 +56,11 @@ ARG POKY_BRANCH=scarthgap
 ARG OE_BRANCH=scarthgap
 ARG RPI_BRANCH=scarthgap
 # RAUC A/B (Phase-2 image OTA). meta-rauc = the updater + bundle class;
-# meta-rauc-community/meta-rauc-raspberrypi = RPi u-boot boot-select integration.
-# Cloned unconditionally but only added to bblayers for IOT_AB=1 builds
-# (entrypoint.sh), so the default single-rootfs image is unaffected.
+# meta-rauc-community/meta-rauc-raspberrypi = RPi u-boot boot-select integration;
+# meta-lts-mixins (scarthgap/u-boot branch) = the newer u-boot that
+# meta-rauc-raspberrypi hard-depends on. Cloned unconditionally but only added
+# to bblayers for IOT_AB=1 builds (entrypoint.sh), so the default single-rootfs
+# image is unaffected.
 ARG RAUC_BRANCH=scarthgap
 
 RUN git clone --depth=1 -b ${POKY_BRANCH} \
@@ -70,7 +72,9 @@ RUN git clone --depth=1 -b ${POKY_BRANCH} \
     git clone --depth=1 -b ${RAUC_BRANCH} \
         https://github.com/rauc/meta-rauc && \
     git clone --depth=1 -b ${RAUC_BRANCH} \
-        https://github.com/rauc/meta-rauc-community
+        https://github.com/rauc/meta-rauc-community && \
+    git clone --depth=1 -b scarthgap/u-boot \
+        https://git.yoctoproject.org/meta-lts-mixins
 
 # ── Workaround: podman overlayfs doesn't support --preserve=xattr ──
 # The oe.path.copyhardlinktree function uses cp -afl --preserve=xattr

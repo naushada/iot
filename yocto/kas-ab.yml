@@ -27,6 +27,13 @@ repos:
     refspec: scarthgap
     layers:
       meta-rauc-raspberrypi:
+  # meta-rauc-raspberrypi hard-depends on lts-u-boot-mixin (newer u-boot with
+  # the RAUC boot-select integration); it lives on a per-mixin branch.
+  meta-lts-mixins:
+    url: https://git.yoctoproject.org/meta-lts-mixins
+    refspec: scarthgap/u-boot
+    layers:
+      .:
 
 local_conf_header:
   iot-ab: |
