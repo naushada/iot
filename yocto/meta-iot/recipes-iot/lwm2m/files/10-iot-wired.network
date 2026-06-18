@@ -1,0 +1,27 @@
+# IoT wired (Ethernet) networkd profile.
+#
+# Purpose: keep eth*/en* usable via DHCP when a cable is present, but do NOT
+# let a MISSING cable hold systemd-networkd at "Online state: offline".
+#
+# Why this exists: the device is WiFi-primary. wlan0 is brought up OUTSIDE
+# networkd (wpa_supplicant + udhcpc via iot-wifi-client), so networkd never
+# counts it as an online link. systemd ships a default 80-wired.network that
+# matches eth0 with RequiredForOnline=yes — so on a headless WiFi-only unit the
+# cable-less eth0 pins networkd's GLOBAL online state to "offline". That parks
+# systemd-timesyncd (it only polls NTP once the system is "online"), so on a
+# board with NO battery-backed RTC the clock never leaves its restored-from-
+# save-file value. A stale clock then fails every TLS handshake ("certificate
+# is not yet valid"), which is exactly what broke the OpenVPN tunnel.
+#
+# RequiredForOnline=no lets a cable-less eth0 stay "offline" without dragging
+# the whole system offline, so timesyncd syncs over WiFi within seconds of
+# boot. This filename sorts before 80-wired.network, so it wins the eth*/en*
+# match. See apps/docs/tdd-wifi-autostart.md.
+[Match]
+Name=eth* en*
+
+[Network]
+DHCP=yes
+
+[Link]
+RequiredForOnline=no
