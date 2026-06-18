@@ -1,0 +1,43 @@
+# kas-ab.yml — RAUC A/B (dual-bank) image overlay on top of kas-iot.yml.
+#
+# Mirrors the `IOT_AB=1 ./build.sh` path for the kas front-end. Builds the
+# 4-partition A/B wic + a signed update-bundle-*.raucb instead of the default
+# single-rootfs image. See apps/docs/tdd-ab-image-ota.md.
+#
+#   kas build yocto/kas-ab.yml                      # raspberrypi3-64 A/B image
+#
+# The plain `kas build yocto/kas-iot.yml` still produces the proven
+# single-rootfs image (opkg-only OTA).
+
+header:
+  version: 14
+  includes:
+    - kas-iot.yml
+
+# RAUC layers: meta-rauc (updater + bundle class) and
+# meta-rauc-community/meta-rauc-raspberrypi (RPi u-boot boot-select).
+repos:
+  meta-rauc:
+    url: https://github.com/rauc/meta-rauc
+    refspec: scarthgap
+    layers:
+      .:
+  meta-rauc-community:
+    url: https://github.com/rauc/meta-rauc-community
+    refspec: scarthgap
+    layers:
+      meta-rauc-raspberrypi:
+
+local_conf_header:
+  iot-ab: |
+    # ── RAUC A/B (Phase-2 image OTA) ───────────────────────────────
+    RPI_USE_U_BOOT = "1"
+    DISTRO_FEATURES:append = " rauc"
+    IMAGE_INSTALL:append = " rauc"
+    WKS_FILE = "iot-ab.wks.in"
+    IMAGE_FSTYPES:append = " ext4"
+
+# Build the bundle too (DEPENDS on iot-image, so the rootfs builds with it).
+target:
+  - iot-image
+  - update-bundle

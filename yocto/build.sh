@@ -19,6 +19,11 @@
 # iot recipe (deps still restore from sstate, so it stays fast):
 #   IOT_FRESH=1 ./build.sh
 #
+# Build the RAUC A/B (dual-bank) image instead of the single-rootfs one:
+#   IOT_AB=1 ./build.sh        # raspberrypi*: u-boot + 4-partition wic +
+#                              # signed update-bundle-*.raucb. See
+#                              # apps/docs/tdd-ab-image-ota.md.
+#
 # Output per machine:
 #   yocto/build/<machine>/images/<machine>/*.wic.bz2   flashable SD image
 #   yocto/build/<machine>/ipk/                          *.ipk feed (opkg)
@@ -172,6 +177,7 @@ build_machine() {
     $CR run --name "$container" \
         -e "MACHINE=$machine" \
         -e "IOT_FRESH=${IOT_FRESH:-}" \
+        -e "IOT_AB=${IOT_AB:-}" \
         -v "$SCRIPT_DIR/meta-iot:/home/builduser/yocto/meta-iot:ro" \
         -v "${DOWNLOADS_VOLUME}:/home/builduser/yocto/build/downloads:U" \
         -v "${SSTATE_VOLUME}:/home/builduser/yocto/build/sstate-cache:U" \

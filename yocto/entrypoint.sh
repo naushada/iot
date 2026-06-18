@@ -41,6 +41,15 @@ bitbake-layers add-layer ../meta-openembedded/meta-networking
 # pi-bluetooth, and the rpidistro Wi-Fi firmware. Harmless for the qemu
 # machines (only its recipes for the selected MACHINE are pulled in).
 bitbake-layers add-layer ../meta-raspberrypi
+# RAUC A/B layers — only for an A/B image build (IOT_AB=1). Adding meta-rauc-
+# raspberrypi unconditionally would pull u-boot into every build; gate it so the
+# default image stays the proven single-rootfs one. meta-iot is added after so
+# its rauc_%.bbappend overrides meta-rauc's stock config.
+if [ -n "${IOT_AB:-}" ] && case "$MACHINE" in raspberrypi*) true;; *) false;; esac; then
+    echo "→ IOT_AB set: adding RAUC A/B layers ..."
+    bitbake-layers add-layer ../meta-rauc
+    bitbake-layers add-layer ../meta-rauc-community/meta-rauc-raspberrypi
+fi
 bitbake-layers add-layer ../meta-iot
 
 # ── 3. Configure local.conf ────────────────────────────────────────
@@ -96,6 +105,25 @@ case "$MACHINE" in
 # ── Raspberry Pi ───────────────────────────────────────────────────
 ENABLE_UART = "1"
 RPICONF
+        # ── RAUC A/B dual-bank image (opt-in: IOT_AB=1) ────────────
+        # Switches the RPi to u-boot + the 4-partition A/B wic, installs the
+        # rauc updater, and builds a signed .raucb bundle. Default builds skip
+        # this and stay single-rootfs (opkg-only OTA). See
+        # apps/docs/tdd-ab-image-ota.md + meta-iot/docs/rauc-bringup.md.
+        if [ -n "${IOT_AB:-}" ]; then
+            echo "→ IOT_AB set: configuring RAUC A/B image ..."
+            cat >> conf/local.conf <<'ABCONF'
+
+# ── RAUC A/B (Phase-2 image OTA) ───────────────────────────────────
+RPI_USE_U_BOOT = "1"
+DISTRO_FEATURES:append = " rauc"
+IMAGE_INSTALL:append = " rauc"
+# 4-partition layout: boot / rootA / rootB / data (meta-iot/wic/iot-ab.wks.in).
+WKS_FILE = "iot-ab.wks.in"
+# The bundle needs the rootfs as an ext4 alongside the flashable wic.bz2.
+IMAGE_FSTYPES:append = " ext4"
+ABCONF
+        fi
         ;;
 esac
 
@@ -140,6 +168,13 @@ if [ -n "${IOT_FRESH:-}" ]; then
 fi
 
 # ── 5. Run bitbake ─────────────────────────────────────────────────
+# For an A/B build also produce the signed .raucb (it DEPENDS on iot-image, so
+# this builds the rootfs too). Only when the default image target is in play —
+# a package-only build (e.g. packagegroup-iot) shouldn't drag in the bundle.
+if [ -n "${IOT_AB:-}" ] && case " $* " in *" iot-image "*) true;; *) false;; esac; then
+    set -- "$@" update-bundle
+fi
+
 echo ""
 echo "→ Starting bitbake for $MACHINE: $@ ..."
 echo ""
@@ -154,6 +189,8 @@ echo "  Artifacts: build/tmp/deploy/"
 echo "═══════════════════════════════════════════════════════════════"
 echo "── SD-card image(s): ──"
 find tmp/deploy/images -name '*.wic.bz2' -type f 2>/dev/null | sort || true
+echo "── RAUC A/B bundle(s): ──"
+find tmp/deploy/images -name '*.raucb' -type f 2>/dev/null | sort || true
 echo "── iot .ipk feed: ──"
 find tmp/deploy/ipk -name 'iot-*.ipk' -type f 2>/dev/null | sort || true
 echo ""
