@@ -94,11 +94,23 @@ bool apply_ruleset(const std::string& script, const std::string& nft_path) {
 }
 
 bool enable_ip_forward() {
-    FILE* f = ::fopen("/proc/sys/net/ipv4/ip_forward", "w");
-    if (!f) return false;
-    const int n = ::fputs("1\n", f);
-    ::fclose(f);
-    return n >= 0;
+    // Try to turn it on.
+    if (FILE* f = ::fopen("/proc/sys/net/ipv4/ip_forward", "w")) {
+        const int n = ::fputs("1\n", f);
+        ::fclose(f);
+        if (n >= 0) return true;
+    }
+    // Couldn't write — common in a container where /proc/sys is read-only. That
+    // is NOT a failure when forwarding is ALREADY enabled (e.g. the compose sets
+    // the namespaced sysctl `net.ipv4.ip_forward=1` at container start). Report
+    // the effective state by reading it back, so the caller only logs an error
+    // when forwarding is genuinely off.
+    bool on = false;
+    if (FILE* r = ::fopen("/proc/sys/net/ipv4/ip_forward", "r")) {
+        on = (::fgetc(r) == '1');
+        ::fclose(r);
+    }
+    return on;
 }
 
 } // namespace dnat

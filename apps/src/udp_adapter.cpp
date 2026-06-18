@@ -4,6 +4,7 @@
 #include "udp_adapter.hpp"
 #include "data_store/log_buffer.hpp"   // LogBuffer::attach_current_thread
 
+#include <cerrno>                 // EADDRINUSE
 #include <ace/Log_Msg.h>
 #include <ace/Reactor.h>
 #include <ace/Signal.h>          // ACE_Sig_Set
@@ -47,10 +48,26 @@ ServiceContext_t::~ServiceContext_t() {
 
 int ServiceContext_t::open() {
     if (m_sock.open(m_selfAddr) == -1) {
-        ACE_ERROR_RETURN((LM_ERROR,
-                          ACE_TEXT("%D [UdpSvc:%t] %M %N:%l bind failed host:%s port:%d errno:%d\n"),
-                          m_selfHost.c_str(), m_selfPort, errno),
-                         -1);
+        const int e = errno;
+        if (e == EADDRINUSE) {
+            // Expected on a single-/shared-port server deploy: the BS and DM
+            // instances each also probe the peer port and the loser hits
+            // EADDRINUSE. The socket that DID bind serves both /bs and /rd
+            // (both handlers are attached to every service context — see
+            // apps/src/main.cpp), so this is benign, not a failure. Log it as a
+            // WARNING (visible, but not an error) and skip just this socket.
+            ACE_DEBUG((LM_WARNING,
+                       ACE_TEXT("%D [UdpSvc:%t] %M %N:%l port %d already in use "
+                                "(EADDRINUSE) — expected when BS/DM share a port; "
+                                "the bound socket still serves /bs + /rd\n"),
+                       m_selfPort));
+        } else {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [UdpSvc:%t] %M %N:%l bind failed host:%s "
+                                "port:%d errno:%d\n"),
+                       m_selfHost.c_str(), m_selfPort, e));
+        }
+        return -1;
     }
 
     if (m_scheme == Scheme_t::CoAPs && m_dtlsAdapter) {
