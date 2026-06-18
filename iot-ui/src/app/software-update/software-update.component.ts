@@ -18,7 +18,7 @@ import { ToastService } from '../../common/toast.service';
           <clr-dg-column>Value</clr-dg-column>
           <clr-dg-row>
             <clr-dg-cell>Installed Version
-              <app-ds-hint *dsDebug key="iot.update.version"></app-ds-hint></clr-dg-cell>
+              <app-ds-hint *dsDebug key="iot.version"></app-ds-hint></clr-dg-cell>
             <clr-dg-cell>{{ version || '—' }}</clr-dg-cell>
           </clr-dg-row>
           <clr-dg-row>
@@ -92,7 +92,7 @@ import { ToastService } from '../../common/toast.service';
   `]
 })
 export class SoftwareUpdateComponent implements OnInit, OnDestroy {
-  version = '';
+  version = '';       // iot.version — the running/installed release (footer value)
   state = 0;
   result = 0;
   bank = '';          // iot.boot.bank — running A/B rootfs bank (empty = single-rootfs)
@@ -126,8 +126,14 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     // Read OTA progress live off the single shared /status stream — no
     // per-page 5s self-poll. The long-poll wakes on iot.update.state changes,
     // so download/install progress renders promptly without missing updates.
-    this.sub.add(this.ds.observe('iot.update.version').subscribe(v => {
-      if (v != null) this.version = String(v);
+    // Installed Version = the running release iot-httpd records at startup
+    // (iot.version — the same value the sidebar footer shows). That is what is
+    // actually installed/booted now. Do NOT read iot.update.version here: that
+    // is only the last OTA *target* and is empty on a device that has never
+    // been pushed, so it rendered "—" even though a real version is running.
+    this.sub.add(this.http.dbGet(['iot.version']).subscribe(r => {
+      if (r.ok && r.data)
+        this.version = String((r.data as Record<string, unknown>)['iot.version'] || '');
     }));
     this.sub.add(this.ds.observe('iot.update.state').subscribe(v => {
       this.state = Number(v) || 0;
