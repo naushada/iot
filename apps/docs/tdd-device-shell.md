@@ -102,7 +102,10 @@ ds-cli set http.workers 4        # restart iot-httpd
 
 ## Security
 
-This is a remote **root** shell — the largest attack surface in the device-ui.
+This is a remote shell that runs as the `iot-httpd` service user
+(`DynamicUser=yes` — **not root**, so privileged ops like `ping`/raw sockets,
+`opkg`, and writes under `/etc` are unavailable). It is still the largest attack
+surface in the device-ui.
 Mitigations: off by default; Admin-only; gated per request (instant kill
 switch); idle-reaped; session-capped; audit-logged via `ACE_DEBUG` on
 open/close/reap. It rides the existing session-cookie auth and (where

@@ -49,9 +49,10 @@ export class MainComponent {
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
-  // Terminal is a remote root shell: only surface it to Admins when the
-  // operator has switched on http.shell.enabled. Everything else is always
-  // shown (each page enforces its own access).
+  // Terminal is a remote shell (runs as the iot-httpd service user, not root):
+  // only surface it to Admins when the operator has switched on
+  // http.shell.enabled. Everything else is always shown (each page enforces its
+  // own access).
   get navMenus() {
     return this.menus.filter(m =>
       m.id !== 'shell' || (this.shellEnabled && this.isAdmin));
