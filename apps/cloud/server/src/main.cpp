@@ -718,6 +718,57 @@ int main(int argc, char** argv) {
         []() -> long { return g_ovpn_pid.load(); });
     g_ovpn_stats.open();
 
+    // Deprovision handler — shared by the watch loop and the startup sweep
+    // below. Factored out so a request left pending in ds by a previous
+    // instance that crashed or wedged mid-request (the old VpnRegistry
+    // self-deadlock did exactly this) is still honored. The watch is
+    // edge-triggered, so it never replays an unchanged value on restart — the
+    // request would sit forever and the cloud-ui "Remove" would silently no-op
+    // (re-writing the same value produces no watch event).
+    auto handle_deprovision = [&](const std::string& ep) {
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l deprovision request '%C'\n"),
+                   ep.c_str()));
+        bool ok = provisioner.deprovision(ep);
+        // Also drop the per-endpoint credential record so the BS/DM stop
+        // accepting it and the row disappears from cloud.endpoint.credentials.
+        // Done independently of the registry result so a stale credential-only
+        // entry can still be cleaned (counts as a successful removal).
+        try {
+            const std::string cur =
+                ds_str(ds, "cloud.endpoint.credentials", "[]");
+            const std::string next =
+                server::lwm2m::remove_credential(cur, ep);
+            if (next != cur) {
+                ds.set("cloud.endpoint.credentials", data_store::Value{next});
+                ok = true;
+            }
+        } catch (const std::exception& e) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l remove credential "
+                                "for %C failed: %C\n"), ep.c_str(), e.what()));
+        }
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l deprovision %C '%C'\n"),
+                   (ok ? "ok" : "failed (not found)"), ep.c_str()));
+        // One-shot: clear both triggers so a watch replay on restart doesn't
+        // re-deprovision, and a stale provision.request can't resurrect what we
+        // just removed.
+        ds.set("cloud.deprovision.request", data_store::Value{std::string("")});
+        ds.set("cloud.provision.request",   data_store::Value{std::string("")});
+    };
+
+    // Startup self-heal: honor a deprovision request left pending in ds (the
+    // edge-triggered watch won't replay it), then sync so cloud.endpoints
+    // reflects the removal immediately instead of after the first periodic tick.
+    if (auto pending = ds_str(ds, "cloud.deprovision.request", ""); !pending.empty()) {
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l honoring pending deprovision "
+                            "request '%C' from ds at startup\n"), pending.c_str()));
+        handle_deprovision(pending);
+        sync_endpoints_to_ds(ds, ep_reg);
+    }
+
     // ── Main loop ─────────────────────────────────────────────────
     // Block on recv_event() up to sync_interval seconds.  A provision
     // or deprovision request from iot-httpd wakes us immediately; a
@@ -826,43 +877,8 @@ int main(int argc, char** argv) {
                            data_store::Value{std::string("")});
                 }
             } else if (ev.key == "cloud.deprovision.request") {
-                if (auto ep = data_store::to_string(ev.value); ep && !ep->empty()) {
-                    ACE_DEBUG((LM_INFO,
-                               ACE_TEXT("%D cloudd:thread:%t %M %N:%l deprovision request '%C'\n"),
-                               ep->c_str()));
-                    bool ok = provisioner.deprovision(*ep);
-                    // Also drop the per-endpoint credential record so the BS/DM
-                    // stop accepting it and the row disappears from
-                    // cloud.endpoint.credentials. Done independently of the
-                    // registry result so a stale credential-only entry can
-                    // still be cleaned (counts as a successful removal).
-                    try {
-                        const std::string cur =
-                            ds_str(ds, "cloud.endpoint.credentials", "[]");
-                        const std::string next =
-                            server::lwm2m::remove_credential(cur, *ep);
-                        if (next != cur) {
-                            ds.set("cloud.endpoint.credentials",
-                                   data_store::Value{next});
-                            ok = true;
-                        }
-                    } catch (const std::exception& e) {
-                        ACE_ERROR((LM_ERROR,
-                                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l remove "
-                                            "credential for %C failed: %C\n"),
-                                   ep->c_str(), e.what()));
-                    }
-                    ACE_DEBUG((LM_INFO,
-                               ACE_TEXT("%D cloudd:thread:%t %M %N:%l deprovision %C '%C'\n"),
-                               (ok ? "ok" : "failed (not found)"), ep->c_str()));
-                    // One-shot: clear both triggers so a watch replay on restart
-                    // doesn't re-deprovision, and a stale provision.request can't
-                    // resurrect what we just removed.
-                    ds.set("cloud.deprovision.request",
-                           data_store::Value{std::string("")});
-                    ds.set("cloud.provision.request",
-                           data_store::Value{std::string("")});
-                }
+                if (auto ep = data_store::to_string(ev.value); ep && !ep->empty())
+                    handle_deprovision(*ep);
             } else if (ev.key == "log.level") {
                 g_log.apply_level(ds);
                 ACE_DEBUG((LM_INFO,
