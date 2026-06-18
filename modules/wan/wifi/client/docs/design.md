@@ -146,6 +146,13 @@ Write keys (daemon → operator): `wifi.assoc.state`, `wifi.assoc.ssid`,
 `wifi.scan.last.unix`, `wifi.dhcp.state`, `wifi.dhcp.ip`,
 `wifi.pid.wpa`, `wifi.pid.dhcp`, `wifi.last.error`.
 
+`wifi.signal.rssi` is the **associated AP's** signal (dBm, negative): on each
+`SCAN_RESULTS` batch the supervisor picks the row whose BSSID matches the
+connected AP and publishes its signal (rate-limited via the RSSI coalescer),
+resetting to 0 when the association drops. It is sourced from scan results
+rather than wpa `SIGNAL_POLL`, which times out on some drivers (RPi brcmfmac —
+there `iw dev wlan0 link` reports a signal but `SIGNAL_POLL` does not).
+
 ### `wifi.networks` JSON shape
 
 ```json

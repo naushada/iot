@@ -536,6 +536,16 @@ All state keys default to `"stopped"`. Each daemon self-reports `"running"`
 immediately after connecting to ds-server, and `"exited"` at shutdown.
 The Services page polls every 5s.
 
+**ds-server state + L22 telemetry stream live in `/status`.** `iot-httpd`
+dual-emits the `services.ds.*` keys (state + cpu/mem/fd/threads) into the flat
+`cloud` passthrough the cloud-ui Services page reads. Without that they only
+landed in the nested `services` block (which the *device*-ui reads) and never in
+the `cloud` block (which only matched `services.cloud.*`), so the cloud
+ds-server row showed a stale `"stopped"` + `—` telemetry even though it was
+running — which it always is, since every other daemon reports *through* it.
+The flat key for ds-server state is `services.ds.state` (the other services use
+`services.cloud.*`).
+
 ## Related modules
 
 | Module | Role |
