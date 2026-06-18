@@ -1,13 +1,19 @@
 # TDD — Phase-2 A/B (dual-bank) image OTA with rollback
 
-Status: **IN PROGRESS** (RAUC chosen; incremental) · Target: Yocto/RPi
+Status: **WIRED — pending HW validation** (RAUC) · Target: Yocto/RPi
 · Author: 2026-06-14
 
-**Increment 1 (✅ shipped, verifiable here):** chunked-append upload (handles
-large `.raucb`), `iot-swupdate` `.raucb`→`rauc` routing (guarded), device-ui
-`.raucb` drop. **Remaining (device bring-up, untestable off-hardware):** the
-RAUC engine + u-boot + 4-partition `wic` + bundle signing + health-check
-rollback + CI — §§2–4, 7.
+**Increment 1 (✅ shipped):** chunked-append upload (handles large `.raucb`),
+`iot-swupdate` `.raucb`→`rauc` routing (guarded), device-ui `.raucb` drop.
+**Increment 2 (✅ wired, build/bootloader — §§2–4, 7):** `meta-rauc` +
+`meta-lts-mixins` (scarthgap/u-boot) + `meta-rauc-raspberrypi` layers, u-boot
+boot-select, `WKS_FILE=iot-ab.wks.in`
+(4-partition wic), `rauc_%.bbappend` (system.conf + keyring), `update-bundle.bb`
+(signed `.raucb`), dev/prod signing keys, and the `rauc-bundle.yml` CI workflow —
+all behind the `IOT_AB=1` build switch (default build stays single-rootfs). See
+`yocto/meta-iot/docs/rauc-bringup.md`. **Remaining: hardware validation only** —
+the boot-attempts/bootcount rollback round-trip on a real RPi (the Acceptance
+checklist in rauc-bringup.md).
 
 ## 1. Why (what Phase 1 can't do)
 

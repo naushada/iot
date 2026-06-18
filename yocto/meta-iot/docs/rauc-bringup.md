@@ -1,51 +1,76 @@
 # RAUC A/B image OTA — device bring-up checklist
 
-Status: **scaffold — not yet validated on hardware.** This lists the Yocto/boot
-work to turn the Phase-2 design (`apps/docs/tdd-ab-image-ota.md`) into a booting
-A/B image. The runtime hooks (chunked `.raucb` upload, `iot-swupdate` → `rauc
-install` routing, `iot-ota-confirm` mark-good/rollback, the `iot.boot.*` ds keys,
-device-ui bank status) are already in the tree; the items below are the
-build/bootloader pieces that need a Yocto build + an RPi to validate.
+Status: **wired; build-side validation in progress — pending hardware
+validation.** The build/bootloader pieces below are in the tree (behind the
+`IOT_AB=1` switch). The A/B layer config now **parses cleanly** for
+`raspberrypi3-64` (all of meta-rauc / meta-lts-mixins / meta-rauc-raspberrypi
+load, no MACHINE-compat skip); a full `IOT_AB=1 ./build.sh` is being run to
+confirm the image + signed `.raucb` assemble. What then remains is booting an
+RPi to verify the boot-select/rollback round-trip (the **Acceptance** section).
+The runtime hooks (chunked `.raucb` upload, `iot-swupdate` → `rauc install`
+routing, `iot-ota-confirm` mark-good/rollback, the `iot.boot.*` ds keys,
+device-ui bank status) were already present.
 
-## 1. Layers
-- Add **`meta-rauc`** and **`meta-rauc-community`** (RPi support) to `bblayers`
-  (kas-iot.yml / the build container).
+**Build it:** `IOT_AB=1 ./build.sh` (or `kas build yocto/kas-ab.yml`). The plain
+`./build.sh` still makes the proven single-rootfs image — the A/B path is opt-in
+so an unvalidated bootloader never becomes the default.
 
-## 2. Bootloader (u-boot)
-- Switch the RPi to **u-boot** (`PREFERRED_PROVIDER_virtual/bootloader = "u-boot"`,
-  `RPI_USE_U_BOOT = "1"`).
-- Enable the RAUC u-boot boot-select integration (`rauc-uboot` / the community
-  layer's `BOOT_ORDER` + `bootcount` env), with `boot-attempts` matching
-  `system.conf`.
+## 1. Layers ✅
+- Three layers are cloned in `yocto/Containerfile` and added to `bblayers` only
+  for `IOT_AB=1` builds (`entrypoint.sh`); the kas path adds them via
+  `yocto/kas-ab.yml`:
+  - **`meta-rauc`** — the updater + the `bundle` class.
+  - **`meta-lts-mixins`** (branch `scarthgap/u-boot`, collection
+    `lts-u-boot-mixin`) — the newer u-boot 2024.04 that the next layer
+    hard-depends on. **Must be added before `meta-rauc-raspberrypi`** or layer
+    parsing fails (`depends on layer 'lts-u-boot-mixin' … not enabled`).
+  - **`meta-rauc-community/meta-rauc-raspberrypi`** — the RPi u-boot
+    boot-select integration (`rpi-u-boot-scr` `boot.cmd`).
+- Add order in `entrypoint.sh`: `meta-rauc` → `meta-lts-mixins` →
+  `meta-rauc-raspberrypi`.
+- Note: the published sstate cache image (`IOT_USE_CACHE=1`) predates these
+  layers, so a cold A/B build must rebuild the builder image (plain
+  `IOT_AB=1 ./build.sh`, no cache) to clone them.
 
-## 3. Image
-- `WKS_FILE = "iot-ab.wks.in"` (the 4-partition layout in `yocto/meta-iot/wic/`).
-- `IMAGE_FSTYPES += "wic.bz2"` for the SD image, and the RAUC **bundle** image
-  type for the `.raucb` (`IMAGE_CLASSES += "rauc"` / a `bundle.bb`).
-- Mount the data partition at `/var/lib/iot` (fstab/systemd mount); keep ds
-  state + certs there so an image swap never loses them.
+## 2. Bootloader (u-boot) ✅
+- `RPI_USE_U_BOOT = "1"` is set in the A/B local.conf block. The community
+  layer's `rpi-u-boot-scr` `boot.cmd` provides `BOOT_ORDER` + `BOOT_A_LEFT`/
+  `BOOT_B_LEFT` bootcount; `boot-attempts=3` in `system.conf` matches its
+  default. boot.cmd selects the bank by partition number (p2=A, p3=B).
 
-## 4. RAUC config + keys
-- Install `recipes-core/rauc/files/system.conf` → `/etc/rauc/system.conf`
-  (slot devices must match the wks partitions).
-- Generate a signing keypair; bake the **cert** into the image at
-  `/etc/rauc/keyring.pem`; keep the **key** as a CI secret.
-- `set compatible=iot-rpi` to match the bundle manifest.
+## 3. Image ✅
+- `WKS_FILE = "iot-ab.wks.in"` (4-partition layout, `/boot` bumped to 100M for
+  u-boot). `IMAGE_FSTYPES` adds `ext4` (the bundle's rootfs slot) alongside
+  `wic.bz2`. The `data` partition gets an automatic wic fstab entry mounting
+  `/var/lib/iot` (ds state + certs survive a bank swap).
 
-## 5. Bundle (.raucb)
-- A `rauc-bundle` recipe producing the signed `.raucb` (rootfs image + manifest,
-  `compatible=iot-rpi`).
-- The operator drops the `.raucb` on the device-ui (already chunk-uploads) or the
-  cloud pushes its URL; `iot-swupdate` runs `rauc install` (already routed).
+## 4. RAUC config + keys ✅
+- `dynamic-layers/rauc/recipes-core/rauc/rauc_%.bbappend` installs `system.conf`
+  → `/etc/rauc/system.conf` and the keyring → `/etc/rauc/keyring.pem`
+  (`compatible=iot-rpi`). (Under `dynamic-layers/rauc/` + `BBFILES_DYNAMIC` so it
+  only parses when meta-rauc is layered — a default build never sees it.)
+- Keys: an in-tree **DEV** keypair
+  (`dynamic-layers/rauc/recipes-core/rauc/files/dev-ca.{cert,key}.pem`,
+  regenerate with `gen-dev-keys.sh`) lets a local build sign+trust its own
+  bundle. **DEV ONLY** — production bundles are signed in CI from the
+  `RAUC_SIGNING_KEY` secret and the prod cert is baked as the keyring.
 
-## 6. Confirm / rollback
-- `iot-ota-confirm.service` (already in the recipe) health-checks the boot and
-  `rauc status mark-good`s it; an unhealthy boot is left un-confirmed so the
-  bootloader reverts. Verify the boot-attempts/bootcount round-trip on HW.
+## 5. Bundle (.raucb) ✅
+- `dynamic-layers/rauc/recipes-core/bundles/update-bundle.bb` (`inherit bundle`)
+  produces the signed
+  `update-bundle-*.raucb` (`compatible=iot-rpi`, single `rootfs` slot = the
+  `iot-image` ext4). The operator drops it on the device-ui (chunk-uploads) or
+  the cloud pushes its URL; `iot-swupdate` runs `rauc install`.
 
-## 7. CI
-- A workflow (like `cloud-image.yml`) to build + **sign** the `.raucb` release
-  artifact on tag, using the CI signing-key secret.
+## 6. Confirm / rollback ✅ (verify on HW)
+- `iot-ota-confirm.service` health-checks the boot and `rauc status mark-good`s
+  it; an unhealthy boot is left un-confirmed so the bootloader reverts. The
+  boot-attempts/bootcount round-trip is the key thing to validate on hardware.
+
+## 7. CI ✅
+- `.github/workflows/rauc-bundle.yml` runs the A/B build (cached) and signs the
+  `.raucb` with the `RAUC_SIGNING_KEY` secret on tag/dispatch, publishing the
+  bundle + keyring as release assets.
 
 ## Acceptance (on hardware)
 1. Flash A/B image; boots bank A; `rauc status` shows A good.

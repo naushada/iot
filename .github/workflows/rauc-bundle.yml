@@ -1,0 +1,92 @@
+name: Build & Sign RAUC A/B Bundle
+
+# Builds the Phase-2 A/B (dual-bank) image and a SIGNED update-bundle .raucb,
+# then publishes them as release assets. Unlike cloud-image.yml/device-image.yml
+# (which build Docker images in minutes), this runs a containerized Yocto
+# scarthgap build — heavy and slow — so it's intentional-only (tag or manual)
+# and relies on the published sstate cache image (IOT_USE_CACHE=1) to be
+# feasible on a hosted runner. For a cold/large fleet build, point this at a
+# self-hosted runner with disk + RAM headroom.
+#
+# Secrets required:
+#   RAUC_SIGNING_KEY   — PEM private key used to sign the .raucb (production)
+#   RAUC_SIGNING_CERT  — matching PEM cert; baked into the image keyring so the
+#                        device trusts production bundles
+#   DOCKERHUB_USERNAME / DOCKERHUB_TOKEN — to pull the sstate cache image
+#
+# Without RAUC_SIGNING_KEY/CERT the build falls back to the in-tree DEV keypair
+# (fine for a test bundle, NOT for fleet use).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  MACHINE: raspberrypi3-64
+
+jobs:
+  build-bundle:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free up disk space   # Yocto needs far more than a stock runner has
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          df -h /
+
+      - name: Log in to Docker Hub   # for the IOT_USE_CACHE sstate image
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Materialize production signing keypair
+        env:
+          RAUC_SIGNING_KEY: ${{ secrets.RAUC_SIGNING_KEY }}
+          RAUC_SIGNING_CERT: ${{ secrets.RAUC_SIGNING_CERT }}
+        run: |
+          # Replace the in-tree DEV pair with the production key+cert for this
+          # release build: the bundle is signed with the prod key and the image
+          # keyring bakes the prod cert (so devices trust production bundles).
+          # (secrets aren't usable in step `if:`, so branch on the env here.)
+          if [ -n "$RAUC_SIGNING_KEY" ]; then
+            d=yocto/meta-iot/dynamic-layers/rauc/recipes-core/rauc/files
+            printf '%s' "$RAUC_SIGNING_KEY"  > "$d/dev-ca.key.pem"
+            printf '%s' "$RAUC_SIGNING_CERT" > "$d/dev-ca.cert.pem"
+            echo "Using PRODUCTION signing keypair."
+          else
+            echo "No RAUC_SIGNING_KEY secret — building with the in-tree DEV keypair (test bundle only)."
+          fi
+
+      - name: Build A/B image + signed bundle
+        working-directory: yocto
+        env:
+          IOT_AB: "1"
+          IOT_USE_CACHE: "1"
+        run: ./build.sh "${MACHINE}"
+
+      - name: Collect artifacts
+        id: collect
+        run: |
+          out="yocto/build/${MACHINE}/images"
+          mkdir -p dist
+          cp -v "$out"/*.raucb dist/ || { echo "no .raucb produced"; exit 1; }
+          cp -v yocto/meta-iot/dynamic-layers/rauc/recipes-core/rauc/files/dev-ca.cert.pem dist/keyring.pem
+          ls -l dist/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rauc-bundle-${{ env.MACHINE }}
+          path: dist/
+
+      - name: Attach to release   # only on a tag
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.raucb
+            dist/keyring.pem
