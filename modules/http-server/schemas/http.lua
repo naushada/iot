@@ -52,7 +52,8 @@ return {
 
     -- ── Remote shell (device-ui Terminal page) ──────────────────────
     -- Master switch for the forkpty-backed shell at /api/v1/shell/*.
-    -- OFF by default: this is a remote ROOT shell on the device, the
+    -- OFF by default: this is a remote shell on the device — runs as the
+    -- iot-httpd service user (DynamicUser, NOT root), but still the
     -- single largest attack surface here, so an operator must opt in
     -- explicitly. Read on every /api/v1/shell/* request, so flipping it
     -- off kills new sessions immediately and existing ones on next poll.

@@ -93,10 +93,11 @@ import { DataStoreService } from '../../common/datastore.service';
         <h4 style="margin-top:32px;">Remote Shell
           <span class="hint">(device-ui Terminal page)</span></h4>
         <div class="warn-card">
-          A remote <strong>root shell</strong> on this device — the largest
-          attack surface here. Admin-only, idle-reaped. Leave OFF unless you
-          need it. Each open terminal holds one HTTP worker, so set Worker
-          Threads ≥ 2 (and restart) before enabling.
+          A remote <strong>shell</strong> on this device — runs as the
+          <code>iot-httpd</code> service user (<strong>not root</strong>), but
+          still a remote shell and the largest attack surface here. Admin-only,
+          idle-reaped. Leave OFF unless you need it. Each open terminal holds one
+          HTTP worker, so set Worker Threads ≥ 2 (and restart) before enabling.
         </div>
         <div class="form-grid">
           <clr-checkbox-container>

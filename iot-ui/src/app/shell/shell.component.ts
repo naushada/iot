@@ -37,7 +37,10 @@ function b64ToBytes(b64: string): Uint8Array {
       </div>
       <div #term class="term"></div>
       <p class="hint">
-        Root shell on this device. Session ends on idle or when you leave the page.
+        Shell on this device — runs as the <code>iot-httpd</code> service user,
+        <strong>not root</strong> (so <code>ping</code>, package installs, and
+        writes under <code>/etc</code> lack privilege). Admin-only; session ends
+        on idle or when you leave the page.
       </p>
     </div>
   `,
