@@ -87,7 +87,10 @@ Sequence on a fresh PUSH_REPLY:
 3. openvpn(8) emits management lines: `>STATE:…,ASSIGN_IP,…,10.8.0.6,…`,
    then `>PUSH_REPLY:…`, then `>STATE:…,CONNECTED,…`.
 4. Our `Lifecycle::step` parses + DsBridge writes
-   `vpn.assigned.{ip,gateway,netmask,dns}` to ds-server.
+   `vpn.assigned.{ip,gateway,netmask,dns}` to ds-server. `DsBridge::set_state`
+   also stamps `vpn.connected.unix` (epoch secs) on the transition INTO
+   `connected` and clears it (0) on the way out, so the UI can render tunnel
+   uptime = now − that.
 5. Other apps observe via `ds-cli get vpn.assigned.ip` or
    `Client::watch`.
 

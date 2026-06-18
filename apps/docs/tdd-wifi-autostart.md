@@ -38,6 +38,23 @@ first or `find_package(GTest)` fails. The `:lp` httpd image has it baked in.)
 - Per-device secure WiFi credential provisioning (placeholder default is
   world-readable in the image — fine for lab, not production).
 
+## Companion fix — NTP sync on a WiFi-only, no-RTC board
+
+Because `wlan0` is brought up **outside** systemd-networkd (by wpa_supplicant +
+udhcpc here), networkd manages only `eth0`, which is `RequiredForOnline=yes` by
+default. On a headless WiFi-only RPi the cable-less `eth0` pins networkd's global
+`Online state: offline`, which **parks `systemd-timesyncd`** — it never sends an
+NTP packet. The Pi has no RTC, so the clock stays at its stale save-file value
+and every TLS handshake fails `certificate is not yet valid` (this is what broke
+the OpenVPN tunnel until the clock was set by hand).
+
+Fix: the image ships `meta-iot/.../files/10-iot-wired.network` (sorts before the
+stock `80-wired.network`, wins the `eth*/en*` match) with
+`RequiredForOnline=no`, so a cable-less `eth0` no longer drags the system
+offline and timesyncd syncs over WiFi within seconds of boot. Durable across
+reboots with no RTC: timesyncd's save-file restores a forward-only clock at
+early boot, kept fresh now that NTP actually syncs. (PR #240.)
+
 ## 1. Goal
 
 On a fresh Raspberry Pi boot with the `iot` image, the `wifi-client` daemon

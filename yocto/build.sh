@@ -31,6 +31,11 @@
 # Requirements:
 #   - podman or docker
 #   - ~50 GB free disk space (Yocto downloads + build + image)
+#   - RAM: 8 GB works but is slow. entrypoint.sh derives BB_NUMBER_THREADS /
+#     PARALLEL_MAKE from available RAM (+ bitbake PSI pressure regulation) to
+#     avoid OOM-killed compiles (cc1plus on gcc/nodejs-native). More RAM = more
+#     parallelism: 8 GB→1 recipe at a time, 14 GB→2, 24 GB→4. Bump the podman VM
+#     with `podman machine set --memory <MB>` (machine stopped) for faster builds.
 #   - Internet access (first build fetches ~8 GB of sources)
 #
 # Persistent caches (named volumes, survive across runs → incremental):

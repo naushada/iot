@@ -550,6 +550,12 @@ How it works on the image:
 > network, restrict `http.listen.ip` (bind to localhost / the VPN iface) or
 > front it with auth.
 
+> **Default device-ui logins** — auth is **on** by default
+> (`http.auth.enabled=true`). The image seeds two accounts (`iot-ds-seed`, first
+> boot): `admin` / `admin` (full access) and `engineer` / `engineer` (read-only
+> **Viewer** — can't change config, run the Terminal, or provision). Change both
+> in the **Users** page before production.
+
 Notes / limits:
 - The advert hardcodes port **8080**; if you change `http.listen.port` the
   mDNS record is stale (edit `/etc/avahi/services/iot-http.service` to match).
