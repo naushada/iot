@@ -1,0 +1,71 @@
+#!/bin/sh
+# iot-bank-switch <A|B|other|rootfs.N> — switch the active RAUC bank + reboot.
+#
+# Launched DETACHED as root (systemd-run --unit=iot-bank-switch by the lwm2m
+# client, which watches iot.boot.switch.request — same pattern as iot-ota-stage).
+# Marks the requested bank as the bootloader's next-boot choice
+# (`rauc status mark-active`) and reboots into it. The bootloader's boot-attempts
+# counter (system.conf) automatically rolls back to the previous bank if the new
+# one fails to come up healthy — iot-ota-confirm only marks-good a bank that
+# boots cleanly, so an unbootable/unhealthy switch self-reverts after the
+# configured attempts. No-op on a non-RAUC (single-rootfs) image.
+#
+# See apps/docs/tdd-ab-image-ota.md.
+
+set -u
+
+TARGET="${1:-}"
+SOCK="/run/iot/data_store.sock"
+DSCLI="ds-cli --socket=${SOCK}"
+log()    { logger -t iot-bank-switch "$*" 2>/dev/null; echo "iot-bank-switch: $*"; }
+set_ds() { $DSCLI set "$1" "$2" >/dev/null 2>&1 || true; }
+# Always clear the trigger after handling so re-requesting the same bank re-fires.
+clear_req() { set_ds iot.boot.switch.request '""'; }
+
+[ -n "$TARGET" ] || { log "no target bank given"; clear_req; exit 1; }
+
+if ! command -v rauc >/dev/null 2>&1; then
+    log "rauc absent — non-A/B image, cannot switch banks"
+    clear_req; exit 0
+fi
+
+# Source the slot table (valid sh; single-quoted values → safe to eval).
+eval "$(rauc status --output-format=shell 2>/dev/null)" || true
+booted="${RAUC_SYSTEM_BOOTED_SLOT:-}"
+
+# Resolve the requested target to a slot identifier rauc accepts. rauc itself
+# understands "other"/"booted"/<slot-name> (e.g. rootfs.1) but NOT a bootname
+# (A/B), so map A/B → slot name; pass "other" straight through.
+target_slot=""
+case "$TARGET" in
+    other|OTHER|toggle) target_slot="other" ;;
+    booted)             log "refusing to switch to the booted bank"; clear_req; exit 0 ;;
+    *)
+        for i in ${RAUC_SLOTS:-}; do
+            eval "name=\${RAUC_SLOT_NAME_$i:-}"
+            eval "bn=\${RAUC_SLOT_BOOTNAME_$i:-}"
+            if [ "$TARGET" = "$bn" ] || [ "$TARGET" = "$name" ]; then target_slot="$name"; fi
+        done
+        ;;
+esac
+
+[ -n "$target_slot" ] || { log "cannot resolve target bank '$TARGET'"; clear_req; exit 1; }
+
+# Don't reboot to switch to the bank we're already running.
+if [ "$target_slot" = "$booted" ]; then
+    log "target bank ($TARGET → $target_slot) is already booted; not switching"
+    clear_req; exit 0
+fi
+
+log "marking bank '$target_slot' active (booted=$booted); rebooting to activate"
+if ! rauc status mark-active "$target_slot" >/dev/null 2>&1; then
+    log "rauc status mark-active '$target_slot' failed"
+    set_ds iot.update.result 9     # install/activation error
+    clear_req; exit 1
+fi
+
+set_ds iot.update.state 5          # awaiting-confirm (iot-ota-confirm runs next boot)
+clear_req
+sync
+log "bank switch armed; rebooting now"
+systemctl reboot
