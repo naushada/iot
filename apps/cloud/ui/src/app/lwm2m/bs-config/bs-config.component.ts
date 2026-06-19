@@ -21,7 +21,7 @@ export class BsConfigComponent implements OnInit, OnDestroy {
   loading = true;
   savingBs = false;
   private sub = new Subscription();
-  private readonly KEYS = ['cloud.bs.uri', 'cloud.dm.uri'];
+  private readonly KEYS = ['cloud.bs.uri', 'cloud.dm.uri', 'cloud.dm.lifetime'];
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
@@ -38,6 +38,10 @@ export class BsConfigComponent implements OnInit, OnDestroy {
     this.bsForm = fb.group({
       bs_uri:        ['coaps://0.0.0.0:5684'],
       dm_uri:        ['coaps://0.0.0.0:5683'],
+      // Registration lifetime (s) pushed to the device at bootstrap (Server
+      // Object RID 1). Doubles as the NAT keepalive — default 90 (≈ half the
+      // 120 s assured-UDP conntrack timeout); see cloud.dm.lifetime in cloud.lua.
+      dm_lifetime:   [90],
     });
   }
 
@@ -59,6 +63,7 @@ export class BsConfigComponent implements OnInit, OnDestroy {
     this.bsForm.patchValue({
       bs_uri: d['cloud.bs.uri'] || 'coaps://0.0.0.0:5684',
       dm_uri: d['cloud.dm.uri'] || 'coaps://0.0.0.0:5683',
+      dm_lifetime: Number(d['cloud.dm.lifetime']) || 90,
     });
   }
 
@@ -68,6 +73,7 @@ export class BsConfigComponent implements OnInit, OnDestroy {
     this.ds.write([
       { key: 'cloud.bs.uri',           value: v.bs_uri },
       { key: 'cloud.dm.uri',           value: v.dm_uri },
+      { key: 'cloud.dm.lifetime',      value: v.dm_lifetime },
     ]).subscribe({
       next: (r) => {
         this.savingBs = false;

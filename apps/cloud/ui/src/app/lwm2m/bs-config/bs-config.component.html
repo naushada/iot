@@ -21,7 +21,13 @@
         <clr-control-helper *dsDebug><app-ds-hint key="cloud.dm.uri"></app-ds-hint></clr-control-helper>
       </clr-input-container>
 
-      <div></div>
+      <clr-input-container>
+        <label>Lifetime (s) — RID 1 <span class="hint">(NAT keepalive; default 90)</span></label>
+        <input clrInput type="number" min="0" [disabled]="!isAdmin" formControlName="dm_lifetime"
+               placeholder="90" />
+        <clr-control-helper *dsDebug><app-ds-hint key="cloud.dm.lifetime"></app-ds-hint></clr-control-helper>
+      </clr-input-container>
+
       <div></div>
     </div>
 
