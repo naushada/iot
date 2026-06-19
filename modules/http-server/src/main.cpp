@@ -549,6 +549,28 @@ int main(int argc, char** argv) {
             lastDs = cur;
             if (tlsDirty) reload_tls();
             if (listenDirty) rebind();
+
+            // http.workers can't be hot-resized (the pool is fixed-size), so
+            // apply an operator change by cleanly self-restarting — the new
+            // process rebuilds the pool at the new size. The cloud httpd restarts
+            // via compose `restart: unless-stopped`; the device unit uses
+            // Restart=always. The UI's long-poll reconnects after the ~2s cycle.
+            {
+                std::vector<data_store::Client::GetResult> wgot;
+                auto wrs = ds.get({"http.workers"}, wgot);
+                if (wrs.ok && !wgot.empty() && wgot[0].has_value) {
+                    if (auto n = data_store::to_int32(wgot[0].value);
+                        n && *n >= 0 &&
+                        static_cast<std::size_t>(*n) != pool.size()) {
+                        ACE_DEBUG((LM_INFO,
+                                   ACE_TEXT("%D httpd:thread:%t %M %N:%l "
+                                            "http.workers %u->%d changed; "
+                                            "restarting to apply\n"),
+                                   static_cast<unsigned>(pool.size()), *n));
+                        g_stop.store(true);
+                    }
+                }
+            }
         }
     }
 

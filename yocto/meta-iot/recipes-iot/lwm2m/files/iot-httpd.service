@@ -25,7 +25,11 @@ SupplementaryGroups=iot
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
-Restart=on-failure
+# Restart=always (not on-failure) so the daemon comes back after a CLEAN exit
+# too: iot-httpd self-restarts to apply an http.workers change (the pool is
+# sized at startup and can't be hot-resized). `systemctl stop` is an intentional
+# stop and is NOT restarted; the StartLimit above still guards against flapping.
+Restart=always
 RestartSec=2s
 
 StandardOutput=journal
