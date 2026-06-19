@@ -126,6 +126,7 @@ TEST(IfaceProbe, UpInterfaceWithGatewayPopulated) {
     EXPECT_TRUE(s.present);
     EXPECT_TRUE(s.up);
     EXPECT_TRUE(s.addr);
+    EXPECT_EQ("192.168.1.50", s.addr_ip);   // the routable IPv4 is captured
     EXPECT_EQ("192.168.1.1", s.gateway);
     EXPECT_EQ("eth0", s.name);
     ASSERT_EQ(3u, fr.calls.size());     // link + addr + route
@@ -140,6 +141,7 @@ TEST(IfaceProbe, UpInterfaceWithOnlyLinkLocalV4HasNoAddr) {
     auto s = probe("eth0", fr.make());
     EXPECT_TRUE(s.up);
     EXPECT_FALSE(s.addr);
+    EXPECT_TRUE(s.addr_ip.empty());          // link-local is not captured
 }
 
 TEST(IfaceProbe, UpInterfaceWithNoV4HasNoAddr) {

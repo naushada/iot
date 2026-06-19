@@ -21,6 +21,9 @@
 --   net.tun.ip                - current IP on net.tun.dev (mirrors vpn.assigned.ip)
 --   net.tun.gateway           - current gateway on the tun
 --   net.iface.active          - highest-priority interface currently OPER UP
+--   net.iface.active.ip       - that interface's routable IPv4 (LAN IP); the
+--                               LwM2M /4/0/4 hook publishes it as the device's
+--                               LAN IP without re-enumerating interfaces
 --   net.rules.applied.count   - count of nft rules installed by this daemon
 --   net.last.apply.unix       - unix timestamp of last successful `nft -f -`
 --
@@ -68,6 +71,8 @@ return {
     ["net.tun.gateway"]           = {
         access  = "Viewer", type = "string" },
     ["net.iface.active"]          = {
+        access  = "Viewer", type = "string" },
+    ["net.iface.active.ip"]       = {
         access  = "Viewer", type = "string" },
     ["net.rules.applied.count"]   = {
         access  = "Viewer", type = "integer", min = 0 },

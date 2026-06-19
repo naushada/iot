@@ -23,6 +23,7 @@ struct Capture {
     std::vector<std::vector<State>>     route_calls;
     std::vector<std::string>            state_writes;
     std::vector<std::string>            iface_writes;
+    std::vector<std::string>            iface_ip_writes;
     std::vector<std::uint32_t>          rules_applied_count_writes;
     std::vector<std::uint32_t>          last_apply_unix_writes;
     bool nft_ok    = true;
@@ -42,6 +43,7 @@ struct Capture {
         };
         s.set_state              = [this](const std::string& v){ state_writes.push_back(v); };
         s.set_iface_active       = [this](const std::string& v){ iface_writes.push_back(v); };
+        s.set_iface_active_ip    = [this](const std::string& v){ iface_ip_writes.push_back(v); };
         s.set_rules_applied_count= [this](std::uint32_t v){ rules_applied_count_writes.push_back(v); };
         s.set_last_apply_unix    = [this](std::uint32_t v){ last_apply_unix_writes.push_back(v); };
         return s;
@@ -50,6 +52,7 @@ struct Capture {
 
 State up(const std::string& n, const std::string& gw = "10.0.0.1") {
     State s; s.name = n; s.present = true; s.up = true; s.addr = true;
+    s.addr_ip = "192.168.1.50";
     s.gateway = gw;
     return s;
 }
@@ -94,6 +97,8 @@ TEST(Lifecycle, EmptyTargetIpStillRunsWithBaseRulesetAndNoDnat) {
 
     ASSERT_EQ(1u, cap.iface_writes.size());
     EXPECT_EQ("eth0", cap.iface_writes[0]);
+    ASSERT_EQ(1u, cap.iface_ip_writes.size());
+    EXPECT_EQ("192.168.1.50", cap.iface_ip_writes[0]);
     ASSERT_EQ(1u, cap.state_writes.size());
     EXPECT_EQ("steady", cap.state_writes[0]);
 }

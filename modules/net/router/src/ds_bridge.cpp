@@ -31,6 +31,7 @@ constexpr const char* kState               = "net.state";
 constexpr const char* kTunIp               = "net.tun.ip";
 constexpr const char* kTunGateway          = "net.tun.gateway";
 constexpr const char* kIfaceActive         = "net.iface.active";
+constexpr const char* kIfaceActiveIp        = "net.iface.active.ip";
 constexpr const char* kRulesAppliedCount   = "net.rules.applied.count";
 constexpr const char* kLastApplyUnix       = "net.last.apply.unix";
 
@@ -223,6 +224,10 @@ void DsBridge::set_tun_gateway(const std::string& s) {
 void DsBridge::set_iface_active(const std::string& s) {
     if (!m_ok) return;
     m_impl->client.set(kIfaceActive, s);
+}
+void DsBridge::set_iface_active_ip(const std::string& s) {
+    if (!m_ok) return;
+    m_impl->client.set(kIfaceActiveIp, s);
 }
 void DsBridge::set_rules_applied_count(std::uint32_t n) {
     if (!m_ok) return;

@@ -20,6 +20,7 @@ struct State {
     bool        present = false;  ///< iface exists in the kernel
     bool        up      = false;  ///< OPER state == "UP"
     bool        addr    = false;  ///< has a routable (non-link-local) IPv4 addr
+    std::string addr_ip;    ///< that routable IPv4 (e.g. "192.168.1.3"), empty if none
     std::string gateway;    ///< default route's `via`, empty if none
 };
 

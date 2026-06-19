@@ -66,6 +66,7 @@ public:
     void set_tun_ip(const std::string& s);
     void set_tun_gateway(const std::string& s);
     void set_iface_active(const std::string& s);
+    void set_iface_active_ip(const std::string& s);
     void set_rules_applied_count(std::uint32_t n);
     void set_last_apply_unix(std::uint32_t t);
 

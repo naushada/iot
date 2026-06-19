@@ -34,6 +34,7 @@ const std::vector<std::string>& known_keys() {
         "net.tun.ip",
         "net.tun.gateway",
         "net.iface.active",
+        "net.iface.active.ip",
         "net.rules.applied.count",
         "net.last.apply.unix",
     };

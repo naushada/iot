@@ -39,6 +39,7 @@ public:
         std::function<bool(const std::vector<iface::State>&)>  apply_routes;
         std::function<void(const std::string&)>                set_state;
         std::function<void(const std::string&)>                set_iface_active;
+        std::function<void(const std::string&)>                set_iface_active_ip;
         std::function<void(std::uint32_t)>                     set_rules_applied_count;
         std::function<void(std::uint32_t)>                     set_last_apply_unix;
     };
@@ -82,6 +83,7 @@ private:
     std::uint32_t m_apply_count  = 0;
     std::string   m_last_ruleset;
     std::string   m_last_iface;
+    std::string   m_last_iface_ip;
 
     void transition(State next);
 };
