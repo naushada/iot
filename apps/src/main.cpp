@@ -16,6 +16,10 @@
 #include <sstream>
 #include <unordered_map>
 
+#include <ifaddrs.h>      // getifaddrs — active-iface IP for LwM2M /4/0/4
+#include <netinet/in.h>   // sockaddr_in
+#include <arpa/inet.h>    // inet_ntop
+
 #include <ace/Log_Msg.h>
 #include <ace/OS_NS_unistd.h>   // ACE_OS::sleep
 #include <ace/Time_Value.h>
@@ -910,15 +914,43 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                 if (!s->empty()) return *s;
         return {};
     };
-    // /4/0/4 (Connectivity Monitoring IP Addresses) → the device's LAN IP
-    // (wifi.dhcp.ip). A server Read surfaces it so the cloud Endpoints table can
-    // show the device's local-network address (useful when its DHCP IP hops).
+    // /4/0/4 (Connectivity Monitoring IP Addresses) → the device's IP on its
+    // ACTIVE WAN interface (eth0 / wlan0 / wwan0), so the cloud Endpoints table
+    // shows the address the device is actually reachable at — not hard-wired to
+    // WiFi. net-router publishes the active iface name (net.iface.active); we
+    // read that iface's live IPv4 via getifaddrs. Falls back to the WiFi DHCP
+    // lease (wifi.dhcp.ip) when the active iface is unknown (no net-router).
     deviceHooks.ipAddresses = [dsc]() -> std::string {
-        std::vector<data_store::Client::GetResult> got;
-        if (dsc && dsc->get({"wifi.dhcp.ip"}, got).ok && !got.empty() && got[0].has_value)
-            if (auto s = data_store::to_string(got[0].value))
-                if (!s->empty()) return *s;
-        return {};
+        auto ds_get = [dsc](const char* k) -> std::string {
+            std::vector<data_store::Client::GetResult> got;
+            if (dsc && dsc->get({std::string(k)}, got).ok && !got.empty() &&
+                got[0].has_value)
+                if (auto s = data_store::to_string(got[0].value)) return *s;
+            return {};
+        };
+        const std::string iface = ds_get("net.iface.active");
+        if (!iface.empty()) {
+            struct ifaddrs* ifa = nullptr;
+            if (::getifaddrs(&ifa) == 0) {
+                std::string ip;
+                for (auto* p = ifa; p; p = p->ifa_next) {
+                    if (p->ifa_addr &&
+                        p->ifa_addr->sa_family == AF_INET &&
+                        iface == p->ifa_name) {
+                        char buf[INET_ADDRSTRLEN] = {0};
+                        ::inet_ntop(AF_INET,
+                            &reinterpret_cast<struct sockaddr_in*>(
+                                p->ifa_addr)->sin_addr,
+                            buf, sizeof(buf));
+                        ip.assign(buf);
+                        break;
+                    }
+                }
+                ::freeifaddrs(ifa);
+                if (!ip.empty()) return ip;
+            }
+        }
+        return ds_get("wifi.dhcp.ip");   // fallback: WiFi-only / no net-router
     };
     ::lwm2m::objects::install_canonical_objects(*plumb.store, configDir,
                                                 std::move(deviceHooks),
