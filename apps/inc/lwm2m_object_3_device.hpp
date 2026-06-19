@@ -51,6 +51,13 @@ struct DeviceHooks {
     /// deviceObject/0.lua value or the compiled-in fallback. Leave nullptr
     /// to keep the static metadata behaviour.
     std::function<std::string()> firmwareVersion;
+    /// Optional reader for Connectivity Monitoring RID 4 (IP Addresses, /4/0/4).
+    /// When set, the device serves its live IP (e.g. wifi.dhcp.ip from ds)
+    /// instead of the static "0.0.0.0", so a server Read /4/0/4 surfaces the
+    /// device's LAN IP — the cloud (lwm2m-dm) reads it for the Endpoints table.
+    /// Leave nullptr to keep the static stub. (Lives in DeviceHooks for wiring
+    /// convenience though it backs Object 4, not Object 3.)
+    std::function<std::string()> ipAddresses;
 };
 
 /// Install OID 3 into `store`. `configDir` is the path under which the

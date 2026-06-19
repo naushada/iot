@@ -5,7 +5,7 @@ import { SessionService } from '../../common/session.service';
 import { ToastService } from '../../common/toast.service';
 import { DebugService } from '../../common/debug.service';
 
-interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; isp_ip?:string;
+interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; isp_ip?:string; lan_ip?:string;
                    proxy_port:number; registered:boolean;
                    last_seen_unix?:number; lifetime?:number; location?:string; }
 
@@ -67,6 +67,7 @@ interface EpCred {
         <clr-dg-column>Tunnel IP</clr-dg-column>
         <clr-dg-column>Device Tunnel IP</clr-dg-column>
         <clr-dg-column>ISP IP</clr-dg-column>
+        <clr-dg-column>LAN IP</clr-dg-column>
         <clr-dg-column>Proxy Port</clr-dg-column>
         <clr-dg-column>Next Heart Beat in</clr-dg-column>
         <clr-dg-column>Location</clr-dg-column>
@@ -82,6 +83,7 @@ interface EpCred {
           <clr-dg-cell><code>{{ serverTunIp || '—' }}</code></clr-dg-cell>
           <clr-dg-cell><code>{{ e.dev_tun_ip || '—' }}</code></clr-dg-cell>
           <clr-dg-cell><code>{{ e.isp_ip || '—' }}</code></clr-dg-cell>
+          <clr-dg-cell><code>{{ e.lan_ip || '—' }}</code></clr-dg-cell>
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
           <clr-dg-cell>
             <code>{{ nextHeartbeat(e) }}</code>

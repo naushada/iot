@@ -77,7 +77,7 @@ std::string join_path(const std::string& configDir, const std::string& tail) {
 
 } // namespace
 
-int install_connmon(ObjectStore& store) {
+int install_connmon(ObjectStore& store, std::function<std::string()> ipReader) {
     ObjectDescriptor d;
     d.oid = 4; d.name = "Connectivity Monitoring";
     d.urn = "urn:oma:lwm2m:oma:4:1.1";
@@ -88,7 +88,16 @@ int install_connmon(ObjectStore& store) {
     inst.resources[1] = read_only(1,  "Available Network Bearer",ResourceType::Integer, "41");
     inst.resources[2] = read_only(2,  "Radio Signal Strength",   ResourceType::Integer, "-70");
     inst.resources[3] = read_only(3,  "Link Quality",            ResourceType::Integer, "100");
-    inst.resources[4] = read_only(4,  "IP Addresses",            ResourceType::String,  "0.0.0.0");
+    if (ipReader) {
+        // Live IP (wifi.dhcp.ip from ds) so a server Read /4/0/4 surfaces the
+        // device's LAN IP; the cloud shows it in the Endpoints table.
+        Resource ip; ip.rid = 4; ip.name = "IP Addresses";
+        ip.type = ResourceType::String; ip.ops = Operations::R;
+        ip.read = std::move(ipReader);
+        inst.resources[4] = std::move(ip);
+    } else {
+        inst.resources[4] = read_only(4, "IP Addresses", ResourceType::String, "0.0.0.0");
+    }
     inst.resources[6] = read_only(6,  "Link Utilization",        ResourceType::Integer, "0");
     inst.resources[7] = read_only(7,  "APN",                     ResourceType::String,  "");
     d.instances[0] = std::move(inst);
@@ -160,8 +169,11 @@ int install_canonical_objects(ObjectStore& store,
                               CertHooks certHooks) {
     int rc = 0;
     rc |= install_access_control(store, configDir);
+    // Lift the Object-4 IP reader out before deviceHooks is moved into the
+    // Device-object installer (it backs /4/0/4, wired here for convenience).
+    auto ipReader = std::move(deviceHooks.ipAddresses);
     rc |= install_device(store, configDir, std::move(deviceHooks));
-    rc |= install_connmon(store);
+    rc |= install_connmon(store, std::move(ipReader));
     rc |= install_firmware_apply(store, configDir, std::move(fwHooks));
     rc |= install_location(store);
     rc |= install_connstats(store);

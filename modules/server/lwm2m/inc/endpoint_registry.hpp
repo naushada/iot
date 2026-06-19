@@ -25,6 +25,9 @@ struct EndpointInfo {
     std::string wan_ip;      // device's public/ISP IP (the real-address openvpn
                              // sees the tunnel coming from), e.g. "65.49.1.75".
                              // From the same mgmt status. Empty when tunnel down.
+    std::string lan_ip;      // device's local-network IP (LwM2M /4/0/4 =
+                             // wifi.dhcp.ip), e.g. "192.168.1.3". Learned from
+                             // lwm2m-dm; empty until first read.
     std::uint16_t proxy_port = 0;  // 5001+
     bool registered = false;       // LwM2M registration active
     std::int64_t last_seen_unix = 0;  // last Register/Update, 0 = never
@@ -86,6 +89,10 @@ public:
     /// reverse index). Returns true only if the value changed (false if unknown
     /// ep or unchanged).
     bool update_version(const std::string& ep, const std::string& version);
+
+    /// Record the device's LAN IP (LwM2M /4/0/4), learned from lwm2m-dm via
+    /// cloud.lwm2m.registrations. Display only. Returns true if it changed.
+    bool update_lan_ip(const std::string& ep, const std::string& ip);
 
     /// Lookup by endpoint name.  Returns nullptr when not found.
     const EndpointInfo* lookup_by_ep(const std::string& ep) const;

@@ -82,6 +82,16 @@ bool EndpointRegistry::update_version(const std::string& ep,
     return true;
 }
 
+bool EndpointRegistry::update_lan_ip(const std::string& ep,
+                                     const std::string& ip) {
+    std::lock_guard<std::mutex> lk(m_mutex);
+    auto it = m_by_ep.find(ep);
+    if (it == m_by_ep.end()) return false;       // unknown endpoint
+    if (it->second.lan_ip == ip) return false;   // unchanged
+    it->second.lan_ip = ip;                       // display only, no index
+    return true;
+}
+
 bool EndpointRegistry::update_reg_meta(const std::string& ep,
                                        std::uint32_t lifetime,
                                        const std::string& location) {
