@@ -80,15 +80,29 @@ return {
       type    = "string",
       default = "coaps://0.0.0.0:5683",
     },
-    -- Default registration lifetime pushed to devices at bootstrap
-    -- (Server Object OID 1, RID 1).  Devices may request a different
-    -- value; the DM server can accept or negotiate.
+    -- Default registration lifetime (seconds) pushed to devices at bootstrap
+    -- (Server Object OID 1, RID 1). Devices may request a different value.
+    --
+    -- This DOUBLES AS THE NAT KEEPALIVE. The device sends a registration Update
+    -- at (lifetime - 30s margin), and that Update is what keeps the gateway's
+    -- UDP conntrack mapping for the DIRECT LwM2M/DTLS flow (:5683) alive so the
+    -- cloud can reach the device (OTA push, server reads). Aligned to netfilter
+    -- conntrack defaults:
+    --   UDP unreplied ......... 30 s   (nf_conntrack_udp_timeout)
+    --   UDP assured/stream ... 120 s   (nf_conntrack_udp_timeout_stream)
+    --   TCP established .... 432000 s   (the VPN's own plane — openvpn's 10s
+    --                                    ping keeps that alive, not this key)
+    -- default 90 → Update every 60 s ≈ half the 120 s assured timeout (classic
+    -- keepalive = timeout/2). Lower to 60 (→30 s Update) for aggressive CGNAT
+    -- (30-60 s UDP). Raise toward 86400 ONLY if LwM2M is routed over the VPN
+    -- tunnel (openvpn's ping then handles NAT — see apps/cloud/CLAUDE.md
+    -- "Registration lifetime & NAT keepalive").
     ["cloud.dm.lifetime"] = {
         access  = "Admin",
-      type    = "integer",
-      default = 86400,
-      min     = 0,
-      max     = 2592000,
+        type    = "integer",
+        default = 90,
+        min     = 0,
+        max     = 2592000,
     },
     -- Default binding mode pushed to devices at bootstrap
     -- (Server Object OID 1, RID 7).  "U" = UDP (standard).
