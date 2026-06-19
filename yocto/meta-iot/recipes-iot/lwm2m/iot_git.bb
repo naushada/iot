@@ -425,9 +425,12 @@ FILES:${PN}-wifi-client = "\
     ${systemd_system_unitdir}/iot-wifi-client.service \
 "
 # iot-ds-cli: the udhcpc lease hook writes the lease via ds-cli.
+# iw: the lease hook runs `iw dev <iface> set power_save off` to stop the RPi
+#     brcmfmac WiFi from idle-disassociating (link/IP/VPN/LwM2M flapping).
 RDEPENDS:${PN}-wifi-client = "\
     ace-tao \
     wpa-supplicant \
+    iw \
     ${PN}-ds-cli \
 "
 RRECOMMENDS:${PN}-wifi-client = "\

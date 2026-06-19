@@ -44,6 +44,13 @@ fi
 # 2) Mirror the lease to the data-store.
 case "$1" in
     bound|renew)
+        # RPi brcmfmac re-enables WiFi power-save after each association, which
+        # makes the link idle-disassociate — flapping the IP / VPN / LwM2M. Turn
+        # it off on every lease (post-association); best-effort, must never break
+        # DHCP. See apps/docs/tdd-wifi-autostart.md.
+        if [ -n "${interface:-}" ]; then
+            iw dev "$interface" set power_save off >/dev/null 2>&1 || true
+        fi
         dsset wifi.dhcp.ip            "$(jq_str "${ip:-}")"
         dsset wifi.dhcp.mask          "$(jq_str "${subnet:-}")"
         dsset wifi.dhcp.gateway       "$(jq_str "${router:-}")"

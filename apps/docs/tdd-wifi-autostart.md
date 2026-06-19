@@ -55,6 +55,19 @@ offline and timesyncd syncs over WiFi within seconds of boot. Durable across
 reboots with no RTC: timesyncd's save-file restores a forward-only clock at
 early boot, kept fresh now that NTP actually syncs. (PR #240.)
 
+## Companion fix — WiFi power-save flapping (RPi brcmfmac)
+
+The RPi3 brcmfmac (BCM43430) enables WiFi **power-save after each association**
+(`dmesg`: `brcmf_cfg80211_set_power_mgmt: power save enabled`). On an idle link
+the chip sleeps, misses beacons, gets disassociated, then reconnects — usually
+to a **new DHCP lease**, so the LAN IP hops around and the OpenVPN tunnel +
+LwM2M registration flap in lockstep (the cloud's device-UI DNAT toggles
+`1↔0 rule(s)`). It is not reboots/crashes: the daemons show `NRestarts=0`.
+
+Fix: the `udhcpc-ds.script` lease hook runs `iw dev <iface> set power_save off`
+on every `bound`/`renew` (post-association, where the driver re-enables it), and
+`iw` is pulled into the wifi-client package. Best-effort — it never breaks DHCP.
+
 ## 1. Goal
 
 On a fresh Raspberry Pi boot with the `iot` image, the `wifi-client` daemon
