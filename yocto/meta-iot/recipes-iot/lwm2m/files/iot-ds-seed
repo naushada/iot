@@ -8,14 +8,12 @@
 # re-clobbers operator changes made later via the UI / ds-cli — including across
 # an OS update (the flag lives with the persisted state, not in the rootfs).
 #
+# (http.workers is no longer seeded here — the http.* schema default is now 4,
+# which the device-ui long-polls need; there's nothing device-specific to
+# override. Operators tune it on the HTTP Config page; iot-httpd self-restarts
+# to apply a change.)
+#
 # Current seed:
-#   http.workers = 2
-#     The schema default is 0 (handlers run inline on the reactor thread). The
-#     device-ui relies on blocking long-polls (the shared /status poll, and the
-#     Terminal shell's /api/v1/shell/output) which would stall an inline server,
-#     so a fresh device needs a worker pool. 2 is enough for the status poll +
-#     one shell session; bump via the HTTP Config page (restart required —
-#     http.workers is not hot-reloaded).
 #   auth.users.accounts = [ engineer / Viewer ]
 #     Seed a read-only "engineer" device-ui login (password "engineer") next to
 #     the built-in admin (admin/admin), so a field engineer can view the device
@@ -51,20 +49,13 @@ fi
 ENGINEER_HASH="7826b958b79c70626801b880405eb5111557dadceb2fee2b1ed69a18eed0c6dc"
 ENGINEER_ACCOUNTS="[{\"id\":\"engineer\",\"hash\":\"$ENGINEER_HASH\",\"access\":\"Viewer\"}]"
 
-# Seed all device-only defaults; write the flag only if EVERY step succeeds, so
-# a partial failure retries cleanly on the next boot (|| guards keep `set -e`
-# from aborting before we can report which step failed).
-ok=1
-$DSCLI set http.workers 2 \
-    || { ok=0; echo "iot-ds-seed: failed to set http.workers" >&2; }
-$DSCLI set auth.users.accounts "$ENGINEER_ACCOUNTS" \
-    || { ok=0; echo "iot-ds-seed: failed to set auth.users.accounts" >&2; }
-
-if [ "$ok" = 1 ]; then
+# Seed the device-only default(s); write the flag only on success so a failure
+# retries cleanly on the next boot.
+if $DSCLI set auth.users.accounts "$ENGINEER_ACCOUNTS"; then
     mkdir -p "$STATE"
     : > "$FLAG"
-    echo "iot-ds-seed: seeded http.workers=2 + engineer (Viewer) account (first boot)"
+    echo "iot-ds-seed: seeded engineer (Viewer) account (first boot)"
 else
-    echo "iot-ds-seed: a seed step failed; will retry next boot" >&2
+    echo "iot-ds-seed: failed to set auth.users.accounts; will retry next boot" >&2
     exit 0   # leave the flag unwritten so the next boot retries
 fi

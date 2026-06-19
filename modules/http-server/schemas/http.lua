@@ -44,11 +44,16 @@ return {
     ["http.tls.ca"]        = {
         access  = "Admin", type = "string",  default = "" },
 
-    -- Handler thread-pool size. 0 = run handlers inline on the reactor
-    -- thread (default). >0 off-loads handlers to N worker threads so a
-    -- blocking long-poll can't stall other connections. CLI: http-workers=N.
+    -- Handler thread-pool size. 0 = run handlers inline on the reactor thread;
+    -- >0 off-loads handlers to N worker threads so a blocking long-poll (the
+    -- shared /status poll, the Terminal shell) can't stall other connections.
+    -- Default 4: both the device-ui and cloud-ui rely on those long-polls, so
+    -- inline (0) stalls them — 4 is a safe floor with headroom for the status
+    -- poll + a shell + a couple of requests. Operators tune it on the HTTP page;
+    -- iot-httpd applies a change by self-restarting (the pool is sized at
+    -- startup). CLI http-workers=N still overrides at startup if ever passed.
     ["http.workers"]       = {
-        access  = "Admin", type = "integer", default = 0, min = 0, max = 64 },
+        access  = "Admin", type = "integer", default = 4, min = 0, max = 64 },
 
     -- ── Remote shell (device-ui Terminal page) ──────────────────────
     -- Master switch for the forkpty-backed shell at /api/v1/shell/*.

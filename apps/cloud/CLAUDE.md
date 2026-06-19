@@ -395,14 +395,17 @@ http.listen.scheme       → "http" | "https"
 http.tls.cert            → TLS cert PEM path (required for https)
 http.tls.key             → TLS key PEM path (required for https)
 http.tls.ca              → CA bundle PEM path (optional — enables mTLS)
-http.workers             → Handler thread pool (0 = inline, default). ds-ONLY:
-                           no CLI arg / env — the compose used to pass
-                           http-workers= which silently overrode this key, so
-                           the UI showed 0 while the daemon ran 4. Now ds is
-                           the single source of truth (set it in the HTTP page).
+http.workers             → Handler thread pool (0 = inline; schema default 4 —
+                           enough for the cloud-ui long-polls). ds-ONLY: no CLI
+                           arg / env — the compose used to pass http-workers=
+                           which silently overrode this key, so the UI showed 0
+                           while the daemon ran 4. Now ds is the single source of
+                           truth (set it in the HTTP page).
 http.auth.enabled        → Auth gate (true = enabled, from auth.lua)
 ```
-Hot-reloaded: all except `http.workers` (needs a restart).
+Hot-reloaded: all except `http.workers` — a change there makes iot-httpd
+**self-restart** to resize the pool (cloud restarts via compose
+`restart: unless-stopped`; device unit uses `Restart=always`).
 
 ### Bootstrap Server (cloud.bs.*)
 ```
