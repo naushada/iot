@@ -214,6 +214,12 @@ if [ -n "${IOT_AB:-}" ] && case " $* " in *" iot-image "*) true;; *) false;; esa
     set -- "$@" update-bundle
 fi
 
+# Also build the single-shot iot-* OTA tarball (iot-bundle.bb) alongside any
+# image build — one tar.gz of every iot-*.ipk, pushed in a single LwM2M Object 5
+# upgrade to a list of endpoints. Skip for package-only builds (e.g.
+# packagegroup-iot): the feed is enough there.
+case " $* " in *" iot-image "*) set -- "$@" iot-bundle ;; esac
+
 echo ""
 echo "→ Starting bitbake for $MACHINE: $@ ..."
 echo ""
@@ -230,6 +236,8 @@ echo "── SD-card image(s): ──"
 find tmp/deploy/images -name '*.wic.bz2' -type f 2>/dev/null | sort || true
 echo "── RAUC A/B bundle(s): ──"
 find tmp/deploy/images -name '*.raucb' -type f 2>/dev/null | sort || true
+echo "── iot-* OTA bundle(s) (single-shot LwM2M push): ──"
+find tmp/deploy/images -name 'iot-bundle-*.tar.gz' -type f 2>/dev/null | sort || true
 echo "── iot .ipk feed: ──"
 find tmp/deploy/ipk -name 'iot-*.ipk' -type f 2>/dev/null | sort || true
 echo ""
