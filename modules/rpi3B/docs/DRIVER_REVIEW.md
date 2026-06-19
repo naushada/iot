@@ -1,9 +1,16 @@
 # RPi3B (BCM2837) Bare-Metal Driver — Review & Issue Log
 
-This document captures (1) how the current driver framework is structured, and
-(2) the defects found while reviewing the half-finished GPIO / Clock / Interrupt
-drivers. It is the reference for the I2C/SPI work, which deliberately follows the
+This document captures (1) how the driver framework is structured, and
+(2) the defects found while reviewing the originally half-finished GPIO / Clock /
+Interrupt drivers. It is the reference for the I2C/SPI work, which follows the
 same framework while avoiding the bugs listed here.
+
+**Status (current):** The **GPIO** and **Interrupt** defects (§2.2, §2.4) are
+**fixed and merged** (PR #1), with regression tests. **I2C (BSC1)** and **SPI0**
+are **implemented and shipped** (§3). The build is now library-consumable
+(`rpi3b_driver` static lib) and the repo is vendored into the `iot` Yocto image
+as the `iot-rpi3b-selftest` boot oneshot. The **Clock** defects (§2.3) and the
+remaining design notes in §2.1 are **still open**.
 
 ---
 
@@ -67,11 +74,14 @@ Severity legend: **[H]** breaks correct behaviour on hardware · **[M]** logic
 bug / inconsistency · **[L]** cosmetic / warning.
 
 ### 2.1 Build / framework wide
-- **[H] Root executable never compiles the drivers.** Root
-  `CMakeLists.txt` uses `file(GLOB SOURCES "src/*.cpp")`, but the driver sources
-  live in `src/gpio/`, `src/clock/`, `src/interrupt/`. Only `src/main.cpp` is
-  compiled into `rpi3Bdriver`; the drivers are never linked. (Tests work because
-  `test/CMakeLists.txt` lists them explicitly.) Fix: glob `src/*/*.cpp`.
+- **[H] Root executable never compiles the drivers.** ✅ **FIXED.** Root
+  `CMakeLists.txt` used `file(GLOB SOURCES "src/*.cpp")`, but the driver sources
+  live in `src/gpio/`, `src/clock/`, `src/interrupt/` — so only `src/main.cpp`
+  was compiled and the project never actually built the drivers (it also failed
+  under `-std=c++17` on the headers' abbreviated-template ctors). Resolved by the
+  CMake refactor: a `rpi3b_driver` STATIC library globs `src/*/*.cpp`, builds as
+  C++20, and the public headers are kept C++17-consumable (explicit-template
+  ctors) so the C++17 `iot` build can link it.
 - **[H] No freestanding/cross toolchain.** The project compiles as a normal host
   program (`-pg`, default sysroot). There is no `aarch64-none-elf` toolchain
   file, no linker script, no startup/`_start`, so the artifact is **not loadable
@@ -185,9 +195,10 @@ bug / inconsistency · **[L]** cosmetic / warning.
 
 ---
 
-## 3. How I2C/SPI follow the framework (and avoid the bugs)
+## 3. I2C/SPI — shipped, and how they avoid the bugs
 
-The new I2C (BSC) and SPI0 drivers reuse the exact framework pattern
+The I2C (BSC1) and SPI0 drivers (`inc/i2c.hpp`, `inc/spi.hpp`, `src/i2c`,
+`src/spi`, with gtests in `test/`) reuse the exact framework pattern
 (register-block struct + placement `new` + driver class + gtest-over-vector), but:
 
 - Index registers **directly by datasheet word offset** — no pin-number
