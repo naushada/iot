@@ -45,8 +45,10 @@ so an unvalidated bootloader never becomes the default.
   `/var/lib/iot` (ds state + certs survive a bank swap).
 
 ## 4. RAUC config + keys ✅
-- `dynamic-layers/rauc/recipes-core/rauc/rauc_%.bbappend` installs `system.conf`
-  → `/etc/rauc/system.conf` and the keyring → `/etc/rauc/keyring.pem`
+- `dynamic-layers/rauc/recipes-core/rauc/rauc-conf.bbappend` supplies `system.conf`
+  → `/etc/rauc/system.conf` and the keyring → `/etc/rauc/keyring.pem` (via the
+  meta-rauc `rauc-conf` recipe, which owns those paths — shipping them from the
+  rauc daemon recipe too caused a do_rootfs file clash)
   (`compatible=iot-rpi`). (Under `dynamic-layers/rauc/` + `BBFILES_DYNAMIC` so it
   only parses when meta-rauc is layered — a default build never sees it.)
 - Keys: an in-tree **DEV** keypair
