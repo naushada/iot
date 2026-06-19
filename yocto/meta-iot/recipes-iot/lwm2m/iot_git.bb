@@ -503,7 +503,11 @@ FILES:${PN}-rpi3b-selftest = "\
     ${systemd_system_unitdir}/rpi3b-selftest.service \
 "
 ALLOW_EMPTY:${PN}-rpi3b-selftest = "1"
-RDEPENDS:${PN}-rpi3b-selftest = "${@bb.utils.contains('PACKAGECONFIG', 'rpi3b-selftest', 'gtest', '', d)}"
+# No manual RDEPENDS on gtest. `gtest` is a build-time DEPENDS (added via the
+# PACKAGECONFIG above, resolved through PROVIDES) — it is NOT a runtime package
+# name, so an explicit RDEPENDS:...= "gtest" fails with "Nothing RPROVIDES
+# 'gtest'". If rpi3B_test links libgtest.so, Yocto's shared-lib dependency scan
+# adds the correct runtime package automatically.
 INSANE_SKIP:${PN}-rpi3b-selftest = "already-stripped"
 
 # ── systemd ─────────────────────────────────────────────────────────
