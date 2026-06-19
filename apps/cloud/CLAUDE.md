@@ -419,12 +419,43 @@ cloud.bs.psk.key         → BS PSK secret (RID 5, opaque)
 ### Device Management (cloud.dm.*)
 ```
 cloud.dm.uri             → DM server URI (pushed to devices, RID 0)
-cloud.dm.lifetime        → Default registration lifetime (RID 1, default 86400)
+cloud.dm.lifetime        → Default registration lifetime (RID 1, default 90 — NAT keepalive, see below)
 cloud.dm.binding         → Default binding mode (RID 7, default "U")
 cloud.dm.psk.id          → DM PSK identity (post-bootstrap)
 cloud.dm.psk.key         → DM PSK key (post-bootstrap, opaque)
 cloud.dm.lwm2m.version   → LwM2M version (default "1.1")
 ```
+
+#### Registration lifetime & NAT keepalive
+
+The LwM2M control plane is **direct device→cloud DTLS over UDP (:5683)** — the
+device is behind the home-router / ISP **NAT**, whose UDP conntrack mapping
+expires after a short idle. If it expires, the cloud can no longer reach the
+device (OTA push, server Reads) until the device speaks again. So the
+registration **Update doubles as the NAT keepalive**: the device sends one at
+`lifetime − 30s` (the fixed `updateMarginSeconds`), and that traffic keeps the
+mapping alive.
+
+`cloud.dm.lifetime` is therefore sized to the NAT timeout, **not** left at a
+day. netfilter conntrack defaults (what most gateways are built on):
+
+| Flow | conntrack timeout | sysctl |
+|------|-------------------|--------|
+| UDP, unreplied | **30 s** | `nf_conntrack_udp_timeout` |
+| UDP, assured/stream | **120 s** | `nf_conntrack_udp_timeout_stream` |
+| TCP, established | **432000 s (5 d)** | `nf_conntrack_tcp_timeout_established` |
+
+- **Default `lifetime = 90`** → Update every **60 s** ≈ half the 120 s
+  assured-UDP timeout (classic keepalive = timeout/2). Also covers most CGNATs.
+- **Aggressive CGNAT (30–60 s UDP):** lower to `60` (→30 s Update).
+- The **VPN tunnel** is openvpn over **TCP** + `ping 10` (10 s), so its mapping
+  never idles out — it needs no tuning. The 24 h default only makes sense if
+  LwM2M itself is **routed over the tunnel** (then the tunnel's keepalive covers
+  it and `lifetime` can go back to 86400). Until that's done, keep it NAT-sized.
+
+A lost registration (e.g. cloud `lwm2m-dm` restart) is *also* recovered fast by
+the **VPN-reconnect-triggered re-Register** in the client (`apps/src/main.cpp`,
+`vpn.state` watch) — complementary to this keepalive.
 
 ### Provision (per-device)
 ```

@@ -17,10 +17,15 @@
 return {
   namespace = "iot",
   keys = {
+    -- Device-side default/fallback registration lifetime (s). The effective
+    -- value is normally the one the cloud pushes at bootstrap (cloud.dm.lifetime,
+    -- default 90 — sized so the registration Update doubles as a NAT keepalive;
+    -- see cloud.lua). Kept aligned at 90 so a pre-bootstrap/direct-Register run
+    -- behaves the same.
     ["iot.lifetime"]   = {
         access  = "Admin",
       type    = "integer",
-      default = 86400,
+      default = 90,
       min     = 0,
       max     = 2592000,     -- 30 days; LwM2M Registration lifetime cap
     },
