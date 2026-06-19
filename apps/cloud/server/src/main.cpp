@@ -671,6 +671,19 @@ int main(int argc, char** argv) {
     // iot-cloudd doesn't matter.
     ds.set("http.auth.cookie.name",
            data_store::Value{std::string("iot-cloud-session")});
+    // Seed http.workers for the cloud httpd. The cloud-ui relies on blocking
+    // long-polls (the shared /status poll), so the schema default 0 (inline)
+    // stalls it. Unlike the device (iot-ds-seed) the cloud has no first-boot
+    // seed, and run.sh intentionally doesn't pass http-workers on the CLI (ds is
+    // the single source of truth). Bump it from the inline default to 4; an
+    // operator's own higher value is left untouched. httpd applies it live — it
+    // self-restarts when http.workers changes — so start order doesn't matter.
+    if (ds_int(ds, "http.workers", 0) == 0) {
+        ds.set("http.workers", data_store::Value{static_cast<std::int32_t>(4)});
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l seeded http.workers=4 "
+                            "(was inline 0)\n")));
+    }
     if (!server::dnat::enable_ip_forward()) {
         ACE_ERROR((LM_ERROR,
                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l could not enable "
