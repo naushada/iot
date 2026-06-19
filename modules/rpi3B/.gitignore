@@ -1,0 +1,16 @@
+# CMake / build output
+build/
+build-*/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+*.o
+*.a
+*.so
+*.gcda
+*.gcno
+gmon.out
+
+# Editor / OS
+.DS_Store
+compile_commands.json
