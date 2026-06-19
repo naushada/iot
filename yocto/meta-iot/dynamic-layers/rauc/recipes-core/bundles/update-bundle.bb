@@ -25,7 +25,7 @@ RAUC_SLOT_rootfs = "iot-image"
 RAUC_SLOT_rootfs[fstype] = "ext4"
 
 # Signing material. Dev default = the in-tree dev keypair (self-consistent with
-# the dev keyring baked by rauc_%.bbappend). CI/production overrides
+# the dev keyring baked by rauc-conf.bbappend). CI/production overrides
 # RAUC_KEY_FILE / RAUC_CERT_FILE to the secret prod key + its cert.
 FILESEXTRAPATHS:prepend := "${THISDIR}/../rauc/files:"
 SRC_URI += " \
