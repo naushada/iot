@@ -25,8 +25,10 @@
 #   MACHINE=qemuarm64 ./flash-sd.sh /dev/sdX     # pick another machine's image
 #   IMAGE=/path/to/custom.wic.bz2 ./flash-sd.sh /dev/sdX
 #
-# Safety: refuses internal/system disks (override with --force), shows the
-# image + target, and requires you to type "yes". Destructive steps use sudo.
+# Safety: refuses internal/system disks (override with --force), refuses a card
+# too small for the image's on-card layout (the A/B image is ~2.4GB — needs a
+# ≥4GB card), shows the image + target, and requires you to type "yes".
+# Destructive steps use sudo.
 
 set -euo pipefail
 
@@ -43,6 +45,29 @@ log_error()   { echo -e "${RED}ERROR: $1${NC}" >&2; }
 # Print the header comment block (everything from line 2 up to the first
 # non-comment line), with the leading "# " stripped.
 usage() { awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"; }
+
+# On-card size the image needs, in MiB, summed from the partition sizes in the
+# deployed wks (wic writes the expanded .wks next to the image). This is what
+# makes the capacity guard adapt automatically when the layout grows — e.g. the
+# A/B image's two 1024M banks (100M boot + 2×1024M + 256M data ≈ 2.4GB). Prints
+# the total MiB, or returns non-zero when no wks is found (default RPi image —
+# its wks lives in meta-raspberrypi, not the deploy dir, so the guard is skipped).
+required_mb_from_wks() {
+    local wks
+    wks="$(find "$IMAGES_DIR" -maxdepth 1 -name '*.wks' -type f 2>/dev/null | sort | tail -1 || true)"
+    [ -n "$wks" ] || return 1
+    awk '
+        /^[[:space:]]*part/ {
+            for (i = 1; i <= NF; i++)
+                if ($i == "--size" || $i == "--fixed-size") {
+                    v = $(i + 1); u = substr(v, length(v), 1); n = v + 0
+                    if (u == "G" || u == "g") n *= 1024
+                    total += n
+                }
+        }
+        END { if (total > 0) print total; else exit 1 }
+    ' "$wks"
+}
 
 OS="$(uname -s)"
 
@@ -170,6 +195,8 @@ if [ "$OS" = "Darwin" ]; then
     [ -n "$INFO" ] || { log_error "diskutil cannot read $DEV"; exit 1; }
     DEV_SIZE="$(echo "$INFO" | awk -F: '/Disk Size/{print $2; exit}' | xargs)"
     DEV_NAME="$(echo "$INFO" | awk -F: '/Device \/ Media Name/{print $2; exit}' | xargs)"
+    # "Disk Size: 31.9 GB (31914983424 Bytes) ..." → the parenthesized byte count.
+    DEV_BYTES="$(echo "$INFO" | sed -n 's/.*(\([0-9][0-9]*\) Bytes).*/\1/p' | head -1)"
     # macOS reports e.g. "Device Location: Internal/External" and
     # "Removable Media: Fixed/Removable" (there is no "Internal: Yes" field).
     # A safe target is External OR Removable; an internal fixed disk (the
@@ -200,6 +227,7 @@ else
     REMOVABLE="$(cat "/sys/block/$BASE/removable" 2>/dev/null || echo 0)"
     DEV_SIZE="$(lsblk -dno SIZE "$DEV" 2>/dev/null | xargs)"
     DEV_NAME="$(lsblk -dno MODEL "$DEV" 2>/dev/null | xargs)"
+    DEV_BYTES="$(lsblk -bdno SIZE "$DEV" 2>/dev/null | xargs)"   # -b → bytes
     # Refuse the disk that carries the running root filesystem. PKNAME is the
     # parent (whole-disk) kernel name of the partition mounted at /.
     ROOT_SRC="$(findmnt -no SOURCE / 2>/dev/null || true)"
@@ -221,12 +249,36 @@ fi
 
 _umount_linux() { for p in "$DEV"?*; do sudo umount "$p" 2>/dev/null || true; done; }
 
+# ── Capacity guard ────────────────────────────────────────────────────
+# The wic image is a whole-disk image of a FIXED size (the wks layout total);
+# dd onto a smaller card runs out of space mid-write and leaves a truncated,
+# unbootable image (often only after the last partition — silent corruption).
+# Refuse up front when the card is too small for the layout. Skipped when the
+# size can't be determined (no deployed wks, or unparseable device size) so the
+# default RPi image and exotic devices still flash. ~3% margin for the partition
+# table + alignment slack.
+REQ_MB="$(required_mb_from_wks || true)"
+if [ -n "${REQ_MB:-}" ] && [ -n "${DEV_BYTES:-}" ] 2>/dev/null && [ "${DEV_BYTES:-0}" -gt 0 ] 2>/dev/null; then
+    REQ_BYTES=$(( REQ_MB * 1024 * 1024 ))
+    REQ_BYTES=$(( REQ_BYTES + REQ_BYTES / 32 ))     # +~3% headroom
+    if [ "$DEV_BYTES" -lt "$REQ_BYTES" ]; then
+        log_error "Target $DEV (${DEV_SIZE:-$((DEV_BYTES/1024/1024))MB}) is too small for this image:"
+        log_error "the layout needs ~$(( REQ_BYTES / 1024 / 1024 ))MB on-card. Use a larger SD card."
+        if [ "$FORCE" -ne 1 ]; then
+            log_error "(Override with --force only if you are certain the card is big enough.)"
+            exit 1
+        fi
+        log_info "Proceeding anyway (--force) — the write will fail if it truly doesn't fit."
+    fi
+fi
+
 # ── Confirm ───────────────────────────────────────────────────────────
 log_section "Flash plan"
 echo "  Image  : $IMG"
 echo "           ($IMG_SIZE compressed)"
 echo "  Machine: $MACHINE"
 echo "  Target : $DEV  ${DEV_SIZE:+($DEV_SIZE${DEV_NAME:+, $DEV_NAME})}"
+[ -n "${REQ_MB:-}" ] && echo "  Layout : ~${REQ_MB}MB on-card (whole-disk wic image)"
 echo "  Steps  : unmount → $([ "$SKIP_FORMAT" -eq 1 ] && echo '(skip format)' || echo 'wipe partition table') → write image → sync/eject"
 echo ""
 echo -e "${RED}  ⚠  ALL DATA ON $DEV WILL BE DESTROYED.${NC}"
@@ -303,3 +355,11 @@ log_info "Done. $DEV is flashed and safe to remove."
 echo ""
 echo "  Boot the Pi, then ssh in (sshd is baked in; debug-tweaks → empty root pw):"
 echo "    ssh root@<pi-ip>"
+if [ -n "${REQ_MB:-}" ]; then
+    # A deployed wks in the image dir → this is the RAUC A/B image.
+    echo ""
+    echo "  A/B image — verify the dual-bank layout and OTA readiness on-target:"
+    echo "    lsblk            # expect boot / rootA / rootB / data"
+    echo "    rauc status      # two rootfs slots, one booted + good"
+    echo "    rauc install /path/to/update-bundle-*.raucb   # writes the inactive bank"
+fi
