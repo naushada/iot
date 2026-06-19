@@ -134,4 +134,20 @@ export class HttpsvcService {
       `${this.api}/api/v1/users?id=${encodeURIComponent(id)}`,
       { withCredentials: true });
   }
+
+  // ── Firmware feed upload (Software Update) ────────────────────────
+  // Chunked browse/drag-drop into the cloud firmware feed: offset=0 truncates,
+  // final=1 finalises (server computes sha256 + upserts cloud.firmware.manifest).
+  // pkg/version/arch are pre-filled from the filename and operator-confirmable.
+  uploadFirmwareChunk(name: string, version: string, arch: string, pkg: string,
+                      chunk: Blob, offset: number, final: boolean):
+                      Observable<{ ok: boolean; err?: string; sha256?: string }> {
+    return this.http.post<{ ok: boolean; err?: string; sha256?: string }>(
+      `${this.api}/api/v1/firmware/upload?name=${encodeURIComponent(name)}` +
+        `&version=${encodeURIComponent(version)}&arch=${encodeURIComponent(arch)}` +
+        `&pkg=${encodeURIComponent(pkg)}&offset=${offset}&final=${final ? 1 : 0}`,
+      chunk,
+      { headers: new HttpHeaders({ 'Content-Type': 'application/octet-stream' }),
+        withCredentials: true });
+  }
 }

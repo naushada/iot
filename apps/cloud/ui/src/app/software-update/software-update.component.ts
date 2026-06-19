@@ -35,7 +35,38 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
           <div></div>
           <div></div>
         </div>
-        <p class="hint" *ngIf="!manifest.length">No firmware in the catalogue. Seed the iot-firmware volume and set <code>cloud.firmware.manifest</code>.</p>
+        <p class="hint" *ngIf="!manifest.length">No firmware in the catalogue yet — add one below (or seed <code>cloud.firmware.manifest</code> manually).</p>
+
+        <!-- Add firmware: browse / drag & drop a bundle straight into the feed -->
+        <h4>Add Firmware</h4>
+        <div class="dropzone" [class.over]="dragOver" [class.busy]="uploading"
+             (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)"
+             (drop)="onDrop($event)" (click)="fileInput.click()">
+          <input #fileInput type="file" accept=".ipk,.tar.gz,.tgz" hidden (change)="onPick($event)" />
+          <clr-icon shape="upload-cloud" size="28"></clr-icon>
+          <span *ngIf="!uploading && !pendingFile">Drag &amp; drop an <code>.ipk</code> or <code>.tar.gz</code> bundle, or click to browse</span>
+          <span *ngIf="!uploading && pendingFile">{{ pendingFile.name }} ({{ (pendingFile.size/1048576) | number:'1.0-1' }} MB) — confirm details and upload</span>
+          <span *ngIf="uploading">Uploading {{ uploadName }} — {{ uploadPct }}%…</span>
+        </div>
+        <div class="form-grid" *ngIf="pendingFile" style="margin-top:12px; align-items:end;">
+          <clr-input-container>
+            <label>Package</label>
+            <input clrInput [(ngModel)]="upPkg" placeholder="iot-bundle" />
+          </clr-input-container>
+          <clr-input-container>
+            <label>Version</label>
+            <input clrInput [(ngModel)]="upVersion" placeholder="1.1.0" />
+          </clr-input-container>
+          <clr-input-container>
+            <label>Arch</label>
+            <input clrInput [(ngModel)]="upArch" placeholder="raspberrypi3-64" />
+          </clr-input-container>
+          <div class="btn-cell">
+            <button class="btn btn-primary" (click)="startUpload()" [disabled]="uploading || !upPkg">
+              {{ uploading ? 'Uploading…' : 'Upload to feed' }}
+            </button>
+          </div>
+        </div>
 
         <!-- Target devices (multi-select) -->
         <h4>Target Devices</h4>
@@ -107,6 +138,11 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
       transition: width 0.3s ease; border-radius: 4px; }
     .pbar > span.err { background: #c92100; }
     .pbar-pct { margin-left: 6px; font-size: 12px; color: #607d8b; vertical-align: middle; }
+    .dropzone { display: flex; align-items: center; gap: 12px; padding: 18px;
+      border: 2px dashed #b0bec5; border-radius: 8px; color: #607d8b;
+      cursor: pointer; font-size: 13px; transition: all 0.15s; background: #fafcfd; }
+    .dropzone:hover, .dropzone.over { border-color: #0072a3; color: #0072a3; background: #f0f8fc; }
+    .dropzone.busy { opacity: 0.6; pointer-events: none; }
   `]
 })
 export class SoftwareUpdateComponent implements OnInit, OnDestroy {
@@ -116,6 +152,16 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   selected: Ep[] = [];
   selectedUrl = '';
   pushing = false;
+  // Firmware upload (browse / drag-drop into the feed)
+  dragOver = false;
+  uploading = false;
+  uploadName = '';
+  uploadPct = 0;
+  pendingFile: File | null = null;
+  upPkg = '';
+  upVersion = '';
+  upArch = '';
+  private static readonly CHUNK = 4 * 1024 * 1024;
   private active = true;
   private sub = new Subscription();
 
@@ -196,6 +242,58 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
       },
       error: () => { this.pushing = false; this.toast.error('Update failed'); }
     });
+  }
+
+  // ── Firmware upload (browse / drag-drop into the cloud feed) ───────
+  onDragOver(e: DragEvent): void { e.preventDefault(); this.dragOver = true; }
+  onDragLeave(e: DragEvent): void { e.preventDefault(); this.dragOver = false; }
+  onDrop(e: DragEvent): void {
+    e.preventDefault(); this.dragOver = false;
+    const f = e.dataTransfer?.files?.[0]; if (f) this.stageFile(f);
+  }
+  onPick(e: Event): void {
+    const input = e.target as HTMLInputElement;
+    const f = input.files?.[0]; if (f) this.stageFile(f);
+    input.value = '';   // allow re-picking the same file
+  }
+
+  // Stage the file + pre-fill pkg/version/arch from its name (operator edits).
+  private stageFile(f: File): void {
+    if (!/\.(ipk|tar\.gz|tgz)$/i.test(f.name)) {
+      this.toast.error('Pick a .ipk, .tar.gz or .tgz file'); return;
+    }
+    this.pendingFile = f;
+    const base = f.name.replace(/\.(tar\.gz|tgz|ipk)$/i, '');
+    this.upPkg = base; this.upVersion = ''; this.upArch = '';
+    // .ipk = name_version_arch ; bundle = pkg-version-arch (version starts w/ a digit)
+    let m = base.match(/^(.+)_([^_]+)_([^_]+)$/);
+    if (!m) m = base.match(/^(.+)-(\d[\w.+]*)-([\w.+-]+)$/);
+    if (m) { this.upPkg = m[1]; this.upVersion = m[2]; this.upArch = m[3]; }
+  }
+
+  startUpload(): void {
+    const file = this.pendingFile;
+    if (!file || this.uploading || !this.upPkg) return;
+    this.uploading = true; this.uploadName = file.name; this.uploadPct = 0;
+    const total = file.size;
+    const sendFrom = (offset: number): void => {
+      const end = Math.min(offset + SoftwareUpdateComponent.CHUNK, total);
+      const final = end >= total;
+      this.sub.add(this.http.uploadFirmwareChunk(file.name, this.upVersion, this.upArch,
+          this.upPkg, file.slice(offset, end), offset, final).subscribe({
+        next: (r) => {
+          if (!r.ok) { this.uploading = false; this.toast.error(r.err || 'Upload failed'); return; }
+          this.uploadPct = total ? Math.round((end / total) * 100) : 100;
+          if (final) {
+            this.uploading = false; this.pendingFile = null;
+            this.toast.success('Added ' + file.name + ' to the firmware feed');
+            this.loadManifest();   // dropdown picks up the new row
+          } else { sendFrom(end); }
+        },
+        error: (e) => { this.uploading = false; this.toast.error(e?.error?.err || 'Upload failed'); }
+      }));
+    };
+    sendFrom(0);
   }
 
   ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
