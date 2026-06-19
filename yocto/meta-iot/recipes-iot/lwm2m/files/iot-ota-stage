@@ -22,8 +22,10 @@ SOCK="/run/iot/data_store.sock"
 DSCLI="ds-cli --socket=${SOCK}"
 SPOOL="/run/iot/update"
 
-set_state()  { $DSCLI set iot.update.state  "$1" >/dev/null 2>&1 || true; }
-set_result() { $DSCLI set iot.update.result "$1" >/dev/null 2>&1 || true; }
+set_state()    { $DSCLI set iot.update.state    "$1" >/dev/null 2>&1 || true; }
+set_result()   { $DSCLI set iot.update.result   "$1" >/dev/null 2>&1 || true; }
+set_progress() { $DSCLI set iot.update.progress "$1" >/dev/null 2>&1 || true; }
+set_package()  { $DSCLI set iot.update.package  "$1" >/dev/null 2>&1 || true; }
 log() { logger -t iot-ota-stage "$*" 2>/dev/null; echo "iot-ota-stage: $*"; }
 fail() { log "FAILED ($1): $2"; set_result "$1"; set_state 0; exit 1; }
 
@@ -56,6 +58,12 @@ esac
 mkdir -p "$SPOOL"
 DL="$SPOOL/$NAME"
 
+# Surface what's being applied + reset the progress gauge for the UIs. The
+# package label is the artifact name plus version when known (e.g.
+# "iot-bundle-1.1.0-raspberrypi3-64.tar.gz (1.1.0)").
+set_package "${NAME}${VER:+ ($VER)}"
+set_progress 0
+
 set_state 1   # downloading
 log "downloading $URL -> $DL"
 
@@ -80,6 +88,32 @@ download_once() {
         return 99   # no downloader → caller maps to result 9
     fi
 }
+
+# Best-effort total size (Content-Length, following redirects) so the device-ui
+# can show a true byte-accurate download %. Empty/unknown → the gauge stays at 0
+# and the UI shows an indeterminate "downloading" bar instead of a false number.
+TOTAL=""
+if command -v curl >/dev/null 2>&1; then
+    TOTAL="$(curl -fksSLI "$URL" 2>/dev/null | tr 'A-Z' 'a-z' \
+            | awk -F': *' '/^content-length:/{gsub(/\r/,"",$2); v=$2} END{print v}')"
+fi
+case "$TOTAL" in ''|*[!0-9]*) TOTAL=0 ;; esac
+
+# Background poller: while the download runs, publish bytes-on-disk / TOTAL as a
+# 0..99 percentage (100 is set only once the file is complete + verified).
+poll_progress() {
+    [ "$TOTAL" -gt 0 ] || return 0
+    while :; do
+        sz="$(wc -c < "$DL" 2>/dev/null || echo 0)"
+        pct=$(( sz * 100 / TOTAL )); [ "$pct" -gt 99 ] && pct=99
+        set_progress "$pct"
+        sleep 1
+    done
+}
+poll_progress & POLLER=$!
+# Kill the poller no matter how we leave (success, fail, or signal).
+trap 'kill "$POLLER" 2>/dev/null' EXIT INT TERM
+
 attempt=1
 while : ; do
     # `&& break` (not `if/fi`): on failure the list's status stays
@@ -95,7 +129,9 @@ while : ; do
     DELAY=$(( DELAY * 2 )); [ "$DELAY" -gt 60 ] && DELAY=60
     attempt=$(( attempt + 1 ))
 done
+kill "$POLLER" 2>/dev/null; trap - EXIT INT TERM
 [ -s "$DL" ] || fail 8 "empty download"
+set_progress 100   # bytes fully on disk; sha256 verify is the next gate
 
 # sha256 is verified against the downloaded artifact (the tarball for a bundle,
 # the .ipk otherwise) — the cloud computes it over the same file.

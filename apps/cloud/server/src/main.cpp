@@ -926,6 +926,7 @@ int main(int argc, char** argv) {
                         std::string url = req.value("url", "");
                         std::string sha = req.value("sha256", "");
                         std::string ver = req.value("version", "");
+                        std::string pkg = req.value("pkg", "");
                         // Validate url against the manifest (and fill sha/ver).
                         bool known = false;
                         auto man = nlohmann::json::parse(
@@ -935,6 +936,7 @@ int main(int argc, char** argv) {
                                 known = true;
                                 if (sha.empty()) sha = m.value("sha256",  "");
                                 if (ver.empty()) ver = m.value("version", "");
+                                if (pkg.empty()) pkg = m.value("pkg",     "");
                                 break;
                             }
                         }
@@ -998,7 +1000,8 @@ int main(int argc, char** argv) {
                                 pending.push_back({{"endpoint", serial}, {"cid", cid},
                                     {"url", fullUrl}, {"sha256", sha}, {"version", ver}});
                                 status.push_back({{"serial", serial}, {"state", 1},
-                                    {"result", 0}, {"version", ver}, {"ts", cid}});
+                                    {"result", 0}, {"version", ver}, {"pkg", pkg},
+                                    {"ts", cid}});
                             }
                             ds.set("cloud.update.pending",
                                    data_store::Value{pending.dump()});

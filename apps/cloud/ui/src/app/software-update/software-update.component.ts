@@ -7,7 +7,7 @@ import { ToastService } from '../../common/toast.service';
 
 interface FwPkg { pkg: string; version: string; arch: string; ipk_url: string; sha256: string; }
 interface Ep { endpoint: string; tun_ip: string; proxy_port: number; registered: boolean; installed_version?: string; }
-interface UpdStatus { serial: string; state: number; result: number; version: string; ts: number; }
+interface UpdStatus { serial: string; state: number; result: number; version: string; pkg?: string; ts: number; }
 
 @Component({
   selector: 'app-software-update',
@@ -62,15 +62,23 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
         <h4 style="margin-top:28px;">Update Status</h4>
         <clr-datagrid>
           <clr-dg-column>Serial</clr-dg-column>
+          <clr-dg-column>Package</clr-dg-column>
           <clr-dg-column>State</clr-dg-column>
+          <clr-dg-column>Progress</clr-dg-column>
           <clr-dg-column>Result</clr-dg-column>
           <clr-dg-column>Version</clr-dg-column>
 
           <clr-dg-row *clrDgItems="let s of status">
             <clr-dg-cell><code>{{ s.serial }}</code></clr-dg-cell>
+            <clr-dg-cell>{{ s.pkg || '—' }}</clr-dg-cell>
             <clr-dg-cell>
               <app-status-badge [label]="stateLabel(s.state)"
                 [state]="s.state===0 ? 'connected' : 'idle'"></app-status-badge>
+            </clr-dg-cell>
+            <clr-dg-cell>
+              <div class="pbar"><span [style.width.%]="progressPct(s)"
+                [class.err]="s.result>=5"></span></div>
+              <span class="pbar-pct">{{ progressPct(s) }}%</span>
             </clr-dg-cell>
             <clr-dg-cell>
               <app-status-badge [label]="resultLabel(s.result)"
@@ -93,6 +101,12 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
     .hint { color: #888; font-size: 12px; margin-top: 8px; }
     .btn-cell { display: flex; align-items: flex-end; }
     .btn-cell .btn-primary { white-space: nowrap; }
+    .pbar { display: inline-block; width: 90px; height: 8px; background: #e0e6e9;
+      border-radius: 4px; overflow: hidden; vertical-align: middle; }
+    .pbar > span { display: block; height: 100%; background: #0072a3;
+      transition: width 0.3s ease; border-radius: 4px; }
+    .pbar > span.err { background: #c92100; }
+    .pbar-pct { margin-left: 6px; font-size: 12px; color: #607d8b; vertical-align: middle; }
   `]
 })
 export class SoftwareUpdateComponent implements OnInit, OnDestroy {
@@ -152,6 +166,17 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     if (r === 8) return 'uri error';
     if (r === 9) return 'install error';
     return 'error ' + r;
+  }
+  // Cloud-side progress is PHASE-based (the device's byte-accurate % shows on the
+  // device-ui): the cloud sees the coarse Object-5 state, not the live download.
+  // 100% once the device reports success or its installed version matches the
+  // target; a failed job freezes the bar (rendered red) at the phase it died.
+  progressPct(s: UpdStatus): number {
+    if (s.result === 1) return 100;
+    const ep = this.endpoints.find(e => e.endpoint === s.serial);
+    if (ep?.installed_version && ep.installed_version === s.version) return 100;
+    if (s.result >= 5) return s.state >= 2 ? 80 : 30;
+    return [0, 30, 65, 90][s.state] ?? 0;
   }
 
   pushUpdate(): void {
