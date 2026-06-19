@@ -30,7 +30,7 @@ export class Lwm2mConfigComponent implements OnInit, OnDestroy {
     // per-endpoint into cloud.endpoint.credentials — see the Endpoints page.
     this.dmForm = fb.group({
       dm_uri:        ['coaps://0.0.0.0:5683'],
-      lifetime:      [86400],
+      lifetime:      [90],
       binding:       ['U'],
     });
   }
@@ -52,7 +52,7 @@ export class Lwm2mConfigComponent implements OnInit, OnDestroy {
   private applyData(d: Record<string, unknown>): void {
     this.dmForm.patchValue({
       dm_uri:   d['cloud.dm.uri']      || 'coaps://0.0.0.0:5683',
-      lifetime: d['cloud.dm.lifetime'] || 86400,
+      lifetime: d['cloud.dm.lifetime'] || 90,
       binding:  d['cloud.dm.binding']  || 'U',
     });
   }
