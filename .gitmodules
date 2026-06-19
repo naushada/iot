@@ -7,4 +7,4 @@
 [submodule "modules/rpi3B"]
 	path = modules/rpi3B
 	url = https://github.com/naushada/rpi3B.git
-	branch = feat/i2c-spi-drivers-and-fixes
+	branch = main
