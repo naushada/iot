@@ -21,7 +21,7 @@ operator reach each NAT'd device's local web UI from one cloud dashboard.
 | **Device-UI-over-VPN** | Every device serves its own web UI behind NAT; the cloud reverse-proxies each one (per-device nftables DNAT) so operators reach it with one click — **Launch UI**. |
 | **Cloud Operator Dashboard** | Angular 14 + Clarity SPA: endpoints, VPN, routing/forwarding, LwM2M config, services, logs, multi-user login (SHA-256, Admin/Viewer roles). |
 | **On-device UI** | The same UI on the device for local commissioning, WiFi/WAN, VPN, and live LwM2M/VPN status. |
-| **OTA software update** | Cloud firmware feed + LwM2M Object 5; multi-select push from the cloud UI; the device pulls, verifies sha256, installs the `.ipk`, and restarts — detached so it survives replacing the running binary. |
+| **OTA software update** | Cloud firmware feed + LwM2M Object 5; multi-select push from the cloud UI upgrades a whole list of devices in one shot — a single `.ipk` or a `.tar.gz` bundle of the entire `iot-*` userspace. The device pulls **direct over the public WAN (not the tunnel)** with retry + resume, verifies sha256 (pinned over the trusted DTLS channel), installs, and restarts — detached so it survives replacing the running binary, and so a stuck VPN can't block its own fix. |
 | **Schema-enforced data store** | A small AF_UNIX key/value store (`ds-server`) is the single IPC backbone; typed, schema-validated, per-key ACLs, live watch + hot-reload, write-through persistence. |
 | **Service control plane** | Per-daemon enable/disable/restart, dependency gating, rate-limiting, live log level + log viewer. |
 | **Build & ship anywhere** | Dev + thin runtime OCI images, docker-compose stacks for cloud and device, and a full **Yocto** layer that builds a bootable Raspberry Pi 3B image **and** the per-daemon `.ipk` feed — entirely inside a container, no host Yocto install. |
@@ -137,11 +137,14 @@ We'd rather you know up front. Current, honest limits of the platform:
 - No built-in horizontal scaling, load balancing, or geo-distribution.
 
 **Updates**
-- **OTA is Phase 1:** userspace `.ipk` packages via LwM2M Object 5 + the cloud
-  feed (multi-select push, device self-update). **Full-image / A-B partition /
-  rollback OTA is Phase 2 and not yet implemented.** A redesigned
-  inotify-triggered installer for Yocto is *designed* but not yet shipped
-  (`apps/docs/tdd-yocto-swupdate.md`).
+- **OTA covers userspace today:** single `.ipk` *or* a `.tar.gz` bundle of the
+  whole `iot-*` userspace, via LwM2M Object 5 + the cloud feed (multi-select
+  push to a list of endpoints, VPN-independent download with retry/resume,
+  re-pushable per campaign, device self-update). The inotify-triggered installer
+  (`iot-ota-stage` + `iot-swupdate`) **is shipped**
+  (`apps/docs/tdd-yocto-swupdate.md`). **Atomic full-image / A-B partition /
+  rollback OTA (RAUC, behind `IOT_AB=1`) — build + bootloader wiring is done but
+  pending hardware acceptance** (`apps/docs/tdd-ab-image-ota.md`).
 
 **Hardware & platform**
 - **Reference target is the Raspberry Pi 3B** (Yocto), with qemuarm64/ARMv7

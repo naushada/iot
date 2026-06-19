@@ -310,6 +310,12 @@ scp yocto/build/raspberrypi3-64/ipk/*/iot-*.ipk root@<pi-ip>:/tmp/
 ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk && systemctl restart iot-httpd'
 ```
 
+> This is the bench path. In the field, updates go **over LwM2M from the cloud
+> UI** (no ssh): push a single `.ipk` or the whole-userspace `iot-bundle.tar.gz`
+> to a multi-selected list of devices; the download runs direct over the public
+> WAN with retry/resume. See
+> [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md#ota-updates-lwm2m-object-5).
+
 Full Yocto / layer docs, including how to change the architecture, the
 image payload, or the Wi-Fi firmware package:
 [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md).

@@ -154,16 +154,28 @@ ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
 
 The manual `scp` + `opkg` step above is for the bench. In the field, app
 updates ride the **LwM2M Object 5 (Firmware Update)** flow — the cloud points
-the device at an `.ipk` in its firmware feed, and the device pulls and applies
-it over the VPN tunnel. This is split into a **stager** and an
-**inotify-triggered installer** (full design: `apps/docs/tdd-yocto-swupdate.md`):
+the device at an artifact in its firmware feed and the device pulls and applies
+it. The artifact is either a **single `.ipk`** or a **`.tar.gz` bundle of every
+`iot-*.ipk`** (built by `iot-bundle.bb`) for a whole-userspace upgrade in one
+push; the cloud-ui multi-selects endpoints, so one push can target a whole list
+of devices. The download runs **direct over the public WAN, not the VPN
+tunnel** — the cloud resolves a relative manifest `ipk_url` (`/firmware/...`)
+against its public address (`cloud.firmware.base.url`, else the host of
+`cloud.dm.uri`), and the `sha256` that pins integrity arrives over the trusted
+DTLS control plane, so the payload transport needn't be trusted. This keeps OTA
+working when the tunnel is down and lets a bundle safely replace the VPN client
+itself. The flow is split into a **stager** and an **inotify-triggered
+installer** (full design: `apps/docs/tdd-yocto-swupdate.md`):
 
 - `iot-ota-stage` (`/usr/bin/iot-ota-stage`, in `iot-lwm2m`) is the worker the
   LwM2M client invokes on a /5/0/0 write. It runs **detached**
-  (`systemd-run --unit=iot-ota-stage`): download the `.ipk` (honouring
-  `?sha256=` / `?version=` / `?reboot=` params) → verify sha256 → write it to the
-  tmpfs spool `/run/iot/update/` → `touch` the empty `update` trigger. It does
-  **not** install.
+  (`systemd-run --unit=iot-ota-stage`): download the artifact (honouring
+  `?sha256=` / `?version=` / `?reboot=` params) with **retry + resume**
+  (`curl -C -` / `wget -c`, up to `iot.update.retries`, default 5) so a flaky
+  uplink doesn't fail the campaign → verify sha256 → for a `.tar.gz` bundle,
+  extract the `.ipk`s into the spool (so the installer's `*.ipk` glob applies
+  them all) → write to the tmpfs spool `/run/iot/update/` → `touch` the empty
+  `update` trigger. It does **not** install.
 - `iot-swupdate.path` (systemd **inotify** watch on the trigger) fires
   `iot-swupdate.service` → `/usr/bin/iot-swupdate`, which: snapshots + re-arms,
   `opkg install --force-reinstall --force-downgrade`, runs config/schema
@@ -185,9 +197,16 @@ it over the VPN tunnel. This is split into a **stager** and an
   | `iot.update.state`  | 0 idle · 1 downloading · 2 downloaded · 3 updating  |
   | `iot.update.result` | 0 initial · 1 success · 5 integrity · 8 uri · 9 install |
 
-This is Phase 1 (single `.ipk` package update). Full-image A/B updates are
-out of scope here. See `apps/docs/` and the device/cloud OTA notes for the
-end-to-end push from the cloud UI.
+Re-pushing is idempotent per **campaign**: iot-cloudd stamps each push with a
+monotonic `cloud.update.seq` (`cid`), and lwm2m-dm pushes Object 5 at-most-once
+per `(endpoint, cid)` — so a fresh push re-sends even an identical version,
+while a stuck campaign isn't re-fired every tick.
+
+This covers per-`.ipk` and whole-userspace (`iot-bundle`) updates. Atomic
+full-image **A/B** updates (RAUC `.raucb`, behind `IOT_AB=1`) are a separate
+path — `iot-swupdate` branches on `.raucb` → `rauc install` + reboot — see
+`apps/docs/tdd-ab-image-ota.md`. See `apps/docs/` and the device/cloud OTA
+notes for the end-to-end push from the cloud UI.
 
 ## What this layer provides
 
