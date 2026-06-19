@@ -14,6 +14,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -85,7 +86,8 @@ bool save_accounts(data_store::Client* ds, const json& arr) {
 
 void install_handlers(Router& router,
                       data_store::Client* ds,
-                      SessionStore* auth) {
+                      SessionStore* auth,
+                      const std::string& firmware_dir) {
     // ─── GET / → redirect to the SPA login ───────────────────
     // The UI lives under /webui/; hitting the bare host (e.g. just the
     // IP) should land on the login page instead of a 404, so users can
@@ -475,6 +477,102 @@ void install_handlers(Router& router,
                 ACE_DEBUG((LM_INFO,
                            ACE_TEXT("%D httpd:thread:%t %M %N:%l OTA upload complete %C; "
                                     "triggered iot-swupdate\n"), safe.c_str()));
+            }
+            r.body = R"({"ok":true})";
+            return r;
+        });
+
+    // ── POST /api/v1/firmware/upload?name=<f>&version=&arch=&pkg= ──
+    // Cloud-side: browse / drag-drop a .ipk or .tar.gz bundle in the cloud-ui
+    // straight into the firmware FEED (firmware_dir, served at /firmware/) and
+    // add it to cloud.firmware.manifest — no scp / ds-cli for the operator.
+    // Chunked like /update/upload (offset=0 truncates, final=1 finalises). On
+    // the final chunk the server computes the sha256 over the assembled file
+    // (authoritative) and upserts the manifest row keyed by ipk_url. Only
+    // active where a firmware feed exists (the cloud); a device has none → 400.
+    router.add("POST", "/api/v1/firmware/upload",
+        [ds, auth, firmware_dir](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            std::string access_level = "Admin";
+            if (auth && auth->enabled()) {
+                std::string token = extract_session_cookie(req.headers, auth->cookie_name());
+                if (!token.empty()) { const auto* s = auth->validate(token); if (s) access_level = s->access; }
+            }
+            if (access_level != "Admin") {
+                r.status = 403; r.body = R"({"ok":false,"err":"admin required"})"; return r;
+            }
+            if (firmware_dir.empty()) {
+                r.status = 400; r.body = R"({"ok":false,"err":"no firmware feed on this host"})"; return r;
+            }
+            auto qp = [&](const char* k) -> std::string {
+                auto it = req.query.find(k); return it != req.query.end() ? it->second : std::string();
+            };
+            std::string name = qp("name");
+            if (auto p = name.find_last_of('/'); p != std::string::npos) name = name.substr(p + 1);
+            std::string safe;
+            for (char c : name)
+                safe.push_back((std::isalnum(static_cast<unsigned char>(c)) ||
+                                c == '.' || c == '_' || c == '-') ? c : '_');
+            auto ends_with = [&](const char* e) {
+                std::string s(e);
+                return safe.size() >= s.size() &&
+                       safe.compare(safe.size() - s.size(), s.size(), s) == 0;
+            };
+            if (safe.empty() || !(ends_with(".ipk") || ends_with(".tar.gz") || ends_with(".tgz"))) {
+                r.status = 400; r.body = R"({"ok":false,"err":"name must end in .ipk, .tar.gz or .tgz"})"; return r;
+            }
+            bool first = true, final = true;
+            if (auto it = req.query.find("offset"); it != req.query.end())
+                first = (it->second == "0" || it->second.empty());
+            if (auto it = req.query.find("final"); it != req.query.end())
+                final = (it->second == "1" || it->second == "true");
+            if (req.body.empty() && first) {
+                r.status = 400; r.body = R"({"ok":false,"err":"empty upload"})"; return r;
+            }
+            const std::string path = firmware_dir + "/" + safe;
+            {
+                std::ios::openmode mode = std::ios::binary | std::ios::out |
+                                          (first ? std::ios::trunc : std::ios::app);
+                std::ofstream f(path, mode);
+                if (!f) {
+                    r.status = 500;
+                    r.body = R"({"ok":false,"err":"cannot write firmware feed (perms? feed mounted read-only?)"})";
+                    return r;
+                }
+                if (!req.body.empty())
+                    f.write(req.body.data(), static_cast<std::streamsize>(req.body.size()));
+                if (!f) { r.status = 500; r.body = R"({"ok":false,"err":"feed write failed"})"; return r; }
+            }
+            if (final) {
+                // Authoritative sha256 over the assembled file.
+                std::ifstream in(path, std::ios::binary);
+                std::string data((std::istreambuf_iterator<char>(in)),
+                                  std::istreambuf_iterator<char>());
+                const std::string sha = sha256_hex(data);
+                const std::string ipk_url = "/firmware/" + safe;
+                std::string pkg = qp("pkg"), ver = qp("version"), arch = qp("arch");
+                if (pkg.empty()) pkg = safe;   // fallback so the row is never blank
+                // Upsert into cloud.firmware.manifest, keyed by ipk_url.
+                json arr = json::array();
+                if (ds) {
+                    std::vector<data_store::Client::GetResult> g;
+                    if (ds->get({std::string("cloud.firmware.manifest")}, g).ok &&
+                        !g.empty() && g[0].has_value)
+                        if (auto cur = data_store::to_string(g[0].value))
+                            try { auto p = json::parse(*cur); if (p.is_array()) arr = p; }
+                            catch (const std::exception&) {}
+                }
+                json out = json::array();
+                for (auto& e : arr)
+                    if (e.value("ipk_url", "") != ipk_url) out.push_back(e);
+                out.push_back({{"pkg", pkg}, {"version", ver}, {"arch", arch},
+                               {"ipk_url", ipk_url}, {"sha256", sha}});
+                if (ds) ds->set("cloud.firmware.manifest", data_store::Value{out.dump()});
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D httpd:thread:%t %M %N:%l firmware upload complete %C "
+                                    "(sha256 %C) → manifest\n"), safe.c_str(), sha.c_str()));
+                r.body = std::string(R"({"ok":true,"sha256":")") + sha + R"("})";
+                return r;
             }
             r.body = R"({"ok":true})";
             return r;

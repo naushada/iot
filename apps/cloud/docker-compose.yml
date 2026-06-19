@@ -143,7 +143,7 @@ services:
     network_mode: "service:iot-cloudd"
     volumes:
       - iot-run:/var/run/iot
-      - iot-firmware:/var/lib/iot/firmware:ro   # OTA .ipk feed (served at /firmware/)
+      - iot-firmware:/var/lib/iot/firmware      # OTA .ipk feed (served at /firmware/; RW so the cloud-ui can upload bundles via POST /api/v1/firmware/upload)
       - iot-tls:/etc/iot/tls                    # self-signed cert — auto-provisioned by the image entrypoint
     environment:
       - TLS_HOST=${TLS_HOST:-}                  # cert CN/SAN for https (run.sh passes the host IP)

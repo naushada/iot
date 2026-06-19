@@ -18,7 +18,8 @@ namespace http_server {
 /// need the store for login/logout.
 void install_handlers(Router& router,
                       data_store::Client* ds,
-                      SessionStore* auth);
+                      SessionStore* auth,
+                      const std::string& firmware_dir = "");
 
 /// Install /api/v1/cloud/* handlers (L21/D7).  Pointers must outlive
 /// the router.  Call after install_handlers().
