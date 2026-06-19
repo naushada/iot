@@ -946,8 +946,37 @@ int main(int argc, char** argv) {
                                     if (e.value("endpoint", "") == s) return true;
                                 return false;
                             };
-                            std::string fullUrl = url +
-                                (url.find('?') == std::string::npos ? "?" : "&") +
+                            // Resolve a RELATIVE ipk_url (e.g. "/firmware/x.ipk")
+                            // against the cloud's PUBLIC base so the download
+                            // never depends on the VPN tunnel. Precedence:
+                            //   1. explicit cloud.firmware.base.url, else
+                            //   2. http://<host of cloud.dm.uri> — the same
+                            //      public address the device already reaches for
+                            //      DTLS (port 80, the published HTTP feed).
+                            // An absolute ipk_url (has "://") is used verbatim
+                            // (back-compat: an operator may still point at a CDN
+                            // or, deliberately, the tunnel IP).
+                            std::string abs = url;
+                            if (url.find("://") == std::string::npos) {
+                                std::string base =
+                                    ds_str(ds, "cloud.firmware.base.url", "");
+                                if (base.empty()) {
+                                    std::string dm = ds_str(ds, "cloud.dm.uri", "");
+                                    auto sp = dm.find("://");
+                                    std::string host =
+                                        (sp == std::string::npos) ? dm : dm.substr(sp + 3);
+                                    auto c = host.find_first_of(":/");
+                                    if (c != std::string::npos) host = host.substr(0, c);
+                                    if (!host.empty()) base = "http://" + host;
+                                }
+                                while (!base.empty() && base.back() == '/')
+                                    base.pop_back();
+                                if (!base.empty())
+                                    abs = base + (url.empty() || url[0] == '/'
+                                                  ? url : "/" + url);
+                            }
+                            std::string fullUrl = abs +
+                                (abs.find('?') == std::string::npos ? "?" : "&") +
                                 "sha256=" + sha + "&version=" + ver;
                             nlohmann::json pending = nlohmann::json::array();
                             nlohmann::json status  = nlohmann::json::array();

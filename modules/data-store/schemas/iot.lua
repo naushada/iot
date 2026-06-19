@@ -153,6 +153,14 @@ return {
         type    = "string",
         default = "",
     },
+    -- Download retry budget for iot-ota-stage. The firmware download rides the
+    -- public WAN (not the VPN tunnel), so a flaky uplink is retried with
+    -- backoff + resume up to this many attempts before failing the campaign.
+    ["iot.update.retries"] = {
+        access  = "Admin",
+        type    = "integer",
+        default = 5,
+    },
     -- Apply progress, written by iot-ota-apply, read by device-ui and
     -- mirrored into Object 5 (/5/0/3, /5/0/5) on client (re)start so a
     -- post-restart server readback reflects the outcome.
