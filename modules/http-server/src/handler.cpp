@@ -536,7 +536,7 @@ void install_handlers(Router& router,
                 std::ofstream f(path, mode);
                 if (!f) {
                     r.status = 500;
-                    r.body = R"({"ok":false,"err":"cannot write firmware feed (perms? feed mounted read-only?)"})";
+                    r.body = R"({"ok":false,"err":"cannot write firmware feed - perms or read-only mount"})";
                     return r;
                 }
                 if (!req.body.empty())
