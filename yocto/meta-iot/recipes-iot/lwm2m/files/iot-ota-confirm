@@ -22,10 +22,48 @@ if ! command -v rauc >/dev/null 2>&1; then
     exit 0
 fi
 
+# Publish BOTH banks as a JSON array for the device-ui Software page:
+#   [{ "bootname":"A","slot":"rootfs.0","version":"1.2.0","state":"good","booted":true }, …]
+# Sources `rauc status --output-format=shell` (valid sh — eval'd to define the
+# RAUC_* vars) so it's tolerant of slot ordering. The booted bank's version is
+# iot.version (the authoritative running release); the other bank's comes from
+# its persisted slot status (RAUC_SLOT_BUNDLE_VERSION_*, needs `statusfile` in
+# system.conf), empty until that bank has been RAUC-installed. HW-validate the
+# RAUC_* field names against the deployed rauc version.
+publish_banks() {
+    booted="$1"
+    iotver="$($DSCLI get iot.version 2>/dev/null | sed 's/^iot\.version=//' | tr -d "\"'")"
+    # eval the shell-format status into RAUC_* vars (single-quoted values → safe).
+    eval "$(rauc status --output-format=shell 2>/dev/null)" || true
+    if [ -z "${RAUC_SLOTS:-}" ]; then
+        set_ds iot.boot.banks '""'
+        return
+    fi
+    json="["; first=1
+    for i in $RAUC_SLOTS; do
+        eval "name=\${RAUC_SLOT_NAME_$i:-}"
+        eval "bn=\${RAUC_SLOT_BOOTNAME_$i:-}"
+        eval "bs=\${RAUC_SLOT_BOOT_STATUS_$i:-unknown}"
+        eval "ver=\${RAUC_SLOT_BUNDLE_VERSION_$i:-}"
+        [ -n "$name" ] || continue
+        if [ "$name" = "$booted" ]; then isb=true; [ -n "$iotver" ] && ver="$iotver"; else isb=false; fi
+        [ -n "$bs" ] || bs="unknown"
+        [ "$first" = 1 ] || json="$json,"; first=0
+        json="$json{\"bootname\":\"$bn\",\"slot\":\"$name\",\"version\":\"$ver\",\"state\":\"$bs\",\"booted\":$isb}"
+    done
+    json="$json]"
+    # iot.boot.banks is a STRING key and ds-cli JSON-parses its argument, so the
+    # array text must be passed as a JSON string: escape backslashes then quotes
+    # and wrap in literal quotes.
+    esc="$(printf '%s' "$json" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+    $DSCLI set iot.boot.banks "\"$esc\"" >/dev/null 2>&1 || true
+}
+
 # Which rootfs bank booted (e.g. "rootfs.0"/"A"). Publish for the UI.
 BANK="$(rauc status --output-format=shell 2>/dev/null \
         | sed -n 's/^RAUC_SYSTEM_BOOTED_SLOT=\(.*\)/\1/p' | tr -d "\"'")"
 [ -n "$BANK" ] && set_ds iot.boot.bank "\"$BANK\""
+publish_banks "$BANK"
 
 # Healthy = ds answers AND the core daemons are active. (Deliberately NOT gating
 # on LwM2M registration — a transient cloud outage must not trigger a rollback
@@ -45,6 +83,7 @@ while [ "$i" -lt 90 ]; do          # up to ~90 s for the stack to come up
         set_ds iot.boot.confirmed true
         set_ds iot.update.result 1     # success
         set_ds iot.update.state  0     # idle
+        publish_banks "$BANK"          # re-emit so this bank now reads state=good
         log "boot ${BANK:-?} confirmed good (marked good)"
         exit 0
     fi

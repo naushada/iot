@@ -33,13 +33,65 @@ import { ToastService } from '../../common/toast.service';
             <clr-dg-cell><app-status-badge [label]="resultLabel"
               [state]="result===1 ? 'connected' : (result>=5 ? 'exited' : 'idle')"></app-status-badge></clr-dg-cell>
           </clr-dg-row>
-          <clr-dg-row *ngIf="bank">
+          <clr-dg-row *ngIf="bank && !banks.length">
             <clr-dg-cell>Running Bank <span class="hint">(A/B image)</span>
               <app-ds-hint *dsDebug key="iot.boot.bank"></app-ds-hint></clr-dg-cell>
             <clr-dg-cell><app-status-badge [label]="bank + (confirmed ? ' · confirmed' : ' · unconfirmed')"
               [state]="confirmed ? 'connected' : 'starting'"></app-status-badge></clr-dg-cell>
           </clr-dg-row>
         </clr-datagrid>
+
+        <!-- A/B banks: both rootfs banks, their installed version, and a
+             switch-and-reboot action on the inactive one. -->
+        <ng-container *ngIf="banks.length">
+          <h4>A/B Banks <span class="hint">(dual-bank image)</span>
+            <app-ds-hint *dsDebug key="iot.boot.banks"></app-ds-hint></h4>
+          <clr-datagrid style="margin-bottom:8px;">
+            <clr-dg-column>Bank</clr-dg-column>
+            <clr-dg-column>Installed Version</clr-dg-column>
+            <clr-dg-column>Status</clr-dg-column>
+            <clr-dg-column>Action</clr-dg-column>
+            <clr-dg-row *ngFor="let b of banks">
+              <clr-dg-cell>{{ b.bootname || '?' }} <span class="hint">({{ b.slot }})</span></clr-dg-cell>
+              <clr-dg-cell>{{ b.version || '—' }}</clr-dg-cell>
+              <clr-dg-cell>
+                <app-status-badge
+                  [label]="b.booted ? ('running' + (confirmed ? ' · confirmed' : ' · unconfirmed')) : (b.state || 'standby')"
+                  [state]="b.booted ? (confirmed ? 'connected' : 'starting') : (b.state === 'bad' ? 'exited' : 'idle')">
+                </app-status-badge>
+              </clr-dg-cell>
+              <clr-dg-cell>
+                <button *ngIf="!b.booted" class="btn btn-sm btn-outline" (click)="askSwitch(b)"
+                        [disabled]="switching">Switch &amp; reboot</button>
+                <span *ngIf="b.booted" class="hint">current</span>
+              </clr-dg-cell>
+            </clr-dg-row>
+          </clr-datagrid>
+          <p class="hint">Switching marks the selected bank for the next boot and reboots the device.
+            If the new bank fails to come up cleanly after {{ bootAttempts }} attempts, the bootloader
+            automatically rolls back to the current bank.</p>
+        </ng-container>
+
+        <!-- Reboot confirmation (switching banks reboots the device). -->
+        <clr-modal [(clrModalOpen)]="showSwitchModal">
+          <h3 class="modal-title">Switch bank &amp; reboot?</h3>
+          <div class="modal-body">
+            <p>Reboot into bank <strong>{{ switchTarget?.bootname }}</strong>
+               (version {{ switchTarget?.version || 'unknown' }})?</p>
+            <p class="hint">The device reboots immediately. If the selected bank does not come up
+               cleanly it rolls back to the current bank automatically — but the device will be
+               briefly offline either way.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline" (click)="showSwitchModal=false"
+                    [disabled]="switching">Cancel</button>
+            <button type="button" class="btn btn-danger" (click)="confirmSwitch()"
+                    [disabled]="switching">
+              <span *ngIf="!switching">Switch &amp; reboot</span>
+              <span *ngIf="switching">Rebooting…</span>
+            </button>
+          </div>
+        </clr-modal>
 
         <!-- Self-update trigger -->
         <h4>Apply a package (.ipk URL)</h4>
@@ -97,6 +149,12 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   result = 0;
   bank = '';          // iot.boot.bank — running A/B rootfs bank (empty = single-rootfs)
   confirmed = false;  // iot.boot.confirmed — this boot marked good
+  // iot.boot.banks — both A/B banks (empty on a single-rootfs image).
+  banks: Array<{ bootname: string; slot: string; version: string; state: string; booted: boolean }> = [];
+  readonly bootAttempts = 3;          // system.conf boot-attempts (rollback threshold)
+  showSwitchModal = false;
+  switchTarget: { bootname: string; slot: string; version: string; state: string; booted: boolean } | null = null;
+  switching = false;
   url = '';
   busy = false;
   dragOver = false;
@@ -141,14 +199,55 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     this.sub.add(this.ds.observe('iot.update.result').subscribe(v => {
       this.result = Number(v) || 0;
     }));
-    // A/B boot status changes only once per boot — read it once.
-    this.sub.add(this.http.dbGet(['iot.boot.bank', 'iot.boot.confirmed']).subscribe(r => {
+    // A/B boot status changes only once per boot — read it once. iot.boot.banks
+    // is also written at boot (before the UI connects), so read it here too; the
+    // observe below only delivers later changes (mark-good / post-switch).
+    this.sub.add(this.http.dbGet(['iot.boot.bank', 'iot.boot.confirmed', 'iot.boot.banks']).subscribe(r => {
       if (r.ok && r.data) {
         const d = r.data as Record<string, unknown>;
         this.bank = d['iot.boot.bank'] != null ? String(d['iot.boot.bank']) : '';
         this.confirmed = d['iot.boot.confirmed'] === true;
+        this.parseBanks(d['iot.boot.banks']);
       }
     }));
+    // Live refresh when iot-ota-confirm marks the booted bank good, or a switch
+    // re-publishes.
+    this.sub.add(this.ds.observe('iot.boot.banks').subscribe(v => this.parseBanks(v)));
+  }
+
+  private parseBanks(v: unknown): void {
+    if (v == null || v === '') { this.banks = []; return; }
+    try {
+      const arr = typeof v === 'string' ? JSON.parse(v) : v;
+      this.banks = Array.isArray(arr) ? arr.map(b => ({
+        bootname: String((b as Record<string, unknown>)['bootname'] ?? ''),
+        slot:     String((b as Record<string, unknown>)['slot'] ?? ''),
+        version:  String((b as Record<string, unknown>)['version'] ?? ''),
+        state:    String((b as Record<string, unknown>)['state'] ?? ''),
+        booted:   (b as Record<string, unknown>)['booted'] === true,
+      })) : [];
+    } catch { this.banks = []; }
+  }
+
+  askSwitch(b: { bootname: string; slot: string; version: string; state: string; booted: boolean }): void {
+    this.switchTarget = b;
+    this.showSwitchModal = true;
+  }
+
+  confirmSwitch(): void {
+    if (!this.switchTarget) return;
+    this.switching = true;
+    // Send the target bank's bootname; iot-bank-switch (device) marks it active
+    // and reboots. The key is cleared device-side after handling.
+    this.http.dbSet([{ key: 'iot.boot.switch.request', value: this.switchTarget.bootname }]).subscribe({
+      next: (r) => {
+        this.switching = false;
+        this.showSwitchModal = false;
+        if (r.ok) this.toast.success('Bank switch requested — the device is rebooting…');
+        else this.toast.error(r.err || 'Bank switch failed');
+      },
+      error: () => { this.switching = false; this.toast.error('Bank switch failed'); }
+    });
   }
 
   apply(): void {

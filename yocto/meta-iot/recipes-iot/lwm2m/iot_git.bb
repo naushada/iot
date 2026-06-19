@@ -51,6 +51,7 @@ SRC_URI = "\
     file://iot-swupdate.service \
     file://iot-ota-confirm \
     file://iot-ota-confirm.service \
+    file://iot-bank-switch \
     file://migrations/README.md \
     file://migrations/0000-template.sh.example \
     file://gen_wifi_default.py \
@@ -219,6 +220,7 @@ do_install() {
     install -m 0755 ${WORKDIR}/iot-ota-stage    ${D}${bindir}/iot-ota-stage
     install -m 0755 ${WORKDIR}/iot-swupdate     ${D}${bindir}/iot-swupdate
     install -m 0755 ${WORKDIR}/iot-ota-confirm  ${D}${bindir}/iot-ota-confirm
+    install -m 0755 ${WORKDIR}/iot-bank-switch  ${D}${bindir}/iot-bank-switch
 
     # iot-dump: operator/debug tool — dumps all data-store keys + values for
     # a module (e.g. `iot-dump iot-wifi-client`). Ships with ds-cli.
@@ -363,6 +365,7 @@ FILES:${PN}-lwm2m = "\
     ${bindir}/iot-ota-stage \
     ${bindir}/iot-swupdate \
     ${bindir}/iot-ota-confirm \
+    ${bindir}/iot-bank-switch \
     ${datadir}/iot/migrations \
     ${systemd_system_unitdir}/iot-lwm2m-client.service \
     ${systemd_system_unitdir}/iot-lwm2m-server.service \

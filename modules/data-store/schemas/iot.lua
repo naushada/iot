@@ -181,6 +181,26 @@ return {
         type    = "boolean",
         default = false,
     },
+    -- Both A/B banks for the device-ui Software page: a JSON array
+    --   [{ "bootname":"A", "slot":"rootfs.0", "version":"1.2.0",
+    --      "state":"good", "booted":true }, { ...B... }]
+    -- Written by iot-ota-confirm at boot (and by iot-bank-switch after a
+    -- mark-active). Empty on a single-rootfs / non-RAUC image.
+    ["iot.boot.banks"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
+    -- Bank-switch trigger: device-ui writes the TARGET bootname ("A"|"B", or
+    -- "other" for the inactive bank). The lwm2m client watches it and runs
+    -- iot-bank-switch (root, via systemd-run), which `rauc status mark-active`s
+    -- that bank and reboots. The bootloader's boot-attempts counter rolls back
+    -- to the previous bank if the new one fails to come up. Cleared after use.
+    ["iot.boot.switch.request"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
 
     -- data-store self-benchmark summary (JSON), written by ds-bench at the end
     -- of a run: { config, mem:{rss_kb,hwm_kb}, per-op {ops,p50,p95,p99} }.

@@ -112,6 +112,30 @@ Reuse the OTA ds keys, extended:
   drag-zone accepts `.ipk` (Phase 1, opkg) **or** `.raucb` (Phase 2, A/B) — it
   routes by extension.
 
+### 6.1 Both-banks view + manual bank switch (shipped)
+
+The Software page shows **both** banks — bootname, installed version, and
+good/running status — and an operator can switch the active bank from there.
+
+- **`iot.boot.banks`** — JSON array `[{bootname,slot,version,state,booted}, …]`,
+  published by `iot-ota-confirm` at boot (and re-emitted after `mark-good`). It
+  sources `rauc status --output-format=shell`; the booted bank's version is the
+  authoritative `iot.version`, the other bank's comes from its persisted slot
+  status — which is why `system.conf` now sets a central
+  `statusfile=/var/lib/iot/rauc.status` on the shared data partition (so the
+  booted bank can read the inactive bank's `bundle.version`).
+- **`iot.boot.switch.request`** — the device-ui writes the **target bootname**
+  ("A"/"B", or "other"). The lwm2m client watches it and launches
+  `iot-bank-switch` as root (via `systemd-run`, the same unprivileged→root
+  bridge as `iot-ota-stage`); it `rauc status mark-active`s the target slot,
+  clears the key, and reboots.
+- **Rollback is automatic and needs no UI:** the bootloader's `boot-attempts=3`
+  reverts to the previous bank if the switched-to bank never reaches a healthy
+  `mark-good` (`iot-ota-confirm`). The UI surfaces this in the confirm dialog.
+- Files: `iot-bank-switch` (script), `iot-ota-confirm` (publishes banks),
+  `apps/src/main.cpp` (watch), `iot.lua` (keys), `system.conf` (statusfile),
+  `iot-ui/.../software-update.component.ts` (banks table + switch modal).
+
 ## 7. Yocto work (sketch)
 
 - Add `meta-rauc` (+ RPi community layer); switch RPi to u-boot (or use the

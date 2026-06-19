@@ -837,6 +837,27 @@ static int ota_launch_apply(const std::string& uri) {
     return 0;
 }
 
+/// A/B bank switch: run iot-bank-switch (root, detached) with the requested
+/// target bank ("A"/"B"/"other"). It `rauc status mark-active`s that bank and
+/// reboots; the bootloader rolls back if the new bank fails to come up. Same
+/// systemd-run pattern as ota_launch_apply (this daemon runs unprivileged).
+static int bank_switch_launch(const std::string& target) {
+    if (target.empty()) return -1;
+    std::string cmd =
+        "systemd-run --unit=iot-bank-switch --collect /usr/bin/iot-bank-switch "
+        + ota_shquote(target);
+    int rc = std::system(cmd.c_str());
+    if (rc != 0) {
+        ACE_ERROR((LM_ERROR,
+            ACE_TEXT("%D [ab] %M %N:%l bank-switch launch failed rc=%d cmd=%C\n"),
+            rc, cmd.c_str()));
+        return -1;
+    }
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ab] %M %N:%l launched iot-bank-switch %C\n"),
+        target.c_str()));
+    return 0;
+}
+
 ClientPlumbing wire_client(std::shared_ptr<App>& app,
                            const std::string& endpoint,
                            const std::string& configDir,
@@ -939,6 +960,17 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                     if (!s->empty()) ota_launch_apply(*s);
                 }
             }, &wh);
+
+        // device-ui A/B bank switch: a write to iot.boot.switch.request (the
+        // target bank) reboots the device into that bank. iot-bank-switch
+        // clears the key, so we ignore the empty-string reset it writes back.
+        data_store::Client::WatchHandle wbs = data_store::Client::kInvalidHandle;
+        dsc->watch("iot.boot.switch.request",
+            [](const data_store::Client::Event& e) {
+                if (auto s = data_store::to_string(e.value)) {
+                    if (!s->empty()) bank_switch_launch(*s);
+                }
+            }, &wbs);
     }
 
     plumb.dm = std::make_shared<::lwm2m::DmClient>(plumb.store);
