@@ -33,12 +33,12 @@ interface EpCred {
            from device-ui. Backend forms rpi<serial>@cloud.local, mints the
            DM PSK, and stores per-endpoint credentials. -->
       <div class="card" *ngIf="isAdmin" style="margin-bottom:20px;">
-        <div class="card-header">Provision a device</div>
+        <div class="card-header">{{ editing ? 'Update Bootstrap PSK — ' + provSerial : 'Provision a device' }}</div>
         <div class="card-block">
           <div class="form-grid">
             <clr-input-container>
               <label>Serial Number</label>
-              <input clrInput [(ngModel)]="provSerial" style="width:100%;"
+              <input clrInput [(ngModel)]="provSerial" [readonly]="editing" style="width:100%;"
                      placeholder="device serial (from device-ui)" />
               <clr-control-helper *dsDebug><app-ds-hint key="cloud.provision.request"></app-ds-hint></clr-control-helper>
             </clr-input-container>
@@ -53,9 +53,15 @@ interface EpCred {
           </div>
           <button class="btn btn-primary" style="margin-top:16px;"
                   [disabled]="provisioning" (click)="provision()">
-            {{ provisioning ? 'Provisioning…' : 'Provision' }}
+            {{ provisioning ? (editing ? 'Updating…' : 'Provisioning…') : (editing ? 'Update PSK' : 'Provision') }}
           </button>
-          <span *ngIf="!devMode" class="hint" style="margin-left:12px;">
+          <button *ngIf="editing" class="btn btn-link" style="margin-top:16px;"
+                  [disabled]="provisioning" (click)="cancelEdit()">Cancel</button>
+          <span *ngIf="editing" class="hint" style="margin-left:12px;">
+            Re-provisions <code>{{ provSerial }}</code> in place (keeps tunnel IP / proxy port) —
+            paste the device's newly-generated BS PSK.
+          </span>
+          <span *ngIf="!editing && !devMode" class="hint" style="margin-left:12px;">
             Note: enable <code>cloud.dev.mode</code> to store credentials during commissioning.
           </span>
         </div>
@@ -112,6 +118,7 @@ interface EpCred {
             <span *ngIf="e.registered && !e.dev_tun_ip" class="hint">VPN down</span>
           </clr-dg-cell>
           <clr-dg-cell *ngIf="isAdmin">
+            <button class="btn btn-sm btn-outline" (click)="editPsk(e.endpoint)">Edit</button>
             <button class="btn btn-sm btn-danger" (click)="deprovision(e.endpoint)">Remove</button>
           </clr-dg-cell>
         </clr-dg-row>
@@ -181,6 +188,8 @@ export class EndpointListComponent implements OnInit, OnDestroy {
   serverTunIp = '';
   // PSK provisioning (task O).
   provSerial = ''; provBsPsk = ''; provisioning = false; devMode = false;
+  // Edit mode: re-provision an existing endpoint to update its BS PSK in place.
+  editing = false;
   private sub = new Subscription(); private active = true;
 
   get isAdmin(): boolean { return this.session.isAdmin; }
@@ -274,11 +283,32 @@ export class EndpointListComponent implements OnInit, OnDestroy {
     ]).subscribe({
       next: (r) => {
         this.provisioning = false;
-        if (r.ok) { this.toast.success('Provisioning ' + serial); this.provSerial = ''; this.provBsPsk = ''; }
+        if (r.ok) {
+          this.toast.success((this.editing ? 'Updated PSK for ' : 'Provisioning ') + serial);
+          this.provSerial = ''; this.provBsPsk = ''; this.editing = false;
+        }
         else this.toast.error(r.err || 'Provision failed');
       },
       error: () => { this.provisioning = false; this.toast.error('Provision failed'); }
     });
+  }
+
+  /** Per-row "Edit": pre-fill the provision form with this endpoint's serial so
+   *  the operator pastes the device's newly-generated BS PSK and re-provisions.
+   *  Re-provisioning UPSERTS (replaces bs.psk.key in place, keeps tun_ip/proxy
+   *  port) — the right move after a reflashed SD regenerates its PSK, vs
+   *  Remove + re-add which would deprovision the endpoint. */
+  editPsk(ep: string): void {
+    this.provSerial = ep;
+    this.provBsPsk = '';
+    this.editing = true;
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch { /* noop */ }
+  }
+
+  cancelEdit(): void {
+    this.editing = false;
+    this.provSerial = '';
+    this.provBsPsk = '';
   }
 
   private startLongPoll(): void {
