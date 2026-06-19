@@ -174,6 +174,22 @@ return {
         type    = "integer",
         default = 0,
     },
+    -- Download progress 0..100, written by iot-ota-stage during the download
+    -- (bytes-on-disk / Content-Length). Stays 0 when the size is unknown (the
+    -- device-ui then shows an indeterminate bar). 100 = fully downloaded.
+    ["iot.update.progress"] = {
+        access  = "Admin",
+        type    = "integer",
+        default = 0,
+    },
+    -- Human label for the artifact being applied (e.g.
+    -- "iot-bundle-1.1.0-raspberrypi3-64.tar.gz (1.1.0)"), written by
+    -- iot-ota-stage. Shown in the device-ui Software Update status.
+    ["iot.update.package"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
 
     -- A/B image OTA (Phase 2). Which rootfs bank is running, and whether this
     -- boot has been health-checked + confirmed good (else the bootloader rolls

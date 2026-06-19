@@ -21,11 +21,30 @@ import { ToastService } from '../../common/toast.service';
               <app-ds-hint *dsDebug key="iot.version"></app-ds-hint></clr-dg-cell>
             <clr-dg-cell>{{ version || '—' }}</clr-dg-cell>
           </clr-dg-row>
+          <clr-dg-row *ngIf="pkg">
+            <clr-dg-cell>Package
+              <app-ds-hint *dsDebug key="iot.update.package"></app-ds-hint></clr-dg-cell>
+            <clr-dg-cell><code>{{ pkg }}</code></clr-dg-cell>
+          </clr-dg-row>
           <clr-dg-row>
             <clr-dg-cell>State
               <app-ds-hint *dsDebug key="iot.update.state"></app-ds-hint></clr-dg-cell>
             <clr-dg-cell><app-status-badge [label]="stateLabel"
               [state]="state===0 ? 'connected' : 'idle'"></app-status-badge></clr-dg-cell>
+          </clr-dg-row>
+          <clr-dg-row *ngIf="state===1">
+            <clr-dg-cell>Download
+              <app-ds-hint *dsDebug key="iot.update.progress"></app-ds-hint></clr-dg-cell>
+            <clr-dg-cell>
+              <ng-container *ngIf="progress > 0; else indeterminate">
+                <div class="pbar"><span [style.width.%]="progress"></span></div>
+                <span class="pbar-pct">{{ progress }}%</span>
+              </ng-container>
+              <ng-template #indeterminate>
+                <div class="pbar indet"><span></span></div>
+                <span class="pbar-pct">downloading…</span>
+              </ng-template>
+            </clr-dg-cell>
           </clr-dg-row>
           <clr-dg-row>
             <clr-dg-cell>Result
@@ -141,12 +160,21 @@ import { ToastService } from '../../common/toast.service';
       cursor: pointer; font-size: 13px; transition: all 0.15s; background: #fafcfd; }
     .dropzone:hover, .dropzone.over { border-color: #0072a3; color: #0072a3; background: #f0f8fc; }
     .dropzone.busy { opacity: 0.6; pointer-events: none; }
+    .pbar { display: inline-block; width: 140px; height: 8px; background: #e0e6e9;
+      border-radius: 4px; overflow: hidden; vertical-align: middle; }
+    .pbar > span { display: block; height: 100%; background: #0072a3;
+      transition: width 0.3s ease; border-radius: 4px; }
+    .pbar.indet > span { width: 35%; animation: pbar-slide 1.1s ease-in-out infinite; }
+    .pbar-pct { margin-left: 8px; font-size: 12px; color: #607d8b; vertical-align: middle; }
+    @keyframes pbar-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
   `]
 })
 export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   version = '';       // iot.version — the running/installed release (footer value)
   state = 0;
   result = 0;
+  pkg = '';           // iot.update.package — artifact being applied (name + version)
+  progress = 0;       // iot.update.progress — download % (0 when size unknown)
   bank = '';          // iot.boot.bank — running A/B rootfs bank (empty = single-rootfs)
   confirmed = false;  // iot.boot.confirmed — this boot marked good
   // iot.boot.banks — both A/B banks (empty on a single-rootfs image).
@@ -198,6 +226,12 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     }));
     this.sub.add(this.ds.observe('iot.update.result').subscribe(v => {
       this.result = Number(v) || 0;
+    }));
+    this.sub.add(this.ds.observe('iot.update.package').subscribe(v => {
+      this.pkg = String(v ?? '');
+    }));
+    this.sub.add(this.ds.observe('iot.update.progress').subscribe(v => {
+      this.progress = Math.max(0, Math.min(100, Number(v) || 0));
     }));
     // A/B boot status changes only once per boot — read it once. iot.boot.banks
     // is also written at boot (before the UI connects), so read it here too; the
