@@ -978,16 +978,27 @@ int main(int argc, char** argv) {
                             std::string fullUrl = abs +
                                 (abs.find('?') == std::string::npos ? "?" : "&") +
                                 "sha256=" + sha + "&version=" + ver;
+                            // Campaign id: a monotonic per-push counter that
+                            // stamps every job. lwm2m-dm keys "already pushed"
+                            // on endpoint+cid, so re-pushing even the SAME
+                            // version (fresh cid) re-sends — fixing the old
+                            // grow-only endpoint@version guard that made a
+                            // re-push a no-op until lwm2m-dm restarted. A
+                            // persisted counter (not a clock) → unique across
+                            // restarts and same-second double-pushes.
+                            int cid = ds_int(ds, "cloud.update.seq", 0) + 1;
+                            ds.set("cloud.update.seq",
+                                   data_store::Value{static_cast<std::int32_t>(cid)});
                             nlohmann::json pending = nlohmann::json::array();
                             nlohmann::json status  = nlohmann::json::array();
                             for (const auto& s : serials) {
                                 if (!s.is_string()) continue;
                                 std::string serial = s.get<std::string>();
                                 if (!ep_known(serial)) continue;
-                                pending.push_back({{"endpoint", serial},
+                                pending.push_back({{"endpoint", serial}, {"cid", cid},
                                     {"url", fullUrl}, {"sha256", sha}, {"version", ver}});
                                 status.push_back({{"serial", serial}, {"state", 1},
-                                    {"result", 0}, {"version", ver}, {"ts", 0}});
+                                    {"result", 0}, {"version", ver}, {"ts", cid}});
                             }
                             ds.set("cloud.update.pending",
                                    data_store::Value{pending.dump()});

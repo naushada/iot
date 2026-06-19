@@ -184,11 +184,21 @@ return {
     -- Per-endpoint update status (Object-5 readback), written by lwm2m-dm,
     -- read by cloud-ui. JSON array of
     --   { "serial":"...", "state":<0..3>, "result":<0..9>,
-    --     "version":"0.2.0", "ts":<unix> }
+    --     "version":"0.2.0", "ts":<cid> }
     ["cloud.update.status"] = {
         access  = "Admin",
         type    = "string",
         default = "[]",
+    },
+    -- Monotonic OTA campaign counter. iot-cloudd bumps it on every push and
+    -- stamps each cloud.update.pending job with the new value as "cid";
+    -- lwm2m-dm pushes Object-5 at-most-once per (endpoint, cid), so a re-push
+    -- (fresh cid) re-sends even the SAME version. Persisted so the id is unique
+    -- across restarts and same-second double-pushes.
+    ["cloud.update.seq"] = {
+        access  = "Admin",
+        type    = "integer",
+        default = 0,
     },
 
     -- ── PSK provisioning (serial-derived endpoint + per-endpoint PSK) ──
