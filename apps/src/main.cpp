@@ -10,6 +10,7 @@
 #include <cstdlib>   // std::system (OTA apply launcher)
 #include <fstream>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -492,10 +493,14 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     // tunnel, which resumes the push.
     auto* dsCertPush = ds.client();
 
-    // OTA: endpoints we've already pushed an update to this run (keyed by
-    // endpoint+version) so we send the Object-5 write+execute at-most-once —
-    // re-running opkg every tick would be wrong.
-    auto otaSent = std::make_shared<std::set<std::string>>();
+    // OTA: the campaign id (cloud.update.pending "cid") we last pushed to each
+    // endpoint, so the Object-5 write+execute fires at-most-once PER CAMPAIGN —
+    // re-running opkg every tick would be wrong, but a NEW push (operator
+    // re-pushes the same or a new version → fresh cid from cloud.update.seq)
+    // MUST re-send. Bounded to one entry per endpoint (overwritten), unlike the
+    // old grow-only endpoint@version set that made a same-version re-push a
+    // no-op until this daemon restarted.
+    auto otaSent = std::make_shared<std::map<std::string, std::string>>();
 
     app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll,
                                        publish_regs, dsCertPush, otaSent,
@@ -685,8 +690,16 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                                     if (job.value("endpoint", "") != reg.endpoint) continue;
                                     std::string url = job.value("url", "");
                                     std::string ver = job.value("version", "");
-                                    std::string key = reg.endpoint + "@" + ver;
-                                    if (url.empty() || otaSent->count(key)) break;
+                                    // Campaign id: a fresh push (operator re-pushes
+                                    // → new cloud.update.seq) yields a new cid, so
+                                    // even a same-version re-push re-sends. Fallback
+                                    // to version for pre-cid pending rows.
+                                    std::string cid = job.contains("cid")
+                                        ? std::to_string(job.value("cid", 0))
+                                        : ver;
+                                    if (url.empty()) break;
+                                    auto prev = otaSent->find(reg.endpoint);
+                                    if (prev != otaSent->end() && prev->second == cid) break;
                                     std::string utok{static_cast<char>(0x05)};
                                     auto w = ::lwm2m::dmsrv::build_write(
                                         next_msgid(), utok, /*oid*/5, /*iid*/0,
@@ -695,7 +708,7 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                                     auto ex = ::lwm2m::dmsrv::build_execute(
                                         next_msgid(), utok, 5, 0, 2, "");
                                     ctx->send_async(ex, reg.peerHost, reg.peerPort);
-                                    otaSent->insert(key);
+                                    (*otaSent)[reg.endpoint] = cid;
                                     ACE_DEBUG((LM_INFO,
                                         ACE_TEXT("%D lwm2m:thread:%t %M %N:%l pushed OTA "
                                                  "update to %C ver=%C peer=%C:%u\n"),
