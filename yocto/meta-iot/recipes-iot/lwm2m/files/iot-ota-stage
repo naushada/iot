@@ -58,13 +58,43 @@ DL="$SPOOL/$NAME"
 
 set_state 1   # downloading
 log "downloading $URL -> $DL"
-if command -v wget >/dev/null 2>&1; then
-    wget --no-check-certificate -q -O "$DL" "$URL" || fail 8 "download failed"
-elif command -v curl >/dev/null 2>&1; then
-    curl -ksSL -o "$DL" "$URL" || fail 8 "download failed"
-else
-    fail 9 "no wget/curl on device"
-fi
+
+# The download rides the public WAN (the manifest points at the cloud's public
+# feed, not the VPN tunnel), so a flaky uplink is expected. Retry with backoff
+# and RESUME (curl -C -, wget -c) so a mid-transfer drop continues from the byte
+# offset already on disk instead of starting over — important for the larger
+# .tar.gz bundle. Give up only after TRIES attempts; sha256 below still guards
+# integrity. TRIES is operator-overridable via ds, with a safe default.
+TRIES="$($DSCLI get iot.update.retries 2>/dev/null | awk 'NF{print $1}')"
+case "$TRIES" in ''|*[!0-9]*) TRIES=5 ;; esac
+DELAY=5            # backoff seconds, doubles each round (5,10,20,...), capped 60
+download_once() {
+    if command -v curl >/dev/null 2>&1; then
+        # -C - resumes; --retry handles curl-internal transient errors too.
+        curl -fksSL --connect-timeout 20 --retry 2 -C - -o "$DL" "$URL"
+    elif command -v wget >/dev/null 2>&1; then
+        # -c continues a partial file; -T per-read timeout so a stalled
+        # socket fails fast instead of hanging the whole campaign.
+        wget --no-check-certificate -q -c -T 30 -O "$DL" "$URL"
+    else
+        return 99   # no downloader → caller maps to result 9
+    fi
+}
+attempt=1
+while : ; do
+    # `&& break` (not `if/fi`): on failure the list's status stays
+    # download_once's real rc — an `if ... fi` with no else resets $? to 0.
+    download_once && break
+    rc=$?
+    [ "$rc" = 99 ] && fail 9 "no wget/curl on device"
+    if [ "$attempt" -ge "$TRIES" ]; then
+        fail 8 "download failed after ${attempt} attempt(s)"
+    fi
+    log "download attempt ${attempt}/${TRIES} failed (rc=$rc); resuming in ${DELAY}s"
+    sleep "$DELAY"
+    DELAY=$(( DELAY * 2 )); [ "$DELAY" -gt 60 ] && DELAY=60
+    attempt=$(( attempt + 1 ))
+done
 [ -s "$DL" ] || fail 8 "empty download"
 
 # sha256 is verified against the downloaded artifact (the tarball for a bundle,

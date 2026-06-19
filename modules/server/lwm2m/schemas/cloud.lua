@@ -142,10 +142,25 @@ return {
     --     { "pkg":"iot-bundle", "version":"1.1.0", "arch":"raspberrypi3-64",
     --       "ipk_url":"/firmware/iot-bundle-1.1.0-raspberrypi3-64.tar.gz",
     --       "sha256":"<hex>" } ]
+    -- PREFER a RELATIVE ipk_url ("/firmware/..."): iot-cloudd resolves it
+    -- against the cloud's PUBLIC address (cloud.firmware.base.url, else the
+    -- host of cloud.dm.uri), so the device downloads DIRECT over WAN and OTA
+    -- never depends on the VPN tunnel. An absolute "http(s)://..." ipk_url is
+    -- still honoured verbatim (CDN, or a deliberate tunnel IP).
     ["cloud.firmware.manifest"] = {
         access  = "Admin",
         type    = "string",
         default = "[]",
+    },
+    -- Public base URL the device downloads firmware from when a manifest
+    -- ipk_url is relative ("/firmware/..."). Empty → iot-cloudd derives
+    -- http://<host-of-cloud.dm.uri> (the same public address the device
+    -- already reaches for DTLS — NOT the VPN tunnel IP). Set this to force
+    -- HTTPS or a CDN, e.g. "https://ota.example.com".
+    ["cloud.firmware.base.url"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "",
     },
     -- Update request from cloud-ui (carrier — iot-cloudd clears to ""):
     --   { "serials":["100000abcd",...], "pkg":"iot", "version":"0.2.0",

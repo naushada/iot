@@ -209,11 +209,16 @@ ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
 ```
 
 In the field, app updates ride **LwM2M Object 5 (Firmware Update)** instead of
-the manual `scp`/`opkg` above: the cloud points the device at an `.ipk` in its
-firmware feed and the `iot-ota-stage` helper pulls + verifies (sha256) the .ipk
+the manual `scp`/`opkg` above: the cloud points the device at an `.ipk` (or a
+`.tar.gz` bundle of every `iot-*.ipk`, for a whole-userspace upgrade) in its
+firmware feed and the `iot-ota-stage` helper pulls + verifies (sha256) it
 into a tmpfs spool and trips an inotify trigger; the separate `iot-swupdate`
 service then installs it, runs config/schema migrations, and restarts or reboots
-— decoupled so it survives replacing the running binaries. See the OTA section in
+— decoupled so it survives replacing the running binaries. The download runs
+**direct over the public WAN, not the VPN tunnel** (the sha256 arrives over the
+trusted DTLS control plane, so the payload transport needn't be trusted), with
+retry+resume — so OTA works even when the tunnel is down and a bundle can safely
+replace the VPN client itself. See the OTA section in
 [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md#ota-updates-lwm2m-object-5)
 and the design in [`apps/docs/tdd-yocto-swupdate.md`](apps/docs/tdd-yocto-swupdate.md).
 

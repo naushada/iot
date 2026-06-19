@@ -94,7 +94,14 @@ stages + triggers**, but **does not install**.
   1. Parse `?sha256=`, `?version=`, `?reboot=` query params (same parser as
      today).
   2. `iot.update.state = 1` (downloading); `wget`/`curl` the URL to
-     `/run/iot/update/<pkg>.ipk` over the VPN tunnel.
+     `/run/iot/update/<pkg>.ipk` **direct over the public WAN** (the cloud
+     resolves a relative `ipk_url` against its public address — `cloud.dm.uri`
+     host or `cloud.firmware.base.url` — NOT the VPN tunnel, so OTA still works
+     when the tunnel is down and a bundle can safely replace the VPN client
+     itself). Retried with backoff + **resume** (`curl -C -` / `wget -c`) up to
+     `iot.update.retries` (default 5) so a flaky uplink doesn't fail a campaign;
+     integrity is still pinned by the sha256 below, which arrives over the
+     trusted DTLS control plane.
   3. Verify sha256 if given → on mismatch `iot.update.result = 5`, state 0, abort
      (no trigger written).
   4. `iot.update.state = 2` (downloaded); write `update.meta`
