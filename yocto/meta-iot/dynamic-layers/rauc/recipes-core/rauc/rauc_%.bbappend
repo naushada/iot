@@ -26,7 +26,11 @@ do_install:append() {
     install -m 0644 ${WORKDIR}/${RAUC_KEYRING_FILE} ${D}${sysconfdir}/rauc/keyring.pem
 }
 
-FILES:${PN} += " \
-    ${sysconfdir}/rauc/system.conf \
-    ${sysconfdir}/rauc/keyring.pem \
-"
+# system.conf belongs to the meta-rauc `rauc-conf` package, which already ships
+# a template at this path. Claiming it in the main `rauc` package too made BOTH
+# ipks carry /etc/rauc/system.conf, so opkg aborts do_rootfs with a file clash
+# ("file is already provided by package rauc-conf"). Our do_install:append
+# overwrites the template with the iot slot map; ownership stays with rauc-conf.
+# keyring.pem is our own addition (not in any other package) → main `rauc` pkg.
+FILES:rauc-conf += " ${sysconfdir}/rauc/system.conf "
+FILES:${PN}     += " ${sysconfdir}/rauc/keyring.pem "
