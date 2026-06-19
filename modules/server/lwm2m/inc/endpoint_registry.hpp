@@ -22,6 +22,9 @@ struct EndpointInfo {
     std::string dev_tun_ip;  // device's ACTUAL openvpn-assigned IP (from the
                              // server mgmt status), e.g. "10.9.0.2"; the DNAT
                              // targets this. Empty until the device connects.
+    std::string wan_ip;      // device's public/ISP IP (the real-address openvpn
+                             // sees the tunnel coming from), e.g. "65.49.1.75".
+                             // From the same mgmt status. Empty when tunnel down.
     std::uint16_t proxy_port = 0;  // 5001+
     bool registered = false;       // LwM2M registration active
     std::int64_t last_seen_unix = 0;  // last Register/Update, 0 = never
@@ -73,6 +76,10 @@ public:
     /// targets this `dev_tun_ip`. Returns true only if the value changed
     /// (false if unknown ep or unchanged).
     bool update_dev_tun_ip(const std::string& ep, const std::string& ip);
+
+    /// Record the device's public/ISP IP (the openvpn real-address). Display
+    /// only — no reverse index. Returns true only if the value changed.
+    bool update_wan_ip(const std::string& ep, const std::string& ip);
 
     /// Record the device's running firmware version (LwM2M /3/0/3), learned
     /// from lwm2m-dm via cloud.lwm2m.registrations. Stored for display only (no

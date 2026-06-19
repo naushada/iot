@@ -5,7 +5,8 @@ import { SessionService } from '../../common/session.service';
 import { ToastService } from '../../common/toast.service';
 import { DebugService } from '../../common/debug.service';
 
-interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; proxy_port:number; registered:boolean;
+interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; isp_ip?:string;
+                   proxy_port:number; registered:boolean;
                    last_seen_unix?:number; lifetime?:number; location?:string; }
 
 /** Per-endpoint credential record, as minted by iot-cloudd into the
@@ -65,6 +66,7 @@ interface EpCred {
         <clr-dg-column>State</clr-dg-column>
         <clr-dg-column>Tunnel IP</clr-dg-column>
         <clr-dg-column>Device Tunnel IP</clr-dg-column>
+        <clr-dg-column>ISP IP</clr-dg-column>
         <clr-dg-column>Proxy Port</clr-dg-column>
         <clr-dg-column>Next Heart Beat in</clr-dg-column>
         <clr-dg-column>Location</clr-dg-column>
@@ -79,6 +81,7 @@ interface EpCred {
           </clr-dg-cell>
           <clr-dg-cell><code>{{ serverTunIp || '—' }}</code></clr-dg-cell>
           <clr-dg-cell><code>{{ e.dev_tun_ip || '—' }}</code></clr-dg-cell>
+          <clr-dg-cell><code>{{ e.isp_ip || '—' }}</code></clr-dg-cell>
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
           <clr-dg-cell>
             <code>{{ nextHeartbeat(e) }}</code>

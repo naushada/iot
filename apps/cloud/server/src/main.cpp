@@ -110,6 +110,7 @@ void sync_endpoints_to_ds(data_store::Client& ds,
         item["state"]         = ep.registered ? "online" : "offline";
         item["tun_ip"]        = ep.tun_ip;       // registry allocation
         item["dev_tun_ip"]    = ep.dev_tun_ip;   // openvpn-assigned (actual)
+        item["isp_ip"]        = ep.wan_ip;        // device public/ISP IP (real-addr)
         item["proxy_port"]    = ep.proxy_port;
         item["registered"]    = ep.registered;
         item["last_seen_unix"] = ep.last_seen_unix;
@@ -248,8 +249,9 @@ bool reconcile_registrations(data_store::Client& ds,
 // pre-allocated IP is not honored by openvpn). The serial here is already in
 // the cert-CN sanitized form (':' → '_'), matching sanitize_cn(endpoint).
 // Best-effort — empty map on any connect/IO failure (openvpn not up yet).
-std::map<std::string, std::string> poll_vpn_client_ips(std::uint16_t mgmt_port) {
-    std::map<std::string, std::string> out;   // sanitized-serial → virtual IP
+struct VpnClientNet { std::string vip; std::string wan_ip; };
+std::map<std::string, VpnClientNet> poll_vpn_client_ips(std::uint16_t mgmt_port) {
+    std::map<std::string, VpnClientNet> out;  // sanitized-serial → {vip, wan_ip}
     ACE_INET_Addr addr(mgmt_port, "127.0.0.1");
     ACE_SOCK_Connector conn;
     ACE_SOCK_Stream stream;
@@ -286,11 +288,25 @@ std::map<std::string, std::string> poll_vpn_client_ips(std::uint16_t mgmt_port) 
         std::size_t comma = resp.find(',', vstart);
         std::string vip = (comma != std::string::npos && comma < pos)
                               ? resp.substr(vstart, comma - vstart) : std::string();
+        // Real (public/ISP) address = the field AFTER the CN: `…,CN,real-addr,…`.
+        // It is ip:port; keep just the ip.
+        std::string wan;
+        {
+            std::size_t c1 = resp.find(',', at + suffix.size());  // comma after CN
+            if (c1 != std::string::npos && c1 < end) {
+                std::size_t c2 = resp.find(',', c1 + 1);
+                std::string ra = (c2 != std::string::npos && c2 < end)
+                                     ? resp.substr(c1 + 1, c2 - (c1 + 1))
+                                     : std::string();
+                wan = ra.substr(0, ra.find(':'));   // strip :port
+                if (wan.find_first_of(",\n\r ") != std::string::npos) wan.clear();
+            }
+        }
         pos = at + suffix.size();
         if (!serial.empty() && !vip.empty() &&
             serial.find_first_of(",\n\r ") == std::string::npos &&
             vip.find_first_of(",\n\r ") == std::string::npos) {
-            out[serial] = vip;
+            out[serial] = VpnClientNet{vip, wan};
         }
     }
     return out;
@@ -326,6 +342,7 @@ std::size_t rehydrate_registry(data_store::Client& ds,
                     static_cast<std::uint16_t>(e.value("proxy_port", 0)),
                     e.value("registered", false));
                 info.dev_tun_ip     = e.value("dev_tun_ip", std::string());
+                info.wan_ip         = e.value("isp_ip", std::string());
                 info.last_seen_unix = e.value("last_seen_unix", std::int64_t{0});
                 info.installed_version =
                     e.value("installed_version", std::string());
@@ -987,13 +1004,15 @@ int main(int argc, char** argv) {
                     auto it = ips.find(
                         server::openvpn::CertAuthority::sanitize_cn(e.ep));
                     if (it != ips.end()) {
-                        ip_changed |= ep_reg.update_dev_tun_ip(e.ep, it->second);
+                        ip_changed |= ep_reg.update_dev_tun_ip(e.ep, it->second.vip);
+                        ep_reg.update_wan_ip(e.ep, it->second.wan_ip);
                     } else {
                         // Tunnel down for this endpoint — clear the stale
                         // assigned IP so the cloud UI gates Launch UI off and
                         // the DNAT stops targeting a dead vip (dev_tun_ip is
                         // the per-device "VPN up" signal the UI keys on).
                         ip_changed |= ep_reg.update_dev_tun_ip(e.ep, "");
+                        ep_reg.update_wan_ip(e.ep, "");
                     }
                 }
                 if (ip_changed) {
