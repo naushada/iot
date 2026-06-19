@@ -5,6 +5,11 @@ cloud pushes its URL; iot-swupdate runs `rauc install`, the bootloader switches 
 banks on reboot, and iot-ota-confirm health-checks + marks the bank good (else \
 the bootloader rolls back). See apps/docs/tdd-ab-image-ota.md."
 LICENSE = "MIT"
+# This recipe ships no upstream source of its own — it bundles the iot-image
+# rootfs and pulls in the dev signing key/cert via SRC_URI. But once SRC_URI is
+# non-empty with a non-CLOSED license, OE's `license-checksum` QA demands a
+# LIC_FILES_CHKSUM. Point it at poky's canonical MIT text (the stack is MIT).
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
 # `bundle` ships in meta-rauc. This recipe lives under dynamic-layers/rauc/ and
 # is registered via BBFILES_DYNAMIC (layer.conf), so it's parsed ONLY when
