@@ -211,8 +211,10 @@ print_summary() {
         img=$(find "$OUT_DIR/$machine/images" -name 'iot-image*.wic.bz2' -type f 2>/dev/null | sort | tail -1 || true)
         local ipk_count
         ipk_count=$(find "$OUT_DIR/$machine/ipk" -name 'iot-*.ipk' -type f 2>/dev/null | wc -l | tr -d ' ' || true)
+        local bundle
+        bundle=$(find "$OUT_DIR/$machine/images" -name 'iot-bundle-*.tar.gz' -type f 2>/dev/null | sort | tail -1 || true)
         if [ -n "$img" ]; then
-            echo "  ✅ $machine  →  $(basename "$img")  +  ${ipk_count} iot .ipk"
+            echo "  ✅ $machine  →  $(basename "$img")  +  ${ipk_count} iot .ipk${bundle:+  +  $(basename "$bundle")}"
         elif [ "$ipk_count" -gt 0 ]; then
             echo "  ⚠️  $machine  →  ${ipk_count} iot .ipk (no image — package-only build)"
         elif [ -d "$OUT_DIR/$machine" ]; then
@@ -241,6 +243,12 @@ print_summary() {
   ── Push iot app updates over ssh (opkg feed) ────────────────────────
     scp $OUT_DIR/raspberrypi3-64/ipk/*/iot-*.ipk root@<pi-ip>:/tmp/
     ssh root@<pi-ip> 'opkg install /tmp/iot-*.ipk'
+
+  ── OTA the whole iot-* userspace over LwM2M (one shot, many devices) ─
+    # Copy the bundle into the cloud firmware feed + add its manifest row,
+    # then push from the cloud-ui Software Update page (multi-select devices).
+    scp $OUT_DIR/raspberrypi3-64/images/iot-bundle-*.tar.gz* <cloud>:/firmware/
+    # Paste images/iot-bundle-*.tar.gz.manifest.json into cloud.firmware.manifest
 EOF
     fi
     echo ""

@@ -132,10 +132,16 @@ return {
     },
 
     -- ── OTA software update (LwM2M Firmware Update Object 5) ──────────
-    -- Operator-curated catalogue of .ipk packages available in the
-    -- cloud firmware feed (served by iot-httpd at /firmware/...). JSON:
+    -- Operator-curated catalogue of artifacts in the cloud firmware feed
+    -- (served by iot-httpd at /firmware/...). An entry's ipk_url may point at
+    -- a single .ipk OR a .tar.gz BUNDLE of every iot-*.ipk (built by
+    -- iot-bundle.bb) — the device's iot-ota-stage extracts a bundle and
+    -- opkg-installs all packages in one shot. JSON:
     --   [ { "pkg":"iot", "version":"0.2.0", "arch":"aarch64",
-    --       "ipk_url":"/firmware/iot_0.2.0_aarch64.ipk", "sha256":"<hex>" } ]
+    --       "ipk_url":"/firmware/iot_0.2.0_aarch64.ipk", "sha256":"<hex>" },
+    --     { "pkg":"iot-bundle", "version":"1.1.0", "arch":"raspberrypi3-64",
+    --       "ipk_url":"/firmware/iot-bundle-1.1.0-raspberrypi3-64.tar.gz",
+    --       "sha256":"<hex>" } ]
     ["cloud.firmware.manifest"] = {
         access  = "Admin",
         type    = "string",

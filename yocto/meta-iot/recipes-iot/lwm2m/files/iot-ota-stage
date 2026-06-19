@@ -42,31 +42,54 @@ for kv in $(echo "$QUERY" | tr '&' ' '); do
 done
 
 # Name the staged file from the URL basename so several distinct packages in one
-# campaign don't collide; fall back to fw.ipk.
+# campaign don't collide. A .tar.gz/.tgz is a multi-package BUNDLE (every
+# iot-*.ipk in one shot, built by iot-bundle.bb); a bare .ipk is a single
+# package; anything else falls back to fw.ipk.
 NAME="$(basename "$BASE")"
-case "$NAME" in *.ipk) ;; *) NAME="fw.ipk" ;; esac
+BUNDLE=0
+case "$NAME" in
+    *.tar.gz|*.tgz) BUNDLE=1 ;;
+    *.ipk) ;;
+    *) NAME="fw.ipk" ;;
+esac
 
 mkdir -p "$SPOOL"
-IPK="$SPOOL/$NAME"
+DL="$SPOOL/$NAME"
 
 set_state 1   # downloading
-log "downloading $URL -> $IPK"
+log "downloading $URL -> $DL"
 if command -v wget >/dev/null 2>&1; then
-    wget --no-check-certificate -q -O "$IPK" "$URL" || fail 8 "download failed"
+    wget --no-check-certificate -q -O "$DL" "$URL" || fail 8 "download failed"
 elif command -v curl >/dev/null 2>&1; then
-    curl -ksSL -o "$IPK" "$URL" || fail 8 "download failed"
+    curl -ksSL -o "$DL" "$URL" || fail 8 "download failed"
 else
     fail 9 "no wget/curl on device"
 fi
-[ -s "$IPK" ] || fail 8 "empty download"
+[ -s "$DL" ] || fail 8 "empty download"
 
+# sha256 is verified against the downloaded artifact (the tarball for a bundle,
+# the .ipk otherwise) — the cloud computes it over the same file.
 if [ -n "$SHA" ]; then
-    GOT="$(sha256sum "$IPK" 2>/dev/null | awk '{print $1}')"
+    GOT="$(sha256sum "$DL" 2>/dev/null | awk '{print $1}')"
     if [ "$GOT" != "$SHA" ]; then
-        rm -f "$IPK"
+        rm -f "$DL"
         fail 5 "sha256 mismatch (want $SHA got $GOT)"
     fi
     log "sha256 verified"
+fi
+
+# A bundle expands into the spool so iot-swupdate's `opkg install *.ipk` glob
+# applies every package atomically. Decompress via gzip|tar (busybox-safe:
+# avoids relying on tar's built-in -z) and drop the tarball.
+if [ "$BUNDLE" = 1 ]; then
+    if ( cd "$SPOOL" && gzip -dc "$DL" | tar -xf - ) 2>/dev/null; then
+        rm -f "$DL"
+    else
+        rm -f "$DL"
+        fail 9 "bundle extract failed"
+    fi
+    ls "$SPOOL"/*.ipk >/dev/null 2>&1 || fail 9 "no .ipk in bundle"
+    log "extracted bundle $NAME -> $(ls "$SPOOL"/*.ipk | wc -l) package(s)"
 fi
 set_state 2   # downloaded
 

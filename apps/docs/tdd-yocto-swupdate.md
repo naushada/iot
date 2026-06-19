@@ -103,6 +103,17 @@ stages + triggers**, but **does not install**.
      is now the .path unit's job.
 - Multiple packages in one campaign: the stager may drop several `<pkg>.ipk`
   before the single final `touch` (opkg installs them together, resolving deps).
+- **Bundle (`.tar.gz`) — whole-userspace upgrade in one LwM2M push.** When the
+  URL basename ends in `.tar.gz`/`.tgz` the artifact is an **iot-* bundle**
+  (built by `iot-bundle.bb`: every `iot-*.ipk` tarred flat). The stager
+  downloads + sha256-verifies the **tarball**, then `gzip -dc | tar -xf -`
+  extracts the `.ipk`s straight into the spool (busybox-safe — no reliance on
+  `tar -z`) and drops the tarball, so the existing multi-package path (above)
+  installs them all. This is what lets the cloud upgrade a device's full
+  userspace — and a whole *list* of devices, since the cloud push already fans a
+  single `cloud.update.request{serials:[…]}` out to every endpoint — in one
+  shot. Lighter than the RAUC A/B `.raucb` image bundle (no reboot unless a
+  base/kernel package lands).
 
 ### 3.3 Watcher — `iot-swupdate.path` (systemd, inotify)
 
