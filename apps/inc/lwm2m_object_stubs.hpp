@@ -28,7 +28,8 @@ namespace lwm2m { namespace objects {
 /// Connectivity Monitoring (OID 4) — RID set per OMA registry.
 /// Resources are read-only with placeholder values until a real
 /// network-bearer reader lands.
-int install_connmon(ObjectStore& store);
+int install_connmon(ObjectStore& store,
+                    std::function<std::string()> ipReader = {});
 
 /// Location (OID 6) — Latitude / Longitude / Timestamp.
 int install_location(ObjectStore& store);

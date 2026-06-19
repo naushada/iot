@@ -111,6 +111,7 @@ void sync_endpoints_to_ds(data_store::Client& ds,
         item["tun_ip"]        = ep.tun_ip;       // registry allocation
         item["dev_tun_ip"]    = ep.dev_tun_ip;   // openvpn-assigned (actual)
         item["isp_ip"]        = ep.wan_ip;        // device public/ISP IP (real-addr)
+        item["lan_ip"]        = ep.lan_ip;        // device LAN IP (LwM2M /4/0/4)
         item["proxy_port"]    = ep.proxy_port;
         item["registered"]    = ep.registered;
         item["last_seen_unix"] = ep.last_seen_unix;
@@ -183,6 +184,7 @@ bool reconcile_registrations(data_store::Client& ds,
     const std::string js = ds_str(ds, "cloud.lwm2m.registrations", "[]");
     std::unordered_map<std::string, std::int64_t> online;  // ep → last_seen_unix
     std::unordered_map<std::string, std::string>  versions;  // ep → /3/0/3
+    std::unordered_map<std::string, std::string>  lanIps;    // ep → /4/0/4
     std::unordered_map<std::string, std::uint32_t> lifetimes; // ep → lifetime(s)
     std::unordered_map<std::string, std::string>  locations;  // ep → /rd/<id>
     try {
@@ -195,6 +197,8 @@ bool reconcile_registrations(data_store::Client& ds,
                 if (ep.empty()) continue;
                 auto ver = e.value("version", std::string());
                 if (!ver.empty()) versions[ep] = std::move(ver);
+                auto lan = e.value("lan_ip", std::string());
+                if (!lan.empty()) lanIps[ep] = std::move(lan);
                 if (auto lt = e.value("lifetime", std::uint32_t{0}); lt != 0)
                     lifetimes[ep] = lt;
                 if (auto loc = e.value("location", std::string()); !loc.empty())
@@ -216,6 +220,9 @@ bool reconcile_registrations(data_store::Client& ds,
         // (a device read once but now offline keeps its last-known version).
         auto vit = versions.find(ep.ep);
         if (vit != versions.end() && reg.update_version(ep.ep, vit->second))
+            changed = true;
+        auto nit = lanIps.find(ep.ep);
+        if (nit != lanIps.end() && reg.update_lan_ip(ep.ep, nit->second))
             changed = true;
         // Heartbeat interval + /rd location (Endpoints table columns).
         {
@@ -343,6 +350,7 @@ std::size_t rehydrate_registry(data_store::Client& ds,
                     e.value("registered", false));
                 info.dev_tun_ip     = e.value("dev_tun_ip", std::string());
                 info.wan_ip         = e.value("isp_ip", std::string());
+                info.lan_ip         = e.value("lan_ip", std::string());
                 info.last_seen_unix = e.value("last_seen_unix", std::int64_t{0});
                 info.installed_version =
                     e.value("installed_version", std::string());

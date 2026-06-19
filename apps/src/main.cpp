@@ -364,6 +364,7 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     // threads. Allocated for every instance but only wired for dm (publish_regs
     // null elsewhere), so non-DM instances issue no version reads.
     auto epVersions = std::make_shared<std::unordered_map<std::string, std::string>>();
+    auto epLanIps   = std::make_shared<std::unordered_map<std::string, std::string>>();
     auto seqToEp    = std::make_shared<std::unordered_map<std::uint32_t, std::string>>();
     auto verMtx     = std::make_shared<std::mutex>();
     auto verSeq     = std::make_shared<std::uint32_t>(0);
@@ -379,7 +380,7 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                     .count());
         };
         publish_regs = std::make_shared<std::function<void()>>(
-            [registry, dsClient, lastSeen, now_unix, epVersions, verMtx]() {
+            [registry, dsClient, lastSeen, now_unix, epVersions, epLanIps, verMtx]() {
                 if (!dsClient) return;
                 const std::int64_t nowUnix = now_unix();
                 nlohmann::json arr = nlohmann::json::array();
@@ -400,12 +401,15 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                                           // cloud-UI Endpoints table.
                                           {"lifetime", kv.second.lifetime},
                                           {"location", kv.second.location}};
-                    // Carry the last-read installed version, if any.
+                    // Carry the last-read installed version + LAN IP, if any.
                     {
                         std::lock_guard<std::mutex> lk(*verMtx);
                         auto vit = epVersions->find(ep);
                         if (vit != epVersions->end() && !vit->second.empty())
                             row["version"] = vit->second;
+                        auto lit = epLanIps->find(ep);
+                        if (lit != epLanIps->end() && !lit->second.empty())
+                            row["lan_ip"] = lit->second;
                     }
                     arr.push_back(std::move(row));
                 }
@@ -438,10 +442,14 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         for (auto& [type, ctx] : services) {
             (void)type;
             ctx->coapAdapter()->dmResponseHandler(
-                [epVersions, seqToEp, verMtx, publish_regs]
+                [epVersions, epLanIps, seqToEp, verMtx, publish_regs]
                 (const CoAPAdapter::CoAPMessage& m) {
                     const auto& tok = m.tokens;
-                    if (tok.size() < 4 || tok[0] != 0x06) return;
+                    // 0x06 tag = Read /3/0/3 (firmware version); 0x07 = Read
+                    // /4/0/4 (LAN IP). Both stamp a 24-bit seq we map back to the
+                    // endpoint; the tag selects which field the reply fills.
+                    if (tok.size() < 4 || (tok[0] != 0x06 && tok[0] != 0x07)) return;
+                    const std::uint8_t  kind = tok[0];
                     const std::uint32_t seq =
                         (static_cast<std::uint32_t>(tok[1]) << 16) |
                         (static_cast<std::uint32_t>(tok[2]) << 8)  |
@@ -453,9 +461,9 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                         if (it == seqToEp->end()) return;
                         const std::string ep = it->second;
                         seqToEp->erase(it);
-                        if (!m.payload.empty() &&
-                            (*epVersions)[ep] != m.payload) {
-                            (*epVersions)[ep] = m.payload;
+                        auto& target = (kind == 0x06) ? *epVersions : *epLanIps;
+                        if (!m.payload.empty() && target[ep] != m.payload) {
+                            target[ep] = m.payload;
                             changed = true;
                         }
                     }
@@ -639,6 +647,26 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                         /*oid*/ 3, /*iid*/ 0, /*rid*/ 3,
                         /*accept*/ -1);
                     ctx->send_async(vreq, reg.peerHost, reg.peerPort);
+
+                    // Read /4/0/4 (Connectivity Monitoring IP Addresses) → the
+                    // device's LAN IP for the Endpoints table. Same correlation
+                    // scheme, distinguished by a 0x07 token tag.
+                    std::uint32_t lseq;
+                    {
+                        std::lock_guard<std::mutex> lk(*verMtx);
+                        lseq = (++(*verSeq)) & 0x00FFFFFFu;
+                        (*seqToEp)[lseq] = reg.endpoint;
+                    }
+                    std::string ltok;
+                    ltok.push_back(static_cast<char>(0x07));
+                    ltok.push_back(static_cast<char>((lseq >> 16) & 0xFF));
+                    ltok.push_back(static_cast<char>((lseq >> 8)  & 0xFF));
+                    ltok.push_back(static_cast<char>( lseq        & 0xFF));
+                    auto lreq = ::lwm2m::dmsrv::build_read(
+                        next_msgid(), ltok,
+                        /*oid*/ 4, /*iid*/ 0, /*rid*/ 4,
+                        /*accept*/ -1);
+                    ctx->send_async(lreq, reg.peerHost, reg.peerPort);
                 }
 
                 // OTA: push a pending firmware update over Object 5 (Package
@@ -878,6 +906,16 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     deviceHooks.firmwareVersion = [dsc]() -> std::string {
         std::vector<data_store::Client::GetResult> got;
         if (dsc && dsc->get({"iot.version"}, got).ok && !got.empty() && got[0].has_value)
+            if (auto s = data_store::to_string(got[0].value))
+                if (!s->empty()) return *s;
+        return {};
+    };
+    // /4/0/4 (Connectivity Monitoring IP Addresses) → the device's LAN IP
+    // (wifi.dhcp.ip). A server Read surfaces it so the cloud Endpoints table can
+    // show the device's local-network address (useful when its DHCP IP hops).
+    deviceHooks.ipAddresses = [dsc]() -> std::string {
+        std::vector<data_store::Client::GetResult> got;
+        if (dsc && dsc->get({"wifi.dhcp.ip"}, got).ok && !got.empty() && got[0].has_value)
             if (auto s = data_store::to_string(got[0].value))
                 if (!s->empty()) return *s;
         return {};
