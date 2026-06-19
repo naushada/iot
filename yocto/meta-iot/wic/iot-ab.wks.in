@@ -19,9 +19,14 @@
 # mountpoints are added unless --no-fstab-update), so /var/lib/iot mounts the
 # `data` label at boot — an image/bank swap never touches ds state or certs.
 
+# Bank size (1024M) must exceed the standalone rootfs ext4 RAUC carries in the
+# .raucb — that image is inflated by IMAGE_ROOTFS_EXTRA_SPACE (512M of on-target
+# headroom for opkg/logs) to ~824M, and `rauc install` writes it raw to the
+# inactive slot. 768M banks flash fine (wic builds them from the rootfs dir,
+# ~300M used) but an OTA into a 768M slot would fail "image larger than slot".
 part /boot --source bootimg-partition --fstype=vfat --label boot --active --align 4096 --size 100M
-part /     --source rootfs --fstype=ext4 --label rootA --align 4096 --size 768M
-part /     --source rootfs --fstype=ext4 --label rootB --align 4096 --size 768M
+part /     --source rootfs --fstype=ext4 --label rootA --align 4096 --size 1024M
+part /     --source rootfs --fstype=ext4 --label rootB --align 4096 --size 1024M
 part /var/lib/iot --fstype=ext4 --label data --align 4096 --size 256M
 
 bootloader --ptable msdos
