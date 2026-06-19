@@ -504,7 +504,9 @@ cloud.endpoints          → JSON array of provisioned endpoints
     "tun_ip":        "10.9.0.12",
     "proxy_port":    10000,
     "registered":    true,
-    "last_seen_unix": 1718123456
+    "last_seen_unix": 1718123456,
+    "isp_ip":        "65.49.1.75",     // device public/ISP IP (openvpn real-addr)
+    "lan_ip":        "192.168.1.3"     // device LAN IP on its active WAN iface
   }]
 cloud.lwm2m.registrations → JSON array of currently-registered endpoints.
                             SOLE writer = lwm2m-dm (from its ClientRegistry on
@@ -512,8 +514,30 @@ cloud.lwm2m.registrations → JSON array of currently-registered endpoints.
                             iot-cloudd watches it and merges online/offline +
                             last_seen into cloud.endpoints (separate key avoids
                             a two-writer clobber on tun_ip/proxy_port).
-  [{ "endpoint": "100000abcd", "registered": true, "last_seen_unix": 1718123456 }]
+  [{ "endpoint": "100000abcd", "registered": true, "last_seen_unix": 1718123456,
+     "installed_version": "1.2.0", "lan_ip": "192.168.1.3" }]
 ```
+
+**Two device IP columns (`isp_ip` / `lan_ip`).** The Endpoints table shows both
+the device's public IP and its local IP — sourced from *different* planes:
+
+- **`isp_ip`** (public/ISP) comes from the **OpenVPN management plane**:
+  `iot-cloudd`'s `poll_vpn_client_ips` parses the server `status` ROUTING TABLE
+  (`<virtual-ip>,<CN>,<real-addr>,<ref>`); the `real-addr` is the NAT public IP
+  the tunnel arrives from. No device cooperation needed; empty when the tunnel
+  is down.
+- **`lan_ip`** (local) comes from the **LwM2M plane**: `lwm2m-dm` server-reads
+  the device's `/4/0/4` (Connectivity Monitoring → IP Addresses) over the
+  tunnel; the device serves it from `net.iface.active.ip`, which **net-router**
+  publishes for whichever WAN iface (eth0/wlan0/wwan0) it currently routes
+  through (see `modules/net/router/docs/design.md`). lwm2m-dm writes it into
+  `cloud.lwm2m.registrations`; `iot-cloudd` merges it into `cloud.endpoints`
+  (`update_lan_ip`) and rehydrate restores it. Empty until the first read.
+
+Same merge discipline as `installed_version` (/3/0/3): lwm2m-dm is the sole
+writer of `cloud.lwm2m.registrations`, iot-cloudd merges into `cloud.endpoints`
+— so the device-reported facts never two-writer-clobber the registry's
+`tun_ip`/`proxy_port`.
 
 ### VPN Server (cloud.vpn.*)
 ```

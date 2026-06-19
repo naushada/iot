@@ -64,13 +64,21 @@ Lifecycle::State Lifecycle::step(const Inputs& in) {
 
     // 3) Emit net.iface.active if the pick changed (empty string when
     //    nothing is up — operator-visible signal that we're offline).
-    std::string new_active;
+    std::string new_active, new_active_ip;
     if (auto idx = iface::pick_active(in.ifaces_in_priority_order)) {
-        new_active = in.ifaces_in_priority_order[*idx].name;
+        new_active    = in.ifaces_in_priority_order[*idx].name;
+        new_active_ip = in.ifaces_in_priority_order[*idx].addr_ip;
     }
     if (new_active != m_last_iface) {
         m_last_iface = new_active;
         if (m_sinks.set_iface_active) m_sinks.set_iface_active(new_active);
+    }
+    // The active iface's IP changes independently of the name (DHCP renew on
+    // the same iface), so track + emit it separately. Consumers (LwM2M /4/0/4)
+    // read net.iface.active.ip rather than re-enumerating interfaces.
+    if (new_active_ip != m_last_iface_ip) {
+        m_last_iface_ip = new_active_ip;
+        if (m_sinks.set_iface_active_ip) m_sinks.set_iface_active_ip(new_active_ip);
     }
 
     // 4) State: apply failure dominates; otherwise track the WAN uplink —

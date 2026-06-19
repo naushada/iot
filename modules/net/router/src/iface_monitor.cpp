@@ -57,7 +57,8 @@ void parse_addr_show(const std::string& body, State& out) {
             if (!a.contains("family") || a["family"] != "inet") continue;
             if (!a.contains("local") || !a["local"].is_string()) continue;
             if (is_routable_v4(a["local"].get<std::string>())) {
-                out.addr = true;
+                out.addr    = true;
+                out.addr_ip = a["local"].get<std::string>();
                 return;
             }
         }

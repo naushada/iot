@@ -155,6 +155,7 @@ Status run_daemon(const std::string& socketPath,
     };
     sinks.set_state               = [&ds](const std::string& s) { ds.set_state(s); };
     sinks.set_iface_active        = [&ds](const std::string& s) { ds.set_iface_active(s); };
+    sinks.set_iface_active_ip     = [&ds](const std::string& s) { ds.set_iface_active_ip(s); };
     sinks.set_rules_applied_count = [&ds](std::uint32_t n)      { ds.set_rules_applied_count(n); };
     sinks.set_last_apply_unix     = [&ds](std::uint32_t t)      { ds.set_last_apply_unix(t); };
 

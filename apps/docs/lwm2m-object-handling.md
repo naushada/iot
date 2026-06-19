@@ -300,7 +300,40 @@ merge matches by exact endpoint string.
 
 ---
 
-## 5. File map
+## 5. Server-initiated Reads (firmware version + LAN IP)
+
+Beyond Register/Update the DM server also **reads** two device resources so the
+cloud Endpoints table can show what the device is running and where it lives:
+
+| Resource | Object/RID | Device source | Endpoints column |
+|----------|------------|---------------|------------------|
+| Firmware version | `/3/0/3` (Device → Firmware Version) | `iot.version` (compiled-in) | Installed Version |
+| IP Addresses | `/4/0/4` (Connectivity Monitoring → IP Addresses) | `net.iface.active.ip` (net-router) | LAN IP |
+
+**Flow** (`apps/src/main.cpp`, DM-side poll loop):
+
+1. The DM poll loop issues a CoAP **Read** for each registered endpoint —
+   `/3/0/3` (tagged `0x06`) and `/4/0/4` (oid 4, iid 0, rid 4, tagged `0x07`).
+2. `dmResponseHandler` routes the tagged responses: `0x06` → version map,
+   `0x07` → `epLanIps` map.
+3. `publish_regs` folds both into `cloud.lwm2m.registrations`
+   (`installed_version`, `lan_ip`) alongside the online/offline state.
+4. **iot-cloudd** merges them into `cloud.endpoints` (`update_version`,
+   `update_lan_ip`) — display-only, no reverse index, same single-writer
+   discipline as §4 so the device-reported facts never clobber
+   `tun_ip`/`proxy_port`.
+
+The device serves `/4/0/4` live: `install_connmon` takes an `ipReader` wired in
+`install_canonical_objects` to `deviceHooks.ipAddresses`, which reads
+`net.iface.active.ip` from ds — net-router owns interface selection, so the LAN
+IP always tracks the active WAN bearer (eth0/wlan0/wwan0) and follows DHCP
+renews. The public/ISP IP shown next to it is **not** from LwM2M — iot-cloudd
+derives it from the OpenVPN management `status` real-address (see
+`apps/cloud/CLAUDE.md` → "Two device IP columns").
+
+---
+
+## 6. File map
 
 | Concern | File |
 |---------|------|
@@ -311,6 +344,7 @@ merge matches by exact endpoint string.
 | Client object install | `apps/src/lwm2m_object_stubs.cpp` |
 | Registration server + registry (lifetime timer) | `apps/src/lwm2m_registration_server.cpp`, `apps/src/lwm2m_registration.cpp` |
 | Online/offline publish (lwm2m-dm) + merge (iot-cloudd) | `apps/src/main.cpp` (`wire_server`), `apps/cloud/server/src/main.cpp` (`reconcile_registrations`); key `cloud.lwm2m.registrations` |
+| Server-read version (`/3/0/3`) + LAN IP (`/4/0/4`) | `apps/src/main.cpp` (DM poll loop, `dmResponseHandler`, `publish_regs`); device serves `/4/0/4` via `install_connmon` `ipReader` → `net.iface.active.ip` |
 | Registration client (`/rd`, Update) | `apps/src/lwm2m_registration_client.cpp` |
 | PSK provisioning (mint DM PSK) | `apps/cloud/server/src/main.cpp`, `apps/src/psk_gen.cpp` |
 | Bootstrap/DM provisioning source | data-store: `cloud.endpoint.credentials`, `cloud.bs.uri`, `cloud.dm.uri/lifetime/binding` (no static lua) |

@@ -60,7 +60,7 @@ An iptables fallback is FUP only if a target without nftables surfaces.
 ## Schema layout
 
 `schemas/net.lua` (installed to `/etc/iot/ds-schemas/net.lua` by D7's
-install rule). 9 read keys + 6 write keys; **all are optional** — the
+install rule). 9 read keys + 7 write keys; **all are optional** — the
 daemon starts on boot regardless of config. `net.lwm2m.target.ip` (once
 required) now only gates the optional DNAT/port-forward chain
 (`build_nft_ruleset` omits it when the target/ports are empty); the
@@ -69,6 +69,18 @@ while none is, so dependent services (lwm2m/openvpn) come up without it.
 Custom rules ship as a JSON-encoded string in `net.custom.rules`; shape
 is validated at the JSON-parse step in the daemon (the schema can't
 json-parse).
+
+The lifecycle publishes two facts about the WAN uplink it selects:
+`net.iface.active` (the highest-priority OPER-UP iface *name*) and
+`net.iface.active.ip` (that iface's routable IPv4 — the device's LAN IP).
+The IP is captured in `iface_monitor` during the same `ip -j addr show`
+pass that gates routability (`State::addr_ip`), and is tracked/emitted
+*independently of the name* so a DHCP renew on the same iface re-publishes
+it. The LwM2M Connectivity-Monitoring hook (`/4/0/4` IP Addresses, in
+`apps/src/main.cpp`) reads `net.iface.active.ip` straight from ds rather
+than re-enumerating interfaces itself — net-router is the single owner of
+interface state, so the cloud Endpoints "LAN IP" column reflects exactly
+the iface this daemon routes through.
 
 See [L13 plan §2.D1](../../../../log/L13/plan.md) for the full
 key list; the schema file itself is the canonical reference.

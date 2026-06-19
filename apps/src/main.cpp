@@ -16,11 +16,6 @@
 #include <sstream>
 #include <unordered_map>
 
-#include <ifaddrs.h>      // getifaddrs — active-iface IP for LwM2M /4/0/4
-#include <net/if.h>       // IFF_LOOPBACK / IFF_UP
-#include <netinet/in.h>   // sockaddr_in
-#include <arpa/inet.h>    // inet_ntop
-
 #include <ace/Log_Msg.h>
 #include <ace/OS_NS_unistd.h>   // ACE_OS::sleep
 #include <ace/Time_Value.h>
@@ -918,46 +913,17 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     // /4/0/4 (Connectivity Monitoring IP Addresses) → the device's IP on its
     // ACTIVE WAN interface (eth0 / wlan0 / wwan0), so the cloud Endpoints table
     // shows the address the device is actually reachable at — not hard-wired to
-    // WiFi. net-router publishes the active iface name (net.iface.active); we
-    // read that iface's live IPv4 via getifaddrs. Falls back to the WiFi DHCP
-    // lease (wifi.dhcp.ip) when the active iface is unknown (no net-router).
+    // WiFi. net-router owns interface state: it picks the highest-priority
+    // OPER-UP iface and publishes that iface's routable IPv4 as
+    // net.iface.active.ip (bearer-agnostic, follows DHCP renews). We just read
+    // that ds key — no getifaddrs / interface enumeration in the lwm2m process.
     deviceHooks.ipAddresses = [dsc]() -> std::string {
-        // Active WAN iface name from net-router (may be empty if it isn't
-        // running yet); when known we pin to it, otherwise we pick the first
-        // real interface — never assuming a particular bearer.
-        std::string active;
-        {
-            std::vector<data_store::Client::GetResult> got;
-            if (dsc && dsc->get({std::string("net.iface.active")}, got).ok &&
-                !got.empty() && got[0].has_value)
-                if (auto s = data_store::to_string(got[0].value)) active = *s;
-        }
-        struct ifaddrs* ifa = nullptr;
-        if (::getifaddrs(&ifa) != 0) return {};
-        std::string ip;
-        for (auto* p = ifa; p; p = p->ifa_next) {
-            if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET) continue;
-            const std::string name = p->ifa_name ? p->ifa_name : "";
-            if (!active.empty()) {
-                if (name != active) continue;          // pin to the active iface
-            } else {
-                // Bearer-agnostic fallback: skip loopback, down ifaces, and the
-                // VPN tunnel; take the first real interface (eth*/wlan*/wwan*…).
-                if ((p->ifa_flags & IFF_LOOPBACK) || !(p->ifa_flags & IFF_UP))
-                    continue;
-                if (name.rfind("tun", 0) == 0) continue;
-            }
-            char buf[INET_ADDRSTRLEN] = {0};
-            ::inet_ntop(AF_INET,
-                &reinterpret_cast<struct sockaddr_in*>(p->ifa_addr)->sin_addr,
-                buf, sizeof(buf));
-            std::string cand(buf);
-            if (cand.rfind("169.254.", 0) == 0) continue;   // skip link-local
-            ip = std::move(cand);
-            break;
-        }
-        ::freeifaddrs(ifa);
-        return ip;
+        if (!dsc) return {};
+        std::vector<data_store::Client::GetResult> got;
+        if (dsc->get({std::string("net.iface.active.ip")}, got).ok &&
+            !got.empty() && got[0].has_value)
+            if (auto s = data_store::to_string(got[0].value)) return *s;
+        return {};
     };
     ::lwm2m::objects::install_canonical_objects(*plumb.store, configDir,
                                                 std::move(deviceHooks),
