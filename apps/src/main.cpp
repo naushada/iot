@@ -1146,6 +1146,36 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     // 1 Hz ticker: drives Update emission + Observe pmax + (TODO) initial
     // Register once bootstrap completes.
     std::weak_ptr<::lwm2m::RegistrationClient> wreg = plumb.reg;
+    // VPN-reconnect-triggered re-Register. A cloud/DM restart is otherwise only
+    // noticed at the next registration Update (lifetime - margin ≈ up to 24h),
+    // so the device sits offline for a long time. The openvpn client detects the
+    // link drop via ping-restart (~120s) and republishes vpn.state; on a genuine
+    // reconnect edge (up → dropped → up) force a re-Register so the device comes
+    // back online within ~2 min. The phase guard avoids firing on the FIRST
+    // connect (the normal bootstrap/Register path handles that). Runs on the ds
+    // listener thread (serialised per key), same as the iot.server.uri watch;
+    // request_reregister() just sets a flag the 1 Hz tick consumes, so it's safe.
+    if (dsc) {
+        auto vpnPhase = std::make_shared<int>(0);  // 0 pre-connect, 1 up, 2 dropped
+        data_store::Client::WatchHandle wvpn = data_store::Client::kInvalidHandle;
+        dsc->watch("vpn.state",
+            [wreg, vpnPhase](const data_store::Client::Event& e) {
+                const std::string st = data_store::to_string(e.value).value_or("");
+                if (st == "connected") {
+                    if (*vpnPhase == 2) {
+                        if (auto reg = wreg.lock()) {
+                            reg->request_reregister();
+                            ACE_DEBUG((LM_INFO,
+                                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l VPN reconnected "
+                                         "after a drop — forcing LwM2M re-Register\n")));
+                        }
+                    }
+                    *vpnPhase = 1;
+                } else if (*vpnPhase == 1) {
+                    *vpnPhase = 2;   // tunnel dropped after being up
+                }
+            }, &wvpn);
+    }
     std::weak_ptr<::lwm2m::DmClient>           wdm  = plumb.dm;
     std::weak_ptr<App>                         wapp = app;
     std::weak_ptr<::lwm2m::bootstrap::Client>  wbs  = plumb.bs;
