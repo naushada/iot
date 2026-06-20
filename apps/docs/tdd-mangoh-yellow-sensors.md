@@ -31,6 +31,17 @@ left untouched.
 > 3.3 V levels and that pull-ups are present on exactly one side before
 > connecting.
 
+> **Transport variants — DMA ruled out (2026-06-20).** Three `I2cTransport`
+> implementations ship: poll (`Bcm2837I2cTransport`, #283), `/dev/i2c-N`
+> (`I2cDevTransport`, #293, the Linux shipping path), and interrupt-driven
+> (`Bcm2837I2cIrqTransport`, #296, bare-metal). A fourth, **DMA-driven**, was
+> evaluated and **rejected: the BCM2837 BSC I²C masters have no DMA DREQ**, so a
+> DMA channel can't be paced against the 16-byte FIFO (it would overrun). This
+> module's register model confirms it — BSC `Control` has no `DMAEN` bit while
+> SPI does — and it's why Linux `i2c-bcm2835` is PIO/IRQ-only. The interrupt
+> transport is the CPU-offload ceiling for BSC I²C. Details in
+> `modules/bcm2837/docs/i2c-irq-transport-spec.md` §2.
+
 ## 1. Architecture (4 layers, bottom-up)
 
 ```
