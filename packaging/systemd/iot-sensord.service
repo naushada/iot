@@ -13,11 +13,13 @@ Type=simple
 EnvironmentFile=/etc/iot/sensord.env
 ExecStart=/usr/local/bin/iot-sensord $IOT_SENSORD_ARGS
 
-# iot-sensord maps the BSC1/GPIO peripheral block via /dev/mem, which needs
-# CAP_SYS_RAWIO. /dev/mem is root:kmem and (with CONFIG_STRICT_DEVMEM) the
-# kernel still gates peripheral pages — so the privilege model is confirmed on
-# hardware in PR-4; this is the conservative starting point: run with only
-# CAP_SYS_RAWIO and explicit device access, nothing else.
+# PREFERRED path: the kernel i2c-dev node (/dev/i2c-1) — no CAP_SYS_RAWIO,
+# just device access (boot with dtparam=i2c_arm=on so the node exists). The
+# daemon falls back to the BSC register transport via /dev/mem only if i2c-dev
+# is absent, which needs CAP_SYS_RAWIO (kept here for that fallback; drop it,
+# and the /dev/mem/gpiomem DeviceAllow, once i2c-dev is confirmed on the board).
+DeviceAllow=/dev/i2c-1 rw
+DeviceAllow=char-i2c rw
 AmbientCapabilities=CAP_SYS_RAWIO
 CapabilityBoundingSet=CAP_SYS_RAWIO
 DeviceAllow=/dev/mem rw

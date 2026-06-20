@@ -32,8 +32,10 @@ test/                  gtests over FakeI2cTransport (a 256-byte auto-increment
 ## iot-sensord (producer daemon)
 
 Built when `-DSENSORS_BUILD_DAEMON=ON` (forced on in the iot image build). It
-maps the BSC1 + GPIO blocks via `/dev/mem` (needs root / `CAP_SYS_RAWIO`),
-`bus_init()`s the I²C bus, runs `sample_all` on a fixed interval and publishes
+**prefers the kernel i2c-dev node** (`/dev/i2c-1`, `I2cDevTransport` — group
+`i2c`, no `CAP_SYS_RAWIO`, real repeated-START) and falls back to the BSC1
+register transport via `/dev/mem` (`--mmio`); it `bus_init()`s the bus, runs
+`sample_all` on a fixed interval and publishes
 `iot.sensor.{temp,humidity,pressure,lux,accel,gyro,version}` to the data-store.
 The (unprivileged) lwm2m client mirrors those keys into IPSO objects for the
 cloud — the producer→ds→client handoff used across the stack. Ships as the

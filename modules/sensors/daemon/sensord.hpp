@@ -19,6 +19,7 @@ namespace sensors {
 
 struct Options {
     std::string   ds_sock;            ///< ds-server socket ("" → built-in default)
+    std::string   i2c_dev = "/dev/i2c-1"; ///< kernel i2c-dev node; "" → force BSC /dev/mem
     std::uint32_t interval_sec = 10;  ///< sample cadence
     bool          once = false;       ///< sample once and exit (--once / smoke)
     std::uint8_t  bme_addr   = 0x76;
