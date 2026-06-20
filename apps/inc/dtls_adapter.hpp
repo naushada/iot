@@ -26,6 +26,7 @@ extern "C"
     #include "dtls.h"
     #include "session.h"
     #include "alert.h"
+
     /**
      * @brief This Function is invoked by tinydtls to send message to peer. The message/data will be encrypted with PSK Key.
      * @param This is a context of tinydtls which has app pointer data member which points to the instance of DTLSAdapter.
@@ -67,6 +68,21 @@ extern "C"
     */
     std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtls_credentials_type_t type, const unsigned char *identity, size_t identity_len, unsigned char *result, size_t result_length);
 }
+
+// C++ linkage (NOT in the extern "C" block above — these take C++ types).
+namespace data_store { class Client; }
+
+/// Map an iot log-level string ("DEBUG"/"INFO"/"WARNING"/"ERROR", any case) to
+/// the nearest tinydtls log_t. tinydtls has no ERROR level — ERROR maps to
+/// DTLS_LOG_CRIT (emerg/alert/crit only). Unknown/empty → DTLS_LOG_WARN.
+log_t dtls_level_from_string(const std::string& s);
+
+/// Resolve log.level.dtls (falling back to log.level) from ds and push it into
+/// tinydtls' GLOBAL logger via dtls_set_log_level. Call at startup (after the
+/// DTLS contexts exist) and on every log-level watch event — tinydtls logging
+/// is otherwise frozen at the value set when the first DTLSAdapter was
+/// constructed, ignoring the configured level entirely.
+void dtls_apply_log_level(data_store::Client& ds);
 
 class DTLSAdapter {
     public:

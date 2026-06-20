@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cerrno>
 #include <ctime>
+#include <atomic>
 #include <deque>
 #include <mutex>
 #include <string>
@@ -27,8 +28,14 @@ namespace data_store {
 // honour the configured log level — ACE_Log_Msg is per-thread, so a spawned
 // reactor thread inherits neither. One LogBuffer per process in practice.
 namespace {
-    ACE_Log_Msg_Callback* s_active_cb   = nullptr;
-    unsigned long         s_active_mask = LM_INFO;
+    ACE_Log_Msg_Callback*      s_active_cb   = nullptr;
+    std::atomic<unsigned long> s_active_mask{LM_INFO};
+    // Bumped on every apply_level(): lets a long-lived worker thread (which
+    // pinned its per-thread mask once at attach_current_thread()) notice a
+    // runtime level change and re-pin via refresh_level(). ACE_Log_Msg is
+    // per-thread, so apply_level() on the main thread cannot reach it otherwise.
+    std::atomic<unsigned>      s_mask_gen{0};
+    thread_local unsigned      t_seen_gen = 0;
 }
 
 struct LogBuffer::Impl {
@@ -122,7 +129,21 @@ void LogBuffer::attach_current_thread() {
     // Also pin this thread's level to the configured mask — a freshly
     // spawned reactor thread otherwise defaults to "all levels", leaking
     // DEBUG noise that the INFO default is meant to suppress.
-    lm->priority_mask(static_cast<int>(s_active_mask), ACE_Log_Msg::THREAD);
+    lm->priority_mask(static_cast<int>(s_active_mask.load()), ACE_Log_Msg::THREAD);
+    t_seen_gen = s_mask_gen.load();
+}
+
+void LogBuffer::refresh_level() {
+    // Cheap (one relaxed atomic load) when nothing changed — safe to call
+    // every iteration of a worker thread's reactor loop. Re-pins this thread's
+    // per-thread ACE mask when apply_level() has run since we last attached,
+    // so a runtime log-level change reaches reactor/worker threads (not just
+    // the main thread that handles the watch).
+    const unsigned g = s_mask_gen.load(std::memory_order_relaxed);
+    if (g == t_seen_gen) return;
+    t_seen_gen = g;
+    ACE_Log_Msg::instance()->priority_mask(
+        static_cast<int>(s_active_mask.load()), ACE_Log_Msg::THREAD);
 }
 
 int LogBuffer::open(Client& ds, int interval_sec, std::size_t min_bytes) {
@@ -247,9 +268,16 @@ void LogBuffer::apply_level(Client& ds) {
         else if (lvl_str == "WARNING") mask = kWarn;
         else if (lvl_str == "ERROR")   mask = kErr;
     }
-    s_active_mask = mask;   // remembered for attach_current_thread()
-    ACE_Log_Msg::instance()->priority_mask(
-        static_cast<int>(mask), ACE_Log_Msg::PROCESS);
+    s_active_mask = mask;            // remembered for attach_current_thread()
+    s_mask_gen.fetch_add(1, std::memory_order_relaxed);  // wake refresh_level()
+    auto* lm = ACE_Log_Msg::instance();
+    // PROCESS seeds threads spawned LATER; THREAD fixes THIS (the calling/main)
+    // thread NOW. ACE gates logging on the per-thread mask, so without the
+    // THREAD set the main thread keeps its default "all levels" and every
+    // ACE_DEBUG it emits prints regardless of the configured level.
+    lm->priority_mask(static_cast<int>(mask), ACE_Log_Msg::PROCESS);
+    lm->priority_mask(static_cast<int>(mask), ACE_Log_Msg::THREAD);
+    t_seen_gen = s_mask_gen.load();
 }
 
 }  // namespace data_store

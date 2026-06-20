@@ -26,7 +26,11 @@ ServiceContext_t::ServiceContext_t(Scheme_t scheme,
         // DTLSAdapter takes the raw fd because tinydtls' read/write
         // callbacks ::sendto/::recvfrom on it directly. The fd is filled
         // in inside open() once the socket is actually bound.
-        m_dtlsAdapter = std::make_shared<DTLSAdapter>(ACE_INVALID_HANDLE, DTLS_LOG_DEBUG);
+        // Quiet default; the real level is pushed from ds by
+        // dtls_apply_log_level() at startup + on every log.level change. Was
+        // hardcoded DTLS_LOG_DEBUG, which made tinydtls ignore the config and
+        // spew handshake DEBUG regardless of log.level / log.level.dtls.
+        m_dtlsAdapter = std::make_shared<DTLSAdapter>(ACE_INVALID_HANDLE, DTLS_LOG_WARN);
         // Share THIS context's CoAPAdapter with the DTLS read path. The
         // DTLSAdapter's dtlsReadCb dispatches deciphered datagrams via its
         // own coapAdapter(); without this it would use a private, unwired
@@ -415,6 +419,10 @@ int UDPAdapter::svc() {
     data_store::LogBuffer::attach_current_thread();
 
     while (!m_stop.load()) {
+        // Re-pin this thread's log mask if the level changed at runtime — cheap
+        // when unchanged. attach_current_thread() above only set it once, so a
+        // hot log.level change would otherwise never reach this reactor thread.
+        data_store::LogBuffer::refresh_level();
         // Reset the timeout every iteration: ACE_Reactor::handle_events()
         // decrements the passed ACE_Time_Value in place (ACE_Countdown_Time),
         // so a single shared value drains to zero after the first idle wait and
