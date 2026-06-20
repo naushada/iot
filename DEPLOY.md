@@ -180,12 +180,12 @@ The script builds the container image (`iot-yocto-builder`, defined by
 to `yocto/build/<machine>/` (`images/<machine>/*.wic.bz2` + `ipk/`).
 
 > **Source branch (`IOT_BRANCH`).** The recipe fetches the iot source from
-> `IOT_BRANCH` (default `main`, which carries the vendored `modules/rpi3B` driver
-> and the `iot-rpi3b-selftest` boot oneshot). Override for a release/feature
+> `IOT_BRANCH` (default `main`, which carries the vendored `modules/bcm2837` driver
+> and the `iot-bcm2837-selftest` boot oneshot). Override for a release/feature
 > image, e.g. `IOT_BRANCH=release/v1.1.0` in `local.conf`; add `IOT_FRESH=1` to
 > force a fresh re-clone of the branch tip (bypasses a stale cached checkout).
 > After boot, check the driver self-test with
-> `systemctl status iot-rpi3b-selftest` / `journalctl -u iot-rpi3b-selftest`.
+> `systemctl status iot-bcm2837-selftest` / `journalctl -u iot-bcm2837-selftest`.
 
 The **first** build compiles the whole distribution (toolchain, glibc,
 ACE, kernel…) — hours. Reruns are incremental via the persistent
