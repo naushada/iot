@@ -21,8 +21,8 @@ SECTION = "net"
 #   tinydtls headers + .a come from the separate tinydtls recipe (sysroot).
 # Branch/ref to build. Defaults to `main` (rolling dev image). For a frozen
 # release image, override (here on a release branch, or in local.conf):
-#   IOT_BRANCH = "release/v1.1.0"
-IOT_BRANCH ?= "main"
+#   IOT_BRANCH = "release/v1.2.0"
+IOT_BRANCH ?= "release/v1.2.0"
 SRC_URI = "\
     git://github.com/naushada/iot.git;protocol=https;branch=${IOT_BRANCH} \
     file://0001-cmake-use-yocto-sysroot-paths.patch \
@@ -84,7 +84,7 @@ SRCREV = "${AUTOREV}"
 # PV can't read the fetched VERSION at parse time (source isn't unpacked yet),
 # so it's set here manually. The +git${SRCPV} suffix gives opkg per-commit
 # upgrade ordering (AUTOINC+sha) for the _git recipe.
-PV = "1.1.0+git${SRCPV}"
+PV = "1.2.0+git${SRCPV}"
 
 S = "${WORKDIR}/git"
 B = "${WORKDIR}/build"
