@@ -227,10 +227,22 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
             };
             const std::string credsJson = str_at(0);
             const std::string dmUri     = str_at(1);
-            std::uint32_t     lifetime  = 86400;
-            if (auto s = str_at(2); !s.empty()) {
-                try { lifetime = static_cast<std::uint32_t>(std::stoul(s)); }
-                catch (...) {}
+            // cloud.dm.lifetime is INTEGER-typed in the schema (default 90, the
+            // NAT-keepalive value). Read it as an int — to_string() returns
+            // nullopt on an integer Value, which used to silently fall through to
+            // the old 86400 default so the device always registered with a 24h
+            // lifetime regardless of cloud.dm.lifetime. Tolerate a string-typed
+            // value too (legacy). Default 90 to match the schema, not 86400.
+            std::uint32_t lifetime = 90;
+            if (got.size() > 2 && got[2].has_value) {
+                if (auto n = data_store::to_uint32(got[2].value)) {
+                    lifetime = *n;
+                } else if (auto i = data_store::to_int32(got[2].value)) {
+                    if (*i > 0) lifetime = static_cast<std::uint32_t>(*i);
+                } else if (auto s = data_store::to_string(got[2].value); s && !s->empty()) {
+                    try { lifetime = static_cast<std::uint32_t>(std::stoul(*s)); }
+                    catch (...) {}
+                }
             }
             std::string binding = str_at(3);
             if (binding.empty()) binding = "U";
