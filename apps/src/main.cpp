@@ -42,6 +42,7 @@
 #include "lwm2m_codec_tlv.hpp"
 #include "lwm2m_dm_client.hpp"
 #include "lwm2m_object_3_device.hpp"
+#include "lwm2m_object_sensors.hpp"
 #include "lwm2m_object_store.hpp"
 #include "lwm2m_object_stubs.hpp"
 #include "lwm2m_registration.hpp"
@@ -989,6 +990,51 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     ::lwm2m::objects::install_canonical_objects(*plumb.store, configDir,
                                                 std::move(deviceHooks),
                                                 std::move(fwHooks), std::move(certHooks));
+
+    // ── IPSO sensor objects (mangOH Yellow) ───────────────────────────────
+    // Sensor values are produced by the privileged iot-sensord daemon (it owns
+    // the I2C bus / mangOH board) and published to iot.sensor.* in the
+    // data-store; this (unprivileged) client mirrors them into the IPSO objects
+    // 3301/3303/3304/3313/3315/3334 so a server Read/Observe surfaces them — the
+    // same ds-handoff used for iot.version, net.iface.active.ip and iot.update.*.
+    // An absent key reads "0", so a board without the mangOH attached still
+    // advertises the objects (with zero readings) rather than erroring.
+    {
+        auto sensorVal = [dsc](const char* key) -> std::string {
+            std::string v;
+            if (dsc) {
+                std::vector<data_store::Client::GetResult> got;
+                if (dsc->get({std::string(key)}, got).ok && !got.empty() && got[0].has_value)
+                    if (auto s = data_store::to_string(got[0].value)) v = *s;
+            }
+            return v.empty() ? std::string("0") : v;
+        };
+        // iot.sensor.accel / .gyro carry "x,y,z"; pull the idx-th CSV field.
+        auto sensorCsv = [sensorVal](const char* key, int idx) -> std::string {
+            std::string v = sensorVal(key);
+            std::size_t start = 0;
+            for (int i = 0; i < idx; ++i) {
+                start = v.find(',', start);
+                if (start == std::string::npos) return std::string("0");
+                ++start;
+            }
+            std::size_t end = v.find(',', start);
+            std::string f = v.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            return f.empty() ? std::string("0") : f;
+        };
+        ::lwm2m::objects::SensorHooks sh;
+        sh.temperature = [sensorVal]() { return sensorVal("iot.sensor.temp"); };
+        sh.humidity    = [sensorVal]() { return sensorVal("iot.sensor.humidity"); };
+        sh.pressure    = [sensorVal]() { return sensorVal("iot.sensor.pressure"); };
+        sh.illuminance = [sensorVal]() { return sensorVal("iot.sensor.lux"); };
+        sh.accel_x = [sensorCsv]() { return sensorCsv("iot.sensor.accel", 0); };
+        sh.accel_y = [sensorCsv]() { return sensorCsv("iot.sensor.accel", 1); };
+        sh.accel_z = [sensorCsv]() { return sensorCsv("iot.sensor.accel", 2); };
+        sh.gyro_x  = [sensorCsv]() { return sensorCsv("iot.sensor.gyro", 0); };
+        sh.gyro_y  = [sensorCsv]() { return sensorCsv("iot.sensor.gyro", 1); };
+        sh.gyro_z  = [sensorCsv]() { return sensorCsv("iot.sensor.gyro", 2); };
+        ::lwm2m::objects::install_sensors(*plumb.store, std::move(sh));
+    }
 
     // device-ui self-update: a write to iot.update.request launches the same
     // detached apply locally (no CoAP round-trip).

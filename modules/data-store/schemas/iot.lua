@@ -139,6 +139,49 @@ return {
         default = "idle",
     },
 
+    -- ── mangOH Yellow sensor telemetry (iot-sensord → ds → IPSO/UI) ──
+    -- The privileged iot-sensord daemon owns the I2C bus, reads the onboard
+    -- BME680 / BMI160 / light sensors and publishes their latest values here.
+    -- The lwm2m client mirrors them into IPSO objects (3303/3304/3315/3301/
+    -- 3313/3334) for the cloud, and the device-ui shows them locally. Scalars
+    -- are formatted decimal strings; accel/gyro are "x,y,z" raw counts. See
+    -- apps/docs/tdd-mangoh-yellow-sensors.md.
+    ["iot.sensor.temp"] = {        -- BME680 temperature, deg C
+        access  = "Viewer",
+        type    = "string",
+        default = "",
+    },
+    ["iot.sensor.humidity"] = {    -- BME680 relative humidity, %RH
+        access  = "Viewer",
+        type    = "string",
+        default = "",
+    },
+    ["iot.sensor.pressure"] = {    -- BME680 barometric pressure, Pa
+        access  = "Viewer",
+        type    = "string",
+        default = "",
+    },
+    ["iot.sensor.lux"] = {         -- ambient light, lux
+        access  = "Viewer",
+        type    = "string",
+        default = "",
+    },
+    ["iot.sensor.accel"] = {       -- BMI160 accel "x,y,z" raw int16 counts
+        access  = "Viewer",
+        type    = "string",
+        default = "",
+    },
+    ["iot.sensor.gyro"] = {        -- BMI160 gyro "x,y,z" raw int16 counts
+        access  = "Viewer",
+        type    = "string",
+        default = "",
+    },
+    ["iot.sensor.version"] = {     -- bumped each sample for device-ui long-poll
+        access  = "Viewer",
+        type    = "integer",
+        default = 0,
+    },
+
     -- ── DM Server URI (client → device-ui) ───────────────────────────
     -- The lwm2m client publishes the bootstrap-delivered DM Server URI
     -- (Security Object RID 0 of the non-bootstrap PSK account) here once
