@@ -88,11 +88,14 @@ bug / inconsistency · **[L]** cosmetic / warning.
   on the Pi**. The `operator new` returning `0x3F200000` would segfault if ever
   dereferenced on the host. Today the framework is effectively a host-side
   bit-layout simulator.
-- **[M] `volatile std::atomic<uint32_t>` for MMIO.** For 32-bit aligned MMIO a
-  plain `volatile uint32_t` is the idiomatic choice. `std::atomic` adds no value
-  over the peripheral bus and is not guaranteed lock-free in a way that maps to
-  the required single bus access; its RMW operators also emit separate
-  load/modify/store anyway. Recommend `volatile uint32_t`.
+- **[M] `volatile std::atomic<uint32_t>` for MMIO.** ✅ **FIXED.** `std::atomic`
+  added no value over the peripheral bus, and—worse for the real-hardware
+  path—C++20's `std::atomic` default constructor value-initialises to 0, so
+  placement-new'ing a register block over live MMIO would **zero every
+  register**. `device_register` is now `RPi3B::mmio_reg`, a trivially
+  default-constructible `volatile uint32_t` wrapper whose compound operators do
+  an explicit volatile load/modify/store (no `-Wdeprecated-volatile`). This lets
+  `inc/mmio.hpp` overlay live registers via `/dev/mem` without clobbering them.
 - **[L] Include guards on `.cpp` files** (`#ifndef __gpio_cpp__`) — harmless but
   unusual.
 - **[L] Debug `printf` loop in `InterruptRegisterAddress` ctor** runs on every

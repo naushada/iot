@@ -113,13 +113,40 @@ spi.write_byte(0x55);
 
 ---
 
+## Real hardware (Linux MMIO)
+
+On a booted Pi the drivers can attach to live registers through
+[`inc/mmio.hpp`](inc/mmio.hpp), which `mmap`s a peripheral block and hands the
+virtual pointer to the same region constructor the tests use:
+
+```cpp
+#include "mmio.hpp"
+
+auto gpio = RPi3B::map_gpio();   // maps the GPIO block via /dev/mem (root)
+gpio->output(17);
+gpio->GPSETn(17);                // drive GPIO17 high
+```
+
+`map_gpio()` / `map_clock()` / `map_i2c()` / `map_spi()` use `/dev/mem` (needs
+root / `CAP_SYS_RAWIO`); `map_gpiomem()` maps **GPIO only** via the unprivileged
+`/dev/gpiomem` (group `gpio`). Each returns an RAII `Mapped<Driver>` that owns
+the mapping and unmaps on scope exit. The demo binary does this under
+`rpi3Bdriver --blink`.
+
+This is safe because `RPi3B::mmio_reg` (the register cell type) is *trivially
+default-constructible*: placement-new'ing a register block over live MMIO
+**overlays** the registers instead of zeroing them. `IRQ` is **not** exposed
+here — its IVT/exception-vector model is bare-metal-only, not a Linux userspace
+concept.
+
 ## Status
 
-These drivers are **host-side register bit-layout models**. The classes poke
-fixed physical addresses via placement `new` but do **not** `mmap` `/dev/mem`,
-and there is no freestanding/cross toolchain, linker script, or `_start`. So the
-code is exercised and verified on the host; making it drive real silicon needs
-the `/dev/mem` (or `/dev/gpiomem`) mapping plus pin-mux/clock setup.
+The register/field logic is verified on the host (gtest over heap buffers) and
+the same code drives real silicon via the `mmap` path above. What's still
+bare-metal-only: there is no freestanding/cross toolchain, linker script, or
+`_start`, and the `IRQ`/IVT layer assumes a kernel context. Driving real pins
+also needs the usual pin-mux (ALT0) + clock-divider setup, not just the register
+writes.
 
 ## Use in the iot Yocto image
 

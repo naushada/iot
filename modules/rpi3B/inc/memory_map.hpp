@@ -3,10 +3,43 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <atomic>
-#include <vector>
 
 namespace RPi3B {
+
+    /**
+     * @brief One 32-bit memory-mapped I/O register.
+     *
+     * Plain `volatile` storage — NOT `std::atomic`. For a word-aligned MMIO
+     * register a volatile load/store is the correct primitive; atomics add no
+     * value over the peripheral bus (see docs/DRIVER_REVIEW.md §2.1). Two
+     * properties matter for the real-hardware path:
+     *
+     *  1. **Trivially default-constructible.** No user-declared constructor, so
+     *     placement-new'ing a register block over *live* MMIO does NOT run any
+     *     element constructor and therefore does NOT clobber the registers.
+     *     (C++20 `std::atomic`'s default constructor value-initialises to 0,
+     *     which would zero every register on attach.)
+     *  2. **No deprecated volatile compound-assignment.** The compound operators
+     *     below do an explicit volatile load / modify / store, so callers can
+     *     keep writing `reg |= bit;` without tripping C++20's `-Wdeprecated-
+     *     volatile` on `volatile`-qualified `|=`/`&=`.
+     *
+     * Layout-compatible with `uint32_t` (standard-layout, size/align 4), so the
+     * unit tests can still overlay a `std::vector<std::uint32_t>` region.
+    */
+    struct mmio_reg {
+        volatile std::uint32_t value;
+
+        operator std::uint32_t() const { return value; }     ///< volatile read
+        std::uint32_t load() const { return value; }
+        void store(std::uint32_t v) { value = v; }
+
+        mmio_reg& operator=(std::uint32_t v)  { value = v; return *this; }
+        mmio_reg& operator|=(std::uint32_t v) { value = value | v; return *this; }
+        mmio_reg& operator&=(std::uint32_t v) { value = value & v; return *this; }
+        mmio_reg& operator^=(std::uint32_t v) { value = value ^ v; return *this; }
+    };
+
     struct GPIORegistersAddress {
 
         enum Config: std::uint32_t {
@@ -80,7 +113,7 @@ namespace RPi3B {
             BCM2837_MAX
         };
     
-        using device_register = volatile std::atomic<std::uint32_t>; //@brief This ensures that this is a thread safe
+        using device_register = mmio_reg; //@brief One MMIO register (see RPi3B::mmio_reg)
         GPIORegistersAddress() {}
         ~GPIORegistersAddress() {}
 
@@ -190,7 +223,7 @@ namespace RPi3B {
             BOTH_VALUE
         };
 
-        using device_register = volatile std::atomic<std::uint32_t>; //@brief This ensures that this is a thread safe
+        using device_register = mmio_reg; //@brief One MMIO register (see RPi3B::mmio_reg)
         ClockRegistersAddress() {
             /*
             for(auto idx = 0; idx < Register::CM_GPn_MAX; ++idx)
@@ -238,7 +271,7 @@ namespace RPi3B {
         };
 
         
-        using device_register = volatile std::atomic<std::uint32_t>; //@brief This ensures that this is a thread safe
+        using device_register = mmio_reg; //@brief One MMIO register (see RPi3B::mmio_reg)
         InterruptRegisterAddress() {
             for(auto idx = 0; idx < Register::IRQs_ALL_MAX; ++idx)
                 std::printf("Interrupt Register is 0x%X\n", &m_register[idx]);
@@ -323,7 +356,7 @@ namespace RPi3B {
             S_ALL
         };
 
-        using device_register = volatile std::atomic<std::uint32_t>;
+        using device_register = mmio_reg;
         BSCRegistersAddress() {}
         ~BSCRegistersAddress() {}
 
@@ -387,7 +420,7 @@ namespace RPi3B {
             CS_ALL
         };
 
-        using device_register = volatile std::atomic<std::uint32_t>;
+        using device_register = mmio_reg;
         SPIRegistersAddress() {}
         ~SPIRegistersAddress() {}
 
