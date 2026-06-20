@@ -105,16 +105,33 @@ int install_connmon(ObjectStore& store, std::function<std::string()> ipReader) {
     return 0;
 }
 
-int install_location(ObjectStore& store) {
+namespace {
+/// Observable, read-only resource backed by `rd` (live) or a static default.
+Resource live_or_static(std::uint32_t rid, const std::string& name,
+                        ResourceType type, std::function<std::string()> rd,
+                        std::string dflt) {
+    Resource r;
+    r.rid = rid; r.name = name; r.type = type; r.ops = Operations::R;
+    r.observable = true;
+    if (rd) r.read = std::move(rd);
+    else    r.read = [dflt]() { return dflt; };
+    return r;
+}
+} // namespace
+
+int install_location(ObjectStore& store, LocationHooks h) {
     ObjectDescriptor d;
     d.oid = 6; d.name = "Location";
     d.urn = "urn:oma:lwm2m:oma:6:1.0";
     d.mandatory = false; d.multipleInstance = false;
 
     auto inst = instance_with(0);
-    inst.resources[0] = read_only(0, "Latitude",  ResourceType::Float, "0.0");
-    inst.resources[1] = read_only(1, "Longitude", ResourceType::Float, "0.0");
-    inst.resources[5] = read_only(5, "Timestamp", ResourceType::Time,  "0");
+    // Bound to gps.* (cellular-client daemon) in the client build; unset → "0".
+    inst.resources[0] = live_or_static(0, "Latitude",  ResourceType::Float, std::move(h.latitude),  "0.0");
+    inst.resources[1] = live_or_static(1, "Longitude", ResourceType::Float, std::move(h.longitude), "0.0");
+    inst.resources[2] = live_or_static(2, "Altitude",  ResourceType::Float, std::move(h.altitude),  "0.0");
+    inst.resources[5] = live_or_static(5, "Timestamp", ResourceType::Time,  std::move(h.timestamp), "0");
+    inst.resources[6] = live_or_static(6, "Speed",     ResourceType::Float, std::move(h.speed),     "0.0");
     d.instances[0] = std::move(inst);
     store.add_object(std::move(d));
     return 0;
@@ -166,7 +183,8 @@ int install_canonical_objects(ObjectStore& store,
                               const std::string& configDir,
                               DeviceHooks deviceHooks,
                               FwHooks fwHooks,
-                              CertHooks certHooks) {
+                              CertHooks certHooks,
+                              LocationHooks locationHooks) {
     int rc = 0;
     rc |= install_access_control(store, configDir);
     // Lift the Object-4 IP reader out before deviceHooks is moved into the
@@ -175,7 +193,7 @@ int install_canonical_objects(ObjectStore& store,
     rc |= install_device(store, configDir, std::move(deviceHooks));
     rc |= install_connmon(store, std::move(ipReader));
     rc |= install_firmware_apply(store, configDir, std::move(fwHooks));
-    rc |= install_location(store);
+    rc |= install_location(store, std::move(locationHooks));
     rc |= install_connstats(store);
     // Custom OID 2048 — cloud-pushed VPN/TLS credential family. Default
     // store writes the cert family under /etc/iot/vpn (= vpn.{ca,cert,key}.path

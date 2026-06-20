@@ -31,8 +31,20 @@ namespace lwm2m { namespace objects {
 int install_connmon(ObjectStore& store,
                     std::function<std::string()> ipReader = {});
 
-/// Location (OID 6) — Latitude / Longitude / Timestamp.
-int install_location(ObjectStore& store);
+/// Live readers for the Location object (OID 6). Each returns the value as
+/// text/plain; an unset hook serves a static "0". Bound to the gps.* ds keys
+/// (published by the cellular-client daemon) in the client build.
+struct LocationHooks {
+    std::function<std::string()> latitude;    ///< /6/0/0
+    std::function<std::string()> longitude;   ///< /6/0/1
+    std::function<std::string()> altitude;    ///< /6/0/2
+    std::function<std::string()> timestamp;   ///< /6/0/5 (epoch seconds)
+    std::function<std::string()> speed;       ///< /6/0/6
+};
+
+/// Location (OID 6) — Latitude / Longitude / Altitude / Timestamp / Speed.
+/// Resources are observable; unset hooks serve static "0".
+int install_location(ObjectStore& store, LocationHooks hooks = {});
 
 /// Connectivity Statistics (OID 7) — counters.
 int install_connstats(ObjectStore& store);
@@ -58,7 +70,8 @@ int install_canonical_objects(ObjectStore& store,
                               const std::string& configDir,
                               DeviceHooks deviceHooks = {},
                               FwHooks fwHooks = {},
-                              CertHooks certHooks = {});
+                              CertHooks certHooks = {},
+                              LocationHooks locationHooks = {});
 
 }} // namespace lwm2m::objects
 
