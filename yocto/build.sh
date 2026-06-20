@@ -257,8 +257,8 @@ print_summary() {
   ── OTA the whole iot-* userspace over LwM2M (one shot, many devices) ─
     # Copy the bundle into the cloud firmware feed + add its manifest row,
     # then push from the cloud-ui Software Update page (multi-select devices).
-    scp $OUT_DIR/raspberrypi3-64/images/iot-bundle-*.tar.gz* <cloud>:/firmware/
-    # Paste images/iot-bundle-*.tar.gz.manifest.json into cloud.firmware.manifest
+    scp $OUT_DIR/raspberrypi3-64/images/raspberrypi3-64/iot-bundle-*.tar.gz* <cloud>:/firmware/
+    # Paste images/raspberrypi3-64/iot-bundle-*.tar.gz.manifest.json into cloud.firmware.manifest
 EOF
     fi
     echo ""
