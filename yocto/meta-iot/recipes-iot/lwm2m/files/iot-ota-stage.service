@@ -1,0 +1,18 @@
+[Unit]
+Description=Stage an OTA bundle/.ipk (download + verify), then trigger the installer
+Documentation=https://github.com/naushada/iot
+# No [Install]: activated by iot-ota-stage.path, never enabled directly.
+After=iot-ds.service
+Wants=iot-ds.service
+
+[Service]
+Type=oneshot
+# Runs as root (no DynamicUser) so it can write the root-owned /run/iot/update
+# spool and reach the network. With no argument iot-ota-stage reads the package
+# URL from /run/iot/update/stage.req (dropped by the lwm2m client) and removes it
+# to re-arm the .path unit. The opkg install itself runs separately in
+# iot-swupdate.service, which this stager triggers.
+ExecStart=/usr/bin/iot-ota-stage
+# The download (a ~21 MB bundle over a flaky WAN, with retries) plus sha256
+# verify can take a while; give it room.
+TimeoutStartSec=900

@@ -168,8 +168,11 @@ itself. The flow is split into a **stager** and an **inotify-triggered
 installer** (full design: `apps/docs/tdd-yocto-swupdate.md`):
 
 - `iot-ota-stage` (`/usr/bin/iot-ota-stage`, in `iot-lwm2m`) is the worker the
-  LwM2M client invokes on a /5/0/0 write. It runs **detached**
-  (`systemd-run --unit=iot-ota-stage`): download the artifact (honouring
+  LwM2M client requests on a /5/0/2 execute. The client is **unprivileged**
+  (`User=engineer`) and cannot `systemd-run` a system unit, so it drops the URL
+  into `/run/iot/update/stage.req`; the **`iot-ota-stage.path`** unit fires
+  **`iot-ota-stage.service`** (root), which runs the worker: download the
+  artifact (honouring
   `?sha256=` / `?version=` / `?reboot=` params) with **retry + resume**
   (`curl -C -` / `wget -c`, up to `iot.update.retries`, default 5) so a flaky
   uplink doesn't fail the campaign → verify sha256 → for a `.tar.gz` bundle,

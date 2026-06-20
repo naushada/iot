@@ -79,17 +79,26 @@ full, *then* `touch`es `update` as the final step. The trigger's existence ⇒ a
 complete payload is present. The trigger is **empty** by design — all metadata
 lives in `update.meta` so the trigger semantics stay "payload ready".
 
-### 3.2 Stager — `/usr/bin/iot-ota-stage <url>` (root, transient)
+### 3.2 Stager — `/usr/bin/iot-ota-stage` (root, path-triggered)
 
 A slimmed refactor of today's `iot-ota-apply`: it **downloads + verifies +
 stages + triggers**, but **does not install**.
 
-- Launched exactly as today — `ota_launch_apply()` in `apps/src/main.cpp`
-  changes its one command from `iot-ota-apply` to `iot-ota-stage`
-  (`systemd-run --unit=iot-ota-stage --collect /usr/bin/iot-ota-stage <url>`).
-  Runs as **root** (network + write the root-owned spool). Because it no longer
-  installs, it is never killed by opkg replacing a running binary, so the
-  `systemd-run` detach is now only about privilege, not self-replacement.
+- Launched via a **spool trigger**, NOT `systemd-run`. `ota_launch_apply()` in
+  `apps/src/main.cpp` runs in the lwm2m client, which is **unprivileged**
+  (`User=engineer`) and therefore **cannot** create a system transient unit —
+  `systemd-run` returns "Access denied" (polkit; no agent on the busybox image),
+  so the original `systemd-run --unit=iot-ota-stage …` silently failed and the
+  stager never ran. Instead, `ota_launch_apply()` atomically writes the package
+  URL to `/run/iot/update/stage.req` (temp + rename); the **`iot-ota-stage.path`**
+  unit (`PathExists`) fires **`iot-ota-stage.service`** (oneshot, **root**), which
+  runs `iot-ota-stage` with no argument — it reads the URL from `stage.req` and
+  removes the file to re-arm the path unit. `/run/iot/update` is `0775 root:iot`
+  (tmpfiles `iot.conf`) and the client has `SupplementaryGroups=iot`, so the
+  write needs no privilege. Same engineer→root handoff as the cert-apply →
+  `iot-vpn-cert.path` flow. Runs as **root** (network + write the root-owned
+  spool); since it no longer installs, it is never killed by opkg replacing a
+  running binary.
 - Steps:
   1. Parse `?sha256=`, `?version=`, `?reboot=` query params (same parser as
      today).

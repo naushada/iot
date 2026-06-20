@@ -1,0 +1,15 @@
+[Unit]
+Description=Watch the OTA stage request queued by the lwm2m client (inotify)
+Documentation=https://github.com/naushada/iot
+# The lwm2m client runs UNPRIVILEGED (User=engineer) and cannot systemd-run a
+# system unit (polkit denies it). Instead it drops the package URL into
+# /run/iot/update/stage.req; this path unit fires the root stager. The triggered
+# service removes the request file to re-arm (a .path unit won't re-fire until
+# the path is gone again). Same engineer->root handoff as iot-vpn-cert.path.
+
+[Path]
+PathExists=/run/iot/update/stage.req
+Unit=iot-ota-stage.service
+
+[Install]
+WantedBy=multi-user.target
