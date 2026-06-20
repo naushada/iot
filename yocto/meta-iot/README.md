@@ -19,7 +19,7 @@ first source fetch. All commands run from the `yocto/` directory.
 | **Full image** (bootable SD card — first flash / OS change) | `./build.sh` | `build/<machine>/images/<machine>/*.wic.bz2` (+ the `ipk/` feed as a byproduct) |
 | **iot apps only** (just the C++/UI recipe — fast iterate, no full image) | `TARGET=iot ./build.sh` | `build/<machine>/ipk/**/iot-*.ipk` |
 | **Full `.ipk` feed** (every iot package: ds/lwm2m/httpd/sensord/cellular/…) | `TARGET=packagegroup-iot ./build.sh` | `build/<machine>/ipk/` (opkg feed) |
-| **OTA bundle** (one `.tar.gz` of the whole feed, for the LwM2M Object-5 push) | `TARGET=iot-bundle ./build.sh` | `build/<machine>/.../iot-bundle-<ver>-<arch>.tar.gz` |
+| **OTA bundle** (one `.tar.gz` of the whole feed, for the LwM2M Object-5 push) | `TARGET=iot-bundle ./build.sh` | `build/<machine>/images/<machine>/iot-bundle-<ver>-<arch>.tar.gz` (+ `.sha256`, `.manifest.json`) — **NOT** built by the default image target |
 | **A/B dual-bank image** (RAUC update flow) | `IOT_AB=1 ./build.sh` | u-boot + 4-partition `.wic` + signed `update-bundle-*.raucb` |
 
 ```sh
