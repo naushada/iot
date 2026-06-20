@@ -9,6 +9,8 @@
 #include "interrupt.hpp"
 #include "i2c_bus.hpp"   // I2cTransport / I2cResult
 
+class SystemTimer;       // optional watchdog time source (system_timer.hpp)
+
 /**
  * @file i2c_irq.hpp
  * @brief Interrupt-driven BSC1 I²C transport (bare-metal). See
@@ -33,17 +35,31 @@ class Bcm2837I2cIrqTransport : public I2cTransport {
         /// BSC interrupt line — BCM2837 DT `interrupts = <2 21>` ⇒ IRQ 53.
         /// CONFIRM on silicon (shared across BSC0/1/2). See spec §3.
         static constexpr std::uint8_t  kBsc1Irq         = 53;
-        /// Watchdog: max wait_for_irq() iterations before aborting → Timeout.
+        /// Watchdog: absolute cap on wait_for_irq() iterations before aborting →
+        /// Timeout. A backstop for the host / when no time source is wired; the
+        /// real bound is the µs deadline below once a SystemTimer is attached.
         static constexpr std::uint32_t kDefaultMaxWaits = 1000000U;
+
+        /// Watchdog: wall-clock deadline in microseconds (0 = disabled → fall
+        /// back to the iteration cap). Honoured only once a time source is wired
+        /// via set_time_source(); see docs/i2c-irq-transport-spec.md §4.7.
+        static constexpr std::uint32_t kDefaultTimeoutUs = 50000U;   ///< 50 ms
 
         /// Async completion callback (no captures — pass state via `user`).
         using Completion = void (*)(I2cResult result, void* user);
 
         Bcm2837I2cIrqTransport(I2C i2c, GPIO gpio, IRQ irq,
-                               std::uint16_t divider   = kDefaultDivider,
-                               std::uint32_t max_waits = kDefaultMaxWaits)
+                               std::uint16_t divider    = kDefaultDivider,
+                               std::uint32_t max_waits   = kDefaultMaxWaits,
+                               std::uint32_t timeout_us  = kDefaultTimeoutUs)
             : m_i2c(i2c), m_gpio(gpio), m_irq(irq),
-              m_divider(divider), m_max_waits(max_waits) {}
+              m_divider(divider), m_max_waits(max_waits),
+              m_timeout_us(timeout_us) {}
+
+        /// Attach a real microsecond time source for the watchdog (the BCM2837
+        /// System Timer). Without it the watchdog uses only the iteration cap.
+        /// The transport does not own the timer — the caller keeps it alive.
+        void set_time_source(SystemTimer* timer) { m_timer = timer; }
 
         /// Mux GPIO2/3 → ALT0, set the divider, enable BSC1, install the ISR and
         /// enable the BSC IRQ line. Call once before any transfer (hardware).
@@ -83,6 +99,12 @@ class Bcm2837I2cIrqTransport : public I2cTransport {
         /// I2C_IRQ_BAREMETAL) else a no-op; tests override to drive handle_irq().
         virtual void wait_for_irq();
 
+        /// Current time in microseconds for the watchdog deadline. Default:
+        /// the attached SystemTimer's free-running counter, or 0 when none is
+        /// wired (0 means "no clock" → the iteration cap governs). Virtual so
+        /// host tests can simulate the passage of time.
+        virtual std::uint64_t now_us();
+
     private:
         struct Xfer {
             const std::uint8_t* tx = nullptr; std::size_t tn = 0, ti = 0;
@@ -108,6 +130,8 @@ class Bcm2837I2cIrqTransport : public I2cTransport {
         IRQ           m_irq;
         std::uint16_t m_divider;
         std::uint32_t m_max_waits;
+        std::uint32_t m_timeout_us;
+        SystemTimer*  m_timer = nullptr;   ///< optional watchdog time source
         Xfer          m_xfer;
 };
 

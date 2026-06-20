@@ -2,6 +2,7 @@
 #define __i2c_irq_cpp__
 
 #include "i2c_irq.hpp"
+#include "system_timer.hpp"
 
 #include <atomic>
 
@@ -60,6 +61,10 @@ void Bcm2837I2cIrqTransport::wait_for_irq() {
     // Host/default: no-op. The watchdog loop in wait_complete() bounds the wait;
     // tests override this to drive handle_irq(). A real bare-metal build must
     // also arm a timer IRQ so WFI wakes for the watchdog (spec §4.7).
+}
+
+std::uint64_t Bcm2837I2cIrqTransport::now_us() {
+    return m_timer != nullptr ? m_timer->now_us() : 0;
 }
 
 I2cResult Bcm2837I2cIrqTransport::start(std::uint8_t addr,
@@ -153,14 +158,26 @@ void Bcm2837I2cIrqTransport::abort_transfer() {
 }
 
 I2cResult Bcm2837I2cIrqTransport::wait_complete() {
+    // Bound the wait two ways: a wall-clock µs deadline (the real watchdog, when
+    // a time source is wired) and an absolute iteration cap (backstop for the
+    // host / no-clock builds). Whichever trips first aborts the transfer.
+    const std::uint64_t start = now_us();
     for (std::uint32_t i = 0; i < m_max_waits; ++i) {
         mem_barrier();
         if (m_xfer.done) {
             return m_xfer.result;
         }
+        if (m_timeout_us != 0) {
+            const std::uint64_t t = now_us();
+            // now_us()==0 means no time source is wired → skip the µs check and
+            // let the iteration cap govern; otherwise abort once N µs elapse.
+            if (t != 0 && (t - start) >= m_timeout_us) {
+                break;
+            }
+        }
         wait_for_irq();
     }
-    abort_transfer();    // wedged bus / lost interrupt
+    abort_transfer();    // wedged bus / lost interrupt / deadline exceeded
     return I2cResult::Timeout;
 }
 
