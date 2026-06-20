@@ -34,6 +34,7 @@ SRC_URI = "\
     file://iot-vpn-cert.service \
     file://iot-tun.conf \
     file://iot-net-router.service \
+    file://iot-sensord.service \
     file://10-iot-wired.network \
     file://iot-wifi-client.service \
     file://iot-httpd.service \
@@ -294,6 +295,10 @@ do_install() {
         install -m 0644 ${WORKDIR}/iot-swupdate.service       ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-ota-confirm.service    ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-net-router.service     ${D}${systemd_system_unitdir}/
+        # iot-sensord: mangOH Yellow sensor producer (maps I2C, publishes
+        # iot.sensor.*). NOT auto-enabled — it needs the mangOH board attached
+        # and CAP_SYS_RAWIO, so an operator enables it on sensor-equipped units.
+        install -m 0644 ${WORKDIR}/iot-sensord.service        ${D}${systemd_system_unitdir}/
         # networkd wired profile: RequiredForOnline=no so a cable-less eth0 does
         # not pin the system "offline" and park systemd-timesyncd on a WiFi-only
         # unit (no-RTC clock would stay stale → TLS/VPN fails). See the file header.
@@ -371,6 +376,7 @@ PACKAGE_BEFORE_PN = "\
     ${PN}-net-router \
     ${PN}-wifi-client \
     ${PN}-httpd \
+    ${PN}-sensord \
     ${PN}-config \
     ${PN}-bcm2837-selftest \
 "
@@ -510,6 +516,20 @@ RRECOMMENDS:${PN}-httpd = "\
     ${PN}-config \
 "
 
+# sensord — mangOH Yellow sensor producer (maps I2C, publishes iot.sensor.*)
+# The unprivileged lwm2m client mirrors iot.sensor.* into IPSO objects; this
+# daemon is the privileged producer. sensord.env ships in ${PN}-config (the
+# ${sysconfdir}/iot glob). See apps/docs/tdd-mangoh-yellow-sensors.md.
+FILES:${PN}-sensord = "\
+    ${bindir}/iot-sensord \
+    ${systemd_system_unitdir}/iot-sensord.service \
+"
+RDEPENDS:${PN}-sensord = "ace-tao"
+RRECOMMENDS:${PN}-sensord = "\
+    ${PN}-ds-server \
+    ${PN}-config \
+"
+
 # config — schema files, env files, config templates (shared substrate)
 # Includes the tmpfiles.d drop-in (creates /run/iot); it lives under
 # ${nonarch_libdir} (not ${sysconfdir}), and since FILES:${PN} is overridden
@@ -550,6 +570,11 @@ SYSTEMD_SERVICE:${PN}-wifi-client = "iot-wifi-client.service"
 # httpd also carries the boot-time hostname unit (iot-<serial>) that makes the
 # Avahi advert resolvable — zero-touch device-UI discovery.
 SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service iot-ds-seed.service"
+# iot-sensord registered but NOT auto-enabled: it needs the mangOH Yellow board
+# + CAP_SYS_RAWIO, so on a board without it the daemon would Restart-loop. The
+# operator `systemctl enable --now iot-sensord` on sensor-equipped hardware.
+SYSTEMD_SERVICE:${PN}-sensord = "iot-sensord.service"
+SYSTEMD_AUTO_ENABLE:${PN}-sensord = "disable"
 
 # ds-server and wifi-client auto-start. wifi-client comes up on every boot
 # and reads wifi.networks from the data-store (schema default seeds a
@@ -590,3 +615,4 @@ INSANE_SKIP:${PN}-openvpn-client = "already-stripped"
 INSANE_SKIP:${PN}-net-router = "already-stripped"
 INSANE_SKIP:${PN}-wifi-client = "already-stripped"
 INSANE_SKIP:${PN}-httpd = "already-stripped"
+INSANE_SKIP:${PN}-sensord = "already-stripped"

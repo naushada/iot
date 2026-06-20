@@ -1,0 +1,40 @@
+[Unit]
+Description=IoT sensor producer (mangOH Yellow BMI160/BME680/light over I2C → ds iot.sensor.*)
+Documentation=file:///etc/iot/sensord.env
+# Needs ds-server up (publishes iot.sensor.* on connect).
+After=network-online.target iot-ds.service
+Wants=iot-ds.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/iot/sensord.env
+ExecStart=/usr/bin/iot-sensord $IOT_SENSORD_ARGS
+
+# iot-sensord maps the BSC1/GPIO peripheral block via /dev/mem, which needs
+# CAP_SYS_RAWIO. /dev/mem is root:kmem and (with CONFIG_STRICT_DEVMEM) the
+# kernel still gates peripheral pages — so the privilege model is confirmed on
+# hardware. Conservative starting point: only CAP_SYS_RAWIO + explicit devices.
+AmbientCapabilities=CAP_SYS_RAWIO
+CapabilityBoundingSet=CAP_SYS_RAWIO
+DeviceAllow=/dev/mem rw
+DeviceAllow=/dev/gpiomem rw
+
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+
+Restart=on-failure
+RestartSec=10s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

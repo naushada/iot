@@ -128,6 +128,15 @@ endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/bcm2837
                  ${CMAKE_BINARY_DIR}/bcm2837)
 
+# sensors module (mangOH Yellow I2C drivers + iot-sensord producer daemon).
+# Builds the privileged iot-sensord binary that maps the I2C bus, reads the
+# onboard sensors and publishes iot.sensor.* to ds; the lwm2m client mirrors
+# those into IPSO objects. datastore_client + bcm2837_driver are already added
+# above, so the module's guards reuse them. See modules/sensors/README.md.
+set(SENSORS_BUILD_DAEMON ON CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/sensors
+                 ${CMAKE_BINARY_DIR}/sensors)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
@@ -243,6 +252,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-openvpn-client.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-net-router.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-wifi-client.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-sensord.service
             DESTINATION lib/systemd/system)
 
     # tmpfiles.d fallback for hosts where RuntimeDirectory= doesn't
@@ -265,6 +275,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/openvpn-client.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/net-router.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/wifi-client.env
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/sensord.env
             DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot)
 
     # Object-resource config templates. Land each .lua as .lua.example

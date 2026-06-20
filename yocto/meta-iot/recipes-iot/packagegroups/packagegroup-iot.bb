@@ -39,6 +39,7 @@ RDEPENDS:${PN}-full = "\
     iot-net-router \
     iot-wifi-client \
     iot-bcm2837-selftest \
+    iot-sensord \
     openvpn \
     nftables \
     iproute2 \
