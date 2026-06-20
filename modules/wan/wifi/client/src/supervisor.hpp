@@ -161,6 +161,12 @@ public:
     int run();
 
 private:
+    /// Publish a clean "not associated" snapshot to ds when the link drops
+    /// (CTRL-EVENT-DISCONNECTED / TERMINATING): assoc.state=disconnected and
+    /// clear ssid/bssid/rssi/dhcp.ip so the device UI doesn't keep showing a
+    /// ghost "connected" at the last IP after WiFi goes away.
+    void publish_disconnected();
+
     DsBridge&             m_ds;
     SupervisorOptions     m_opt;
     SystemClock           m_clock;
