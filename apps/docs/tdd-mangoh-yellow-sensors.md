@@ -1,11 +1,21 @@
-# TDD Plan — mangOH Yellow Sensor Integration over RPi I²C
+# TDD Plan — mangOH Yellow Integration over RPi (I²C sensors + cellular WAN)
 
-Status: **IN PROGRESS** — PR-1 (BCM2837 I²C transaction layer) implemented and
-host-unit-tested; PRs 2–4 designed below, not yet started.
+Status: **IN PROGRESS** — PR-1 (BCM2837 I²C transaction layer) and PR-2
+(per-chip sensor drivers) implemented and host-unit-tested; PRs 3–4 (LwM2M
+wiring + HW bring-up) designed below. The cellular-WAN / GPS plane (§6) is
+scoped but not yet broken into PRs.
 
 Wire the [mangOH Yellow](https://www.bipom.com/documents/mangOH_Yellow_User_Guide.pdf)
-sensor block to a Raspberry Pi 3B (BCM2837) over **I²C** and surface its
-readings through the existing LwM2M / data-store / device-ui stack.
+to a Raspberry Pi 3B (BCM2837). Two planes:
+
+1. **Sensor plane (this doc's PRs 1–4):** read the onboard BMI160 / BME680 /
+   light sensors over **I²C** and surface them through the existing
+   LwM2M / data-store / device-ui stack.
+2. **WAN plane (§6):** use the mangOH Yellow's CF3 **cellular module** as the
+   Pi's primary WAN uplink, and pull **GPS/GNSS** off the same module. All data
+   — sensors, GPS, device telemetry — flows to **cloud-iot over LwM2M**, reusing
+   the infrastructure already in place (ClientRegistry → cloud.endpoints, IPSO
+   objects, DTLS/PSK, observe/notify).
 
 ## 0. Hardware decision: I²C, not SPI
 
@@ -55,8 +65,8 @@ I²C path.
 
 | Task | PR | State | Notes |
 | --- | --- | --- | --- |
-| **A — I²C transaction layer** | 1 | ✅ **DONE** | `modules/bcm2837` `inc/i2c_bus.hpp` + `src/i2c/i2c_bus.cpp`: `I2cTransport` seam, `Bcm2837I2cTransport` (`bus_init` = GPIO2/3→ALT0 + divider + enable; `write`/`read`/`write_read`/`read_reg`/`write_reg`; `I2cResult` Ok/BadArg/Timeout/Nack/ClockTimeout). Bounded-spin FIFO pump on S.DONE with S.ERR/S.CLKT checks. Host gtests in `test/i2c_bus_test.{hpp,cpp}`. |
-| B — sensor drivers | 2 | ⬜ TODO | `modules/sensors/`: `Bmi160` (chip-id 0xD1, addr 0x68/0x69), `Bme680` (addr 0x76/0x77, Bosch calib compensation), `LightSensor` (confirm part; typ 0x44). Each ctor takes `I2cTransport&`; host tests inject a `FakeI2cTransport` with canned register maps. Add `I2cMux`/expander shim **iff** `i2cdetect` shows the sensors gated behind the mangOH expander. |
+| **A — I²C transaction layer** | 1 | ✅ **DONE** (#283) | `modules/bcm2837` `inc/i2c_bus.hpp` + `src/i2c/i2c_bus.cpp`: `I2cTransport` seam, `Bcm2837I2cTransport` (`bus_init` = GPIO2/3→ALT0 + divider + enable; `write`/`read`/`write_read`/`read_reg`/`write_reg`; `I2cResult` Ok/BadArg/Timeout/Nack/ClockTimeout). Bounded-spin FIFO pump on S.DONE with S.ERR/S.CLKT checks. Host gtests in `test/i2c_bus_test.{hpp,cpp}`. |
+| **B — sensor drivers** | 2 | ✅ **DONE** | `modules/sensors/` (`sensors_driver` lib): `Bmi160` (chip-id 0xD1, raw int16 axes), `Bme680` (chip-id 0x61, calibration-packing decode + Bosch fixed-point T/P/H compensation; gas TODO), `Opt3001` (device-id 0x3001, lux = 0.01·2^E·mantissa). `I2cSensor` base over the `I2cTransport` seam; gtests over a `FakeI2cTransport` (256-byte auto-increment register file). Add an `I2cMux`/expander shim **iff** `i2cdetect` shows the sensors gated behind the mangOH expander (PR-4 finding). |
 | C — IPSO objects | 3 | ⬜ TODO | `install_sensors(store, hooks)` in the object layer, called from `install_canonical_objects` (`apps/src/lwm2m_object_stubs.cpp`). OIDs: 3303 Temp, 3304 Humidity, 3315 Barometer, 3325 Gas/VOC, 3313 Accel, 3334 Gyro, 3301 Illuminance. Resource `read` closures return the Layer-4 cache. Observe/Notify rides the existing observe machinery (NON default, every Nth CON). |
 | D — ds keys + device-ui | 3 | ⬜ TODO | Publish `iot.sensor.*` so the local device-ui shows live values without a cloud round-trip. Reuse/extend an existing sensor namespace — do not mint a key per resource. Add a device-ui tile. |
 | E — sampler | 3 | ⬜ TODO | Periodic reader on the **ACE reactor timer** (StatsPublisher pattern), ACE_DEBUG/ACE_ERROR logging. Updates the IPSO read-closure cache + ds keys at interval N. Behind a build/PACKAGECONFIG flag + runtime config so a board without the mangOH attached no-ops. |
@@ -82,10 +92,64 @@ cmake --build modules/bcm2837/build
 ctest --test-dir modules/bcm2837/build      # or ./modules/bcm2837/build/test/bcm2837_test
 ```
 
-The new `I2cBus*` tests run over `std::vector`-backed I²C/GPIO blocks (same seam
-as the existing suite) — no Pi required. Real DONE/FIFO/RX behaviour is only
-exercised on hardware in PR-4.
+PR-2 (host, no hardware):
 
-> CI note: image workflows build on `main` only and there is no local C++
-> toolchain on the dev Mac — review each PR's C++ carefully before merge, since
-> breaks surface post-merge.
+```bash
+cmake -S modules/sensors -B modules/sensors/build -DSENSORS_BUILD_TESTS=ON
+cmake --build modules/sensors/build
+ctest --test-dir modules/sensors/build      # gtests over FakeI2cTransport
+```
+
+Both suites run over `std::vector`/in-memory register blocks — no Pi required.
+Real DONE/FIFO/RX behaviour and sensor numeric accuracy are exercised on
+hardware in PR-4.
+
+> CI note: image workflows build on `main` only — review each PR's C++ before
+> merge, since breaks surface post-merge.
+
+## 6. WAN plane — mangOH cellular uplink + GPS over LwM2M
+
+The mangOH Yellow's CF3 cellular module (Sierra Wireless WP-series) is the Pi's
+**primary WAN** and the **GPS/GNSS** source. This is a separate workstream from
+the I²C sensor drivers (PRs 1–4) — it touches `modules/wan` and the LwM2M object
+set, not `modules/sensors` — but shares the same destination: **cloud-iot over
+LwM2M**, on the infrastructure that already exists (DTLS/PSK bootstrap+register,
+ClientRegistry → `cloud.lwm2m.registrations` → EndpointRegistry → `cloud.endpoints`,
+observe/notify, IPSO objects). See `[[reference_cloud_endpoints_dataflow]]`.
+
+### 6.1 Cellular WAN
+- The WP module presents to the Pi over USB as a network interface (QMI/MBIM or
+  RNDIS/ECM) plus an AT control channel. Bring-up = enumerate modem → set APN →
+  connect (ModemManager/`mmcli` or a `qmicli`/`pppd` path) → default route.
+- Add a **`modules/wan/cellular/`** daemon as a sibling of `modules/wan/wifi/`
+  (mirrors the wifi-client structure): manage the connection, publish
+  `wan.cellular.*` state into the data-store (operator, RSSI/RSRP, APN, IP,
+  up/down), and integrate with the existing online-gate / route preference so
+  cellular is the uplink when wired/WiFi is absent. Reuse the `vpn.state` /
+  `iot.conn.state` lifecycle pattern, not a new bespoke key
+  (`[[feedback_ds_key_reuse]]`).
+- The VPN/LwM2M client already binds to "whatever the default route is", so once
+  cellular provides the route, bootstrap→register→observe flows unchanged.
+
+### 6.2 GPS / GNSS → LwM2M Object 6 (Location)
+- GPS comes off the **same WP module** (AT `+GPS`/`+QGPS` or QMI LOC / a gnss
+  NMEA device), **not** I²C — so it lives in the cellular daemon, which parses
+  fix → publishes `gps.*` (lat/lon/alt/speed/ts) into ds.
+- Surface to the cloud as **LwM2M Object 6 (Location)**: RIDs 0 Latitude,
+  1 Longitude, 2 Altitude, 5 Timestamp, 6 Speed. Install it next to the IPSO
+  sensor objects (PR-3 `install_sensors` sibling, e.g. `install_location`), with
+  read-closures bound to the `gps.*` ds keys and observe/notify on position
+  change. The cloud Endpoints table can then show device location.
+
+### 6.3 Telemetry transport recap
+Everything converges on LwM2M: sensors → IPSO 33xx, GPS → Object 6, device
+health → Object 3 + existing `iot.*` keys. No new cloud ingestion path is
+needed — the device just registers more objects, and the cloud observes them.
+
+### 6.4 Open questions (WAN)
+1. Modem stack on the Yocto image: ModemManager vs. raw `qmicli`/`pppd` — pick
+   per image size / WP firmware (QMI vs MBIM).
+2. USB enumeration: which interface the WP exposes to the Pi (composition may
+   need a `usb_modeswitch` / mode set).
+3. SIM/APN provisioning path (operator profile via device-ui vs. preconfigured).
+4. Power: the WP + Pi current draw on the mangOH supply during TX peaks.
