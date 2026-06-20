@@ -54,6 +54,12 @@ bool dispatch_at_line(const std::string& line, CellularState& st) {
         st.set_iccid(parse_iccid(line));
         return true;
     }
+    if (starts_with(line, "+QGPSLOC:")) {
+        // GPS over the AT channel (AT+QGPSLOC=2) — one complete fix per line.
+        GpsFix fix;
+        if (parse_qgpsloc(line, fix)) st.set_gps(fix);
+        return true;
+    }
     return false;
 }
 

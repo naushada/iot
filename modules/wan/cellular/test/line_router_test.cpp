@@ -62,6 +62,20 @@ TEST(DispatchNmea, MergesGgaAndRmc) {
     EXPECT_NE(val(kv, "gps.speed"), "<absent>");
 }
 
+TEST(DispatchAt, RoutesQgpslocToGps) {
+    CellularState st;
+    EXPECT_TRUE(dispatch_at_line(
+        "+QGPSLOC: 092204.0,31.22246,121.35372,1.2,57.1,3,45.0,12.5,6.7,200520,06", st));
+    auto kv = st.to_kv();
+    EXPECT_EQ(val(kv, "gps.fix"), "3d");
+    EXPECT_EQ(val(kv, "gps.sats"), "6");
+    EXPECT_NE(val(kv, "gps.lat"), "<absent>");
+    // a no-fix +QGPSLOC is still "handled" (returns true) but sets no fix
+    CellularState st2;
+    EXPECT_TRUE(dispatch_at_line("+QGPSLOC: 0.0,,,,,0", st2));
+    EXPECT_TRUE(st2.to_kv().empty());
+}
+
 TEST(DispatchNmea, RejectsBadChecksum) {
     CellularState st;
     GpsFix acc;

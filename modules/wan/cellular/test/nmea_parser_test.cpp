@@ -73,3 +73,32 @@ TEST(Nmea, RejectsWrongTypeOrChecksum) {
     EXPECT_FALSE(parse_gga(kRMC, fix));   // RMC fed to GGA parser
     EXPECT_FALSE(parse_rmc(kGGA, fix));   // GGA fed to RMC parser
 }
+
+TEST(Qgpsloc, DecimalModeFix) {
+    GpsFix fix;
+    ASSERT_TRUE(parse_qgpsloc(
+        "+QGPSLOC: 092204.0,31.22246,121.35372,1.2,57.1,3,45.0,12.5,6.7,200520,06", fix));
+    EXPECT_TRUE(fix.valid);
+    EXPECT_EQ(fix.quality, "3d");
+    EXPECT_NEAR(fix.lat, 31.22246, 1e-5);
+    EXPECT_NEAR(fix.lon, 121.35372, 1e-5);
+    EXPECT_NEAR(fix.alt_m, 57.1, 1e-3);
+    EXPECT_NEAR(fix.course_deg, 45.0, 1e-3);
+    EXPECT_NEAR(fix.speed_kmh, 12.5, 1e-3);
+    EXPECT_EQ(fix.sats, 6);
+}
+
+TEST(Qgpsloc, NegativeDecimalDegrees) {
+    GpsFix fix;
+    ASSERT_TRUE(parse_qgpsloc(
+        "+QGPSLOC: 010101.0,-33.86880,-151.20930,0.8,15.0,2,0.0,0.0,0.0,010120,05", fix));
+    EXPECT_EQ(fix.quality, "2d");
+    EXPECT_NEAR(fix.lat, -33.86880, 1e-5);
+    EXPECT_NEAR(fix.lon, -151.20930, 1e-5);
+}
+
+TEST(Qgpsloc, NoFixIsRejected) {
+    GpsFix fix;
+    EXPECT_FALSE(parse_qgpsloc("+CME ERROR: 516", fix));   // not fixed yet
+    EXPECT_FALSE(parse_qgpsloc("+QGPSLOC: 0.0,,,,,0", fix));
+}

@@ -39,6 +39,13 @@ bool parse_gga(const std::string& sentence, GpsFix& out);
 /// Parse a `$--RMC` sentence into `out` (lat/lon/speed/course/validity).
 bool parse_rmc(const std::string& sentence, GpsFix& out);
 
+/// Parse a Quectel `+QGPSLOC: <utc>,<lat>,<lon>,<hdop>,<alt>,<fix>,<cog>,<spkm>,
+/// <spkn>,<date>,<nsat>` response — the `AT+QGPSLOC=2` decimal-degree form, so
+/// lat/lon are already signed decimal degrees. Lets GPS work over the AT
+/// channel alone (no dedicated NMEA tty). Returns false on a no-fix/malformed
+/// line (e.g. the modem replies `+CME ERROR: 516` until it has a fix).
+bool parse_qgpsloc(const std::string& sentence, GpsFix& out);
+
 } // namespace cellular
 
 #endif /*__cellular_nmea_parser_hpp__*/

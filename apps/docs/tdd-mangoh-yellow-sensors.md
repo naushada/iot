@@ -171,11 +171,16 @@ raw POSIX** `open/read/write/select`:
   state core.
 
 ### 6.C GPS / GNSS source
-GPS comes off the **same WP module** (a GNSS NMEA tty, or `+QGPSLOC` over AT),
-**not** I²C. The daemon parses the fix (PR-A `nmea_parser`/`at_parser`) →
-publishes `gps.*` → PR-B mirrors into **LwM2M Object 6 (Location)** RIDs 0/1/2/5/6
-with observe/notify on position change, so the cloud Endpoints table can show
-device location.
+GPS comes off the **same WP module**, **not** I²C, by either route — both wired:
+- **NMEA tty** (`cell.gps.tty` set): the daemon opens a second `SerialChannel`
+  and routes `$--GGA`/`$--RMC` through `nmea_parser`.
+- **AT channel** (`cell.gps.tty` empty): the daemon issues `AT+QGPS=1` once then
+  `AT+QGPSLOC=2` each poll; `parse_qgpsloc` decodes the decimal-degree fix
+  (`+QGPSLOC: utc,lat,lon,hdop,alt,fix,cog,spkm,spkn,date,nsat`). A no-fix
+  `+CME ERROR 516` is ignored. **So GPS works with no dedicated NMEA port.**
+
+Either way the fix → `gps.*` → PR-B mirrors into **LwM2M Object 6 (Location)**
+RIDs 0/1/2/5/6 with observe/notify on position change.
 
 ### 6.D Open questions (WAN — need hardware)
 1. Modem stack: ModemManager/`mmcli` vs. raw `qmicli`/`pppd` (or pure-AT
