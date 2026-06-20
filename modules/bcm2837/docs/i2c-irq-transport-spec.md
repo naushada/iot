@@ -1,8 +1,12 @@
 # Spec — Interrupt-driven BSC1 I²C transport (`Bcm2837I2cIrqTransport`)
 
-Status: **DESIGN / not implemented.** A bare-metal follow-up to the polling
-`Bcm2837I2cTransport` (`inc/i2c_bus.hpp`). Implements the same `I2cTransport`
-seam so it is a drop-in for the sensor drivers and stays host-unit-testable.
+Status: **IMPLEMENTED (P1–P5)** in `inc/i2c_irq.hpp` + `src/i2c/i2c_irq.cpp`,
+host-tested in `test/i2c_irq_test.{hpp,cpp}` (11 gtests — DONE path, multi-
+interrupt drain, watchdog, error classes, bus_init/IRQ-arm, async callback).
+A bare-metal follow-up to the polling `Bcm2837I2cTransport` (`inc/i2c_bus.hpp`)
+on the same `I2cTransport` seam — a drop-in for the sensor drivers, host-unit-
+testable by simulating the ISR. **On-silicon validation (P4) is pending real
+hardware** (the `kBsc1Irq`=53 line, IVT wiring, barriers, clock-stretch divider).
 
 ---
 
@@ -222,11 +226,20 @@ Timeout, busy-guard rejects re-entry).
 
 ---
 
-## 9. Phased plan
-- **P1** — `Bcm2837I2cIrqTransport` skeleton + `Xfer` ctx + small-transfer
-  DONE-only path + `wait_complete()` seam; full host gtest suite (ISR simulated).
-- **P2** — large-transfer TXW/RXR refill-drain + tests.
-- **P3** — watchdog (inject a deadline hook; host-test the Timeout path).
-- **P4** — real-silicon bring-up: confirm `kBsc1Irq`, IVT wiring, barriers,
-  divider vs the clock-stretch erratum; A/B against the poll transport.
-- **P5 (optional)** — async/callback API for an event-loop consumer.
+## 9. Phased plan — status
+- **P1 ✅** — `Bcm2837I2cIrqTransport` + `Xfer` ctx + small-transfer DONE path +
+  `wait_complete()`/`read_status()` seams; host gtests (ISR simulated).
+- **P2 ✅** — multi-interrupt FIFO drain/fill (`handle_irq` moves all available
+  bytes per call, re-reading status; the inner loop re-arms across interrupts).
+- **P3 ✅** — watchdog: `wait_complete()` bounds the wait by `max_waits`
+  `wait_for_irq()` cycles, then `abort_transfer()` → `Timeout`. (A real
+  bare-metal build must arm a timer IRQ so `WFI` wakes — §4.7.)
+- **P4 ⚙️ code done, silicon pending** — `bus_init()` muxes ALT0, sets the
+  divider, enables BSC, `install_IRQHandler(kBsc1Irq, trampoline)` + `enable()`;
+  `mem_barrier()` = `dmb sy` on ARM. Confirm `kBsc1Irq`=53, IVT wiring and the
+  clock-stretch divider **on hardware**; A/B against the poll transport.
+- **P5 ✅** — `write_async`/`read_async` (kick + return; the ISR fires the
+  `Completion` callback); a busy guard rejects a second in-flight transfer.
+
+> **Build note:** the bare-metal `WFI` in `wait_for_irq()` is gated behind
+> `-DI2C_IRQ_BAREMETAL` (+ ARM) so the hosted/test build is a safe no-op.
