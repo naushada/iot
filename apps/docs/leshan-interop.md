@@ -203,3 +203,30 @@ as of the L9 follow-up PR:
   `ServiceContext_t` pointers. Smoke (`log/L9/run-cli-smoke.sh`)
   exits cleanly after `quit`. Tracked in `lwm2m-rdd.md` §3.10 as
   BUG-010.
+
+---
+
+## Deferred coverage — REVISIT (not yet tested)
+
+The matrices above verify the **core DM surface** (bootstrap, register,
+Read/Write/Observe/Execute on Object 3, TLV, DTLS-PSK) against Leshan/wakaama.
+The following are **intentionally deferred** — to revisit after the current
+device bring-up (VPN) work. They do NOT affect the proprietary cloud↔device
+features (e.g. Object 2048 VPN-cert push, which a standard server never touches),
+but they matter for full interop with a standard Leshan server:
+
+1. **SenML / CBOR content-formats.** We have the codecs
+   (`lwm2m_codec_senml.cpp`, `cbor_adapter.cpp`); cross-implementation interop
+   with Leshan (Read/Notify in SenML-JSON and SenML-CBOR) is untested.
+2. **CoAP Block-Wise (Block1/Block2).** The CoAP adapter has *partial* Block1/
+   Block2 option handling (`coap_adapter.cpp`), but large standard-object
+   reads/writes segmented by Leshan are not exercised. (The Object-2048 cert
+   push deliberately uses app-level chunking — `certchunk` — for idempotent
+   re-push instead of block-wise, so it sidesteps this; a standard large
+   transfer with Leshan would rely on the untested block-wise path.)
+3. **Object 5 Firmware Update.** FOTA pull/push interop with Leshan driving the
+   update (URI write + state/result Observe) is untested.
+4. **Bootstrap *from* a Leshan BS server** (we test our BS; not Leshan-as-BS).
+
+Owner action when revisited: extend `docker/docker-compose.leshan.yml` + the
+runners under `log/L9/` to add these rows.
