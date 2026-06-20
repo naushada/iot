@@ -5,7 +5,10 @@
 --   cell.apn                - APN to activate the data context (default "";
 --                             operator/SIM-specific, set via ds-cli / cloud-ui)
 --   cell.modem.tty          - AT control device (default "/dev/ttyUSB2")
---   cell.gps.tty            - NMEA device; empty → poll GNSS over AT (QGPSLOC)
+--   cell.gps.tty            - NMEA device. The daemon auto-detects the modem
+--                             vendor (AT+GMI/CGMM) and starts GNSS accordingly:
+--                             Sierra WP via AT!GPSFIX (needs this NMEA port set),
+--                             Quectel via AT+QGPS (empty → poll AT+QGPSLOC).
 --   cell.poll.interval.sec  - status poll cadence (+CSQ/+COPS/+CREG) (default 30)
 --   cell.gps.enable         - enable GNSS reads (default true)
 --

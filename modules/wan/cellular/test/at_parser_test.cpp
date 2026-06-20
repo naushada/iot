@@ -55,6 +55,43 @@ TEST(AtCgpaddr, ExtractsIp) {
 TEST(AtIccid, AcceptsLongDigits) {
     EXPECT_EQ(parse_iccid("+QCCID: 8944500207123456789"), "8944500207123456789");
     EXPECT_EQ(parse_iccid("+CCID: 8901234567890123456F"), "8901234567890123456F");
+    EXPECT_EQ(parse_iccid("+ICCID: 8944500207123456789"), "8944500207123456789"); // Sierra/std
     EXPECT_EQ(parse_iccid("8944500207123456789"), "8944500207123456789");  // bare
     EXPECT_EQ(parse_iccid("ERROR"), "");
+}
+
+TEST(Vendor, ClassifiesFromManufacturer) {
+    EXPECT_EQ(parse_vendor("Sierra Wireless, Incorporated"), Vendor::Sierra);
+    EXPECT_EQ(parse_vendor("Quectel"), Vendor::Quectel);
+    EXPECT_EQ(parse_vendor("u-blox"), Vendor::UBlox);
+    EXPECT_EQ(parse_vendor("Telit"), Vendor::Generic);
+}
+
+TEST(Vendor, ClassifiesFromModel) {
+    EXPECT_EQ(parse_vendor("WP7702"), Vendor::Sierra);   // the board under test
+    EXPECT_EQ(parse_vendor("HL7800"), Vendor::Sierra);
+    EXPECT_EQ(parse_vendor("BG96"), Vendor::Quectel);
+    EXPECT_EQ(parse_vendor("EC25"), Vendor::Quectel);
+    EXPECT_EQ(parse_vendor("SARA-R410M"), Vendor::UBlox);
+    EXPECT_EQ(parse_vendor("OK"), Vendor::Generic);      // not a model line
+}
+
+TEST(Vendor, IccidCommandPerVendor) {
+    EXPECT_STREQ(iccid_command(Vendor::Quectel), "AT+QCCID");
+    EXPECT_STREQ(iccid_command(Vendor::Sierra),  "AT+ICCID");
+    EXPECT_STREQ(iccid_command(Vendor::UBlox),   "AT+CCID");
+    EXPECT_STREQ(iccid_command(Vendor::Generic), "AT+CCID");
+}
+
+TEST(Vendor, GpsStartCommandsPerVendor) {
+    const auto sierra = gps_start_commands(Vendor::Sierra);
+    ASSERT_EQ(sierra.size(), 2u);
+    EXPECT_EQ(sierra[0], "AT!ENTERCND=\"A710\"");
+    EXPECT_EQ(sierra[1], "AT!GPSFIX=1,255,50");
+
+    const auto quectel = gps_start_commands(Vendor::Quectel);
+    ASSERT_EQ(quectel.size(), 1u);
+    EXPECT_EQ(quectel[0], "AT+QGPS=1");
+
+    EXPECT_TRUE(gps_start_commands(Vendor::Generic).empty());
 }

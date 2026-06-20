@@ -63,8 +63,10 @@ class CellularClient : public ACE_Event_Handler {
         bool                            m_apn_sent = false;
         Reg                             m_lastReg = Reg::Unknown;
         bool                            m_haveIp = false;
-        bool                            m_gps_via_at = false;  ///< GNSS over AT+QGPSLOC (no NMEA tty)
-        bool                            m_qgps_on = false;     ///< AT+QGPS=1 issued
+        bool                            m_gps_via_at = false;  ///< GNSS over AT poll (no NMEA tty)
+        Vendor                          m_vendor = Vendor::Generic;
+        bool                            m_gps_started = false; ///< GNSS engine kicked
+        unsigned                        m_poll_count = 0;      ///< for periodic GNSS restart
 };
 
 } // namespace cellular

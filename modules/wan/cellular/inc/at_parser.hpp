@@ -2,6 +2,7 @@
 #define __cellular_at_parser_hpp__
 
 #include <string>
+#include <vector>
 
 /**
  * @file at_parser.hpp
@@ -55,8 +56,30 @@ const char* reg_str(Reg r);
 /// `+CGPADDR: <cid>,"<ip>"` (or unquoted) → the IPv4/IPv6 string, or "".
 std::string parse_cgpaddr(const std::string& line);
 
-/// ICCID from `+QCCID: <iccid>` / `+CCID: <iccid>` / a bare digit line → "".
+/// ICCID from `+QCCID:` / `+CCID:` / `+ICCID:` / a bare digit line → "".
 std::string parse_iccid(const std::string& line);
+
+/// Modem firmware family — the AT command set differs per vendor. Detected
+/// from `AT+GMI` (manufacturer) or `AT+CGMM` (model).
+enum class Vendor {
+    Generic,   ///< unknown — use the most standard commands
+    Sierra,    ///< Sierra Wireless AirPrime (WP/HL/MC/EM/RC…) — AT!GPS*, AT+ICCID
+    Quectel,   ///< Quectel (BG/EC/EG/UG…) — AT+QGPS*, AT+QCCID
+    UBlox,     ///< u-blox (SARA/LARA/LISA)
+};
+
+/// Classify a vendor from an `AT+GMI` / `AT+CGMM` reply line (case-insensitive;
+/// matches manufacturer names and known model prefixes). Generic if unknown.
+Vendor parse_vendor(const std::string& gmi_or_model);
+
+/// The ICCID query command for this vendor (Quectel `AT+QCCID`, Sierra
+/// `AT+ICCID`, else the standard `AT+CCID`).
+const char* iccid_command(Vendor v);
+
+/// The GNSS start command sequence for this vendor (issued before reading a
+/// fix). Sierra unlocks then starts a standalone fix (`AT!ENTERCND` +
+/// `AT!GPSFIX`); Quectel powers the engine (`AT+QGPS=1`); empty for Generic.
+std::vector<std::string> gps_start_commands(Vendor v);
 
 } // namespace cellular
 

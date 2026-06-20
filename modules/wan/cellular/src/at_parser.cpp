@@ -140,6 +140,54 @@ std::string parse_cgpaddr(const std::string& line) {
     return {};
 }
 
+namespace {
+    /// Lowercase copy for case-insensitive matching.
+    std::string lower(std::string s) {
+        for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    }
+    bool contains(const std::string& hay, const char* needle) {
+        return hay.find(needle) != std::string::npos;
+    }
+}
+
+Vendor parse_vendor(const std::string& gmi_or_model) {
+    const std::string s = lower(gmi_or_model);
+    // Manufacturer names (AT+GMI) — unambiguous.
+    if (contains(s, "sierra"))                       return Vendor::Sierra;
+    if (contains(s, "quectel"))                      return Vendor::Quectel;
+    if (contains(s, "u-blox") || contains(s, "ublox")) return Vendor::UBlox;
+    // Model prefixes (AT+CGMM), e.g. WP7702 / BG96 / EC25 / SARA-R410.
+    if (contains(s, "wp") || contains(s, "hl") || contains(s, "mc") ||
+        contains(s, "em75") || contains(s, "rc7"))   return Vendor::Sierra;
+    if (contains(s, "bg") || contains(s, "ec2") || contains(s, "eg2") ||
+        contains(s, "ug") || contains(s, "bc"))      return Vendor::Quectel;
+    if (contains(s, "sara") || contains(s, "lara") || contains(s, "lisa"))
+        return Vendor::UBlox;
+    return Vendor::Generic;
+}
+
+const char* iccid_command(Vendor v) {
+    switch (v) {
+        case Vendor::Quectel: return "AT+QCCID";
+        case Vendor::Sierra:  return "AT+ICCID";
+        default:              return "AT+CCID";   // u-blox + generic
+    }
+}
+
+std::vector<std::string> gps_start_commands(Vendor v) {
+    switch (v) {
+        case Vendor::Sierra:
+            // Unlock the ! commands, then start a standalone fix (max 255s,
+            // 50m). NMEA then streams on the GNSS port. Re-issued periodically.
+            return { "AT!ENTERCND=\"A710\"", "AT!GPSFIX=1,255,50" };
+        case Vendor::Quectel:
+            return { "AT+QGPS=1" };
+        default:
+            return {};   // u-blox/generic: assume NMEA already streaming
+    }
+}
+
 std::string parse_iccid(const std::string& line) {
     std::string body = after_colon(line);
     if (body.empty()) {

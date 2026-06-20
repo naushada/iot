@@ -171,14 +171,25 @@ raw POSIX** `open/read/write/select`:
 - This keeps the daemon a thin reactor shell around the already-tested parsing/
   state core.
 
-### 6.C GPS / GNSS source
-GPS comes off the **same WP module**, **not** I²C, by either route — both wired:
-- **NMEA tty** (`cell.gps.tty` set): the daemon opens a second `SerialChannel`
-  and routes `$--GGA`/`$--RMC` through `nmea_parser`.
-- **AT channel** (`cell.gps.tty` empty): the daemon issues `AT+QGPS=1` once then
-  `AT+QGPSLOC=2` each poll; `parse_qgpsloc` decodes the decimal-degree fix
-  (`+QGPSLOC: utc,lat,lon,hdop,alt,fix,cog,spkm,spkn,date,nsat`). A no-fix
-  `+CME ERROR 516` is ignored. **So GPS works with no dedicated NMEA port.**
+### 6.C GPS / GNSS source — vendor-aware
+GPS comes off the **same WP module**, **not** I²C. The daemon **detects the modem
+vendor** at startup (`AT+GMI`/`AT+CGMM` → `parse_vendor`: Sierra / Quectel /
+u-blox / Generic) and starts + reads GNSS with the right command set — this was a
+real on-hardware finding: the board is a **Sierra WP7702**, not Quectel.
+
+- **Start (vendor-specific):** Sierra → `AT!ENTERCND="A710"` + `AT!GPSFIX=1,255,50`
+  (re-issued ~every 6 polls since standalone fix sessions expire); Quectel →
+  `AT+QGPS=1`. Without this the WP's GNSS engine stays off and the NMEA port is
+  silent.
+- **Read:** NMEA tty (`cell.gps.tty` set) → `nmea_parser` (`$--GGA`/`$--RMC`) —
+  **the path Sierra needs**; or, Quectel-only with `cell.gps.tty` empty →
+  `AT+QGPSLOC=2` + `parse_qgpsloc`. Sierra reports a fix only over NMEA (no
+  single-line AT reply), so Sierra requires the NMEA port — the daemon logs a
+  hint if it's unset.
+
+ICCID is likewise vendor-aware (`iccid_command`: Sierra `AT+ICCID`, Quectel
+`AT+QCCID`, else `AT+CCID`) — the hard-coded `AT+QCCID` returned `ERROR` on the
+WP7702, leaving `cell.iccid` blank.
 
 Either way the fix → `gps.*` → PR-B mirrors into **LwM2M Object 6 (Location)**
 RIDs 0/1/2/5/6 with observe/notify on position change.
