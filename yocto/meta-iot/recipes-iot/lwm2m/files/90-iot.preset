@@ -18,6 +18,7 @@ enable iot-wifi-client.service
 enable iot-lwm2m-client.service
 enable iot-openvpn-client.service
 enable iot-net-router.service
+enable iot-ota-stage.path
 enable iot-swupdate.path
 enable iot-vpn-cert.path
 enable iot-ota-confirm.service
