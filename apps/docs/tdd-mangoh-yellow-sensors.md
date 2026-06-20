@@ -135,46 +135,53 @@ SH
 ## 6. WAN plane — mangOH cellular uplink + GPS over LwM2M
 
 The mangOH Yellow's CF3 cellular module (Sierra Wireless WP-series) is the Pi's
-**primary WAN** and the **GPS/GNSS** source. This is a separate workstream from
-the I²C sensor drivers (PRs 1–4) — it touches `modules/wan` and the LwM2M object
-set, not `modules/sensors` — but shares the same destination: **cloud-iot over
-LwM2M**, on the infrastructure that already exists (DTLS/PSK bootstrap+register,
-ClientRegistry → `cloud.lwm2m.registrations` → EndpointRegistry → `cloud.endpoints`,
-observe/notify, IPSO objects). See `[[reference_cloud_endpoints_dataflow]]`.
+**primary WAN** and the **GPS/GNSS** source. Separate workstream from the I²C
+sensor drivers (PRs 1–4) — it touches `modules/wan` + the LwM2M object set — but
+shares the same destination: **cloud-iot over LwM2M**, on the infrastructure that
+already exists (DTLS/PSK bootstrap+register, ClientRegistry →
+`cloud.lwm2m.registrations` → EndpointRegistry → `cloud.endpoints`, observe/notify).
+See `[[reference_cloud_endpoints_dataflow]]`. net-router already routes the
+cellular slot (`net.iface.cellular.name` default `wwan0`,
+`net.iface.priority="eth,wifi,cellular"`), so once the daemon brings up `wwan0`
+with a default route, bootstrap→register→observe flow unchanged.
 
-### 6.1 Cellular WAN
-- The WP module presents to the Pi over USB as a network interface (QMI/MBIM or
-  RNDIS/ECM) plus an AT control channel. Bring-up = enumerate modem → set APN →
-  connect (ModemManager/`mmcli` or a `qmicli`/`pppd` path) → default route.
-- Add a **`modules/wan/cellular/`** daemon as a sibling of `modules/wan/wifi/`
-  (mirrors the wifi-client structure): manage the connection, publish
-  `wan.cellular.*` state into the data-store (operator, RSSI/RSRP, APN, IP,
-  up/down), and integrate with the existing online-gate / route preference so
-  cellular is the uplink when wired/WiFi is absent. Reuse the `vpn.state` /
-  `iot.conn.state` lifecycle pattern, not a new bespoke key
-  (`[[feedback_ds_key_reuse]]`).
-- The VPN/LwM2M client already binds to "whatever the default route is", so once
-  cellular provides the route, bootstrap→register→observe flows unchanged.
+### 6.A Task breakdown
 
-### 6.2 GPS / GNSS → LwM2M Object 6 (Location)
-- GPS comes off the **same WP module** (AT `+GPS`/`+QGPS` or QMI LOC / a gnss
-  NMEA device), **not** I²C — so it lives in the cellular daemon, which parses
-  fix → publishes `gps.*` (lat/lon/alt/speed/ts) into ds.
-- Surface to the cloud as **LwM2M Object 6 (Location)**: RIDs 0 Latitude,
-  1 Longitude, 2 Altitude, 5 Timestamp, 6 Speed. Install it next to the IPSO
-  sensor objects (PR-3 `install_sensors` sibling, e.g. `install_location`), with
-  read-closures bound to the `gps.*` ds keys and observe/notify on position
-  change. The cloud Endpoints table can then show device location.
+| Task | PR | State | Notes |
+| --- | --- | --- | --- |
+| **A — cellular core** | A | ✅ **DONE** | `modules/wan/cellular/` (`cellular_core` lib): pure `at_parser` (`+CSQ`→dBm/bars, `+COPS`→operator+tech, `+CREG/CGREG/CEREG`→reg, `+CGPADDR`→IP, ICCID), `nmea_parser` (GGA/RMC + XOR checksum → signed decimal-degree fix, knots→km/h), `CellularState` cache → `cell.*`/`gps.*` `to_kv()` batch. `schemas/cell.lua`. **17 gtests pass in podman.** No I/O — host-testable. |
+| **B — GPS → Object 6** | B | ⬜ TODO | Replace the static `install_location` (OID 6) with ds-backed read closures (like `install_sensors`): RID 0 Lat, 1 Lon, 2 Alt, 5 Timestamp, 6 Speed bound to `gps.*` keys; wire `LocationHooks` in `main.cpp`. Client-side, unprivileged, host-testable. |
+| **C — cellular-client daemon** | C | ⬜ TODO | Privileged producer in `modules/wan/cellular/` (sibling of wifi-client): drive the modem, connect the data context, run GNSS, publish `cell.*`/`gps.*`. **Reactor-driven, ACE-only I/O** (see 6.B). Connect FSM publishes `cell.state` (reuse the lifecycle-token convention, `[[feedback_ds_key_reuse]]`). Yocto `${PN}-cellular` package + `cellular-client.service` (NOT auto-enabled — needs the WP module). |
 
-### 6.3 Telemetry transport recap
-Everything converges on LwM2M: sensors → IPSO 33xx, GPS → Object 6, device
-health → Object 3 + existing `iot.*` keys. No new cloud ingestion path is
-needed — the device just registers more objects, and the cloud observes them.
+### 6.B Daemon I/O design — ACE only, reactor-driven (decided)
 
-### 6.4 Open questions (WAN)
-1. Modem stack on the Yocto image: ModemManager vs. raw `qmicli`/`pppd` — pick
-   per image size / WP firmware (QMI vs MBIM).
-2. USB enumeration: which interface the WP exposes to the Pi (composition may
-   need a `usb_modeswitch` / mode set).
-3. SIM/APN provisioning path (operator profile via device-ui vs. preconfigured).
-4. Power: the WP + Pi current draw on the mangOH supply during TX peaks.
+Per `[[feedback_ace_over_posix]]`, the daemon (PR-C) uses **ACE for all I/O — no
+raw POSIX** `open/read/write/select`:
+- The AT control channel and the GNSS NMEA stream are **serial ttys**
+  (`/dev/ttyUSB*`), opened via **`ACE_TTY_IO`/`ACE_DEV_IO`** (termios setup
+  through ACE), not `::open`.
+- Each device's `ACE_HANDLE` is **registered with the `ACE_Reactor`** through an
+  `ACE_Event_Handler` (`get_handle()` returns the fd; `handle_input()` fires on
+  readable) — i.e. yes, a driver's fd is fed to the reactor; no polling loop.
+  `handle_input()` line-buffers and feeds complete lines to the **pure PR-A
+  parsers**. A reactor **timer** (`schedule_timer`) drives the periodic AT polls
+  (`+CSQ/+COPS/+CREG`) and the GNSS query. Any sockets use `ACE_SOCK_*`; sleeps
+  `ACE_OS::sleep`; logging `ACE_DEBUG/ACE_ERROR`.
+- This keeps the daemon a thin reactor shell around the already-tested parsing/
+  state core.
+
+### 6.C GPS / GNSS source
+GPS comes off the **same WP module** (a GNSS NMEA tty, or `+QGPSLOC` over AT),
+**not** I²C. The daemon parses the fix (PR-A `nmea_parser`/`at_parser`) →
+publishes `gps.*` → PR-B mirrors into **LwM2M Object 6 (Location)** RIDs 0/1/2/5/6
+with observe/notify on position change, so the cloud Endpoints table can show
+device location.
+
+### 6.D Open questions (WAN — need hardware)
+1. Modem stack: ModemManager/`mmcli` vs. raw `qmicli`/`pppd` (or pure-AT
+   `+CGACT`/`+QNETDEVCTL`) — pick per image size / WP firmware (QMI vs MBIM).
+2. USB enumeration: which interfaces the WP exposes (AT vs DIAG vs NMEA vs net),
+   composition may need `usb_modeswitch`.
+3. SIM/APN provisioning path (operator profile via device-ui vs. preconfigured
+   `cell.apn`).
+4. Power: WP + Pi draw on the mangOH supply during TX peaks.
