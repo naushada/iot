@@ -196,7 +196,20 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   private pollEndpoints(): void {
     if (!this.active) return;
     this.http.getCloudEndpoints().subscribe({
-      next: (eps) => { this.endpoints = eps as Ep[]; if (this.active) setTimeout(() => this.pollEndpoints(), 5000); },
+      next: (eps) => {
+        const fresh = eps as Ep[];
+        // The 5s poll replaces `endpoints` with fresh objects; Clarity's
+        // clrDgSelected tracks selection by object REFERENCE, so without this
+        // the operator's selection is silently dropped on every refresh (and
+        // appears to vanish when they click the upload area mid-poll). Re-point
+        // `selected` at the new row objects that share the same endpoint id.
+        if (this.selected.length) {
+          const selKeys = new Set(this.selected.map(e => e.endpoint));
+          this.selected = fresh.filter(e => selKeys.has(e.endpoint));
+        }
+        this.endpoints = fresh;
+        if (this.active) setTimeout(() => this.pollEndpoints(), 5000);
+      },
       error: () => { if (this.active) setTimeout(() => this.pollEndpoints(), 5000); }
     });
   }
