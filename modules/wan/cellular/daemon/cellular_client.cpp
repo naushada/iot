@@ -58,6 +58,12 @@ int CellularClient::run() {
         }
     }
 
+    // Identify the modem family up front so the first poll already uses the
+    // right ICCID + GNSS commands. The reply (manufacturer / model line) is
+    // classified in on_at_line.
+    m_at->write_line("AT+GMI");
+    m_at->write_line("AT+CGMM");
+
     m_state.set_state("init");
     publish();
 
@@ -86,6 +92,7 @@ int CellularClient::handle_timeout(const ACE_Time_Value&, const void*) {
 
 void CellularClient::poll_modem() {
     if (!m_at) return;
+    ++m_poll_count;
     if (!m_apn_sent && !m_cfg.apn.empty()) {
         m_at->write_line("AT+CGDCONT=1,\"IP\",\"" + m_cfg.apn + "\"");
         m_apn_sent = true;
@@ -94,15 +101,31 @@ void CellularClient::poll_modem() {
     m_at->write_line("AT+COPS?");
     m_at->write_line("AT+CEREG?");
     m_at->write_line("AT+CGPADDR=1");
-    m_at->write_line("AT+QCCID");
-    if (m_gps_via_at) {
-        // Turn the GNSS engine on once, then query a fix each tick. A no-fix
-        // reply (+CME ERROR 516) is simply ignored by the parser.
-        if (!m_qgps_on) {
-            m_at->write_line("AT+QGPS=1");
-            m_qgps_on = true;
+    m_at->write_line(iccid_command(m_vendor));   // QCCID/ICCID/CCID per vendor
+
+    if (m_cfg.gps_enable) {
+        // Kick the GNSS engine (vendor-specific), then keep it alive — Sierra's
+        // standalone fix sessions expire (maxtime), so re-issue periodically
+        // (~every 6 polls). Once started, NMEA streams on the GNSS tty, or for
+        // Quectel-without-a-NMEA-port we poll +QGPSLOC below.
+        if (!m_gps_started || (m_poll_count % 6 == 0)) {
+            for (const auto& cmd : gps_start_commands(m_vendor)) {
+                m_at->write_line(cmd);
+            }
+            m_gps_started = true;
         }
-        m_at->write_line("AT+QGPSLOC=2");
+        if (m_gps_via_at) {
+            if (m_vendor == Vendor::Quectel) {
+                m_at->write_line("AT+QGPSLOC=2");   // +QGPSLOC parser handles the reply
+            } else if (m_vendor == Vendor::Sierra) {
+                // Sierra reports a fix only on the NMEA port, not a single-line
+                // AT reply — so AT-only GPS isn't supported. Tell the operator
+                // once to set cell.gps.tty to the WP's NMEA port.
+                ACE_ERROR((LM_WARNING,
+                    ACE_TEXT("%D [cell] Sierra GPS needs a NMEA port — set "
+                             "cell.gps.tty (e.g. /dev/ttyUSB1)\n")));
+            }
+        }
     }
 }
 
@@ -113,6 +136,17 @@ void CellularClient::on_at_line(const std::string& line) {
         m_lastReg = parse_creg(line);
     } else if (starts_with(line, "+CGPADDR:")) {
         m_haveIp = !parse_cgpaddr(line).empty();
+    } else if (m_vendor == Vendor::Generic) {
+        // Classify the modem from the AT+GMI / AT+CGMM reply (a bare
+        // manufacturer/model line). Once known, the next poll uses the right
+        // ICCID + GNSS commands.
+        const Vendor v = parse_vendor(line);
+        if (v != Vendor::Generic) {
+            m_vendor = v;
+            m_gps_started = false;   // re-kick GNSS with the correct command
+            ACE_DEBUG((LM_INFO,
+                ACE_TEXT("%D [cell] modem vendor detected: %C\n"), line.c_str()));
+        }
     }
 }
 
