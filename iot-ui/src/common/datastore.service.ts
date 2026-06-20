@@ -35,6 +35,9 @@ export class DataStoreService {
     'net.iface.wifi.name', 'net.iface.cellular.name', 'net.poll.interval.sec',
     'net.state', 'net.rules.applied.count', 'net.last.apply.unix',
     'net.iface.active',
+    // Cellular client config (mangOH WP modem)
+    'cell.apn', 'cell.modem.tty', 'cell.gps.tty',
+    'cell.poll.interval.sec', 'cell.gps.enable',
     // LwM2M client
     'iot.serial', 'iot.dev.mode', 'iot.bs.uri', 'iot.server.uri', 'iot.dm.uri',
     'iot.binding', 'iot.lifetime',
