@@ -67,10 +67,18 @@ I²C path.
 | --- | --- | --- | --- |
 | **A — I²C transaction layer** | 1 | ✅ **DONE** (#283) | `modules/bcm2837` `inc/i2c_bus.hpp` + `src/i2c/i2c_bus.cpp`: `I2cTransport` seam, `Bcm2837I2cTransport` (`bus_init` = GPIO2/3→ALT0 + divider + enable; `write`/`read`/`write_read`/`read_reg`/`write_reg`; `I2cResult` Ok/BadArg/Timeout/Nack/ClockTimeout). Bounded-spin FIFO pump on S.DONE with S.ERR/S.CLKT checks. Host gtests in `test/i2c_bus_test.{hpp,cpp}`. |
 | **B — sensor drivers** | 2 | ✅ **DONE** | `modules/sensors/` (`sensors_driver` lib): `Bmi160` (chip-id 0xD1, raw int16 axes), `Bme680` (chip-id 0x61, calibration-packing decode + Bosch fixed-point T/P/H compensation; gas TODO), `Opt3001` (device-id 0x3001, lux = 0.01·2^E·mantissa). `I2cSensor` base over the `I2cTransport` seam; gtests over a `FakeI2cTransport` (256-byte auto-increment register file). Add an `I2cMux`/expander shim **iff** `i2cdetect` shows the sensors gated behind the mangOH expander (PR-4 finding). |
-| C — IPSO objects | 3 | ⬜ TODO | `install_sensors(store, hooks)` in the object layer, called from `install_canonical_objects` (`apps/src/lwm2m_object_stubs.cpp`). OIDs: 3303 Temp, 3304 Humidity, 3315 Barometer, 3325 Gas/VOC, 3313 Accel, 3334 Gyro, 3301 Illuminance. Resource `read` closures return the Layer-4 cache. Observe/Notify rides the existing observe machinery (NON default, every Nth CON). |
-| D — ds keys + device-ui | 3 | ⬜ TODO | Publish `iot.sensor.*` so the local device-ui shows live values without a cloud round-trip. Reuse/extend an existing sensor namespace — do not mint a key per resource. Add a device-ui tile. |
-| E — sampler | 3 | ⬜ TODO | Periodic reader on the **ACE reactor timer** (StatsPublisher pattern), ACE_DEBUG/ACE_ERROR logging. Updates the IPSO read-closure cache + ds keys at interval N. Behind a build/PACKAGECONFIG flag + runtime config so a board without the mangOH attached no-ops. |
-| F — HW bring-up | 4 | ⬜ TODO | `i2cdetect -y 1` to confirm addresses/parts; correct any defaults; on-device validation; Yocto recipe `mangoh-sensors` PACKAGECONFIG. |
+| **C — IPSO objects (client)** | 3 | ✅ **DONE** | `install_sensors(store, SensorHooks)` in `apps/{inc,src}/lwm2m_object_sensors.{hpp,cpp}`, called from `main.cpp` after `install_canonical_objects`. OIDs 3301/3303/3304/3315 (scalar 5700+5701) and 3313/3334 (tri-axis 5702-4+5701), all observable. Read closures pull `iot.sensor.*` from the data-store (unset → "0"); accel/gyro split the `"x,y,z"` csv. gtests in `apps/test/sensors_object_test.cpp`. (3325 Gas/VOC deferred with the BME680 gas driver.) |
+| **D — ds keys (schema)** | 3 | ✅ **DONE** | `iot.sensor.{temp,humidity,pressure,lux,accel,gyro,version}` added to `modules/data-store/schemas/iot.lua` (Viewer; scalars string, version integer). `iot.sensor.version` bumps each sample for the device-ui long-poll. Reuses one `iot.sensor.*` namespace (no key-per-RID). device-ui tile = follow-up. |
+| **E — iot-sensord daemon** | 4 | ⬜ TODO | The **privileged** producer: maps BSC1/GPIO (needs root/`CAP_SYS_RAWIO` — the lwm2m client runs as `engineer` and can't), runs `sample_all` (BMI160/BME680/OPT3001 over `Bcm2837I2cTransport`) on an ACE timer/`ACE_Task`, publishes `iot.sensor.*` to ds. Same producer→ds→client handoff as net-router / httpd / iot-ota. Behind a Yocto PACKAGECONFIG so a board without the mangOH no-ops. `SensorCache` + `sample_all` core is host-testable over `FakeI2cTransport`. |
+| F — HW bring-up | 4 | ⬜ TODO | `i2cdetect -y 1` to confirm addresses/parts/expander; correct any defaults; grant the daemon the I²C capability + systemd unit; device-ui tile; on-device validation; Yocto recipe + PACKAGECONFIG. |
+
+> **Privilege boundary (decided in PR-3):** the lwm2m client is unprivileged
+> (`User=engineer`) and must not get `CAP_SYS_RAWIO`/`/dev/mem`. So sensor I/O
+> lives in a separate **iot-sensord** daemon (PR-4) that publishes `iot.sensor.*`
+> to the data-store; the client only *reads* those keys to fill the IPSO objects
+> — exactly the ds-handoff already used for `iot.version`, `net.iface.active.ip`
+> and `iot.update.*`. This replaces the earlier "in-process cache + sampler in
+> the client" sketch (Layer 4).
 
 ## 4. Open questions (need hardware)
 
