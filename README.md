@@ -273,10 +273,9 @@ journalctl -u iot-rpi3b-selftest
 ```
 
 > **Build branch knob.** `IOT_BRANCH` selects the iot source branch the recipe
-> fetches (default `main`). While the rpi3B integration lives on a feature
-> branch, `yocto/entrypoint.sh` and `yocto/kas-iot.yml` set
-> `IOT_BRANCH = "feat/add-rpi3b-submodule"`; revert both to `main` once that
-> branch merges.
+> fetches; it defaults to `main` (which carries the rpi3B integration). Override
+> for a release/feature image, e.g. in `local.conf`:
+> `IOT_BRANCH = "release/v1.1.0"`.
 
 ## Leshan interop pass (NFR-INTEROP-001)
 
