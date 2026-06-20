@@ -524,13 +524,30 @@ int Supervisor::run() {
             m_dhcp.terminate();
             m_ds.set_dhcp_state("exited");
             m_ds.set_pid_dhcp(0u);
+            publish_disconnected();   // clear the stale assoc + lease
         } else if (ev->kind == ctrl::CtrlEvent::Kind::Terminating) {
+            m_dhcp.terminate();
+            m_ds.set_dhcp_state("exited");
+            m_ds.set_pid_dhcp(0u);
+            publish_disconnected();   // wpa_supplicant going away → not associated
             return 0;
         } else if (ev->kind == ctrl::CtrlEvent::Kind::AssocReject
                 || ev->kind == ctrl::CtrlEvent::Kind::AuthReject) {
             m_ds.set_last_error("reject:" + ev->reason);
         }
     }
+}
+
+void Supervisor::publish_disconnected() {
+    // Mirror the real link state so the device UI / cloud stop showing a ghost
+    // "connected" at the last IP once WiFi drops. assoc.state is the badge the
+    // dashboard reads; the rest are the per-field values it shows.
+    m_ds.set_assoc_state("disconnected");
+    m_ds.set_assoc_ssid("");
+    m_ds.set_assoc_bssid("");
+    m_ds.set_signal_rssi(0);
+    m_ds.set_dhcp_ip("");
+    m_assoc_bssid.clear();
 }
 
 } // namespace wifi_client
