@@ -69,8 +69,9 @@ I²C path.
 | **B — sensor drivers** | 2 | ✅ **DONE** | `modules/sensors/` (`sensors_driver` lib): `Bmi160` (chip-id 0xD1, raw int16 axes), `Bme680` (chip-id 0x61, calibration-packing decode + Bosch fixed-point T/P/H compensation; gas TODO), `Opt3001` (device-id 0x3001, lux = 0.01·2^E·mantissa). `I2cSensor` base over the `I2cTransport` seam; gtests over a `FakeI2cTransport` (256-byte auto-increment register file). Add an `I2cMux`/expander shim **iff** `i2cdetect` shows the sensors gated behind the mangOH expander (PR-4 finding). |
 | **C — IPSO objects (client)** | 3 | ✅ **DONE** | `install_sensors(store, SensorHooks)` in `apps/{inc,src}/lwm2m_object_sensors.{hpp,cpp}`, called from `main.cpp` after `install_canonical_objects`. OIDs 3301/3303/3304/3315 (scalar 5700+5701) and 3313/3334 (tri-axis 5702-4+5701), all observable. Read closures pull `iot.sensor.*` from the data-store (unset → "0"); accel/gyro split the `"x,y,z"` csv. gtests in `apps/test/sensors_object_test.cpp`. (3325 Gas/VOC deferred with the BME680 gas driver.) |
 | **D — ds keys (schema)** | 3 | ✅ **DONE** | `iot.sensor.{temp,humidity,pressure,lux,accel,gyro,version}` added to `modules/data-store/schemas/iot.lua` (Viewer; scalars string, version integer). `iot.sensor.version` bumps each sample for the device-ui long-poll. Reuses one `iot.sensor.*` namespace (no key-per-RID). device-ui tile = follow-up. |
-| **E — iot-sensord daemon** | 4 | ⬜ TODO | The **privileged** producer: maps BSC1/GPIO (needs root/`CAP_SYS_RAWIO` — the lwm2m client runs as `engineer` and can't), runs `sample_all` (BMI160/BME680/OPT3001 over `Bcm2837I2cTransport`) on an ACE timer/`ACE_Task`, publishes `iot.sensor.*` to ds. Same producer→ds→client handoff as net-router / httpd / iot-ota. Behind a Yocto PACKAGECONFIG so a board without the mangOH no-ops. `SensorCache` + `sample_all` core is host-testable over `FakeI2cTransport`. |
-| F — HW bring-up | 4 | ⬜ TODO | `i2cdetect -y 1` to confirm addresses/parts/expander; correct any defaults; grant the daemon the I²C capability + systemd unit; device-ui tile; on-device validation; Yocto recipe + PACKAGECONFIG. |
+| **E — iot-sensord daemon** | 4 | ✅ **DONE** (code) | `modules/sensors/`: `inc/sensor_reader.hpp` + `src/sample/` (`SensorCache` + `sample_all`, host-tested over `FakeI2cTransport`) and `daemon/` (`iot-sensord`: connects ds, maps BSC1+GPIO via `mmio.hpp`, `bus_init`, samples on an interval with `ACE_OS::sleep`/`ACE_DEBUG`, publishes `iot.sensor.*` via `Client::set`). `SENSORS_BUILD_DAEMON` (forced ON in the iot build) builds it linking `sensors_driver`+`datastore_client`+ACE. **Verified in podman (ubuntu+ACE+gtest): daemon compiles/links/runs; 12 i2c_bus + 22 sensors + 6 IPSO gtests pass.** |
+| **Yocto packaging** | 4 | ✅ **DONE** | `iot_git.bb`: new `${PN}-sensord` package (binary + unit), unit shipped from `files/iot-sensord.service` (ExecStart `/usr/bin`), env via `${PN}-config`; **registered but `SYSTEMD_AUTO_ENABLE=disable`** (needs the mangOH board + `CAP_SYS_RAWIO`, so it would Restart-loop on a board without it — operator enables it). Added to `packagegroup-iot-full`. systemd unit grants `CAP_SYS_RAWIO` + `DeviceAllow=/dev/mem,/dev/gpiomem`. |
+| F — HW bring-up | 4 | ⬜ TODO (needs HW) | `i2cdetect -y 1` to confirm addresses/parts/expander; correct defaults; confirm the `CAP_SYS_RAWIO`/`/dev/mem` model actually maps BSC1 under `CONFIG_STRICT_DEVMEM` (else fall back to a `/dev/i2c-1` ioctl transport); `systemctl enable --now iot-sensord`; device-ui tile; on-device validation. |
 
 > **Privilege boundary (decided in PR-3):** the lwm2m client is unprivileged
 > (`User=engineer`) and must not get `CAP_SYS_RAWIO`/`/dev/mem`. So sensor I/O
@@ -110,10 +111,26 @@ ctest --test-dir modules/sensors/build      # gtests over FakeI2cTransport
 
 Both suites run over `std::vector`/in-memory register blocks — no Pi required.
 Real DONE/FIFO/RX behaviour and sensor numeric accuracy are exercised on
-hardware in PR-4.
+hardware (task F).
+
+PR-4 (host, via podman — builds the ACE daemon + gtest suites for real on Linux):
+
+```bash
+podman run --rm -i -v "$PWD":/src:Z --entrypoint bash ubuntu:22.04 -s <<'SH'
+apt-get update -qq && apt-get install -y -qq build-essential cmake libgtest-dev \
+    libace-dev liblua5.3-dev zlib1g-dev libssl-dev
+# sensor driver + reader gtests
+cmake -S /src/modules/sensors -B /tmp/s -DSENSORS_BUILD_TESTS=ON && cmake --build /tmp/s -j4
+/tmp/s/test/sensors_test
+# iot-sensord daemon (real ACE + datastore_client)
+cmake -S /src/modules/sensors -B /tmp/d -DSENSORS_BUILD_DAEMON=ON -DACE_ROOT=/usr && \
+    cmake --build /tmp/d -j4 --target iot-sensord
+SH
+```
 
 > CI note: image workflows build on `main` only — review each PR's C++ before
-> merge, since breaks surface post-merge.
+> merge, since breaks surface post-merge. PR-4 was validated end-to-end in
+> podman (ubuntu+ACE+gtest): daemon links & runs, all gtests green.
 
 ## 6. WAN plane — mangOH cellular uplink + GPS over LwM2M
 

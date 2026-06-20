@@ -22,9 +22,23 @@ inc/i2c_sensor.hpp     I2cSensor base: holds I2cTransport& + 7-bit addr,
                        read_regs / read_u8 / write_u8 helpers
 inc/<chip>.hpp         driver class: probe() / init() / read(...)
 src/<chip>/<chip>.cpp  register map + decode (anon-namespace constants)
+inc/sensor_reader.hpp  SensorCache + sample_all (probe→read→cache→iot.sensor.*
+src/sample/            KV batch); pure, host-tested
+daemon/                iot-sensord — the privileged producer binary
 test/                  gtests over FakeI2cTransport (a 256-byte auto-increment
                        register file); compensation primitives are pure + tested
 ```
+
+## iot-sensord (producer daemon)
+
+Built when `-DSENSORS_BUILD_DAEMON=ON` (forced on in the iot image build). It
+maps the BSC1 + GPIO blocks via `/dev/mem` (needs root / `CAP_SYS_RAWIO`),
+`bus_init()`s the I²C bus, runs `sample_all` on a fixed interval and publishes
+`iot.sensor.{temp,humidity,pressure,lux,accel,gyro,version}` to the data-store.
+The (unprivileged) lwm2m client mirrors those keys into IPSO objects for the
+cloud — the producer→ds→client handoff used across the stack. Ships as the
+`iot-sensord` systemd unit (registered, **not** auto-enabled — enable it on
+mangOH-equipped hardware).
 
 ## Build & test
 
