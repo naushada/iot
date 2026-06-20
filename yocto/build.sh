@@ -111,9 +111,19 @@ build_image() {
 prepare_image() {
     if [ -n "${IOT_USE_CACHE:-}" ]; then
         log_section "Pulling cache image: $CACHE_IMAGE"
-        $CR pull "$CACHE_IMAGE"
-        IMAGE_NAME="$CACHE_IMAGE"
-        log_info "Using baked sstate from $CACHE_IMAGE — only meta-iot recompiles"
+        # The published cache is an optional speedup, not a hard dependency. If
+        # it is missing/expired/unauthenticated (e.g. `manifest unknown`), fall
+        # back to building the base image locally instead of aborting the whole
+        # build — the same from-scratch path the cache-less builds already use.
+        # The `if $CR pull` guard also keeps the failed pull from tripping
+        # `set -e`.
+        if $CR pull "$CACHE_IMAGE"; then
+            IMAGE_NAME="$CACHE_IMAGE"
+            log_info "Using baked sstate from $CACHE_IMAGE — only meta-iot recompiles"
+        else
+            log_info "Cache image $CACHE_IMAGE unavailable — building the base image from scratch"
+            build_image
+        fi
     else
         build_image
     fi
