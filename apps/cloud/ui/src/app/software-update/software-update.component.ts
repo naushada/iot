@@ -92,7 +92,7 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
         <!-- Update status -->
         <h4 style="margin-top:28px;">Update Status</h4>
         <clr-datagrid>
-          <clr-dg-column>Serial</clr-dg-column>
+          <clr-dg-column>Endpoint</clr-dg-column>
           <clr-dg-column>Package</clr-dg-column>
           <clr-dg-column>State</clr-dg-column>
           <clr-dg-column>Progress</clr-dg-column>

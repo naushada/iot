@@ -244,6 +244,53 @@ bool reconcile_registrations(data_store::Client& ds,
             changed = true;
         }
     }
+
+    // ── OTA job completion (fixes the "stuck at 90%" bar) ──────────────
+    // The cloud sets an OTA job to state 3 ("updating" → 90%) when it pushes
+    // Object 5, but it never reads the device's /5/0/5 Update Result back — and
+    // iot-swupdate restarts the lwm2m client (the reporter) right after writing
+    // success, so a /5/0/5 observe would race the kill anyway. The reliable
+    // completion signal is /3/0/3 (installed version), which the device re-reports
+    // on its post-update re-Register. So: mark a job done (state 0 / result 1 →
+    // 100%) once the endpoint's installed version moves OFF the baseline captured
+    // at push time. Baseline-change (not version-string match) is what makes this
+    // robust to the "1.1.0+<gitsha>" scheme where only the +sha bumps per build.
+    try {
+        auto st = nlohmann::json::parse(ds_str(ds, "cloud.update.status", "[]"));
+        if (st.is_array()) {
+            bool st_changed = false;
+            for (auto& row : st) {
+                if (!row.is_object()) continue;
+                if (row.value("result", 0) != 0) continue;       // already terminal
+                if (row.value("state", 0) < 1) continue;          // not in-flight
+                const auto serial = row.value("serial", std::string());
+                const auto* info  = reg.lookup_by_ep(serial);
+                if (!info || info->installed_version.empty()) continue;
+                const auto baseline = row.value("baseline", std::string());
+                // No baseline (job pushed by an older cloud) → fall back to a
+                // version-prefix match so it can still complete; with a baseline,
+                // require an actual change away from it.
+                const bool done = baseline.empty()
+                    ? info->installed_version.rfind(
+                          row.value("version", std::string()), 0) == 0 &&
+                      !row.value("version", std::string()).empty()
+                    : info->installed_version != baseline;
+                if (done) {
+                    row["state"]  = 0;
+                    row["result"] = 1;
+                    st_changed = true;
+                }
+            }
+            if (st_changed) {
+                ds.set("cloud.update.status", data_store::Value{st.dump()});
+                changed = true;
+            }
+        }
+    } catch (const std::exception& ex) {
+        ACE_ERROR((LM_ERROR, ACE_TEXT("%D cloudd:thread:%t %M %N:%l OTA status "
+                   "reconcile parse: %C\n"), ex.what()));
+    }
+
     return changed;
 }
 
@@ -1002,9 +1049,17 @@ int main(int argc, char** argv) {
                                 if (!ep_known(serial)) continue;
                                 pending.push_back({{"endpoint", serial}, {"cid", cid},
                                     {"url", fullUrl}, {"sha256", sha}, {"version", ver}});
+                                // Snapshot the endpoint's current installed
+                                // version: reconcile_registrations marks this job
+                                // done (→100%) once /3/0/3 moves off this baseline,
+                                // which is the only completion signal the cloud
+                                // gets (the device restarts its reporter mid-apply).
+                                const auto* cur = ep_reg.lookup_by_ep(serial);
                                 status.push_back({{"serial", serial}, {"state", 1},
                                     {"result", 0}, {"version", ver}, {"pkg", pkg},
-                                    {"ts", cid}});
+                                    {"ts", cid},
+                                    {"baseline", cur ? cur->installed_version
+                                                     : std::string()}});
                             }
                             ds.set("cloud.update.pending",
                                    data_store::Value{pending.dump()});
