@@ -135,6 +135,14 @@ if [ "$MACHINE" != "qemux86-64" ]; then
     echo "MACHINE = \"$MACHINE\"" >> conf/local.conf
 fi
 
+# Pin the iot recipe's source branch (the recipe defaults IOT_BRANCH ?= "main").
+# Set by CI for a release-branch build so the image/feed/bundle carries that
+# branch's code instead of main. Unset → recipe default (main).
+if [ -n "${IOT_BRANCH:-}" ]; then
+    echo "→ IOT_BRANCH set: building iot from '${IOT_BRANCH}'"
+    echo "IOT_BRANCH = \"${IOT_BRANCH}\"" >> conf/local.conf
+fi
+
 # Raspberry Pi tunables: serial console on the GPIO header for headless
 # bring-up debugging. (No-op on the qemu machines.)
 case "$MACHINE" in

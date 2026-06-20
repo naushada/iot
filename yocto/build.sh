@@ -23,6 +23,11 @@
 # iot recipe (deps still restore from sstate, so it stays fast):
 #   IOT_FRESH=1 ./build.sh
 #
+# Build a non-`main` ref of the iot recipe (e.g. a release branch) — the recipe
+# fetches its source from IOT_BRANCH, so the image/feed/bundle carries THAT
+# branch's code (combine with IOT_FRESH=1 to force a clean re-fetch):
+#   IOT_BRANCH=release/v1.1.0 IOT_FRESH=1 ./build.sh
+#
 # Build the RAUC A/B (dual-bank) image instead of the single-rootfs one:
 #   IOT_AB=1 ./build.sh        # raspberrypi*: u-boot + 4-partition wic +
 #                              # signed update-bundle-*.raucb. See
@@ -187,6 +192,7 @@ build_machine() {
         -e "MACHINE=$machine" \
         -e "IOT_FRESH=${IOT_FRESH:-}" \
         -e "IOT_AB=${IOT_AB:-}" \
+        -e "IOT_BRANCH=${IOT_BRANCH:-}" \
         -v "$SCRIPT_DIR/meta-iot:/home/builduser/yocto/meta-iot:ro" \
         -v "${DOWNLOADS_VOLUME}:/home/builduser/yocto/build/downloads:U" \
         -v "${SSTATE_VOLUME}:/home/builduser/yocto/build/sstate-cache:U" \
