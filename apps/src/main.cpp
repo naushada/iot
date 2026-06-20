@@ -987,9 +987,30 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
             if (auto s = data_store::to_string(got[0].value)) return *s;
         return {};
     };
+    // Location (OID 6): bind lat/lon/alt/speed to the gps.* ds keys published
+    // by the cellular-client daemon (it owns the GNSS); a server Read/Observe
+    // /6/0/* then surfaces device location to the cloud. Absent/empty → "0".
+    // Timestamp (RID 5) stays static until the daemon publishes an epoch.
+    ::lwm2m::objects::LocationHooks locHooks;
+    {
+        auto gpsVal = [dsc](const char* key) -> std::string {
+            std::string v;
+            if (dsc) {
+                std::vector<data_store::Client::GetResult> got;
+                if (dsc->get({std::string(key)}, got).ok && !got.empty() && got[0].has_value)
+                    if (auto s = data_store::to_string(got[0].value)) v = *s;
+            }
+            return v.empty() ? std::string("0") : v;
+        };
+        locHooks.latitude  = [gpsVal]() { return gpsVal("gps.lat"); };
+        locHooks.longitude = [gpsVal]() { return gpsVal("gps.lon"); };
+        locHooks.altitude  = [gpsVal]() { return gpsVal("gps.alt"); };
+        locHooks.speed     = [gpsVal]() { return gpsVal("gps.speed"); };
+    }
     ::lwm2m::objects::install_canonical_objects(*plumb.store, configDir,
                                                 std::move(deviceHooks),
-                                                std::move(fwHooks), std::move(certHooks));
+                                                std::move(fwHooks), std::move(certHooks),
+                                                std::move(locHooks));
 
     // ── IPSO sensor objects (mangOH Yellow) ───────────────────────────────
     // Sensor values are produced by the privileged iot-sensord daemon (it owns
