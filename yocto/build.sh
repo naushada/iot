@@ -10,8 +10,12 @@
 #   MACHINE=qemux86-64 ./build.sh     # x86-64 (qemu, CI)
 #   ./build.sh all                    # All supported machines
 #
-# Default target is the full bootable distribution `iot-image`. Override:
-#   TARGET=packagegroup-iot ./build.sh   # build just the .ipk feed
+# Default target is the full bootable distribution `iot-image`. Override TARGET:
+#   TARGET=iot ./build.sh               # just the iot apps recipe → iot-*.ipk
+#   TARGET=packagegroup-iot ./build.sh  # the whole .ipk feed (no image)
+#   TARGET=iot-bundle ./build.sh        # one .tar.gz of the feed (LwM2M OTA push)
+# App-only targets recompile just the iot recipe (deps restore from sstate, so
+# minutes not hours) — reach for the full image only on OS/kernel/unit changes.
 #
 # Guarantee the image carries the latest commit on IOT_BRANCH (main). The iot
 # recipe is AUTOREV, but a cached git mirror / sstate can serve a stale checkout
