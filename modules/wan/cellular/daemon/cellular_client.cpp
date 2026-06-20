@@ -37,6 +37,8 @@ int CellularClient::run() {
         ACE_ERROR_RETURN((LM_ERROR, ACE_TEXT("%D [cell] ds connect failed\n")), 1);
     }
     load_config_from_ds();
+    // No dedicated NMEA tty → read GNSS over the AT channel (AT+QGPSLOC).
+    m_gps_via_at = m_cfg.gps_enable && m_cfg.gps_tty.empty();
 
     m_at.reset(new SerialChannel([this](const std::string& l){ on_at_line(l); }));
     if (m_at->open(m_cfg.modem_tty, ACE_Reactor::instance()) == -1) {
@@ -68,7 +70,7 @@ int CellularClient::run() {
     ACE_DEBUG((LM_INFO,
         ACE_TEXT("%D [cell] up: AT=%C GNSS=%C apn=%C every %us\n"),
         m_cfg.modem_tty.c_str(),
-        m_gnss ? m_cfg.gps_tty.c_str() : "(none)",
+        m_gnss ? m_cfg.gps_tty.c_str() : (m_gps_via_at ? "AT+QGPSLOC" : "(none)"),
         m_cfg.apn.empty() ? "(unset)" : m_cfg.apn.c_str(),
         m_cfg.interval_sec));
 
@@ -93,6 +95,15 @@ void CellularClient::poll_modem() {
     m_at->write_line("AT+CEREG?");
     m_at->write_line("AT+CGPADDR=1");
     m_at->write_line("AT+QCCID");
+    if (m_gps_via_at) {
+        // Turn the GNSS engine on once, then query a fix each tick. A no-fix
+        // reply (+CME ERROR 516) is simply ignored by the parser.
+        if (!m_qgps_on) {
+            m_at->write_line("AT+QGPS=1");
+            m_qgps_on = true;
+        }
+        m_at->write_line("AT+QGPSLOC=2");
+    }
 }
 
 void CellularClient::on_at_line(const std::string& line) {

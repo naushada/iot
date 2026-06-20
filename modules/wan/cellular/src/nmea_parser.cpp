@@ -92,6 +92,31 @@ bool parse_gga(const std::string& sentence, GpsFix& out) {
     return true;
 }
 
+bool parse_qgpsloc(const std::string& sentence, GpsFix& out) {
+    const auto colon = sentence.find(':');
+    if (colon == std::string::npos) return false;
+    std::size_t i = colon + 1;
+    while (i < sentence.size() && sentence[i] == ' ') ++i;
+    const std::vector<std::string> f = split_fields(sentence.substr(i));
+    // 0:utc 1:lat 2:lon 3:hdop 4:alt 5:fix 6:cog 7:spkm 8:spkn 9:date 10:nsat
+    if (f.size() < 8) return false;
+    const int fix = static_cast<int>(std::strtol(f[5].c_str(), nullptr, 10));
+    if ((fix != 2 && fix != 3) || f[1].empty() || f[2].empty()) {
+        out.quality = "none";
+        return false;
+    }
+    out.utc        = f[0];
+    out.lat        = to_double(f[1]);   // already signed decimal degrees (mode 2)
+    out.lon        = to_double(f[2]);
+    out.alt_m      = to_double(f[4]);
+    out.quality    = (fix == 3) ? "3d" : "2d";
+    out.course_deg = to_double(f[6]);
+    out.speed_kmh  = to_double(f[7]);
+    if (f.size() > 10) out.sats = static_cast<int>(std::strtol(f[10].c_str(), nullptr, 10));
+    out.valid = true;
+    return true;
+}
+
 bool parse_rmc(const std::string& sentence, GpsFix& out) {
     std::vector<std::string> f;
     if (!fields_for(sentence, "RMC", f)) return false;
