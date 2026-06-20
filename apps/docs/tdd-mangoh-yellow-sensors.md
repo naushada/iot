@@ -182,6 +182,20 @@ GPS comes off the **same WP module**, **not** I²C, by either route — both wir
 Either way the fix → `gps.*` → PR-B mirrors into **LwM2M Object 6 (Location)**
 RIDs 0/1/2/5/6 with observe/notify on position change.
 
+### 6.E Device-ui tiles (DONE)
+The aggregated `/api/v1/status` snapshot (http-server `handler.cpp`) now carries
+`cell` / `gps` / `sensor` blocks (with long-poll watches on `cell.version` /
+`gps.version` / `iot.sensor.version`), and the SPA renders three Clarity
+Property/Value pages off the shared `observeStatus()` stream:
+- **WAN → Cellular** (`cellular-status`): state badge, operator, tech, registration,
+  signal dBm + 5-bar widget, IP, ICCID.
+- **Sensors → Sensors** (`sensors-status`): BME680 temp/humidity/pressure (Pa+kPa),
+  light lux, BMI160 accel/gyro X/Y/Z.
+- **Sensors → Location (GPS)** (`gps-status`): fix badge, position with an
+  OpenStreetMap link, altitude, speed, course, satellites, UTC.
+
+Both the http-server and the production Angular build are podman-verified.
+
 ### 6.D Open questions (WAN — need hardware)
 1. Modem stack: ModemManager/`mmcli` vs. raw `qmicli`/`pppd` (or pure-AT
    `+CGACT`/`+QNETDEVCTL`) — pick per image size / WP firmware (QMI vs MBIM).

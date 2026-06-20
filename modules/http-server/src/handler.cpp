@@ -640,6 +640,17 @@ void install_handlers(Router& router,
                 data_store::Client::WatchHandle wh_cupd =
                     data_store::Client::kInvalidHandle;
                 ds->watch("cloud.update.status", notify, &wh_cupd);
+                // mangOH telemetry: wake on the cellular / GPS / sensor bump
+                // keys so the one status long-poll also carries those tiles live.
+                data_store::Client::WatchHandle wh_cell =
+                    data_store::Client::kInvalidHandle;
+                data_store::Client::WatchHandle wh_gps =
+                    data_store::Client::kInvalidHandle;
+                data_store::Client::WatchHandle wh_sens =
+                    data_store::Client::kInvalidHandle;
+                ds->watch("cell.version", notify, &wh_cell);
+                ds->watch("gps.version", notify, &wh_gps);
+                ds->watch("iot.sensor.version", notify, &wh_sens);
                 if (ws.ok) {
                     std::unique_lock<std::mutex> lk(st->m);
                     st->cv.wait_for(lk, std::chrono::seconds(timeout),
@@ -657,6 +668,12 @@ void install_handlers(Router& router,
                     ds->unwatch(wh_update);
                 if (wh_cupd != data_store::Client::kInvalidHandle)
                     ds->unwatch(wh_cupd);
+                if (wh_cell != data_store::Client::kInvalidHandle)
+                    ds->unwatch(wh_cell);
+                if (wh_gps != data_store::Client::kInvalidHandle)
+                    ds->unwatch(wh_gps);
+                if (wh_sens != data_store::Client::kInvalidHandle)
+                    ds->unwatch(wh_sens);
                 // Fall through to build the full status snapshot
             }
             std::vector<data_store::Client::GetResult> got;
@@ -679,6 +696,14 @@ void install_handlers(Router& router,
                 "net.iface.active", "net.state", "net.tun.ip",
                 "net.rules.applied.count", "net.last.apply.unix",
                 "net.iface.priority",
+                // Cellular modem (mangOH WP) + GPS
+                "cell.state", "cell.operator", "cell.tech", "cell.reg",
+                "cell.signal.dbm", "cell.signal.bars", "cell.ip", "cell.iccid",
+                "gps.fix", "gps.lat", "gps.lon", "gps.alt", "gps.speed",
+                "gps.course", "gps.sats", "gps.utc",
+                // mangOH onboard sensors
+                "iot.sensor.temp", "iot.sensor.humidity", "iot.sensor.pressure",
+                "iot.sensor.lux", "iot.sensor.accel", "iot.sensor.gyro",
                 // Services
                 "services.ds.state", "services.ds.uptime.sec",
                 "services.net.router.enable", "services.net.router.state",
@@ -752,6 +777,11 @@ void install_handlers(Router& router,
             // Flat passthrough (ds key → typed value) for keys the SPA caches
             // verbatim (cloud Service rows + domain bump keys).
             json cloud      = json::object();
+            // mangOH Yellow telemetry: cellular modem status, GPS fix, onboard
+            // sensors — published by cellular-client / iot-sensord.
+            json cell       = json::object();
+            json gps        = json::object();
+            json sensor     = json::object();
 
             for (const auto& g : got) {
                 const auto& k = g.key;
@@ -808,6 +838,34 @@ void install_handlers(Router& router,
                 else if (k == "net.state")                   routing["state"] = sv();
                 else if (k == "net.rules.applied.count")     routing["rules_applied"] = iv();
                 else if (k == "net.last.apply.unix")         routing["last_apply_unix"] = iv();
+
+                // Cellular modem (cellular-client → cell.*)
+                else if (k == "cell.state")        cell["state"] = sv();
+                else if (k == "cell.operator")     cell["operator"] = sv();
+                else if (k == "cell.tech")         cell["tech"] = sv();
+                else if (k == "cell.reg")          cell["reg"] = sv();
+                else if (k == "cell.signal.dbm")   cell["signal_dbm"] = sv();
+                else if (k == "cell.signal.bars")  cell["signal_bars"] = sv();
+                else if (k == "cell.ip")           cell["ip"] = sv();
+                else if (k == "cell.iccid")        cell["iccid"] = sv();
+
+                // GPS / GNSS (cellular-client → gps.*)
+                else if (k == "gps.fix")    gps["fix"] = sv();
+                else if (k == "gps.lat")    gps["lat"] = sv();
+                else if (k == "gps.lon")    gps["lon"] = sv();
+                else if (k == "gps.alt")    gps["alt"] = sv();
+                else if (k == "gps.speed")  gps["speed"] = sv();
+                else if (k == "gps.course") gps["course"] = sv();
+                else if (k == "gps.sats")   gps["sats"] = sv();
+                else if (k == "gps.utc")    gps["utc"] = sv();
+
+                // mangOH onboard sensors (iot-sensord → iot.sensor.*)
+                else if (k == "iot.sensor.temp")     sensor["temp"] = sv();
+                else if (k == "iot.sensor.humidity") sensor["humidity"] = sv();
+                else if (k == "iot.sensor.pressure") sensor["pressure"] = sv();
+                else if (k == "iot.sensor.lux")      sensor["lux"] = sv();
+                else if (k == "iot.sensor.accel")    sensor["accel"] = sv();
+                else if (k == "iot.sensor.gyro")     sensor["gyro"] = sv();
 
                 // ds-server keys feed BOTH the nested `services` block (device-ui
                 // reads s.services.ds) AND the flat `cloud` passthrough (cloud-ui
@@ -887,6 +945,9 @@ void install_handlers(Router& router,
             resp["routing"]  = routing;
             resp["services"] = services;
             resp["cloud"]    = cloud;
+            resp["cell"]     = cell;
+            resp["gps"]      = gps;
+            resp["sensor"]   = sensor;
             // Host uptime (this device / cloud container) from /proc/uptime —
             // first token is seconds since boot. Surfaced in the top status bar.
             {
