@@ -11,15 +11,34 @@ No host Yocto install — everything runs in a container. The host needs
 only **podman** (or **docker**), ~50 GB free disk, and internet for the
 first source fetch. All commands run from the `yocto/` directory.
 
-**1. Build the image.**
+**1. Build.** What you build is selected by the **`TARGET`** env var (default
+`iot-image` = the full bootable distribution). Pick by what you need:
+
+| Goal | Command | Output |
+|------|---------|--------|
+| **Full image** (bootable SD card — first flash / OS change) | `./build.sh` | `build/<machine>/images/<machine>/*.wic.bz2` (+ the `ipk/` feed as a byproduct) |
+| **iot apps only** (just the C++/UI recipe — fast iterate, no full image) | `TARGET=iot ./build.sh` | `build/<machine>/ipk/**/iot-*.ipk` |
+| **Full `.ipk` feed** (every iot package: ds/lwm2m/httpd/sensord/cellular/…) | `TARGET=packagegroup-iot ./build.sh` | `build/<machine>/ipk/` (opkg feed) |
+| **OTA bundle** (one `.tar.gz` of the whole feed, for the LwM2M Object-5 push) | `TARGET=iot-bundle ./build.sh` | `build/<machine>/.../iot-bundle-<ver>-<arch>.tar.gz` |
+| **A/B dual-bank image** (RAUC update flow) | `IOT_AB=1 ./build.sh` | u-boot + 4-partition `.wic` + signed `update-bundle-*.raucb` |
 
 ```sh
 cd yocto
-./build.sh                           # raspberrypi3-64 iot-image (default)
-# MACHINE=qemuarm64 ./build.sh       # a different machine
-# TARGET=packagegroup-iot ./build.sh # just the .ipk feed, no full image
+./build.sh                           # FULL image, raspberrypi3-64 (default)
+TARGET=iot ./build.sh                # just the iot apps recipe → iot-*.ipk
+TARGET=packagegroup-iot ./build.sh   # the whole .ipk feed, no image
+TARGET=iot-bundle ./build.sh         # the OTA .tar.gz bundle (Software-Update push)
+# MACHINE=qemuarm64 ./build.sh       # a different machine (default raspberrypi3-64)
 # ./build.sh all                     # every machine in build.sh
 ```
+
+> **App-only rebuild after a code change?** Use `TARGET=iot` (or
+> `TARGET=packagegroup-iot` for the full feed) — it recompiles only the iot
+> recipe, deps restore from sstate (minutes), and emits fresh `.ipk`s to push
+> over ssh or the cloud Software-Update page. Add **`IOT_FRESH=1`** to force a
+> clean re-clone+recompile of the iot recipe when AUTOREV serves a stale commit
+> (a reflash/feed shipping old code). Reach for a `full image` build only when
+> the OS, kernel, or systemd units changed.
 
 `build.sh` builds the `iot-yocto-builder` container (Ubuntu 22.04 + poky +
 meta-openembedded + meta-raspberrypi, all at Scarthgap 5.0 LTS), runs
