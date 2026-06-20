@@ -1,9 +1,44 @@
 #ifndef __dtls_adapter_cpp__
 #define __dtls_adapter_cpp__
 
+// data-store headers MUST precede dtls_adapter.hpp: tinydtls' numeric.h (pulled
+// in transitively by dtls_adapter.hpp) #defines a max(A,B) macro that otherwise
+// clobbers std::numeric_limits<>::max() inside data_store/value.hpp.
+#include "data_store/client.hpp"
+#include "data_store/value.hpp"
+
 #include "dtls_adapter.hpp"
 
 #include <ace/Log_Msg.h>
+#include <cctype>
+
+log_t dtls_level_from_string(const std::string& s) {
+    std::string up;
+    up.reserve(s.size());
+    for (char c : s) up.push_back(static_cast<char>(std::toupper(
+        static_cast<unsigned char>(c))));
+    if (up == "DEBUG")   return DTLS_LOG_DEBUG;   // 6 — everything
+    if (up == "INFO")    return DTLS_LOG_INFO;    // 5 — all but debug
+    if (up == "WARNING") return DTLS_LOG_WARN;    // 3
+    if (up == "ERROR")   return DTLS_LOG_CRIT;    // 2 — emerg/alert/crit
+    return DTLS_LOG_WARN;                         // quiet, production-safe default
+}
+
+void dtls_apply_log_level(data_store::Client& ds) {
+    // Per-daemon log.level.dtls wins; fall back to the global log.level.
+    std::vector<data_store::Client::GetResult> g;
+    std::string lvl;
+    if (ds.get({std::string("log.level.dtls"), std::string("log.level")}, g).ok) {
+        for (const auto& r : g) {
+            if (r.has_value) {
+                if (auto v = data_store::to_string(r.value)) {
+                    if (!v->empty()) { lvl = *v; break; }
+                }
+            }
+        }
+    }
+    dtls_set_log_level(dtls_level_from_string(lvl));
+}
 
 
 std::int32_t dtlsWriteCb(dtls_context_t *ctx, session_t *session, uint8 *data, size_t len) {
@@ -206,7 +241,11 @@ DTLSAdapter::DTLSAdapter(std::int32_t fd, log_t log_level) {
     dtlsFd = fd;
     dtls_init();
     m_dtls_ctx = dtls_new_context(this);
-    dtls_set_log_level(log_level);
+    // NOTE: do NOT set the tinydtls log level here — it's a PROCESS-GLOBAL and
+    // constructing an adapter must not clobber a level already applied from ds.
+    // dtls_apply_log_level() (driven by log.level.dtls/log.level) is the sole
+    // authority; see udp_adapter.cpp + apps/src/main.cpp.
+    (void)log_level;
     dtls_set_handler(m_dtls_ctx, &cb);
     m_coapAdapter = std::make_shared<CoAPAdapter>();
     isClient(false);

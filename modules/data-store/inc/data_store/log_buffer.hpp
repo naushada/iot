@@ -63,6 +63,14 @@ public:
     /// Process-wide: targets the most recently start()ed LogBuffer.
     static void attach_current_thread();
 
+    /// Re-pin the CALLING thread's ACE log mask if the level changed since it
+    /// last attached. attach_current_thread() sets a thread's mask ONCE, so a
+    /// long-lived reactor/worker thread would never see a runtime log-level
+    /// change (apply_level() runs on the main thread and ACE masks are
+    /// per-thread). Call this cheaply at the top of such a thread's loop — it's
+    /// a single relaxed atomic load when nothing changed. No-op before start().
+    static void refresh_level();
+
     /// Unregister the callback. Flush one last time before destroying.
     ~LogBuffer();
 

@@ -1546,7 +1546,11 @@ int main(std::int32_t argc, char *argv[]) {
     // cloud-instance key setup) just refine the level key.
     g_log.start();
     dtls_set_log_sink(&iot_dtls_log_sink);   // DTLS (tinydtls) logs → UI
-    if (auto* cli = ds.client()) { g_log.apply_level(*cli); g_log.open(*cli, 5, 1); }
+    if (auto* cli = ds.client()) {
+        g_log.apply_level(*cli);
+        dtls_apply_log_level(*cli);   // tinydtls level from log.level.dtls/log.level
+        g_log.open(*cli, 5, 1);
+    }
 
     // RPi serial auto-fill — MUST run BEFORE the provisioning park below.
     // The serial IS the endpoint + BS PSK identity, and the operator reads
@@ -1784,7 +1788,30 @@ int main(std::int32_t argc, char *argv[]) {
 
     if (auto* cli = ds.client()) {
         g_log.apply_level(*cli);
+        dtls_apply_log_level(*cli);
         g_log.flush(*cli);  // push startup logs immediately
+
+        // Hot-reload: the lwm2m binary runs its event loop inside the ACE
+        // reactor (UDPAdapter::start) and has no pull-style watch loop like
+        // cloudd/httpd, so without this a log.level change needed a restart.
+        // A callback-style watch fires on the ds notification thread; re-apply
+        // the ACE mask (bumps the generation → the reactor thread re-pins via
+        // refresh_level()) and the tinydtls level. Watch the global key, this
+        // instance's per-daemon key, and the DTLS key.
+        const std::string lvl_key = lwm2m_instance.empty()
+            ? std::string("log.level.lwm2m")
+            : ("log.level.lwm2m." + lwm2m_instance);
+        static data_store::Client::WatchHandle s_lvl_wh =
+            data_store::Client::kInvalidHandle;
+        cli->watch(
+            std::vector<std::string>{"log.level", lvl_key, "log.level.dtls"},
+            [&ds](const data_store::Client::Event&) {
+                if (auto* c = ds.client()) {
+                    g_log.apply_level(*c);
+                    dtls_apply_log_level(*c);
+                }
+            },
+            &s_lvl_wh);
     }
 
     // ── Resource telemetry (L22) ──────────────────────────────────
