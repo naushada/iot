@@ -87,3 +87,7 @@ yocto/meta-iot/recipes-iot/lwm2m/files/wifi_credentials.lua
 # Python bytecode cache (e.g. from the gen_wifi_default.py tests)
 __pycache__/
 *.pyc
+
+# macOS Finder metadata
+.DS_Store
+**/.DS_Store
