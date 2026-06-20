@@ -9,6 +9,7 @@ on:
     paths:
       - 'apps/**'
       - 'modules/**'
+      - 'yocto/**'
       - '.github/workflows/device-image.yml'
       - '!**/*.md'
   workflow_dispatch:  # manual trigger

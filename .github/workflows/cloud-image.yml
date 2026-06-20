@@ -10,6 +10,7 @@ on:
     paths:
       - 'apps/**'
       - 'modules/**'
+      - 'yocto/**'
       - '.github/workflows/cloud-image.yml'
       - '!**/*.md'
   workflow_dispatch:  # manual trigger
