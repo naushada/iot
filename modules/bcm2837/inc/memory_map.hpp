@@ -374,6 +374,57 @@ namespace BCM2837 {
 
     /**
      * @brief
+     *      System Timer register block. Refer Section 12 "System Timer" of
+     *      BCM2837-ARM-Peripherals.pdf. The peripheral is at bus 0x7E003000 ->
+     *      phys 0x3F003000 and exposes a free-running 1 MHz counter (so one
+     *      tick == 1 microsecond) plus four 32-bit compare channels.
+     *
+     *      The counter (CLO/CHI) is read-only; writing a compare register Cn and
+     *      enabling the matching System-Timer IRQ fires an interrupt when CLO
+     *      reaches Cn (the match latches CS bit Mn, W1C). On the Raspberry Pi
+     *      channels 0 and 2 are owned by the GPU/VideoCore firmware — only
+     *      channels 1 and 3 are free for the ARM.
+    */
+    struct SystemTimerRegistersAddress {
+
+        enum Register : std::uint32_t {
+            CS,     /* 0x00 Control / Status (match flags M0..M3, W1C) */
+            CLO,    /* 0x04 Counter Lower 32 bits (RO, 1 MHz)          */
+            CHI,    /* 0x08 Counter Higher 32 bits (RO)                */
+            C0,     /* 0x0C Compare 0 (GPU)                            */
+            C1,     /* 0x10 Compare 1 (ARM-usable)                     */
+            C2,     /* 0x14 Compare 2 (GPU)                            */
+            C3,     /* 0x18 Compare 3 (ARM-usable)                     */
+            ST_MAX
+        };
+
+        /// @brief Match bits in CS (write 1 to clear). Mn latches when CLO==Cn.
+        enum Status : std::uint32_t {
+            M0,     /* bit0 : compare-0 matched */
+            M1,     /* bit1 : compare-1 matched */
+            M2,     /* bit2 : compare-2 matched */
+            M3,     /* bit3 : compare-3 matched */
+            M_ALL
+        };
+
+        using device_register = mmio_reg;
+        SystemTimerRegistersAddress() {}
+        ~SystemTimerRegistersAddress() {}
+
+        void *operator new(std::size_t nBytes, void *region=nullptr) {
+            (void)nBytes;
+            if(nullptr == region) {
+                /* System Timer physical base (bus 0x7E003000 -> phys 0x3F003000). */
+                return reinterpret_cast<void *>(0x3F003000U);
+            }
+            return(region);
+        }
+
+        device_register m_register[Register::ST_MAX];
+    };
+
+    /**
+     * @brief
      *      SPI0 master register block. Refer Section 10 "SPI" of
      *      BCM2837-ARM-Peripherals.pdf. SPI0 is at bus 0x7E204000 ->
      *      phys 0x3F204000 and is exposed on GPIO7..11 (ALT0):

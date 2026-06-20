@@ -9,6 +9,7 @@
 #include "gpio.hpp"
 #include "interrupt.hpp"
 #include "i2c_irq.hpp"
+#include "system_timer.hpp"
 
 /**
  * @brief Bcm2837I2cIrqTransport driven by a scripted ISR on the host.
@@ -28,6 +29,13 @@ class ScriptedIrqTransport : public Bcm2837I2cIrqTransport {
         std::size_t scriptIdx = 0;
         std::size_t rxIdx = 0;
 
+        /// Simulated clock for the watchdog deadline. nowStep == 0 (the default)
+        /// keeps now_us() at 0 ("no clock") so the iteration cap governs — the
+        /// behaviour every other test relies on. A non-zero step advances the
+        /// clock by `nowStep` µs on each read to exercise the µs deadline.
+        std::uint64_t nowVal  = 0;
+        std::uint64_t nowStep = 0;
+
     protected:
         std::uint32_t read_status() override {
             const std::uint32_t s = (scriptIdx < script.size())
@@ -38,6 +46,15 @@ class ScriptedIrqTransport : public Bcm2837I2cIrqTransport {
             return s;
         }
         void wait_for_irq() override { handle_irq(); }    // simulate the ISR
+        std::uint64_t now_us() override { nowVal += nowStep; return nowVal; }
+};
+
+/// Exposes the (protected) default now_us() so a test can verify that
+/// set_time_source() wires a SystemTimer into the watchdog clock.
+class ProbeIrqTransport : public Bcm2837I2cIrqTransport {
+    public:
+        using Bcm2837I2cIrqTransport::Bcm2837I2cIrqTransport;
+        std::uint64_t probe_now_us() { return now_us(); }
 };
 
 class I2cIrqTest : public ::testing::Test {

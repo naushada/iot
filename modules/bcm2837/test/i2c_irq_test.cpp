@@ -110,6 +110,34 @@ TEST_F(I2cIrqTest, Watchdog_Times_Out_When_No_Completion) {
     EXPECT_EQ(bus.write(0x68, b, 1), I2cResult::Timeout);
 }
 
+TEST_F(I2cIrqTest, Watchdog_Times_Out_On_Microsecond_Deadline) {
+    // Huge iteration cap so ONLY the µs deadline can stop the wait. The clock
+    // advances 400 µs per read; with a 1 ms deadline the watchdog fires after a
+    // few iterations — far below the 1,000,000 iteration backstop.
+    ScriptedIrqTransport bus(i2c(), gpio(), irq(), /*divider=*/2500,
+                             /*max_waits=*/1000000U, /*timeout_us=*/1000U);
+    bus.nowStep = 400;                       // 400 µs of "wall clock" per now_us()
+    const std::uint8_t b[1] = {0};
+    EXPECT_EQ(bus.write(0x68, b, 1), I2cResult::Timeout);
+    EXPECT_LT(bus.nowVal, 1000000ULL);       // stopped on time, not the iter cap
+}
+
+TEST_F(I2cIrqTest, Time_Source_Feeds_The_Watchdog_Clock) {
+    // set_time_source() wires a SystemTimer; the default now_us() then reports
+    // that timer's 64-bit (CHI:CLO) counter. Without a source it reads 0.
+    std::vector<std::uint32_t> treg(
+        BCM2837::SystemTimerRegistersAddress::Register::ST_MAX);
+    SystemTimer timer(treg.data());
+    treg[BCM2837::SystemTimerRegistersAddress::Register::CLO] = 0x12340000U;
+    treg[BCM2837::SystemTimerRegistersAddress::Register::CHI] = 0x2U;
+
+    ProbeIrqTransport bus(i2c(), gpio(), irq());
+    EXPECT_EQ(bus.probe_now_us(), 0ULL);     // no source yet → "no clock"
+    bus.set_time_source(&timer);
+    EXPECT_EQ(bus.probe_now_us(),
+              (static_cast<std::uint64_t>(0x2U) << 32) | 0x12340000U);
+}
+
 /* ---- P5: async (kick + ISR-fired callback) ---- */
 
 TEST_F(I2cIrqTest, Async_Write_Fires_Callback_On_Completion) {

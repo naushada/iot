@@ -5,7 +5,8 @@ Raspberry Pi 3B. Each peripheral is modelled as a memory-mapped register block
 that the driver classes read/modify/write through typed, field-level accessors.
 
 Peripherals: **GPIO**, **Clock manager (CM_GPn)**, **Interrupt controller**,
-**I2C (BSC1)**, **SPI0**.
+**I2C (BSC1)**, **SPI0**, **System Timer** (1 MHz free-running counter +
+compare channels; backs the interrupt-I²C watchdog deadline).
 
 > See [`docs/DRIVER_REVIEW.md`](docs/DRIVER_REVIEW.md) for the design review,
 > the per-peripheral issue log, and what is fixed vs. still open.
@@ -33,7 +34,7 @@ GPIO gpio(buf.data());             // test/host: registers overlay a heap buffer
 ```
 
 Physical bases: GPIO `0x3F200000`, Clock `0x3F101070`*, IRQ `0x3F00B200`,
-I2C/BSC1 `0x3F804000`, SPI0 `0x3F204000`.
+I2C/BSC1 `0x3F804000`, SPI0 `0x3F204000`, System Timer `0x3F003000`.
 <sub>*Clock base is tracked as an open issue — see DRIVER_REVIEW §2.3.</sub>
 
 ---
@@ -127,7 +128,7 @@ gpio->output(17);
 gpio->GPSETn(17);                // drive GPIO17 high
 ```
 
-`map_gpio()` / `map_clock()` / `map_i2c()` / `map_spi()` use `/dev/mem` (needs
+`map_gpio()` / `map_clock()` / `map_i2c()` / `map_spi()` / `map_systimer()` use `/dev/mem` (needs
 root / `CAP_SYS_RAWIO`); `map_gpiomem()` maps **GPIO only** via the unprivileged
 `/dev/gpiomem` (group `gpio`). Each returns an RAII `Mapped<Driver>` that owns
 the mapping and unmaps on scope exit. The demo binary does this under

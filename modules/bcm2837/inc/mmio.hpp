@@ -40,6 +40,7 @@
 #include "clock.hpp"
 #include "i2c.hpp"
 #include "spi.hpp"
+#include "system_timer.hpp"
 // interrupt.hpp is intentionally NOT mapped here — see the IRQ note below.
 
 namespace BCM2837 {
@@ -51,6 +52,7 @@ namespace BCM2837 {
     inline constexpr std::uintptr_t CLOCK_PHYS  = PERIPH_BASE + 0x101070U; ///< 0x3F101070 (CM_GP0CTL)
     inline constexpr std::uintptr_t I2C1_PHYS   = PERIPH_BASE + 0x804000U; ///< 0x3F804000 (BSC1)
     inline constexpr std::uintptr_t SPI0_PHYS   = PERIPH_BASE + 0x204000U; ///< 0x3F204000
+    inline constexpr std::uintptr_t SYSTIMER_PHYS = PERIPH_BASE + 0x3000U; ///< 0x3F003000 (System Timer)
 
     /**
      * @brief RAII mapping of one peripheral register block.
@@ -140,6 +142,7 @@ namespace BCM2837 {
     inline Mapped<CLOCK> map_clock() { return Mapped<CLOCK>(CLOCK_PHYS, sizeof(ClockRegistersAddress)); }
     inline Mapped<I2C>   map_i2c()   { return Mapped<I2C>(I2C1_PHYS,   sizeof(BSCRegistersAddress)); }
     inline Mapped<SPI>   map_spi()   { return Mapped<SPI>(SPI0_PHYS,   sizeof(SPIRegistersAddress)); }
+    inline Mapped<SystemTimer> map_systimer() { return Mapped<SystemTimer>(SYSTIMER_PHYS, sizeof(SystemTimerRegistersAddress)); }
 
     // No map_irq(): the IRQ driver pairs the interrupt-enable registers with an
     // IVT (ARM exception vector table) that its region ctor places *past* the

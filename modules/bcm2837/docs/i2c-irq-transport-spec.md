@@ -181,9 +181,15 @@ A wedged slave (holds SCL low, never raises DONE) yields **no interrupt** → th
 thread would `WFI` forever. `wait_complete()` must bound the wait:
 - coarse: a fallback `ST`-to-now spin/iteration cap that aborts → `Timeout`
   (resets the controller: `clear_fifo()`, `clr_status(DONE|ERR|CLKT)`);
-- better: arm the ARM system timer for `N ms` and abort on expiry. (The bcm2837
-  module has no system-timer driver yet — a small dependency to add, or inject a
-  `now()`/`deadline` hook.)
+- better (**now implemented**): bound the wait by a real **microsecond deadline**
+  from the BCM2837 **System Timer** (`inc/system_timer.hpp`, a free-running 1 MHz
+  counter). Wire it with `set_time_source(&timer)`; `wait_complete()` then aborts
+  once `now_us() - start >= timeout_us` (default 50 ms), with the iteration cap
+  kept as a backstop. `now_us()` is a virtual seam (default reads the attached
+  `SystemTimer`; returns 0 = "no clock" → the cap governs), so host tests
+  simulate elapsed time. **Remaining bare-metal step:** also `arm()` a
+  System-Timer compare IRQ (channel 1 or 3) and enable it, so a wedged bus with
+  no BSC interrupt still wakes the core from `WFI` for the deadline to be acted on.
 
 ---
 
@@ -228,8 +234,11 @@ Timeout, busy-guard rejects re-entry).
    whether `DEL`/control configures them) for the large-transfer path.
 3. **Clock-stretch erratum** — pick the divider for stretch-prone slaves; the
    ISR can't paper over a bus-timing bug.
-4. **Timer dependency** — the watchdog needs a time source the module doesn't
-   ship yet (system timer driver or an injected deadline hook).
+4. **Timer dependency** — ✅ **resolved.** The `SystemTimer` driver
+   (`inc/system_timer.hpp`, phys `0x3F003000`) ships the 1 MHz `now_us()` source;
+   the watchdog uses it as a real µs deadline via `set_time_source()`. The
+   bare-metal compare-IRQ wake (`arm()` + enabling the System-Timer IRQ) is the
+   only piece still pending real silicon.
 5. **`install_IRQHandler` IVT model** — `interrupt.cpp`'s IVT placement is a
    bare-metal-only construct (see DRIVER_REVIEW §2.4); validate the vector wiring
    on real silicon, not just the host model.
@@ -243,9 +252,11 @@ Timeout, busy-guard rejects re-entry).
   `wait_complete()`/`read_status()` seams; host gtests (ISR simulated).
 - **P2 ✅** — multi-interrupt FIFO drain/fill (`handle_irq` moves all available
   bytes per call, re-reading status; the inner loop re-arms across interrupts).
-- **P3 ✅** — watchdog: `wait_complete()` bounds the wait by `max_waits`
-  `wait_for_irq()` cycles, then `abort_transfer()` → `Timeout`. (A real
-  bare-metal build must arm a timer IRQ so `WFI` wakes — §4.7.)
+- **P3 ✅** — watchdog: `wait_complete()` bounds the wait by a real **µs deadline**
+  from the `SystemTimer` (`set_time_source()`, default 50 ms) **and** an absolute
+  `max_waits` iteration backstop, then `abort_transfer()` → `Timeout`. The `now_us()`
+  seam keeps it host-testable (deadline + iteration-cap tests both green). Remaining
+  bare-metal step: `arm()` a timer compare IRQ so `WFI` wakes on a wedged bus (§4.7).
 - **P4 ⚙️ code done, silicon pending** — `bus_init()` muxes ALT0, sets the
   divider, enables BSC, `install_IRQHandler(kBsc1Irq, trampoline)` + `enable()`;
   `mem_barrier()` = `dmb sy` on ARM. Confirm `kBsc1Irq`=53, IVT wiring and the
