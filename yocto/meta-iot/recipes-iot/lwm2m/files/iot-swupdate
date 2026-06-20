@@ -84,6 +84,23 @@ fi
 # ── 2. snapshot + re-arm ───────────────────────────────────────────
 WORK="$SPOOL/.work-$$"
 mkdir -p "$WORK"
+
+# A drag-and-drop bundle (.tar.gz/.tgz) lands here UN-extracted: the device-ui
+# /api/v1/update/upload path drops the tarball and trips us directly, bypassing
+# iot-ota-stage (which is what normally expands a bundle for the cloud/URL push).
+# Expand any bundle in the spool into its .ipks so the *.ipk snapshot below
+# installs them all. busybox-safe: gzip -dc | tar (not tar -z). On the cloud/URL
+# path iot-ota-stage already extracted + removed the tarball, so this is a no-op.
+for b in "$SPOOL"/*.tar.gz "$SPOOL"/*.tgz; do
+    [ -e "$b" ] || continue
+    if ( cd "$SPOOL" && gzip -dc "$b" | tar -xf - ) 2>/dev/null; then
+        log "expanded bundle $(basename "$b")"
+    else
+        log "bundle extract FAILED: $(basename "$b")"
+    fi
+    rm -f "$b"
+done
+
 moved=0
 for f in "$SPOOL"/*.ipk; do
     [ -e "$f" ] || continue
