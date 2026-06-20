@@ -137,6 +137,14 @@ set(SENSORS_BUILD_DAEMON ON CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/sensors
                  ${CMAKE_BINARY_DIR}/sensors)
 
+# cellular module (mangOH Yellow WP modem WAN + GPS). Builds cellular-client,
+# the privileged producer that drives the AT/GNSS ttys and publishes cell.*/
+# gps.* to ds; the lwm2m client mirrors gps.* into LwM2M Object 6. Reuses the
+# datastore_client target added above. See modules/wan/cellular/README.md.
+set(CELLULAR_BUILD_DAEMON ON CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/wan/cellular
+                 ${CMAKE_BINARY_DIR}/cellular)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
@@ -253,6 +261,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-net-router.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-wifi-client.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-sensord.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-cellular-client.service
             DESTINATION lib/systemd/system)
 
     # tmpfiles.d fallback for hosts where RuntimeDirectory= doesn't
@@ -276,6 +285,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/net-router.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/wifi-client.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/sensord.env
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/cellular-client.env
             DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot)
 
     # Object-resource config templates. Land each .lua as .lua.example

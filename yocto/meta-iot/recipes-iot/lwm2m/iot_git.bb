@@ -35,6 +35,7 @@ SRC_URI = "\
     file://iot-tun.conf \
     file://iot-net-router.service \
     file://iot-sensord.service \
+    file://iot-cellular-client.service \
     file://10-iot-wired.network \
     file://iot-wifi-client.service \
     file://iot-httpd.service \
@@ -299,6 +300,10 @@ do_install() {
         # iot.sensor.*). NOT auto-enabled — it needs the mangOH board attached
         # and CAP_SYS_RAWIO, so an operator enables it on sensor-equipped units.
         install -m 0644 ${WORKDIR}/iot-sensord.service        ${D}${systemd_system_unitdir}/
+        # iot-cellular-client: mangOH WP modem WAN + GPS producer. NOT
+        # auto-enabled — needs the WP module + serial ports, so an operator
+        # enables it on cellular-equipped units.
+        install -m 0644 ${WORKDIR}/iot-cellular-client.service ${D}${systemd_system_unitdir}/
         # networkd wired profile: RequiredForOnline=no so a cable-less eth0 does
         # not pin the system "offline" and park systemd-timesyncd on a WiFi-only
         # unit (no-RTC clock would stay stale → TLS/VPN fails). See the file header.
@@ -377,6 +382,7 @@ PACKAGE_BEFORE_PN = "\
     ${PN}-wifi-client \
     ${PN}-httpd \
     ${PN}-sensord \
+    ${PN}-cellular \
     ${PN}-config \
     ${PN}-bcm2837-selftest \
 "
@@ -530,6 +536,22 @@ RRECOMMENDS:${PN}-sensord = "\
     ${PN}-config \
 "
 
+# cellular — mangOH Yellow WP modem WAN + GPS producer (cell.*/gps.*)
+# The lwm2m client mirrors gps.* into LwM2M Object 6; net-router routes the
+# cellular slot (wwan0). cell.lua schema + cellular-client.env ship in
+# ${PN}-config. See apps/docs/tdd-mangoh-yellow-sensors.md §6.
+FILES:${PN}-cellular = "\
+    ${bindir}/cellular-client \
+    ${systemd_system_unitdir}/iot-cellular-client.service \
+"
+RDEPENDS:${PN}-cellular = "ace-tao"
+# A real data path also wants a modem manager + tools on the image; left to the
+# integrator per WP firmware (ModemManager / libqmi / usb-modeswitch).
+RRECOMMENDS:${PN}-cellular = "\
+    ${PN}-ds-server \
+    ${PN}-config \
+"
+
 # config — schema files, env files, config templates (shared substrate)
 # Includes the tmpfiles.d drop-in (creates /run/iot); it lives under
 # ${nonarch_libdir} (not ${sysconfdir}), and since FILES:${PN} is overridden
@@ -575,6 +597,11 @@ SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service iot-ds-see
 # operator `systemctl enable --now iot-sensord` on sensor-equipped hardware.
 SYSTEMD_SERVICE:${PN}-sensord = "iot-sensord.service"
 SYSTEMD_AUTO_ENABLE:${PN}-sensord = "disable"
+# cellular-client registered but NOT auto-enabled: needs the WP module + serial
+# ports, so it would Restart-loop on a board without it. Operator enables it on
+# cellular-equipped hardware.
+SYSTEMD_SERVICE:${PN}-cellular = "iot-cellular-client.service"
+SYSTEMD_AUTO_ENABLE:${PN}-cellular = "disable"
 
 # ds-server and wifi-client auto-start. wifi-client comes up on every boot
 # and reads wifi.networks from the data-store (schema default seeds a
@@ -616,3 +643,4 @@ INSANE_SKIP:${PN}-net-router = "already-stripped"
 INSANE_SKIP:${PN}-wifi-client = "already-stripped"
 INSANE_SKIP:${PN}-httpd = "already-stripped"
 INSANE_SKIP:${PN}-sensord = "already-stripped"
+INSANE_SKIP:${PN}-cellular = "already-stripped"
