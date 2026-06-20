@@ -6,8 +6,10 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <cerrno>    // errno (OTA stage-request write)
 #include <cstdint>
-#include <cstdlib>   // std::system (OTA apply launcher)
+#include <cstdio>    // std::rename/std::remove (OTA stage-request handoff)
+#include <cstdlib>   // std::system (A/B bank-switch launcher)
 #include <fstream>
 #include <functional>
 #include <map>
@@ -836,24 +838,49 @@ static std::string ota_shquote(const std::string& s) {
 /// See apps/docs/tdd-yocto-swupdate.md.
 static int ota_launch_apply(const std::string& uri) {
     if (uri.empty()) return -1;
-    std::string cmd =
-        "systemd-run --unit=iot-ota-stage --collect /usr/bin/iot-ota-stage "
-        + ota_shquote(uri);
-    int rc = std::system(cmd.c_str());
-    if (rc != 0) {
+    // The lwm2m client runs UNPRIVILEGED (User=engineer) and CANNOT `systemd-run`
+    // a system unit — polkit denies it ("Access denied", rc=256) and the busybox
+    // image ships no polkit agent, so the stager never launches. Instead, drop
+    // the package URL into the spool request file that the root iot-ota-stage.path
+    // unit watches; it fires iot-ota-stage.service (root), which downloads +
+    // verifies and triggers iot-swupdate. /run/iot/update is 0775 root:iot
+    // (tmpfiles iot.conf) and the client has SupplementaryGroups=iot, so this
+    // write needs no privilege. Written temp + rename so the .path never fires on
+    // a half-written request. Same engineer->root handoff as the cert-apply ->
+    // iot-vpn-cert.path path. Returns 0 once queued (the download is async).
+    const std::string req = "/run/iot/update/stage.req";
+    const std::string tmp = req + ".tmp";
+    {
+        std::ofstream os(tmp, std::ios::binary | std::ios::trunc);
+        os << uri << '\n';
+        if (!os) {
+            ACE_ERROR((LM_ERROR,
+                ACE_TEXT("%D [ota] %M %N:%l write(%C) failed errno=%d\n"),
+                tmp.c_str(), errno));
+            return -1;
+        }
+    }
+    if (std::rename(tmp.c_str(), req.c_str()) != 0) {
         ACE_ERROR((LM_ERROR,
-            ACE_TEXT("%D [ota] %M %N:%l launch failed rc=%d cmd=%C\n"),
-            rc, cmd.c_str()));
+            ACE_TEXT("%D [ota] %M %N:%l rename(%C) failed errno=%d\n"),
+            req.c_str(), errno));
+        std::remove(tmp.c_str());
         return -1;
     }
-    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ota] %M %N:%l launched iot-ota-stage\n")));
+    ACE_DEBUG((LM_INFO,
+        ACE_TEXT("%D [ota] %M %N:%l queued OTA stage request "
+                 "(iot-ota-stage.path runs the stager)\n")));
     return 0;
 }
 
 /// A/B bank switch: run iot-bank-switch (root, detached) with the requested
 /// target bank ("A"/"B"/"other"). It `rauc status mark-active`s that bank and
-/// reboots; the bootloader rolls back if the new bank fails to come up. Same
-/// systemd-run pattern as ota_launch_apply (this daemon runs unprivileged).
+/// reboots; the bootloader rolls back if the new bank fails to come up.
+/// FIXME: this still uses `systemd-run`, which FAILS for the same reason the OTA
+/// path did — the client runs as engineer and polkit denies a system transient
+/// unit. A/B is unvalidated Phase 2 (gated by IOT_AB), so it's left as-is; when
+/// A/B is brought up, give it the same spool-trigger handoff as
+/// ota_launch_apply (an iot-bank-switch.path watching /run/iot/update/bank.req).
 static int bank_switch_launch(const std::string& target) {
     if (target.empty()) return -1;
     std::string cmd =

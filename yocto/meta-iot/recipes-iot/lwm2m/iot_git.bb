@@ -46,6 +46,8 @@ SRC_URI = "\
     file://wifi-client.env \
     file://httpd.env \
     file://iot-ota-stage \
+    file://iot-ota-stage.path \
+    file://iot-ota-stage.service \
     file://iot-swupdate \
     file://iot-swupdate.path \
     file://iot-swupdate.service \
@@ -225,9 +227,11 @@ do_build_ui[depends] += "nodejs-native:do_populate_sysroot"
 do_install() {
     cmake_do_install
 
-    # OTA helpers: iot-ota-stage (download+verify+stage+trigger, run detached via
-    # systemd-run by the lwm2m client) and iot-swupdate (the inotify-triggered
-    # installer, run by iot-swupdate.service). See apps/docs/tdd-yocto-swupdate.md.
+    # OTA helpers: iot-ota-stage (download+verify+stage+trigger, run as root by
+    # iot-ota-stage.service which iot-ota-stage.path fires when the unprivileged
+    # lwm2m client drops /run/iot/update/stage.req) and iot-swupdate (the
+    # inotify-triggered installer, run by iot-swupdate.service). See
+    # apps/docs/tdd-yocto-swupdate.md.
     install -d ${D}${bindir}
     install -m 0755 ${WORKDIR}/iot-ota-stage    ${D}${bindir}/iot-ota-stage
     install -m 0755 ${WORKDIR}/iot-swupdate     ${D}${bindir}/iot-swupdate
@@ -266,6 +270,8 @@ do_install() {
         install -m 0644 ${WORKDIR}/iot-openvpn-client.service ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-vpn-cert.path          ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-vpn-cert.service       ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-ota-stage.path         ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-ota-stage.service      ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-swupdate.path          ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-swupdate.service       ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-ota-confirm.service    ${D}${systemd_system_unitdir}/
@@ -389,6 +395,8 @@ FILES:${PN}-lwm2m = "\
     ${datadir}/iot/migrations \
     ${systemd_system_unitdir}/iot-lwm2m-client.service \
     ${systemd_system_unitdir}/iot-lwm2m-server.service \
+    ${systemd_system_unitdir}/iot-ota-stage.path \
+    ${systemd_system_unitdir}/iot-ota-stage.service \
     ${systemd_system_unitdir}/iot-swupdate.path \
     ${systemd_system_unitdir}/iot-swupdate.service \
     ${systemd_system_unitdir}/iot-ota-confirm.service \
@@ -512,9 +520,10 @@ INSANE_SKIP:${PN}-rpi3b-selftest = "already-stripped"
 
 # ── systemd ─────────────────────────────────────────────────────────
 SYSTEMD_SERVICE:${PN}-ds-server = "iot-ds.service"
-# iot-swupdate.path is enabled (watches the OTA spool trigger); iot-swupdate.service
-# is activated by the path unit, not enabled directly (it has no [Install]).
-SYSTEMD_SERVICE:${PN}-lwm2m = "iot-lwm2m-client.service iot-lwm2m-server.service iot-swupdate.path iot-ota-confirm.service"
+# iot-ota-stage.path + iot-swupdate.path are enabled (they watch the OTA spool
+# triggers); their .service units are activated by the path units, not enabled
+# directly (they have no [Install]).
+SYSTEMD_SERVICE:${PN}-lwm2m = "iot-lwm2m-client.service iot-lwm2m-server.service iot-ota-stage.path iot-swupdate.path iot-ota-confirm.service"
 # iot-vpn-cert.path is enabled (watches the cert); iot-vpn-cert.service is
 # activated by the path unit, not enabled directly (it has no [Install]).
 SYSTEMD_SERVICE:${PN}-openvpn-client = "iot-openvpn-client.service iot-vpn-cert.path"

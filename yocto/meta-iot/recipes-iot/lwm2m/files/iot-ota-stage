@@ -7,8 +7,11 @@
 # install — that is iot-swupdate's job, in its own systemd unit, so it survives
 # opkg replacing the running binaries.
 #
-# Runs DETACHED as root (systemd-run --unit=iot-ota-stage by the lwm2m client)
-# so it can write the root-owned spool and reach the network.
+# Runs as root via iot-ota-stage.service (oneshot), triggered by
+# iot-ota-stage.path when the lwm2m client drops a request — the client runs as
+# `engineer` and cannot systemd-run a system unit (polkit denies it), so it hands
+# off through the spool instead. Running as root lets this write the root-owned
+# spool and reach the network. A URL argument still works for manual/dev runs.
 #
 # URL may carry ?sha256=<hex>&version=<v>&reboot=<auto|always|never>.
 #
@@ -21,6 +24,16 @@ URL="${1:-}"
 SOCK="/run/iot/data_store.sock"
 DSCLI="ds-cli --socket=${SOCK}"
 SPOOL="/run/iot/update"
+REQ="$SPOOL/stage.req"
+
+# Triggered by iot-ota-stage.path with no argument: the package URL is in the
+# request file the lwm2m client dropped. Consume it immediately — remove it so
+# the .path unit re-arms for the next campaign (mirrors how iot-swupdate removes
+# its own trigger). busybox `head -n 1` is fine; a bare `head -N` is not.
+if [ -z "$URL" ] && [ -f "$REQ" ]; then
+    URL="$(head -n 1 "$REQ" 2>/dev/null)"
+    rm -f "$REQ"
+fi
 
 set_state()    { $DSCLI set iot.update.state    "$1" >/dev/null 2>&1 || true; }
 set_result()   { $DSCLI set iot.update.result   "$1" >/dev/null 2>&1 || true; }
