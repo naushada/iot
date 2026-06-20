@@ -23,8 +23,10 @@ DeviceAllow=/dev/ttyUSB1 rw
 DeviceAllow=/dev/ttyUSB2 rw
 DeviceAllow=/dev/ttyUSB3 rw
 
-RuntimeDirectory=iot
-RuntimeDirectoryMode=0755
+# /run/iot is owned solely by tmpfiles.d (iot.conf, 2775 root:iot) — do NOT use
+# RuntimeDirectory=iot: it resets /run/iot to root:root 0755 on start and removes
+# it on stop, clobbering the group-iot ds socket + breaking every other daemon's
+# data-store access. The daemon just reads /run/iot/data_store.sock like the rest.
 
 Restart=on-failure
 RestartSec=10s
