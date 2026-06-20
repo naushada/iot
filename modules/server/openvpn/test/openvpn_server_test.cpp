@@ -49,6 +49,34 @@ TEST(BuildServerConfig, badSubnetReturnsEmpty) {
     EXPECT_TRUE(build_server_config(c).empty());
 }
 
+TEST(BuildServerConfig, tcpProtoGetsServerSuffix) {
+    // Operator-facing proto is the base form "tcp"; the server *socket* must
+    // LISTEN, so the config must render "proto tcp-server" (not bare "proto tcp",
+    // which OpenVPN treats as a client and never listens).
+    OpenVpnServerConfig c;
+    c.subnet = "10.9.0.0/24";
+    c.proto  = "tcp";
+    const std::string conf = build_server_config(c);
+    EXPECT_NE(conf.find("proto tcp-server"), std::string::npos);
+    EXPECT_EQ(conf.find("proto tcp\n"), std::string::npos);   // never the bare form
+}
+
+TEST(BuildServerConfig, udpProtoUnchanged) {
+    OpenVpnServerConfig c;
+    c.subnet = "10.9.0.0/24";
+    c.proto  = "udp";
+    EXPECT_NE(build_server_config(c).find("proto udp\n"), std::string::npos);
+}
+
+TEST(BuildServerConfig, legacyTcpServerPassesThrough) {
+    OpenVpnServerConfig c;
+    c.subnet = "10.9.0.0/24";
+    c.proto  = "tcp-server";                 // legacy stored value
+    const std::string conf = build_server_config(c);
+    EXPECT_NE(conf.find("proto tcp-server"), std::string::npos);
+    EXPECT_EQ(conf.find("tcp-server-server"), std::string::npos);   // not doubled
+}
+
 TEST(BuildServerConfig, pushesDnsWhenSet) {
     OpenVpnServerConfig c;
     c.subnet = "10.9.0.0/24";

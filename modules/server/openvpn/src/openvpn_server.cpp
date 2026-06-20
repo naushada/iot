@@ -50,7 +50,16 @@ std::string build_server_config(const OpenVpnServerConfig& c) {
     ss << "mode server\n";
     ss << "tls-server\n";
     ss << "dev "   << c.dev   << "\n";
-    ss << "proto " << c.proto << "\n";
+    // The operator-facing proto is the plain base form ("tcp"/"udp") — that's
+    // also what the device/client uses. But OpenVPN's TCP *server socket* needs
+    // the explicit "-server" form to LISTEN (mode server + tls-server set the
+    // TLS role, not the socket direction), so add it here for TCP. udp needs no
+    // suffix; an already-suffixed value (legacy "tcp-server") passes through.
+    auto server_socket_proto = [](const std::string& p) -> std::string {
+        if (p == "tcp" || p == "tcp4" || p == "tcp6") return p + "-server";
+        return p;
+    };
+    ss << "proto " << server_socket_proto(c.proto) << "\n";
     ss << "port "  << c.port  << "\n";
     ss << "topology subnet\n";
     ss << "server " << net << " " << mask << "\n";
