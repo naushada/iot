@@ -166,11 +166,29 @@ inherit cmake pkgconfig useradd
 # client may read the write-only PSK keys. The shared `iot` group lets
 # `engineer` reach ds-server's 0660 socket (ds-server chgrp's the socket
 # to `iot`). The lwm2m package owns these accounts.
+#
+# `engineer` is ALSO a real interactive login account (shell /bin/sh, home
+# /home/engineer, password "engineer") for field/console + ssh access —
+# alongside the debug-tweaks empty-root login. The shell + home come from
+# USERADD_PARAM; the password is set at FIRST BOOT via chpasswd in
+# pkg_postinst_ontarget below (plaintext → chpasswd hashes it), which sidesteps
+# the fragile `$`-escaping of a baked `useradd -p '$6$...'` hash.
+# SECURITY: a known credential baked into every image — a DEV/debug convenience
+# (same posture as debug-tweaks). REMOVE for production: drop the postinst and
+# restore --shell /usr/sbin/nologin (the daemon role doesn't need a shell).
 USERADD_PACKAGES = "${PN}-lwm2m"
 GROUPADD_PARAM:${PN}-lwm2m = "--system engineer; --system iot"
-USERADD_PARAM:${PN}-lwm2m = "--system --no-create-home \
-    --shell /usr/sbin/nologin --gid engineer --groups iot \
+USERADD_PARAM:${PN}-lwm2m = "--system --create-home \
+    --shell /bin/sh --gid engineer --groups iot \
     --comment 'IoT LwM2M client' engineer"
+
+# First-boot: give `engineer` the login password "engineer". Runs as root on the
+# target (ontarget), so chpasswd can write /etc/shadow; by first boot the user
+# already exists (created by the useradd postinst above). Non-zero return re-runs
+# it next boot, so a transient failure self-heals. See the SECURITY note above.
+pkg_postinst_ontarget:${PN}-lwm2m() {
+    echo 'engineer:engineer' | chpasswd
+}
 
 # ── CMake configuration ─────────────────────────────────────────────
 # OECMAKE_SOURCEPATH points cmake at the apps/CMakeLists.txt.
