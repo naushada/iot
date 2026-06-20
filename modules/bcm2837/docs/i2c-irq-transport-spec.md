@@ -27,8 +27,20 @@ interrupt-vector and the BSC IRQ line (the bcm2837 `IRQ` driver in
 transport under Linux** — `/dev/mem` register poking + a userspace ISR cannot
 coexist with the kernel driver. This spec targets the no-Linux consumer only.
 
-**Non-goals:** DMA (the BSC supports a DMA DREQ path; a separate effort),
-multi-master arbitration, 10-bit addressing.
+**Non-goals:** multi-master arbitration, 10-bit addressing.
+
+> ⚠️ **DMA is NOT available for the BSC I²C masters on BCM2837** (an earlier
+> draft of this note wrongly called it "a separate effort"). The BSC0/1/2 I²C
+> masters have **no DMA DREQ line**, so a DMA channel cannot be paced against the
+> 16-byte FIFO — it would overrun immediately. Corroborated by this module's own
+> register model: `BSCRegistersAddress::Control` (`memory_map.hpp`) has no
+> `DMAEN` bit, whereas `SPIRegistersAddress::ControlStatus` does (bit 8, plus the
+> `DC` DMA-DREQ-controls register). In the BCM2835 DREQ table, entries 8/9
+> ("BSC/SPI Slave") map to the BSC **slave** peripheral (`0x7E214000`), not the
+> I²C masters. This is why mainline Linux `i2c-bcm2835` is PIO/interrupt-driven
+> only. **The interrupt-driven transport (this spec) is the CPU-offload ceiling
+> for BSC I²C.** SPI0 *does* have DMA (DREQ 6/7) — a DMA transport is viable there
+> if a future SPI peripheral ever needs it, but no mangOH Yellow sensor is SPI.
 
 ---
 
