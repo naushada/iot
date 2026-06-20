@@ -1,0 +1,40 @@
+[Unit]
+Description=IoT cellular-client (mangOH Yellow WP modem WAN + GPS → ds cell.*/gps.*)
+Documentation=file:///etc/iot/cellular-client.env
+# Needs ds-server up (publishes cell.*/gps.* on connect). net-router already
+# routes the cellular slot (net.iface.cellular.name default "wwan0").
+After=network-online.target iot-ds.service
+Wants=iot-ds.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/iot/cellular-client.env
+ExecStart=/usr/bin/cellular-client $CELLULAR_CLIENT_ARGS
+
+# Drives the WP module's AT + GNSS serial ports (/dev/ttyUSB*). Confirmed on
+# hardware (which tty is AT vs NMEA vs DIAG; data-path stack).
+DeviceAllow=char-ttyUSB rw
+DeviceAllow=/dev/ttyUSB0 rw
+DeviceAllow=/dev/ttyUSB1 rw
+DeviceAllow=/dev/ttyUSB2 rw
+DeviceAllow=/dev/ttyUSB3 rw
+
+RuntimeDirectory=iot
+RuntimeDirectoryMode=0755
+
+Restart=on-failure
+RestartSec=10s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target
