@@ -115,6 +115,19 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/wan/wifi/client
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/http-server
                  ${CMAKE_BINARY_DIR}/http-server)
 
+# rpi3B bare-metal driver library (BCM2837 GPIO/CLOCK/IRQ/I2C/SPI), pulled in as
+# a git submodule under ../modules/rpi3B. Adds the librpi3b_driver.a target
+# (alias rpi3b::driver) + its public headers so iot apps can link the drivers.
+# The on-target gtest self-test binary is only built when
+# IOT_BUILD_RPI3B_SELFTEST=ON (the Yocto recipe sets this and adds googletest);
+# a plain `cmake apps` build just gets the library.
+option(IOT_BUILD_RPI3B_SELFTEST "Build the rpi3B gtest self-test binary" OFF)
+if(IOT_BUILD_RPI3B_SELFTEST)
+    set(RPI3B_BUILD_TESTS ON CACHE BOOL "" FORCE)
+endif()
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/rpi3B
+                 ${CMAKE_BINARY_DIR}/rpi3B)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
@@ -190,6 +203,7 @@ target_link_options(lwm2m PRIVATE -L${ACE_ROOT}/lib)
 target_link_libraries(lwm2m
                         ${TINYDTLS_LINK_LIB}
                         datastore_client
+                        rpi3b_driver
                         ${ACE_LINK_LIB}
                         z
                         readline

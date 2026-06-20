@@ -38,6 +38,7 @@ RDEPENDS:${PN}-full = "\
     iot-openvpn-client \
     iot-net-router \
     iot-wifi-client \
+    iot-rpi3b-selftest \
     openvpn \
     nftables \
     iproute2 \

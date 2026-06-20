@@ -1,6 +1,9 @@
 # Prerequisites
 *.d
 
+# Throwaway local consume-check for the rpi3B submodule integration
+/build-rpi3bcheck/
+
 # Compiled Object files
 *.slo
 *.lo

@@ -61,6 +61,7 @@ SRC_URI = "\
     file://iot-dump \
     file://iot-ds-seed \
     file://iot-ds-seed.service \
+    file://rpi3b-selftest.service \
 "
 
 # Optional, gitignored WiFi credential seed. When an integrator drops
@@ -105,13 +106,15 @@ DEPENDS = "\
 "
 
 # ── PACKAGECONFIG ──────────────────────────────────────────────────
-# mongo:   Enables mongocxx/bsoncxx link (~15 MB in final image).
-#          Required for the RegistryMirror feature (db_adapter.cpp).
-#          Disable for resource-constrained embedded targets.
-# gtest:   Builds unit-test binaries. Dev-only; OFF by default.
-# systemd: Installs systemd unit files + env files + tmpfiles.d.
-#          Auto-detected from DISTRO_FEATURES.
-PACKAGECONFIG ??= "mongo \
+# mongo:          Enables mongocxx/bsoncxx link (~15 MB in final image).
+#                 Required for the RegistryMirror feature (db_adapter.cpp).
+#                 Disable for resource-constrained embedded targets.
+# gtest:          Builds the iot apps unit-test binaries. Dev-only; OFF by default.
+# rpi3b-selftest: Builds the rpi3B driver gtest suite (modules/rpi3B submodule)
+#                 and ships it as the rpi3b-selftest.service boot oneshot.
+# systemd:        Installs systemd unit files + env files + tmpfiles.d.
+#                 Auto-detected from DISTRO_FEATURES.
+PACKAGECONFIG ??= "mongo rpi3b-selftest \
                    ${@bb.utils.contains('DISTRO_FEATURES', 'systemd', 'systemd', '', d)} \
 "
 
@@ -134,6 +137,15 @@ PACKAGECONFIG[gtest] = "\
       -DBUILD_NET_ROUTER_TESTS=OFF \
       -DBUILD_WIFI_CLIENT_TESTS=OFF \
       -DBUILD_HTTP_SERVER_TESTS=OFF, \
+    gtest, \
+"
+
+# rpi3B driver self-test. When enabled, apps/CMakeLists.txt flips the rpi3B
+# submodule's RPI3B_BUILD_TESTS on (building /usr/bin/rpi3B_test) and pulls in
+# gtest. Disabled → only the rpi3b_driver static lib is built (no gtest dep).
+PACKAGECONFIG[rpi3b-selftest] = "\
+    -DIOT_BUILD_RPI3B_SELFTEST=ON, \
+    -DIOT_BUILD_RPI3B_SELFTEST=OFF, \
     gtest, \
 "
 
@@ -270,6 +282,13 @@ do_install() {
         install -m 0644 ${WORKDIR}/iot-httpd.service          ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-ds-seed.service        ${D}${systemd_system_unitdir}/
 
+        # rpi3B driver self-test oneshot (only when the PACKAGECONFIG is enabled;
+        # the /usr/bin/rpi3B_test binary is produced by the rpi3B submodule's
+        # cmake install when -DIOT_BUILD_RPI3B_SELFTEST=ON).
+        if ${@bb.utils.contains('PACKAGECONFIG', 'rpi3b-selftest', 'true', 'false', d)}; then
+            install -m 0644 ${WORKDIR}/rpi3b-selftest.service ${D}${systemd_system_unitdir}/
+        fi
+
         # tmpfiles.d: sole owner of /run/iot (units no longer use RuntimeDirectory=iot)
         install -d ${D}${nonarch_libdir}/tmpfiles.d
         install -m 0644 ${WORKDIR}/iot.conf ${D}${nonarch_libdir}/tmpfiles.d/
@@ -329,6 +348,7 @@ PACKAGE_BEFORE_PN = "\
     ${PN}-wifi-client \
     ${PN}-httpd \
     ${PN}-config \
+    ${PN}-rpi3b-selftest \
 "
 
 # Main package: shared library + dev artefacts
@@ -475,6 +495,21 @@ FILES:${PN}-config = "\
     ${nonarch_libdir}/systemd/system-preset/90-iot.preset \
 "
 
+# rpi3b-selftest — the rpi3B driver GoogleTest binary + boot oneshot. Populated
+# only when the rpi3b-selftest PACKAGECONFIG is enabled; ALLOW_EMPTY keeps the
+# package valid (and the SYSTEMD_SERVICE below empty) when it is disabled.
+FILES:${PN}-rpi3b-selftest = "\
+    ${bindir}/rpi3B_test \
+    ${systemd_system_unitdir}/rpi3b-selftest.service \
+"
+ALLOW_EMPTY:${PN}-rpi3b-selftest = "1"
+# No manual RDEPENDS on gtest. `gtest` is a build-time DEPENDS (added via the
+# PACKAGECONFIG above, resolved through PROVIDES) — it is NOT a runtime package
+# name, so an explicit RDEPENDS:...= "gtest" fails with "Nothing RPROVIDES
+# 'gtest'". If rpi3B_test links libgtest.so, Yocto's shared-lib dependency scan
+# adds the correct runtime package automatically.
+INSANE_SKIP:${PN}-rpi3b-selftest = "already-stripped"
+
 # ── systemd ─────────────────────────────────────────────────────────
 SYSTEMD_SERVICE:${PN}-ds-server = "iot-ds.service"
 # iot-swupdate.path is enabled (watches the OTA spool trigger); iot-swupdate.service
@@ -512,6 +547,11 @@ SYSTEMD_AUTO_ENABLE:${PN}-wifi-client = "enable"
 # lock down via http.listen.ip / auth for untrusted networks. Also enables the
 # iot-hostname oneshot (sets iot-<serial> so Avahi advertises a stable name).
 SYSTEMD_AUTO_ENABLE:${PN}-httpd = "enable"
+
+# rpi3B self-test oneshot. Conditional so disabling the PACKAGECONFIG leaves an
+# empty package with no dangling SYSTEMD_SERVICE reference.
+SYSTEMD_SERVICE:${PN}-rpi3b-selftest = "${@bb.utils.contains('PACKAGECONFIG', 'rpi3b-selftest', 'rpi3b-selftest.service', '', d)}"
+SYSTEMD_AUTO_ENABLE:${PN}-rpi3b-selftest = "enable"
 
 # ── Sanity checks ──────────────────────────────────────────────────
 # Inhibit the "binary already stripped" QA warning — we build with -g

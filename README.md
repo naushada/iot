@@ -227,11 +227,12 @@ deploy walkthrough: [`DEPLOY.md`](DEPLOY.md) Path C.
 
 ### PACKAGECONFIG
 
-| Option   | Default | Effect |
-|----------|---------|--------|
-| `mongo`  | ON      | Links mongocxx/bsoncxx. RegistryMirror. Turn OFF for embedded IoT. |
-| `gtest`  | OFF     | Builds unit-test binaries. |
-| `systemd`| ON      | Installs systemd units + env files. OFF for sysvinit images. |
+| Option           | Default | Effect |
+|------------------|---------|--------|
+| `mongo`          | ON      | Links mongocxx/bsoncxx. RegistryMirror. Turn OFF for embedded IoT. |
+| `gtest`          | OFF     | Builds unit-test binaries. |
+| `rpi3b-selftest` | ON      | Builds the vendored rpi3B driver gtest suite and ships it as the `iot-rpi3b-selftest` boot oneshot (pulls in `gtest`). Turn OFF to build only the `rpi3b_driver` library. |
+| `systemd`        | ON      | Installs systemd units + env files. OFF for sysvinit images. |
 
 Override in `local.conf` or via kas:
 
@@ -249,10 +250,33 @@ PACKAGECONFIG:remove:pn-iot = "mongo"
 | `iot-openvpn-client`    | `/usr/bin/openvpn-client` | ACE, openvpn |
 | `iot-net-router`        | `/usr/bin/net-router`  | ACE, nftables, iproute2 |
 | `iot-wifi-client`       | `/usr/bin/wifi-client` | ACE, wpa-supplicant, udhcpc |
+| `iot-rpi3b-selftest`    | `/usr/bin/rpi3B_test`  | — (gtest, auto via shlibs) |
 | `iot-config`            | `/etc/iot/`            | — |
 
 Tiered `packagegroup-iot-{core,full,debug}` meta-packages pull in
 what you need — from a minimal LwM2M device to a full gateway.
+`iot-rpi3b-selftest` is part of `packagegroup-iot-full`.
+
+### rpi3B driver library + self-test
+
+The [`naushada/rpi3B`](https://github.com/naushada/rpi3B) BCM2837 driver layer
+(GPIO/CLOCK/IRQ/I2C/SPI) is vendored under `modules/rpi3B` (committed as a plain
+tree, matching the `apps/3rdparty` convention so the plain `git://` fetch picks
+it up) and built as the `rpi3b_driver` static library, linked into `lwm2m`. When
+the `rpi3b-selftest` PACKAGECONFIG is on, its GoogleTest suite is built and
+shipped as the **`iot-rpi3b-selftest`** systemd oneshot, which runs the
+register-layout self-test once at boot and logs pass/fail to the journal:
+
+```sh
+systemctl status iot-rpi3b-selftest
+journalctl -u iot-rpi3b-selftest
+```
+
+> **Build branch knob.** `IOT_BRANCH` selects the iot source branch the recipe
+> fetches (default `main`). While the rpi3B integration lives on a feature
+> branch, `yocto/entrypoint.sh` and `yocto/kas-iot.yml` set
+> `IOT_BRANCH = "feat/add-rpi3b-submodule"`; revert both to `main` once that
+> branch merges.
 
 ## Leshan interop pass (NFR-INTEROP-001)
 
