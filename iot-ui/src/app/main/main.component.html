@@ -98,6 +98,13 @@
         <app-wifi-config    *ngIf="!selectedSubNav || selectedSubNav==='wifi'"></app-wifi-config>
         <app-wifi-scan      *ngIf="selectedSubNav==='scan'"></app-wifi-scan>
         <app-iface-priority *ngIf="selectedSubNav==='priority'"></app-iface-priority>
+        <app-cellular-status *ngIf="selectedSubNav==='cellular'"></app-cellular-status>
+      </ng-container>
+
+      <!-- Sensors (mangOH Yellow) -->
+      <ng-container *ngIf="selectedMenu==='sensors'">
+        <app-sensors-status *ngIf="!selectedSubNav || selectedSubNav==='env'"></app-sensors-status>
+        <app-gps-status     *ngIf="selectedSubNav==='gps'"></app-gps-status>
       </ng-container>
 
       <!-- Routing -->

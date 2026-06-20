@@ -20,6 +20,9 @@ import { WanSubmenuComponent } from './wan/wan-submenu/wan-submenu.component';
 import { WifiConfigComponent } from './wan/wifi-config/wifi-config.component';
 import { WifiScanComponent } from './wan/wifi-scan/wifi-scan.component';
 import { IfacePriorityComponent } from './wan/iface-priority/iface-priority.component';
+import { CellularStatusComponent } from './wan/cellular-status/cellular-status.component';
+import { SensorsStatusComponent } from './sensors/sensors-status/sensors-status.component';
+import { GpsStatusComponent } from './sensors/gps-status/gps-status.component';
 
 import { RoutingSubmenuComponent } from './routing/routing-submenu/routing-submenu.component';
 import { PortForwardComponent } from './routing/port-forward/port-forward.component';
@@ -52,6 +55,7 @@ import { DsDebugDirective } from '../common/ds-debug.directive';
     StatusBadgeComponent,
     VpnSubmenuComponent, VpnConfigComponent, VpnStatusComponent,
     WanSubmenuComponent, WifiConfigComponent, WifiScanComponent, IfacePriorityComponent,
+    CellularStatusComponent, SensorsStatusComponent, GpsStatusComponent,
     RoutingSubmenuComponent, PortForwardComponent, CustomRulesComponent,
     Lwm2mSubmenuComponent, Lwm2mConfigComponent,
     ServicesSubmenuComponent, ServicesListComponent,

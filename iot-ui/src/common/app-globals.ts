@@ -27,6 +27,11 @@ export interface StatusSnapshot {
   /// Flat passthrough of ds keys the SPA caches verbatim (domain bump keys
   /// like log.version / services.stats.version, shared with the cloud build).
   cloud?:   Record<string, unknown>;
+  /// mangOH Yellow telemetry — cellular modem, GPS fix, onboard sensors.
+  /// Present only when the cellular-client / iot-sensord daemons publish.
+  cell?:    CellStatus;
+  gps?:     GpsStatus;
+  sensor?:  SensorStatus;
 }
 
 // OTA software-update progress (LwM2M Object 5). state/result are the
@@ -93,6 +98,40 @@ export interface RoutingStatus {
   state?: string;
   rules_applied?: number;
   last_apply_unix?: number;
+}
+
+// Cellular modem status (mangOH WP), from cell.* (string-typed in the schema).
+export interface CellStatus {
+  state?: string;        // absent/init/sim-missing/searching/registered/connecting/connected/failed
+  operator?: string;
+  tech?: string;         // 2G / 3G / 4G
+  reg?: string;          // home / roaming / searching / denied / not-registered / unknown
+  signal_dbm?: string;
+  signal_bars?: string;  // "0".."5"
+  ip?: string;
+  iccid?: string;
+}
+
+// GPS / GNSS fix, from gps.* (decimal-string fields).
+export interface GpsStatus {
+  fix?: string;          // none / 2d / 3d
+  lat?: string;
+  lon?: string;
+  alt?: string;          // metres
+  speed?: string;        // km/h
+  course?: string;       // degrees
+  sats?: string;
+  utc?: string;
+}
+
+// mangOH onboard sensors, from iot.sensor.* (decimal strings; accel/gyro "x,y,z").
+export interface SensorStatus {
+  temp?: string;         // °C
+  humidity?: string;     // %RH
+  pressure?: string;     // Pa
+  lux?: string;          // lux
+  accel?: string;        // "x,y,z" raw counts
+  gyro?: string;         // "x,y,z" raw counts
 }
 
 export interface ServiceInfo {
