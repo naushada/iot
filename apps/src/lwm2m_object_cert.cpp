@@ -157,14 +157,14 @@ ObjectInstance make_instance(std::uint32_t iid,
                     type.c_str()), -1);
             }
             if (rc == 0) {
-                ACE_DEBUG((LM_INFO,
+                ACE_DEBUG((LM_DEBUG,
                     ACE_TEXT("%D [cert-obj] %M %N:%l buffered %C chunk (waiting "
                              "for more)\n"), type.c_str()));
                 return 0;   // more chunks to come
             }
             auto& s = (*staging)[type];
             s.pem = std::move(pem); s.present = true;
-            ACE_DEBUG((LM_INFO,
+            ACE_DEBUG((LM_DEBUG,
                 ACE_TEXT("%D [cert-obj] %M %N:%l reassembled %C (%d bytes)\n"),
                 type.c_str(), static_cast<int>(s.pem.size())));
             return 0;
@@ -198,7 +198,7 @@ ObjectInstance make_instance(std::uint32_t iid,
                 for (auto* t : kFamilyTypes) {
                     auto it = staging->find(t);
                     if (it == staging->end() || !it->second.present) {
-                        ACE_DEBUG((LM_INFO,
+                        ACE_DEBUG((LM_DEBUG,
                             ACE_TEXT("%D [cert-obj] %M %N:%l apply deferred: '%C' "
                                      "not staged yet; retaining partial family\n"),
                             t));
