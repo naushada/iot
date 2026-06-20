@@ -3747,10 +3747,26 @@ handle_handshake(dtls_context_t *ctx, dtls_peer_t *peer, session_t *session,
 	     dtls_handshake_type_to_name(hs_header->msg_type), hs_header->msg_type);
 
   if (peer
+   && peer->handshake_params
    && (peer->state == DTLS_STATE_CONNECTED)
    && (hs_header->msg_type == DTLS_HT_CLIENT_HELLO)
-   && (peer->role == DTLS_CLIENT))
+   && ((peer->role == DTLS_CLIENT)
+       || (role == DTLS_SERVER && state == DTLS_STATE_WAIT_CLIENTHELLO)))
   {
+    /* A fresh ClientHello (epoch 0) arrived on an already-CONNECTED peer:
+     * the client restarted (e.g. an OTA-driven daemon restart) and is
+     * re-handshaking from the same NAT-pinned source port. Without this the
+     * stale handshake_params (mseq_r past the new ClientHello's msg_seq 0)
+     * makes the sequence-number check below drop it as "too small", so the
+     * server never lets the client back in until it is restarted.
+     *
+     * Free the stale handshake state so this is processed as a new handshake.
+     * The server-role case is only reached after the record layer classified
+     * this via hs_attempt_with_existing_peer() (epoch 0 + CLIENT_HELLO on a
+     * CONNECTED peer), and the existing session keys are NOT torn down here:
+     * DTLS_HT_CLIENT_HELLO in handle_handshake_msg() first proves reachability
+     * with the cookie exchange (dtls_verify_peer) before removing the old peer
+     * (RFC 6347 sec 4.2.8), so a spoofed ClientHello cannot kill a live peer. */
     dtls_warn("Specific treatment to accept client hello\n");
     dtls_handshake_free(peer->handshake_params);
     peer->handshake_params = NULL;
