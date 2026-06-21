@@ -71,6 +71,8 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     { key: 'openvpn_client', name: 'OpenVPN Client', label: 'services.openvpn.client', info: {}, restarting: false, msg: '' },
     { key: 'lwm2m_client',   name: 'LwM2M Client',   label: 'services.lwm2m.client',   info: {}, restarting: false, msg: '' },
     { key: 'wifi_client',    name: 'Wi-Fi Client',   label: 'services.wifi.client',    info: {}, restarting: false, msg: '' },
+    { key: 'vehicle',        name: 'Vehicle (OBD-II)', label: 'services.vehicle',     info: {}, restarting: false, msg: '' },
+    { key: 'mqtt',           name: 'MQTT Mirror',    label: 'services.mqtt',           info: {}, restarting: false, msg: '' },
   ];
   private sub = new Subscription();
 
@@ -136,6 +138,8 @@ export class ServicesListComponent implements OnInit, OnDestroy {
       openvpn_client: 'services.openvpn.client.enable',
       lwm2m_client: 'services.lwm2m.client.enable',
       wifi_client: 'services.wifi.client.enable',
+      vehicle: 'services.vehicle.enable',
+      mqtt: 'services.mqtt.enable',
     };
     return m[k] || '';
   }

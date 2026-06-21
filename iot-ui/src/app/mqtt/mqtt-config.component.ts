@@ -23,23 +23,28 @@ import { ToastService } from '../../common/toast.service';
           <clr-input-container>
             <label>Broker Host</label>
             <input clrInput formControlName="host" [disabled]="!isAdmin" placeholder="mqtt.example.com" />
+            <clr-control-helper *dsDebug><app-ds-hint key="mqtt.broker.host"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>Port</label>
             <input clrInput type="number" formControlName="port" [disabled]="!isAdmin" />
+            <clr-control-helper *dsDebug><app-ds-hint key="mqtt.broker.port"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>Username</label>
             <input clrInput formControlName="user" [disabled]="!isAdmin" placeholder="(optional)" />
+            <clr-control-helper *dsDebug><app-ds-hint key="mqtt.broker.user"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>Password</label>
             <input clrInput type="password" formControlName="pass" [disabled]="!isAdmin"
                    autocomplete="new-password" placeholder="(unchanged)" />
+            <clr-control-helper *dsDebug><app-ds-hint key="mqtt.broker.pass"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>Topic Suffix</label>
             <input clrInput formControlName="suffix" [disabled]="!isAdmin" placeholder="telemetry" />
+            <clr-control-helper *dsDebug><app-ds-hint key="mqtt.topic.suffix"></app-ds-hint></clr-control-helper>
           </clr-input-container>
         </div>
         <clr-checkbox-container>
@@ -47,6 +52,7 @@ import { ToastService } from '../../common/toast.service';
             <input type="checkbox" clrCheckbox formControlName="mirror" [disabled]="!isAdmin" />
             <label>Mirror vehicle telemetry to the broker</label>
           </clr-checkbox-wrapper>
+          <clr-control-helper *dsDebug><app-ds-hint key="mqtt.mirror.enable"></app-ds-hint></clr-control-helper>
         </clr-checkbox-container>
         <div style="margin-top:16px;" *ngIf="isAdmin">
           <button type="submit" class="btn btn-primary" [disabled]="saving">
