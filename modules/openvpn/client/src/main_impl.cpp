@@ -12,6 +12,8 @@
 #include <string>
 
 #include <ace/Log_Msg.h>
+#include <ace/OS_NS_unistd.h>   // ACE_OS::sleep (park-until-config)
+#include <ace/Time_Value.h>
 
 namespace openvpn_client {
 
@@ -76,12 +78,34 @@ Status run_daemon(const std::string& socketPath,
         for (std::size_t i = 0; i < missing->size(); ++i) {
             if (i) joined << ", "; joined << (*missing)[i];
         }
-        ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D [ovpn:%t] %M %N:%l refuse to start; "
-                            "required keys missing: %C\n"),
+        if (once) {
+            // One-shot (test/--once) mode: don't park, report + exit.
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D [ovpn:%t] %M %N:%l refuse to start; "
+                                "required keys missing: %C\n"),
+                       joined.str().c_str()));
+            Status s; s.ok = false; s.code = 2;
+            s.err = "missing required vpn.* keys"; return s;
+        }
+        // Daemon mode: PARK and wait instead of exiting. The required keys
+        // arrive AFTER boot — bootstrap derives vpn.remote.host, the cloud
+        // pushes the cert/key/ca via LwM2M Object 2048 — so "missing at startup"
+        // is the normal first-boot ordering, NOT a failure. Exiting here made
+        // systemd (Restart=on-failure, StartLimitBurst=5/60s) give up before the
+        // keys appeared, leaving the VPN client permanently STOPPED. The ds
+        // bridge's watcher thread keeps the cached keys fresh, so poll
+        // missing_required() until it clears, then fall through to the
+        // supervisor (which assumes the config is complete).
+        ACE_DEBUG((LM_WARNING,
+                   ACE_TEXT("%D [ovpn:%t] %M %N:%l VPN config not ready "
+                            "(missing: %C) — parking until it arrives\n"),
                    joined.str().c_str()));
-        Status s; s.ok = false; s.code = 2;
-        s.err = "missing required vpn.* keys"; return s;
+        while (ds.missing_required()) {
+            ACE_OS::sleep(ACE_Time_Value(5));
+        }
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D [ovpn:%t] %M %N:%l VPN config now present — "
+                            "starting supervisor\n")));
     }
 
     // L22 — resource telemetry. Blocking supervisor loop (no ACE reactor),
