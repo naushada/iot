@@ -34,6 +34,7 @@ export class MainComponent {
     { id: 'sensors',   label: 'Sensors',   svg: 'assets/icons/sensor.svg',
       children: [{id:'env',label:'Sensors'},{id:'gps',label:'Location (GPS)'}] },
     { id: 'vehicle',   label: 'Vehicle',   svg: 'assets/icons/sensor.svg', children: [] as {id:string,label:string}[] },
+    { id: 'mqtt',      label: 'MQTT',      svg: 'assets/icons/services.svg', children: [] as {id:string,label:string}[] },
     { id: 'routing',   label: 'Routing',   svg: 'assets/icons/routing.svg',
       children: [{id:'ports',label:'Port Forward'},{id:'dnat',label:'DNAT Target'},{id:'rules',label:'Firewall Rules'}] },
     { id: 'lwm2m',     label: 'LwM2M',     svg: 'assets/icons/lwm2m.svg',
