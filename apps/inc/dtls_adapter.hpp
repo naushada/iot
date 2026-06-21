@@ -178,9 +178,18 @@ class DTLSAdapter {
          * @param secret 
          */
         void add_credential(const std::string& identity, const std::string& secret) {
-            if(!device_credentials.insert(std::pair<std::string, std::string>(identity, secret)).second) {
-                ACE_ERROR((LM_ERROR,
-                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l add_credential: identity already registered\n")));
+            // Upsert, NOT insert: a re-bootstrap must be able to refresh the DM
+            // PSK for an identity already present (the cloud may have rotated /
+            // re-provisioned it). std::*map::insert keeps the OLD secret on a
+            // duplicate key, which wedged the DM DTLS handshake with a stale
+            // credential after a re-bootstrap ("identity already registered" →
+            // dtls: cannot send ClientHello → never registers → cloud shows the
+            // device offline even with the VPN up). insert_or_assign replaces it.
+            auto res = device_credentials.insert_or_assign(identity, secret);
+            if(!res.second) {
+                ACE_DEBUG((LM_DEBUG,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l add_credential: "
+                                    "refreshed secret for existing identity\n")));
             }
         }
 
