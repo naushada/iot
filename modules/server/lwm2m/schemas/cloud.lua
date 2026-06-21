@@ -38,6 +38,20 @@ return {
       default = "[]",
     },
 
+    -- Live vehicle telemetry per endpoint (CAN/OBD-II), JSON array. lwm2m-dm
+    -- observes the device's Vehicle object (/33000/0/*) + Location Object 6 and
+    -- writes the latest values here (VOLATILE — latest-wins, the cloud-ui map
+    -- reads it live). NOT persisted; the 60-day history lives in cloud Mongo.
+    -- See apps/docs/tdd-vehicle-telemetry.md §3b.
+    --   [{ "endpoint":"100000abcd", "ts":1718000000,
+    --      "lat":"12.97","lon":"77.59","speed":"62","rpm":"2150",
+    --      "coolant":"89","throttle":"18","load":"34","fuel":"71",
+    --      "iat":"31","maf":"5.2","dtc":"[]","link":"up" }]
+    ["cloud.vehicle.telemetry"] = {
+      type    = "string",
+      default = "[]",
+    },
+
     -- Bootstrap Server (L21/D3).  iot-cloudd reads these keys to
     -- configure the CoAP /bs endpoint and to build the Security +
     -- Server object TLV payloads that are pushed to devices during
