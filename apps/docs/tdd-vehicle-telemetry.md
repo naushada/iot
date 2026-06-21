@@ -13,14 +13,18 @@ implemented + merged; the cloud/transport half is still planned.
 - ✅ PR-3 (#331) — Vehicle **LwM2M object 33000** + reader hooks (→ cloud).
 - ✅ PR-4a (#334) — `cloud.vehicle.telemetry` cloud schema key.
 - ✅ PR-5 (#335) — OBD-II **DTC** (Mode 03) read → `vehicle.dtc` (single-frame).
+- ✅ PR-6 (#337) — `iot-mqttd` MQTT mirror (ACE + **libmosquitto**, timer-driven
+  `mosquitto_loop`) + `mqtt.lua` + unit + `${PN}-mqtt` package. Also fixed the
+  Yocto unit ExecStart paths (`/usr/bin`).
+- ✅ PR-6b (#338) — device-ui **MQTT config** page (broker + mirror toggle).
 
-**Remaining (planned — cloud/transport half; needs build verification, each
-adds deep C++ and/or new deps):**
+**Remaining (planned — cloud-history half; an interdependent unit best done
+together with build verification; each adds deep C++ and/or new deps):**
 - ⬜ Cloud plumbing: lwm2m-dm observe Object 6/33000 → `cloud.vehicle.telemetry`.
 - ⬜ PR-4 — cloud-ui **Map** (Leaflet) + self-hosted **tileserver-gl** compose +
   endpoint-name hyperlink (§3d).
-- ⬜ PR-6 — `iot-mqttd` (ACE adapter over **libmosquitto**) + MQTT config page.
-- ⬜ PR-7 — `TelemetryMirror` → on-device **MongoDB** buffer (§3a).
+- ⬜ PR-7 — `TelemetryMirror` → on-device **MongoDB** buffer (§3a, needs
+  mongocxx gated into iot-vehicled for device-only).
 - ⬜ PR-8 — **LwM2M Send + SenML/CBOR + full RFC 7959 Block-Wise** (§3b — the
   critical-path enabler; deep CoAP work).
 - ⬜ PR-9..12 — device uploader, cloud **mongod** + iot-httpd ingest,
