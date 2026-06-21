@@ -42,16 +42,6 @@
       <!-- HTTP Server Config -->
       <app-http-config *ngIf="selectedMenu==='http'"></app-http-config>
 
-      <!-- WAN (from iot-ui) -->
-      <ng-container *ngIf="selectedMenu==='wan'">
-        <app-wan-submenu (nav)="onSubNavSelect($event)"></app-wan-submenu>
-        <div class="content-area">
-          <app-wifi-config    *ngIf="!selectedSubNav || selectedSubNav==='wifi'"></app-wifi-config>
-          <app-wifi-scan      *ngIf="selectedSubNav==='scan'"></app-wifi-scan>
-          <app-iface-priority *ngIf="selectedSubNav==='priority'"></app-iface-priority>
-        </div>
-      </ng-container>
-
       <!-- Routing (from iot-ui) -->
       <ng-container *ngIf="selectedMenu==='routing'">
         <app-routing-submenu (nav)="onSubNavSelect($event)"></app-routing-submenu>
