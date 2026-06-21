@@ -58,8 +58,9 @@ Needs a build-and-run loop + new deps:**
   `GET /api/v1/cloud/telemetry/history?ep=<ep>` (file-served, no mongo driver);
   the cloud-ui Map draws the selected endpoint's track as a Leaflet polyline
   (start/end dots, fit-to-bounds) — reuses the PR-4 Leaflet dep, **no charting
-  library**. ⬜ Time-series **charts** (speed/rpm over time, Chart.js/ECharts)
-  remain an optional future add over the same endpoint.
+  library**. ✅ Time-series **charts** (speed/rpm/coolant/throttle/load/fuel over
+  the window) also done — rendered as **dep-free inline SVG sparklines** under
+  the map from the same `/telemetry/history` endpoint (no Chart.js/ECharts dep).
 
 Greenfield baseline: no CAN code existed in the repo before PR-1.
 
@@ -344,10 +345,13 @@ separate plotting process and no third-party app** in the data path:
   tile URL is pluggable, so a commercial provider stays a drop-in if ever wanted.
   Footprint: tileserver-gl + a region MBTiles ≈ hundreds of MB to a few GB
   (vs a ~60 GB+ planet extract) — size the region to the fleet's geography.
-- **Vehicle-data charts (v1 viz choice = charts):** time-series plots
-  (speed/RPM/coolant/… over time) via a **client-side charting lib**
-  (Chart.js or ECharts), fed from the cloud Mongo history query — also no
-  backend process. Live values still render in the marker popover.
+- **Vehicle-data charts (v1 viz choice = charts):** ✅ **done** — time-series
+  plots (speed/RPM/coolant/throttle/load/fuel over the window) render under the
+  map as **dep-free inline SVG sparklines** (no Chart.js/ECharts dep — same
+  reuse-don't-add discipline as the Leaflet track), fed from the same
+  `/api/v1/cloud/telemetry/history` endpoint. Live values still render in the
+  marker popover. A full charting lib stays a drop-in if richer interaction
+  (tooltips/zoom) is ever wanted.
 
 ## 4. New data-store keys
 
@@ -568,8 +572,9 @@ in `vehicle.dtc`. MIL/readiness via Mode 01 PID `0x01`.
     (`IOT_HTTPD_MONGO`); `lwm2m-dm` → `cloud.telemetry.inbox` → iot-httpd drain →
     cloud time-series (60-day hot window; archiver-driven prune + 75 d backstop,
     §3c) with `(endpoint,ts)` dedup.
-11. cloud-ui Map history/replay (track polyline) + **time-series charts**
-    (Chart.js/ECharts) over the cloud Mongo history query endpoint.
+11. ✅ cloud-ui Map history/replay (Leaflet track polyline) + **time-series
+    charts** (dep-free inline SVG sparklines, no Chart.js/ECharts) over the
+    `/api/v1/cloud/telemetry/history` endpoint.
 12. **Cold-storage archiver** (§3c) — monthly `mongodump --archive --gzip` of the
     aged window, verify → prune, manifest in `telemetry_archives`, TTL backstop;
     archive volume in the cloud compose for operator HDD offload.

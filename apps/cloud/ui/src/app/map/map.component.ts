@@ -11,6 +11,10 @@ interface Telem {
   throttle?: string; load?: string; fuel?: string; iat?: string; maf?: string; dtc?: string;
 }
 
+/// A pre-computed sparkline: an SVG path (viewBox 0 0 100 30) plus the
+/// metric's min/max/last over the track window.
+interface Spark { d: string; min: number; max: number; last: number; }
+
 /// Fleet map — plots each endpoint's latest position from cloud.vehicle.telemetry
 /// (live, polled). Client-side Leaflet (no plotting daemon); tiles come from the
 /// self-hosted tileserver (compose service). circleMarkers avoid the Leaflet
@@ -38,6 +42,29 @@ interface Telem {
         <span class="tinfo" *ngIf="trackRequested && !trackLayer && !loadingTrack">no history for this endpoint yet</span>
       </div>
       <div id="fleet-map" class="map"></div>
+
+      <div class="charts" *ngIf="trackLayer && trackCount > 1">
+        <h4>{{ trackEp }} — last 24 h ({{ trackCount }} points)</h4>
+        <div class="chart-grid">
+          <div class="chart" *ngFor="let c of charts">
+            <ng-container *ngIf="sparks[c.key] as s; else nochart">
+              <div class="chd">
+                <span class="cl">{{ c.label }}</span>
+                <span class="cv">{{ s.last }}{{ c.unit }}</span>
+              </div>
+              <svg viewBox="0 0 100 30" preserveAspectRatio="none" class="spark">
+                <path [attr.d]="s.d" fill="none" stroke="#0095d3" stroke-width="1.2"
+                      vector-effect="non-scaling-stroke"></path>
+              </svg>
+              <div class="cmm"><span>min {{ s.min }}</span><span>max {{ s.max }}</span></div>
+            </ng-container>
+            <ng-template #nochart>
+              <div class="chd"><span class="cl">{{ c.label }}</span><span class="cv">—</span></div>
+              <div class="nodata">no data</div>
+            </ng-template>
+          </div>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
@@ -49,6 +76,16 @@ interface Telem {
     .track-bar select { padding: 3px 6px; }
     .track-bar .tinfo { color: #888; }
     .map { height: 70vh; width: 100%; border: 1px solid #ccc; border-radius: 4px; }
+    .charts { margin-top: 16px; }
+    .charts h4 { font-size: 13px; font-weight: 600; color: #555; margin: 0 0 10px 0; }
+    .chart-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+    .chart { border: 1px solid #e0e0e0; border-radius: 4px; padding: 8px 10px; }
+    .chart .chd { display: flex; justify-content: space-between; font-size: 12px; }
+    .chart .cl { color: #555; font-weight: 600; }
+    .chart .cv { color: #0072a3; font-variant-numeric: tabular-nums; }
+    .chart .spark { width: 100%; height: 36px; display: block; margin: 4px 0; }
+    .chart .cmm { display: flex; justify-content: space-between; font-size: 10px; color: #999; font-variant-numeric: tabular-nums; }
+    .chart .nodata { font-size: 11px; color: #bbb; padding: 12px 0; text-align: center; }
   `]
 })
 export class MapComponent implements AfterViewInit, OnDestroy {
@@ -62,6 +99,19 @@ export class MapComponent implements AfterViewInit, OnDestroy {
   loadingTrack = false;
   trackRequested = false;
   trackLayer?: L.FeatureGroup;
+  /// Raw track points (incl. ts + every signal) backing the SVG charts below.
+  private track: Array<Record<string, string | number>> = [];
+  /// Pre-computed sparkline per metric (built once per load, not per CD cycle).
+  sparks: Record<string, Spark | null> = {};
+  /// Metrics charted under the map when a track is loaded (dep-free inline SVG).
+  readonly charts: Array<{ key: string; label: string; unit: string }> = [
+    { key: 'speed',    label: 'Speed',    unit: ' km/h' },
+    { key: 'rpm',      label: 'RPM',      unit: '' },
+    { key: 'coolant',  label: 'Coolant',  unit: ' °C' },
+    { key: 'throttle', label: 'Throttle', unit: ' %' },
+    { key: 'load',     label: 'Load',     unit: ' %' },
+    { key: 'fuel',     label: 'Fuel',     unit: ' %' },
+  ];
   private map?: L.Map;
   private markers: Record<string, L.CircleMarker> = {};
   private centeredFor = '';
@@ -144,6 +194,8 @@ export class MapComponent implements AfterViewInit, OnDestroy {
     this.http.getVehicleHistory(this.trackEp).subscribe(track => {
       this.loadingTrack = false;
       this.clearTrack();
+      this.track = track;
+      this.buildSparks();         // charts from the full signal set, GPS or not
       const map = this.map;
       if (!map) return;
       const pts: L.LatLngExpression[] = [];
@@ -167,11 +219,44 @@ export class MapComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  /// Remove the current track polyline (+ its endpoint dots).
+  /// Remove the current track polyline (+ its endpoint dots) and its charts.
   clearTrack(): void {
     if (this.trackLayer && this.map) this.map.removeLayer(this.trackLayer);
     this.trackLayer = undefined;
     this.trackCount = 0;
+    this.track = [];
+    this.sparks = {};
+  }
+
+  /// Build one sparkline path per charted metric from the loaded track. Each
+  /// metric is normalised to its own min/max over the window (viewBox
+  /// 0 0 100 30, y inverted for SVG). NaN/empty samples are skipped; x is the
+  /// sample's ordinal position so gaps don't distort the shape. Pre-computed
+  /// here (once per load) rather than in a template getter (every CD cycle).
+  private buildSparks(): void {
+    const out: Record<string, Spark | null> = {};
+    const n = this.track.length;
+    for (const c of this.charts) {
+      const xs: number[] = [];
+      const ys: number[] = [];
+      for (let i = 0; i < n; i++) {
+        const v = parseFloat(String(this.track[i][c.key] ?? ''));
+        if (isNaN(v)) continue;
+        xs.push(n > 1 ? (i / (n - 1)) * 100 : 0);
+        ys.push(v);
+      }
+      if (ys.length < 2) { out[c.key] = null; continue; }
+      const min = Math.min(...ys);
+      const max = Math.max(...ys);
+      const range = (max - min) || 1;
+      const d = xs
+        .map((x, i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${(28 - ((ys[i] - min) / range) * 26).toFixed(1)}`)
+        .join(' ');
+      // Round display values: integers for whole-ish metrics, 1dp otherwise.
+      const r = (v: number) => (Math.abs(v) >= 10 || Number.isInteger(v) ? Math.round(v) : Math.round(v * 10) / 10);
+      out[c.key] = { d, min: r(min), max: r(max), last: r(ys[ys.length - 1]) };
+    }
+    this.sparks = out;
   }
 
   ngOnDestroy(): void {
