@@ -27,8 +27,8 @@
     </div>
     <div class="content">
       <app-dashboard *ngIf="selectedMenu==='dashboard'"></app-dashboard>
-      <app-endpoint-list *ngIf="selectedMenu==='endpoints'"></app-endpoint-list>
-      <app-map *ngIf="selectedMenu==='map'"></app-map>
+      <app-endpoint-list *ngIf="selectedMenu==='endpoints'" (showOnMap)="goToMap($event)"></app-endpoint-list>
+      <app-map *ngIf="selectedMenu==='map'" [focus]="mapFocus"></app-map>
 
       <!-- VPN (server-side) -->
       <ng-container *ngIf="selectedMenu==='vpn'">

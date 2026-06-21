@@ -52,6 +52,10 @@ export class MainComponent implements OnInit {
   }
 
   onMenuSelect(id: string): void { this.selectedMenu = id; this.selectedSubNav = ''; }
+
+  /// Endpoints → "show on map": focus the Fleet Map on the clicked endpoint.
+  mapFocus = '';
+  goToMap(ep: string): void { this.mapFocus = ep; this.onMenuSelect('map'); }
   onSubNavSelect(item: string): void { this.selectedSubNav = item; }
   onLogout(): void { this.ds.stop(); this.http.logout().subscribe({ next: () => { this.session.clear(); this.router.navigate(['/login']); } }); }
 }

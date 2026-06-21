@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, Output, EventEmitter } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../common/httpsvc.service';
 import { SessionService } from '../../common/session.service';
@@ -81,7 +81,9 @@ interface EpCred {
         <clr-dg-column *ngIf="isAdmin">Actions</clr-dg-column>
 
         <clr-dg-row *clrDgItems="let e of endpoints">
-          <clr-dg-cell><code>{{e.endpoint}}</code></clr-dg-cell>
+          <clr-dg-cell>
+            <a style="cursor:pointer" title="Show on map" (click)="showOnMap.emit(e.endpoint)"><code>{{e.endpoint}}</code></a>
+          </clr-dg-cell>
           <clr-dg-cell>
             <app-status-badge [label]="e.registered?'online':'offline'"
               [state]="e.registered?'connected':'exited'"></app-status-badge>
@@ -173,6 +175,9 @@ interface EpCred {
   `]
 })
 export class EndpointListComponent implements OnInit, OnDestroy {
+  /// Emits the endpoint serial when its name is clicked → MainComponent shows
+  /// it on the Fleet Map.
+  @Output() showOnMap = new EventEmitter<string>();
   endpoints: EpInfo[] = [];
   creds: EpCred[] = [];
   // Live wall-clock (unix s), ticked every second so the "Next Heart Beat in"
