@@ -1,0 +1,12 @@
+[Unit]
+Description=Watch the factory-reset trigger (device-ui Advanced -> Factory Reset)
+Documentation=https://github.com/naushada/iot
+
+[Path]
+# iot-httpd (unprivileged) arms this; the root iot-factory-reset.service wipes
+# persisted state and reboots. DESTRUCTIVE — see iot-factory-reset.
+PathExists=/run/iot/factory-reset.request
+Unit=iot-factory-reset.service
+
+[Install]
+WantedBy=multi-user.target

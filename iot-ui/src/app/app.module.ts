@@ -43,6 +43,7 @@ import { UsersComponent } from './users/users.component';
 import { SoftwareUpdateComponent } from './software-update/software-update.component';
 import { HttpConfigComponent } from './http-config/http-config.component';
 import { ShellComponent } from './shell/shell.component';
+import { AdvancedComponent } from './advanced/advanced.component';
 
 import { SsoAuthInterceptor } from '../common/sso-auth.interceptor';
 import { SessionService, initSession } from '../common/session.service';
@@ -66,6 +67,7 @@ import { DsDebugDirective } from '../common/ds-debug.directive';
     LogLevelComponent, LogViewerComponent, ToastComponent,
     UsersComponent, SoftwareUpdateComponent, HttpConfigComponent,
     ShellComponent,
+    AdvancedComponent,
     DsHintComponent, DsDebugDirective,
   ],
   imports: [

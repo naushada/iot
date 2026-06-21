@@ -145,6 +145,12 @@
 
       <!-- Terminal (remote shell) -->
       <app-shell *ngIf="selectedMenu==='shell' && shellEnabled && isAdmin"></app-shell>
+
+      <!-- Advanced: Reboot / Factory Reset / Transfer -->
+      <ng-container *ngIf="selectedMenu==='advanced'">
+        <app-advanced [panel]="selectedSubNav==='factory' ? 'factory'
+                              : selectedSubNav==='transfer' ? 'transfer' : 'reboot'"></app-advanced>
+      </ng-container>
     </div>
   </div>
 </div>

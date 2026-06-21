@@ -1,0 +1,31 @@
+#!/bin/sh
+# iot-factory-reset — DESTRUCTIVE full reset to as-flashed (first-boot) defaults.
+#
+# Armed by the device-ui: POST /api/v1/system/factory-reset writes
+# /run/iot/factory-reset.request, iot-factory-reset.path fires this (as root).
+# It removes the persisted data-store OVERRIDE layer + generated secrets so
+# ds-server restarts with ONLY the schema (Lua) defaults, then reboots into that
+# first-boot state. The device comes back UNPROVISIONED (no PSKs, no VPN, no
+# operator config — including network), so it likely drops off-network and needs
+# re-setup from the console. This is intentional ("full wipe to as-flashed").
+set -u
+
+logger -t iot-factory-reset "FACTORY RESET: wiping persisted state -> schema defaults, then reboot"
+rm -f /run/iot/factory-reset.request
+
+# Stop ds-server first so it does not rewrite the persist file as we remove it
+# (it is write-through + fsync-on-set). Dependents go down with it; we reboot
+# anyway.
+systemctl stop iot-ds 2>/dev/null || true
+
+# 1. The operator-override layer: ALL config + credentials + network. Removing
+#    it makes ds fall back to the compiled schema defaults — the .lua files in
+#    /etc/iot/ds-schemas, which are part of the image and are NOT touched.
+rm -f /var/lib/iot/data_store.lua
+
+# 2. Generated runtime secrets not held in the data-store.
+rm -rf /etc/iot/vpn
+
+sync
+logger -t iot-factory-reset "wipe done; rebooting into defaults"
+systemctl reboot

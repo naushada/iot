@@ -45,6 +45,8 @@ export class MainComponent {
     { id: 'users',     label: 'Users',     svg: 'assets/icons/users.svg', children: [] as {id:string,label:string}[] },
     { id: 'software',  label: 'Software',  svg: 'assets/icons/software.svg', children: [] as {id:string,label:string}[] },
     { id: 'shell',     label: 'Terminal',  svg: 'assets/icons/services.svg', children: [] as {id:string,label:string}[] },
+    { id: 'advanced',  label: 'Advanced',  svg: 'assets/icons/advanced.svg',
+      children: [{id:'reboot',label:'Reboot'},{id:'factory',label:'Factory Reset'},{id:'transfer',label:'Transfer'}] },
   ];
 
   expandedMenu: string | null = null;  // which menu is expanded in sidebar

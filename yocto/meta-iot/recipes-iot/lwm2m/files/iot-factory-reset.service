@@ -1,0 +1,9 @@
+[Unit]
+Description=Factory reset — wipe persisted state to schema defaults, then reboot
+Documentation=https://github.com/naushada/iot
+# No [Install]: activated by iot-factory-reset.path, never enabled directly.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/iot-factory-reset
+TimeoutStartSec=120

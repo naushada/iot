@@ -1,0 +1,10 @@
+[Unit]
+Description=Reboot the device (armed by iot-reboot.path)
+Documentation=https://github.com/naushada/iot
+# No [Install]: activated by iot-reboot.path, never enabled directly.
+
+[Service]
+Type=oneshot
+# Remove the trigger first so the .path unit re-arms, then reboot.
+ExecStartPre=/bin/rm -f /run/iot/reboot.request
+ExecStart=/bin/systemctl reboot

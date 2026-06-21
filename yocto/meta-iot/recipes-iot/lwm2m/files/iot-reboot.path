@@ -1,0 +1,13 @@
+[Unit]
+Description=Watch the reboot trigger (device-ui Advanced -> Reboot)
+Documentation=https://github.com/naushada/iot
+
+[Path]
+# iot-httpd (unprivileged) arms this by creating the file; the root
+# iot-reboot.service then runs `systemctl reboot`. The service removes the
+# trigger to re-arm (a .path unit won't re-fire until the path is gone again).
+PathExists=/run/iot/reboot.request
+Unit=iot-reboot.service
+
+[Install]
+WantedBy=multi-user.target
