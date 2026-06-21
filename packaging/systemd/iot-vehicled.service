@@ -1,0 +1,36 @@
+[Unit]
+Description=IoT vehicle telemetry (CAN/OBD-II ISO 15765-4 → ds vehicle.*)
+Documentation=file:///usr/local/share/doc/iot/tdd-vehicle-telemetry.md
+# Needs ds-server up (publishes vehicle.* on connect) and can0 brought up first.
+After=network-online.target iot-ds.service iot-can0-up.service
+Wants=iot-ds.service iot-can0-up.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/iot-vehicled
+
+# SocketCAN is a netdev (no /dev node), so the daemon needs CAP_NET_RAW to open
+# the PF_CAN socket — but nothing else.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+
+# /run/iot is owned solely by tmpfiles.d (iot.conf, 2775 root:iot) — do NOT use
+# RuntimeDirectory=iot: it resets /run/iot on start/stop, clobbering the
+# group-iot ds socket. The daemon just reads /run/iot/data_store.sock.
+
+Restart=on-failure
+RestartSec=10s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target
