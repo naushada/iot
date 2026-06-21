@@ -111,13 +111,17 @@ interface EpCred {
                  /dev/<ep>/ over the tun to the device UI (one HTTPS origin,
                  per-device cookie isolation). Requires iot-httpd to share
                  iot-cloudd's netns — see apps/docs/tdd-device-ui-path-proxy.md. -->
+            <!-- Device-UI reachability follows the VPN tunnel only (dev_tun_ip +
+                 proxy), NOT LwM2M registration: the reverse proxy works whenever
+                 the tunnel is up, even if the device's LwM2M registration has
+                 lapsed. Registration status is shown separately in the State
+                 column. -->
             <a class="btn btn-sm" target="_blank" rel="noopener"
                [href]="launchUrl(e.endpoint)"
-               *ngIf="e.registered && e.dev_tun_ip">
+               *ngIf="e.dev_tun_ip">
               Launch UI <clr-icon shape="pop-out" size="12"></clr-icon>
             </a>
-            <span *ngIf="!e.registered" class="hint">offline</span>
-            <span *ngIf="e.registered && !e.dev_tun_ip" class="hint">VPN down</span>
+            <span *ngIf="!e.dev_tun_ip" class="hint">VPN down</span>
           </clr-dg-cell>
           <clr-dg-cell *ngIf="isAdmin">
             <button class="btn btn-sm btn-outline" (click)="editPsk(e.endpoint)">Edit</button>
