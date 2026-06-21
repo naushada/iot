@@ -46,8 +46,32 @@ void VehicleClient::publish_link(const char* state) {
     ACE_DEBUG((LM_INFO, ACE_TEXT("%D [veh] link=%C\n"), state));
 }
 
+void VehicleClient::handle_dtc(const std::uint8_t* d, std::uint8_t dlc) {
+    // Single-frame Mode 03 response: [pci, 0x43, dtc1_hi, dtc1_lo, ...]. The PCI
+    // byte (d[0]) is the data-byte count, so we only parse DTC pairs within it
+    // (the rest is CAN padding). Multi-DTC responses spanning >1 frame need
+    // ISO-TP reassembly — a follow-up; v1 covers the common ≤2-DTC single frame.
+    std::string json = "[";
+    bool first = true;
+    for (std::size_t i = 2; i + 1 <= d[0] && i + 1 < dlc; i += 2) {
+        std::string code = obd::decode_dtc(d[i], d[i + 1]);
+        if (code.empty()) continue;             // 0x0000 → no DTC / padding
+        if (!first) json += ",";
+        json += "\"" + code + "\"";
+        first = false;
+    }
+    json += "]";
+    if (json == m_dtc) return;                  // unchanged → no write
+    m_dtc = json;
+    m_any_reply = true;
+    m_ds.set(std::string("vehicle.dtc"), data_store::Value{json});  // persistent
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [veh] DTCs=%C\n"), json.c_str()));
+}
+
 void VehicleClient::on_frame(std::uint32_t id, const std::uint8_t* data, std::uint8_t dlc) {
     if (id < obd::kEcuResponseIdBase || id > (obd::kEcuResponseIdBase + 7)) return;
+    // Mode 03 (stored DTCs) positive response service id is 0x43.
+    if (dlc >= 2 && data[1] == 0x43) { handle_dtc(data, dlc); return; }
     auto v = obd::decode_response(data, dlc);
     if (!v.valid) return;
     const char* key = ds_key_for_pid(v.pid);
@@ -64,6 +88,15 @@ int VehicleClient::handle_timeout(const ACE_Time_Value&, const void*) {
     if (m_next == 0) {
         publish_link(m_any_reply ? "up" : "no-ecu");
         m_any_reply = false;
+        // Poll stored DTCs (Mode 03) every ~30 rounds — they change rarely. The
+        // request is a single frame [0x01, 0x03] (mode only, no PID).
+        if (m_round++ % 30 == 0 && m_can) {
+            std::array<std::uint8_t, 8> req;
+            req.fill(obd::kPad);
+            req[0] = 0x01;            // single frame, 1 data byte (mode)
+            req[1] = obd::kModeDtc;   // 0x03
+            m_can->send(obd::kFunctionalRequestId, req);
+        }
     }
 
     const std::uint8_t pid = m_pids[m_next];
