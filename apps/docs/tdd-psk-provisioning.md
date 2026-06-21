@@ -181,6 +181,16 @@ own identity/PSK pair that will *not* match that derivation. For that case:
   (third-party vendor)"* checkbox revealing Identity + (masked, hex) Key
   fields. The key is write-only; a blank Key on save keeps the stored secret.
   The PSK key encoding stays **hex** (reuses the existing decode path).
+- **Live apply (DTLS re-establish).** Changing the override flag, or the custom
+  identity while override is on, is handled by the same self-exit policy as a
+  `iot.bs.psk.key` change: the `on_change` handler calls `::exit(0)` and systemd
+  (`Restart=always`) relaunches the client, which performs a fresh bootstrap
+  DTLS handshake with the new credentials — i.e. the old session is torn down
+  and a new one established, no manual restart needed. A bare
+  `iot.bs.psk.identity` write while override is **off** is a no-op for the
+  handshake (the derived identity is used), so it deliberately does NOT restart
+  — this is what lets the RPi serial auto-fill rewrite that key every boot
+  without churning the process.
 
 Two distinct writers:
 - **device-ui (httpd)** writes `iot.bs.psk.key` (+ `iot.serial` for non-RPi)

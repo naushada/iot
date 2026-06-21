@@ -139,7 +139,8 @@
           {{ savingOverride ? 'Saving…' : 'Save custom BS PSK' }}
         </button>
         <p *ngIf="overrideOn" class="hint" style="margin-top:8px;">
-          Restart the LwM2M client after saving for the new credentials to apply.
+          Saving tears down the current bootstrap DTLS session and the client
+          re-establishes a new one with these credentials automatically.
         </p>
       </div>
     </div>

@@ -2020,7 +2020,9 @@ int main(std::int32_t argc, char *argv[]) {
     if (clientPlumbing.reg) {
         std::weak_ptr<::lwm2m::RegistrationClient>      wreg = clientPlumbing.reg;
         std::shared_ptr<ClientPlumbing::Rebind>         rebind = clientPlumbing.rebind;
-        ds.on_change([wreg, rebind, &ds, started_bs_psk = secret]
+        ds.on_change([wreg, rebind, &ds, started_bs_psk = secret,
+                      started_bs_override = ds.bs_psk_override(),
+                      started_bs_identity = ds.bs_psk_identity().value_or(std::string())]
                      (iot::DsConfig::Key k) {
             // Task G — a BS PSK change underneath us (e.g. an engineer
             // edits iot.bs.psk.key via ds-cli in dev-mode) means the next
@@ -2036,6 +2038,32 @@ int main(std::int32_t argc, char *argv[]) {
                                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK changed "
                                         "— exiting for systemd restart with new "
                                         "credentials\n")));
+                    ::exit(0);
+                }
+                return;
+            }
+            // Third-party BS override / custom identity change: the on-the-wire
+            // BS identity changes when the override flag flips (derived
+            // sha256(endpoint) <-> custom) or when the custom identity is edited
+            // while override is on. Either way the next bootstrap DTLS handshake
+            // needs the new identity, so self-exit for a clean systemd restart —
+            // same policy as the BS PSK key above, yielding a fresh DTLS session.
+            // A bare iot.bs.psk.identity write while override is OFF is a no-op
+            // for the handshake (the derived identity is used), so it must NOT
+            // churn the process — e.g. the RPi serial auto-fill writes that key
+            // on every boot.
+            if (k == iot::DsConfig::Key::BsPskOverride ||
+                k == iot::DsConfig::Key::BsPskIdentity) {
+                const bool override_now = ds.bs_psk_override();
+                const std::string id_now = ds.bs_psk_identity().value_or("");
+                const bool override_changed = (override_now != started_bs_override);
+                const bool identity_changed =
+                    override_now && (id_now != started_bs_identity);
+                if (override_changed || identity_changed) {
+                    ACE_ERROR((LM_WARNING,
+                               ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK "
+                                        "identity/override changed — exiting for "
+                                        "systemd restart with new credentials\n")));
                     ::exit(0);
                 }
                 return;

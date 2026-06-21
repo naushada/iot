@@ -216,8 +216,8 @@ export class Lwm2mConfigComponent implements OnInit, OnDestroy {
           this.bsOverride = on;
           this.serverForm.get('bs_key')?.reset('');   // never retain the secret in the form
           this.toast.success(on
-            ? 'Custom bootstrap PSK saved — restart the LwM2M client to apply'
-            : 'Custom bootstrap PSK disabled — reverted to derived identity');
+            ? 'Custom bootstrap PSK saved — client restarting to re-establish DTLS'
+            : 'Custom bootstrap PSK disabled — client restarting (derived identity)');
         } else {
           this.toast.error(r.err || 'Save failed');
         }
