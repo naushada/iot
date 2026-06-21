@@ -279,7 +279,23 @@ safe; distinct from the repo's existing OMA-3rd-party Object 2048 VPN push).
   …, ts}]`, latest-wins. Same sole-writer/merge discipline as
   `cloud.lwm2m.registrations` (lwm2m-dm writes; iot-cloudd needn't touch it).
 - **cloud-ui Map page** — Leaflet markers from `cloud.vehicle.telemetry`
-  (long-poll), telemetry popover per endpoint. New nav entry.
+  (long-poll), telemetry popover per endpoint. New nav entry. Accepts a focus
+  param `?ep=<serial>` → centers + opens that endpoint's marker.
+- **Endpoints ↔ Map integration:**
+  - Merge geographic **`lat`/`lon` (+ `pos_ts`)** into `cloud.endpoints` from
+    **GPS Object 6**, via the existing sole-writer/merge discipline used for
+    `lan_ip` (lwm2m-dm → `cloud.lwm2m.registrations`; iot-cloudd merges) — one
+    source feeds both the grid and the map.
+  - Per-row **"Show on map"** action, **enabled only when `lat`/`lon` are
+    present** ("if available") — disabled with a "No location" tooltip for
+    non-GPS endpoints (the mixed fleet degrades cleanly). Click → Map
+    `?ep=<serial>`.
+  - **Fix the mislabeled column:** today's "Location" column shows the LwM2M
+    **`/rd/<id>` registration path** (`endpoint_registry.hpp:41`), not a place.
+    Relabel it **"Reg"** (or move behind Debug) and make **"Location"** show the
+    **geographic position** (coords now; reverse-geocoded place later) as a
+    clickable map link. Show **last-known** position when offline, with a
+    staleness hint.
 - DTCs surfaced in cloud-ui (persistent `vehicle.dtc`, RID 8).
 
 ### Phase 3 — `iot-mqttd` mirror [DEVICE + PKG]
@@ -387,7 +403,9 @@ JSON payload** per poll on `<serial>/<suffix>`; **reuse iot `DbClient`** +
 `TelemetryMirror`. **Two-tier storage**: device Mongo = store-and-forward
 buffer (short TTL); **cloud Mongo = 60-day system of record** (x86 → native
 time-series). **Transport = LwM2M Send (SenML)**; **cloud ingest = iot-httpd +
-mongod compose service**.
+mongod compose service**. **Endpoints page**: per-row "Show on map" gated on
+position availability + relabel the `/rd` "Location" column → geographic
+position (merge `lat`/`lon` into `cloud.endpoints` from Object 6).
 
 Still to confirm before the relevant PR:
 
