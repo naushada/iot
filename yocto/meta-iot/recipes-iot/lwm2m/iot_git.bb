@@ -36,6 +36,8 @@ SRC_URI = "\
     file://iot-net-router.service \
     file://iot-sensord.service \
     file://iot-cellular-client.service \
+    file://iot-vehicled.service \
+    file://iot-can0-up.service \
     file://10-iot-wired.network \
     file://iot-wifi-client.service \
     file://iot-httpd.service \
@@ -304,6 +306,11 @@ do_install() {
         # auto-enabled — needs the WP module + serial ports, so an operator
         # enables it on cellular-equipped units.
         install -m 0644 ${WORKDIR}/iot-cellular-client.service ${D}${systemd_system_unitdir}/
+        # iot-vehicled + iot-can0-up: CAN/OBD-II telemetry producer. NOT
+        # auto-enabled — needs a CAN controller, so an operator enables it on
+        # vehicle/CAN-equipped units. iot-vehicled Wants= iot-can0-up (brings up can0).
+        install -m 0644 ${WORKDIR}/iot-vehicled.service        ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-can0-up.service         ${D}${systemd_system_unitdir}/
         # networkd wired profile: RequiredForOnline=no so a cable-less eth0 does
         # not pin the system "offline" and park systemd-timesyncd on a WiFi-only
         # unit (no-RTC clock would stay stale → TLS/VPN fails). See the file header.
@@ -553,8 +560,16 @@ RDEPENDS:${PN}-cellular = "ace-tao"
 # ${PN}-config (${sysconfdir}/iot). systemd unit + can0 bring-up land in a
 # follow-up PR; for now the binary ships and is run manually / on demand.
 # See apps/docs/tdd-vehicle-telemetry.md.
-FILES:${PN}-vehicle = "${bindir}/iot-vehicled"
+FILES:${PN}-vehicle = "\
+    ${bindir}/iot-vehicled \
+    ${systemd_system_unitdir}/iot-vehicled.service \
+    ${systemd_system_unitdir}/iot-can0-up.service \
+"
 RDEPENDS:${PN}-vehicle = "ace-tao"
+RRECOMMENDS:${PN}-vehicle = "\
+    ${PN}-ds-server \
+    ${PN}-config \
+"
 # A real data path also wants a modem manager + tools on the image; left to the
 # integrator per WP firmware (ModemManager / libqmi / usb-modeswitch).
 RRECOMMENDS:${PN}-cellular = "\
@@ -612,6 +627,11 @@ SYSTEMD_AUTO_ENABLE:${PN}-sensord = "disable"
 # cellular-equipped hardware.
 SYSTEMD_SERVICE:${PN}-cellular = "iot-cellular-client.service"
 SYSTEMD_AUTO_ENABLE:${PN}-cellular = "disable"
+# vehicle (iot-vehicled + can0 bring-up) registered but NOT auto-enabled: needs a
+# CAN controller, so it would Restart-loop on a board without one. Operator
+# enables it on vehicle/CAN-equipped hardware (Wants= pulls in iot-can0-up).
+SYSTEMD_SERVICE:${PN}-vehicle = "iot-vehicled.service iot-can0-up.service"
+SYSTEMD_AUTO_ENABLE:${PN}-vehicle = "disable"
 
 # ds-server and wifi-client auto-start. wifi-client comes up on every boot
 # and reads wifi.networks from the data-store (schema default seeds a

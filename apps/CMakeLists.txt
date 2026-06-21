@@ -270,6 +270,8 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-wifi-client.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-sensord.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-cellular-client.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-vehicled.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-can0-up.service
             DESTINATION lib/systemd/system)
 
     # tmpfiles.d fallback for hosts where RuntimeDirectory= doesn't

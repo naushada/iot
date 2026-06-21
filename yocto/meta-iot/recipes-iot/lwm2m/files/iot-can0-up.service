@@ -1,0 +1,18 @@
+[Unit]
+Description=Bring up the SocketCAN interface (can0) for OBD-II
+Documentation=file:///usr/local/share/doc/iot/tdd-vehicle-telemetry.md
+After=network-pre.target
+Before=iot-vehicled.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Bring can0 up at the ISO 15765-4 bitrate (500 kbps; some vehicles use 250k —
+# adjust per fleet). The leading "-" makes systemd ignore failure, so a board
+# with no CAN controller (or a different `ip` path) does not fault the boot;
+# iot-vehicled then reports vehicle.link=down until the bus is present.
+ExecStart=-/sbin/ip link set can0 up type can bitrate 500000
+ExecStop=-/sbin/ip link set can0 down
+
+[Install]
+WantedBy=multi-user.target
