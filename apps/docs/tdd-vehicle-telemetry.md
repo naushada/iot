@@ -49,7 +49,7 @@ J1939 (heavy-duty), bidirectional control / actuation, OBD security (Mode 27).
    ▼                            │  ds inbox key  │
   can0 up (oneshot)             ▼                ▼
                          iot-httpd drains ─► CLOUD MongoDB (native time-series,
-                                              60-day TTL) ◄─ system of record
+                                              60d hot→archive) ◄─ record
                                               │
                                               └─► cloud-ui Map + history/replay
 ```
@@ -145,6 +145,26 @@ its buffer oldest-first and pushes batches as a **SenML pack** via LwM2M **Send*
 Send is for. Cadence: opportunistic (when the tunnel is up); offline → the
 buffer grows and flushes on reconnect (backfill).
 
+**Encoding + framing — STANDARDS ONLY, no proprietary chunking.** Every
+CoAP/LwM2M payload follows one rule: **compact-encode, then RFC 7959
+Block-Wise** for anything over one block:
+
+- **Encode** the SenML batch compactly — **SenML/CBOR** (`application/senml+cbor`,
+  the registered compact format) and/or **gzip** the body. CBOR alone removes
+  most of the bloat; gzip is applied on top when still large.
+- **Frame** with **CoAP Block-Wise (RFC 7959)** at **1024-byte blocks** (CoAP's
+  max SZX) for any payload `> 1024 B` — Block1 for the device→server Send,
+  Block2 for large server→device reads/notifies. **No custom offset/chunk
+  scheme** anywhere on the CoAP plane.
+- This applies to **all** CoAP/LwM2M data — telemetry Send, large Object
+  reads/Observe-notifies, DTC lists — not just telemetry.
+
+> ⚠️ **Prerequisite — Block-Wise is only PARTIAL in the CoAP adapter today**
+> (`apps/docs/leshan-interop.md`). Completing **full RFC 7959 Block1/Block2**
+> (with the 1024 block size) is a foundational prerequisite alongside Send/SenML
+> — it lands in PR-8. The device-ui→device **OTA upload is HTTP, a separate
+> transport** (its existing chunking is out of scope for this CoAP rule).
+
 > ⚠️ **Prerequisite — Send + SenML are NOT implemented yet.** They're on the
 > deferred-interop list (`apps/docs/leshan-interop.md`: SenML/CBOR, LwM2M Send).
 > This choice makes **implementing client-side Send + a SenML pack codec** (and
@@ -157,7 +177,7 @@ buffer grows and flushes on reconnect (backfill).
 ```
 device ──Send(SenML)──► lwm2m-dm ──ds inbox key──► iot-httpd ──► cloud MongoDB
             (CoAP /dp)      │  cloud.telemetry.inbox   (drain)     (time-series,
-            ◄── 2.04 ACK ───┘  (volatile JSON batch)               60-day TTL)
+            ◄── 2.04 ACK ───┘  (volatile JSON batch)               60d hot→arch)
 ```
 
 - `lwm2m-dm` receives the Send, appends the batch to a **volatile** ds key
@@ -168,17 +188,49 @@ device ──Send(SenML)──► lwm2m-dm ──ds inbox key──► iot-httpd
   inserts into the cloud `telemetry` time-series collection, **dedups on
   `(endpoint, ts)`** (idempotent — a re-sent batch never double-writes).
 - **Cloud Mongo deployment:** add a **`mongod` service to
-  `apps/cloud/docker-compose.yml`** (x86 VM → mongod ≥ 5.0 → native time-series
-  + `expireAfterSeconds = 5184000` (60 d)). `iot-httpd` links **mongocxx**
-  behind a new build flag (e.g. `IOT_HTTPD_MONGO=ON` cloud-only) so the device
-  httpd stays lean. Reuse the same `DbClient` (lift it to a shared spot, or a
-  thin copy in `modules/http-server`).
+  `apps/cloud/docker-compose.yml`** (x86 VM → mongod ≥ 5.0 → native time-series).
+  `iot-httpd` links **mongocxx** behind a new build flag (e.g.
+  `IOT_HTTPD_MONGO=ON` cloud-only) so the device httpd stays lean. Reuse the
+  same `DbClient` (lift it to a shared spot, or a thin copy in
+  `modules/http-server`).
+- **Retention = 60-day HOT window, archiver-driven** (NOT a bare TTL delete —
+  see §3c). The archiver exports+prunes data older than 60 d; a TTL backstop at
+  ~75 d (`expireAfterSeconds`) only reaps anything the archiver missed, so
+  nothing is deleted before it is safely archived.
 - **ACK-then-prune end to end:** device prunes a point only after the Send it
   rode in got a 2.04; the cloud's dedup makes an un-acked re-send safe.
 - cloud-ui Map reads **live** position from `cloud.vehicle.telemetry` (volatile)
   and **history/replay** from Mongo via a new `iot-httpd` query endpoint.
 
-## 3c. Map rendering & basemap (cloud-ui — client-side, NO plotting daemon)
+## 3c. Cold-storage archiver (offload after 60 days → external HDD)
+
+After the 60-day hot window, telemetry is **archived, then pruned** — never
+silently deleted. A scheduled archiver owns this lifecycle:
+
+- **Owner:** a small **scheduled archiver** (systemd timer / cron container,
+  **monthly**), reusing the cloud `DbClient`. Runs **off the request-path
+  daemons** so a large export never stalls ingest.
+- **Export-verify-then-delete (ordered, no data loss):**
+  1. **Export** documents older than 60 d for the period via
+     **`mongodump --archive --gzip`** (BSON, lossless types, restorable) into
+     one self-contained file, e.g. `telemetry-YYYY-MM.archive.gz`.
+  2. **Verify** — doc-count match + sha256 of the file.
+  3. **Only then delete** those documents from Mongo.
+  4. Append a **manifest** row (`{file, from, to, count, sha256, created_at}` in
+     a `telemetry_archives` collection) so an operator knows which file/HDD holds
+     which date range.
+- **Destination:** the archiver writes the file + manifest to a designated
+  **archive volume** on the VM (mounted dir). The **physical move to an external
+  HDD is an operator step** (copy/rsync the files off) — the archiver stays
+  storage-agnostic. (A cron `rsync` to a mounted disk is an optional add-on.)
+- **TTL backstop** (~75 d) only reaps records the archiver somehow missed; the
+  archiver is the primary path.
+- **Cold data is not live-queryable.** Pulling old data back = `mongorestore`
+  the archive (the manifest maps date-range → file). Document this restore path.
+- Config ds keys: `cloud.archive.dir`, `cloud.archive.hot.days` (60),
+  `cloud.archive.backstop.days` (75), `cloud.archive.period` (`monthly`).
+
+## 3d. Map rendering & basemap (cloud-ui — client-side, NO plotting daemon)
 
 Plotting is **entirely client-side** in the cloud-ui SPA — there is **no
 separate plotting process and no third-party app** in the data path:
@@ -413,15 +465,20 @@ in `vehicle.dtc`. MIL/readiness via Mode 01 PID `0x01`.
    TTL safety net; `iot.mongo.uri` config.
 
 **v2 — cloud history pipeline (depends on Send):**
-8. **LwM2M Send + SenML pack codec** (client push + server `/dp` receive) — the
-   critical-path enabler; lands with its own gtest. (Or the Observe/Notify
-   fallback per §3b.)
+8. **LwM2M Send + SenML/CBOR codec + full CoAP Block-Wise (RFC 7959, 1024 B)**
+   — the critical-path enabler (client push + server `/dp` receive; complete the
+   partial Block1/Block2 in the CoAP adapter; CBOR/gzip compaction). Lands with
+   its own gtest. (Or the Observe/Notify fallback per §3b.)
 9. Device uploader: drain buffer oldest-first → Send batches → prune on 2.04-ACK.
 10. Cloud: `mongod` in `apps/cloud/docker-compose.yml`; `iot-httpd` Mongo link
     (`IOT_HTTPD_MONGO`); `lwm2m-dm` → `cloud.telemetry.inbox` → iot-httpd drain →
-    cloud time-series (60-day TTL) with `(endpoint,ts)` dedup.
+    cloud time-series (60-day hot window; archiver-driven prune + 75 d backstop,
+    §3c) with `(endpoint,ts)` dedup.
 11. cloud-ui Map history/replay (track polyline) + **time-series charts**
     (Chart.js/ECharts) over the cloud Mongo history query endpoint.
+12. **Cold-storage archiver** (§3c) — monthly `mongodump --archive --gzip` of the
+    aged window, verify → prune, manifest in `telemetry_archives`, TTL backstop;
+    archive volume in the cloud compose for operator HDD offload.
 
 ## 9. Open items to confirm before coding
 
@@ -438,6 +495,12 @@ map hyperlink when position is available (hidden `lat`/`lon` gating merged into
 **Map rendering**: client-side **Leaflet** in cloud-ui (no plotting daemon);
 **self-hosted `tileserver-gl`** on the cloud VM (region MBTiles — first-party, no
 Google/Mapbox); vehicle data via popover + **client-side time-series charts**.
+**Transport encoding**: standards-only — SenML/CBOR + gzip, **RFC 7959 CoAP
+Block-Wise at 1024 B** for any >1024 B payload, no proprietary chunking (needs
+the partial Block-Wise completed, PR-8). **Cold storage**: 60-day hot window,
+**archiver** (`mongodump` BSON+gzip, monthly) export→verify→prune + 75-day TTL
+backstop; archive volume → operator copies to external HDD; cold data restored
+via `mongorestore` per manifest.
 
 Still to confirm before the relevant PR:
 
