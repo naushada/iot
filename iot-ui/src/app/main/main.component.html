@@ -108,6 +108,11 @@
         <app-gps-status     *ngIf="selectedSubNav==='gps'"></app-gps-status>
       </ng-container>
 
+      <!-- Vehicle (CAN/OBD-II) -->
+      <ng-container *ngIf="selectedMenu==='vehicle'">
+        <app-vehicle-status></app-vehicle-status>
+      </ng-container>
+
       <!-- Routing -->
       <ng-container *ngIf="selectedMenu==='routing'">
         <app-port-forward [view]="selectedSubNav==='dnat' ? 'dnat' : 'ports'" *ngIf="!selectedSubNav || selectedSubNav==='ports' || selectedSubNav==='dnat'"></app-port-forward>
