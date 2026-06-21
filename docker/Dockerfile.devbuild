@@ -1,0 +1,37 @@
+# Dev-build image: compile + run the apps/ gtest suite (lwm2m_test) against a
+# locally-mounted working tree, WITHOUT cloning from GitHub or building the
+# mongo/device runtime. Lines 1–31 are byte-identical to docker/Dockerfile so
+# podman reuses its cached ACE/apt layers (no ~15-min ACE rebuild).
+#
+# Usage (from repo root):
+#   podman build -t localhost/iot-devbuild:latest -f docker/Dockerfile.devbuild docker/
+#   podman run --rm -v "$PWD":/src:Z -w /src localhost/iot-devbuild:latest \
+#       bash docker/devbuild.sh
+FROM ubuntu:jammy
+RUN apt-get update && apt-get -y upgrade && \
+    apt-get install -y gcc g++ git make cmake libssl-dev zlib1g-dev libreadline-dev liblua5.3-dev python3-dev autoconf wget pkg-config \
+                       openvpn netcat-openbsd nftables iproute2 \
+                       wpasupplicant udhcpc wireless-tools
+
+ENV ACE_SRC=/root/ACE_wrappers ACE_PREFIX=/usr/local/ACE_TAO-7.0.0
+WORKDIR /root
+RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_0/ACE+TAO-7.0.0.tar.gz \
+    && tar -xzf ACE+TAO-7.0.0.tar.gz \
+    && rm ACE+TAO-7.0.0.tar.gz \
+    && echo '#include "ace/config-linux.h"' > /root/ACE_wrappers/ace/config.h \
+    && echo 'include $(ACE_SRC)/include/makeinclude/platform_linux.GNU' \
+          > /root/ACE_wrappers/include/makeinclude/platform_macros.GNU
+WORKDIR /root/ACE_wrappers
+RUN make install ssl=1 INSTALL_PREFIX=${ACE_PREFIX} ACE_ROOT=${ACE_SRC} SSL_ROOT=/usr/include/openssl \
+    && echo "${ACE_PREFIX}/lib" > /etc/ld.so.conf.d/ace-tao.conf \
+    && ldconfig
+
+# googletest (find_package(GTest) for apps/test). Separate layer so it caches
+# independently of the source tree.
+WORKDIR /tmp
+RUN git clone --depth 1 https://github.com/google/googletest/ && \
+    cd /tmp/googletest && mkdir build && cd build && cmake .. && make -j"$(nproc)" install && \
+    ldconfig
+
+WORKDIR /src
+CMD ["bash"]

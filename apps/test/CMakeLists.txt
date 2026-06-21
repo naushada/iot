@@ -63,6 +63,7 @@ file(GLOB SOURCES "*.cpp"
                     "../src/lwm2m_object_3_device.cpp"
                     "../src/lwm2m_object_sensors.cpp"
                     "../src/lwm2m_object_stubs.cpp"
+                    "../src/lwm2m_object_firmware.cpp"
                     "../src/lwm2m_object_cert.cpp"
                     "../src/lwm2m_cert_chunk.cpp"
                     "../src/lua_config.cpp"
@@ -78,6 +79,8 @@ target_link_libraries(lwm2m_test
     ACE
     pthread
     z
+    ssl
+    crypto
     ${LUA_LINK_LIBS})
 
 add_test(NAME lwm2m_gtests COMMAND lwm2m_test)
