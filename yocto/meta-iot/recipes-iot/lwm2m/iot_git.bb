@@ -38,6 +38,7 @@ SRC_URI = "\
     file://iot-cellular-client.service \
     file://iot-vehicled.service \
     file://iot-can0-up.service \
+    file://iot-mqttd.service \
     file://10-iot-wired.network \
     file://iot-wifi-client.service \
     file://iot-httpd.service \
@@ -109,6 +110,7 @@ DEPENDS = "\
     readline \
     nlohmann-json \
     nodejs-native \
+    mosquitto \
 "
 
 # ── PACKAGECONFIG ──────────────────────────────────────────────────
@@ -212,6 +214,7 @@ EXTRA_OECMAKE = "\
     -DACE_LIBRARY=${STAGING_LIBDIR}/libACE.so \
     -DBSONCXX_LIBRARY=${STAGING_LIBDIR}/libbsoncxx.so \
     -DMONGOCXX_LIBRARY=${STAGING_LIBDIR}/libmongocxx.so \
+    -DMQTT_BUILD_DAEMON=ON \
     -DCMAKE_INSTALL_PREFIX=/usr \
 "
 
@@ -311,6 +314,9 @@ do_install() {
         # vehicle/CAN-equipped units. iot-vehicled Wants= iot-can0-up (brings up can0).
         install -m 0644 ${WORKDIR}/iot-vehicled.service        ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-can0-up.service         ${D}${systemd_system_unitdir}/
+        # iot-mqttd: MQTT telemetry mirror. Enabled by default but parks until a
+        # broker is configured (mqtt.broker.host), so it is harmless when unused.
+        install -m 0644 ${WORKDIR}/iot-mqttd.service           ${D}${systemd_system_unitdir}/
         # networkd wired profile: RequiredForOnline=no so a cable-less eth0 does
         # not pin the system "offline" and park systemd-timesyncd on a WiFi-only
         # unit (no-RTC clock would stay stale → TLS/VPN fails). See the file header.
@@ -391,6 +397,7 @@ PACKAGE_BEFORE_PN = "\
     ${PN}-sensord \
     ${PN}-cellular \
     ${PN}-vehicle \
+    ${PN}-mqtt \
     ${PN}-config \
     ${PN}-bcm2837-selftest \
 "
@@ -570,6 +577,19 @@ RRECOMMENDS:${PN}-vehicle = "\
     ${PN}-ds-server \
     ${PN}-config \
 "
+
+# mqtt — iot-mqttd telemetry mirror to an operator MQTT broker (libmosquitto).
+# Enabled by default; parks until mqtt.broker.host is configured. mqtt.lua
+# schema ships in ${PN}-config.
+FILES:${PN}-mqtt = "\
+    ${bindir}/iot-mqttd \
+    ${systemd_system_unitdir}/iot-mqttd.service \
+"
+RDEPENDS:${PN}-mqtt = "ace-tao mosquitto"
+RRECOMMENDS:${PN}-mqtt = "\
+    ${PN}-ds-server \
+    ${PN}-config \
+"
 # A real data path also wants a modem manager + tools on the image; left to the
 # integrator per WP firmware (ModemManager / libqmi / usb-modeswitch).
 RRECOMMENDS:${PN}-cellular = "\
@@ -632,6 +652,9 @@ SYSTEMD_AUTO_ENABLE:${PN}-cellular = "disable"
 # enables it on vehicle/CAN-equipped hardware (Wants= pulls in iot-can0-up).
 SYSTEMD_SERVICE:${PN}-vehicle = "iot-vehicled.service iot-can0-up.service"
 SYSTEMD_AUTO_ENABLE:${PN}-vehicle = "disable"
+# mqtt mirror enabled by default — it parks (no broker connection) until
+# mqtt.broker.host is configured, so it is a no-op until the operator sets it up.
+SYSTEMD_SERVICE:${PN}-mqtt = "iot-mqttd.service"
 
 # ds-server and wifi-client auto-start. wifi-client comes up on every boot
 # and reads wifi.networks from the data-store (schema default seeds a

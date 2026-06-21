@@ -1,0 +1,26 @@
+[Unit]
+Description=IoT MQTT mirror (vehicle.* → operator MQTT broker)
+Documentation=file:///usr/local/share/doc/iot/tdd-vehicle-telemetry.md
+# Network + ds only. VPN-independent (device → broker over the WAN).
+After=network-online.target iot-ds.service
+Wants=network-online.target iot-ds.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/iot-mqttd
+# No special privileges. The daemon parks (no connection) until mqtt.broker.host
+# is configured, so enabling it on every device is harmless until set up.
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target
