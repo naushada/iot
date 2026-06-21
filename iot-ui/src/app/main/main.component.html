@@ -113,6 +113,11 @@
         <app-vehicle-status></app-vehicle-status>
       </ng-container>
 
+      <!-- MQTT mirror -->
+      <ng-container *ngIf="selectedMenu==='mqtt'">
+        <app-mqtt-config></app-mqtt-config>
+      </ng-container>
+
       <!-- Routing -->
       <ng-container *ngIf="selectedMenu==='routing'">
         <app-port-forward [view]="selectedSubNav==='dnat' ? 'dnat' : 'ports'" *ngIf="!selectedSubNav || selectedSubNav==='ports' || selectedSubNav==='dnat'"></app-port-forward>
