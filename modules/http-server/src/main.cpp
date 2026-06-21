@@ -29,6 +29,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <ctime>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -308,6 +309,27 @@ int main(int argc, char** argv) {
     if (!wwwDir.empty()) router.set_static_dir(wwwDir);
     if (!fwDir.empty()) router.set_firmware_dir("/firmware/", fwDir);
     http_server::install_handlers(router, &ds, &auth_store, fwDir);
+
+    // ── Telemetry history spool (cloud-only, §3b) ─────────────
+    // Mirror each cloud.vehicle.telemetry snapshot to an append-only NDJSON
+    // spool that the iot-telemetry-ingest sidecar bulk-loads into Mongo (the
+    // 60-day store). One doc per poll cycle — {ts, endpoints:[...]} — built by
+    // string-wrapping the raw ds array value, so no JSON re-parse here. The key
+    // exists only on the cloud, so on a device this watch simply never fires
+    // (same binary, no #ifdef). The callback runs on the ds listener thread;
+    // each fire opens+appends+closes (O_APPEND), so the sidecar can safely
+    // rename the spool out from under us between fires.
+    data_store::Client::WatchHandle wh_telem = data_store::Client::kInvalidHandle;
+    ds.watch(std::string("cloud.vehicle.telemetry"),
+        [](const data_store::Client::Event& e) {
+            auto sv = data_store::to_string(e.value);
+            if (!sv || sv->empty() || *sv == "[]") return;  // skip empties
+            std::ofstream f("/var/lib/iot/telemetry-spool/spool.ndjson",
+                            std::ios::app);
+            if (f) f << "{\"ts\":" << static_cast<long>(::time(nullptr))
+                     << ",\"endpoints\":" << *sv << "}\n";
+        }, &wh_telem);
+
     // Per-device UI reverse proxy at /dev/<ep>/ (cloud-only effect; on a device
     // there is no cloud.endpoints so any /dev/ hit just 502s).
     http_server::install_proxy_handler(router, &ds, &auth_store);
