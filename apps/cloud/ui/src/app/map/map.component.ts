@@ -8,6 +8,7 @@ interface Telem {
   endpoint: string;
   lat?: string; lon?: string;
   speed?: string; rpm?: string; coolant?: string; link?: string;
+  throttle?: string; load?: string; fuel?: string; iat?: string; maf?: string; dtc?: string;
 }
 
 /// Fleet map — plots each endpoint's latest position from cloud.vehicle.telemetry
@@ -68,10 +69,14 @@ export class MapComponent implements AfterViewInit, OnDestroy {
       const lon = parseFloat(t.lon || '');
       if (isNaN(lat) || isNaN(lon)) continue;
       n++;
+      const dtc = (t.dtc && t.dtc !== '[]') ? t.dtc : 'none';
       const popup =
         `<b>${t.endpoint}</b><br>` +
-        `speed ${t.speed ?? '—'} km/h<br>rpm ${t.rpm ?? '—'}<br>` +
-        `coolant ${t.coolant ?? '—'} °C<br>link ${t.link ?? '—'}`;
+        `speed ${t.speed ?? '—'} km/h &nbsp; rpm ${t.rpm ?? '—'}<br>` +
+        `coolant ${t.coolant ?? '—'} °C &nbsp; throttle ${t.throttle ?? '—'} %<br>` +
+        `load ${t.load ?? '—'} % &nbsp; fuel ${t.fuel ?? '—'} %<br>` +
+        `iat ${t.iat ?? '—'} °C &nbsp; maf ${t.maf ?? '—'} g/s<br>` +
+        `link ${t.link ?? '—'} &nbsp; DTCs ${dtc}`;
       const existing = this.markers[t.endpoint];
       if (existing) {
         existing.setLatLng([lat, lon]);
