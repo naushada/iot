@@ -281,21 +281,21 @@ safe; distinct from the repo's existing OMA-3rd-party Object 2048 VPN push).
 - **cloud-ui Map page** — Leaflet markers from `cloud.vehicle.telemetry`
   (long-poll), telemetry popover per endpoint. New nav entry. Accepts a focus
   param `?ep=<serial>` → centers + opens that endpoint's marker.
-- **Endpoints ↔ Map integration:**
+- **Endpoints ↔ Map integration (kept lean — NO new columns/action buttons):**
   - Merge geographic **`lat`/`lon` (+ `pos_ts`)** into `cloud.endpoints` from
     **GPS Object 6**, via the existing sole-writer/merge discipline used for
-    `lan_ip` (lwm2m-dm → `cloud.lwm2m.registrations`; iot-cloudd merges) — one
-    source feeds both the grid and the map.
-  - Per-row **"Show on map"** action, **enabled only when `lat`/`lon` are
-    present** ("if available") — disabled with a "No location" tooltip for
-    non-GPS endpoints (the mixed fleet degrades cleanly). Click → Map
-    `?ep=<serial>`.
-  - **Fix the mislabeled column:** today's "Location" column shows the LwM2M
-    **`/rd/<id>` registration path** (`endpoint_registry.hpp:41`), not a place.
-    Relabel it **"Reg"** (or move behind Debug) and make **"Location"** show the
-    **geographic position** (coords now; reverse-geocoded place later) as a
-    clickable map link. Show **last-known** position when offline, with a
-    staleness hint.
+    `lan_ip` (lwm2m-dm → `cloud.lwm2m.registrations`; iot-cloudd merges). This is
+    **hidden gating data** — used only to decide whether the row is linkable,
+    NOT shown as a column (avoids datagrid bloat).
+  - **Make the endpoint NAME a hyperlink** when position is available → click
+    plots it on the Map (`?ep=<serial>` → center + popover). Plain text when no
+    position (non-GPS endpoints degrade cleanly). Zero extra columns/buttons —
+    just changes how the existing endpoint cell renders.
+  - **Leave the existing "Location" column as-is** — it is the LwM2M
+    **registration / heartbeat URI** (`/rd/<id>`, the path the client posts
+    registration Updates/heartbeats to; `endpoint_registry.hpp:41`), NOT a
+    place. Optionally relabel its header to **"Reg URI"** for clarity; do **not**
+    overload it with geo.
 - DTCs surfaced in cloud-ui (persistent `vehicle.dtc`, RID 8).
 
 ### Phase 3 — `iot-mqttd` mirror [DEVICE + PKG]
@@ -403,9 +403,10 @@ JSON payload** per poll on `<serial>/<suffix>`; **reuse iot `DbClient`** +
 `TelemetryMirror`. **Two-tier storage**: device Mongo = store-and-forward
 buffer (short TTL); **cloud Mongo = 60-day system of record** (x86 → native
 time-series). **Transport = LwM2M Send (SenML)**; **cloud ingest = iot-httpd +
-mongod compose service**. **Endpoints page**: per-row "Show on map" gated on
-position availability + relabel the `/rd` "Location" column → geographic
-position (merge `lat`/`lon` into `cloud.endpoints` from Object 6).
+mongod compose service**. **Endpoints page (lean)**: the endpoint NAME becomes a
+map hyperlink when position is available (hidden `lat`/`lon` gating merged into
+`cloud.endpoints` from Object 6) — no new columns/buttons; the existing
+"Location" column stays the LwM2M reg/heartbeat URI (`/rd/<id>`).
 
 Still to confirm before the relevant PR:
 
