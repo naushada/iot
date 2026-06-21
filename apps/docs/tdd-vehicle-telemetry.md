@@ -106,6 +106,63 @@ dev-build, PR-26; see "validation" note below):**
 > `SendServer`, `SampleBuffer`, `Uploader` exercising real CoAP frames. CI's
 > image build (device + cloud) additionally confirms the live binary links.
 
+### e2e session runbook — wiring the v2 Send (do with HW in the loop)
+
+**Pre-reqs:** RPi3B online + LwM2M-registered to the cloud over DTLS (the
+`iot.conn.state`/device-ui shows `registered`); cloud VM running `lwm2m-dm`;
+a way to push a rebuilt `lwm2m` / `iot-vehicled` binary to the device (`scp`
+onto the running unit + `systemctl restart`, or a CI image build + OTA). **No
+CAN/vehicle needed to validate** — synthesize samples with `ds-cli`.
+
+**Order matters: do #2 → #1 → #4. #3 is deferred.**
+
+- ⬜ **#2 first — server persist + design call.** Decide the sink, then wire
+  `CoAPAdapter::onSendReport` (the hook is already in, logging only — PR-31).
+  - **Recommended:** reuse the **existing spool** (PR-22/23). In the
+    `onSendReport` callback (cloud `main.cpp`), for each sample append a
+    `{ts, endpoints:[{endpoint, …}]}` line to `/var/lib/iot/telemetry-spool/
+    spool.ndjson` — the SAME file `iot-httpd` already writes and the ingest
+    sidecar already drains to Mongo. Net: Send history flows through the
+    shipping pipeline, the map + 60-day store + charts work unchanged, **no new
+    drain/inbox**. Map the peer→endpoint via the session (the callback already
+    gets `peerHost`/`peerPort`; correlate to `cloud.endpoints` like the
+    server-Read poll does).
+  - **Alternative (only if per-sample fidelity into Mongo is needed sooner than
+    the spool's arrival-ts granularity):** a parallel `cloud.telemetry.inbox`
+    volatile key + a dedicated drain. More moving parts; skip unless required.
+  - **Acceptance:** on the device, `ds-cli set vehicle.speed 62` etc., trigger a
+    Send (after #1), and confirm a new row lands in Mongo `telemetry` with the
+    sample's real `ts` (not just arrival time).
+
+- ⬜ **#1 — client session I/O glue.** Instantiate a `send::Uploader` in the
+  registered DM client (one per registered server, base path `"/33000/0/"`).
+  - **Feed:** on the client tick, read `vehicle.*` from ds → build a
+    `telemetry::Sample{timeUnix=now, values=[{"10",speed},{"11",rpm},…]}` →
+    `uploader.offer(s)` (only while registered + link up — direct DTLS, never
+    the VPN).
+  - **Send:** when `!in_flight() && pending()>0`, allocate a msg-id+token,
+    `auto wire = uploader.poll(msgId, token)`, transmit over the session,
+    schedule a retransmit timer.
+  - **ACK/timeout:** route the server's 2.04 (match msg-id) → `uploader.on_ack`;
+    on the retransmit timer with no ACK → `uploader.on_timeout` (re-sends).
+  - **Acceptance:** `ds-cli set vehicle.*` on the device → cloud `lwm2m-dm` logs
+    the `Send /dp report base=/33000/0/ samples=N …` line (PR-31) and #2 lands
+    the rows. Pull the cable / stop the cloud → buffer grows, drains on
+    reconnect (backfill).
+
+- ⬜ **#4 — on-device Mongo buffer (optional, after #1).** Only if offline
+  backfill beyond the in-RAM `SampleBuffer` is needed. `mongod` 4.4 on the RPi;
+  `iot-vehicled` (or the client) persists samples under `#ifdef IOT_ENABLE_MONGO`
+  and the uploader drains the buffer instead of (or behind) the RAM ring. Gate
+  the `mongocxx` link in `modules/vehicle/CMakeLists.txt` on `IOT_ENABLE_MONGO`
+  so the **cloud** build (no mongocxx) still links `iot-vehicled`. Build BOTH
+  configs in the podman image (add the mongo-cxx layers) before merging.
+
+- ⬜ **#3 — full RFC 7959 Block-Wise (deferred).** Not needed: `maxBatch` keeps
+  packs under one 1024-B block and the adapter's existing 1-byte block option
+  already covers ≤16 blocks. Revisit only for general large-payload CoAP, and
+  treat it as a live-adapter change (regression-test the full suite).
+
 Greenfield baseline: no CAN code existed in the repo before PR-1.
 
 ## 1. Goal
