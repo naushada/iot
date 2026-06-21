@@ -300,28 +300,40 @@ merge matches by exact endpoint string.
 
 ---
 
-## 5. Server-initiated Reads (firmware version + LAN IP)
+## 5. Server-initiated Reads (firmware version, LAN IP, vehicle telemetry)
 
-Beyond Register/Update the DM server also **reads** two device resources so the
-cloud Endpoints table can show what the device is running and where it lives:
+Beyond Register/Update the DM server also **reads** device resources so the
+cloud can show what the device is running, where it lives, and — for vehicle
+gateways — its live GPS position + OBD-II telemetry:
 
-| Resource | Object/RID | Device source | Endpoints column |
-|----------|------------|---------------|------------------|
-| Firmware version | `/3/0/3` (Device → Firmware Version) | `iot.version` (compiled-in) | Installed Version |
-| IP Addresses | `/4/0/4` (Connectivity Monitoring → IP Addresses) | `net.iface.active.ip` (net-router) | LAN IP |
+| Resource | Object/RID | Tag | Device source | Cloud sink |
+|----------|------------|-----|---------------|-----------|
+| Firmware version | `/3/0/3` | `0x06` | `iot.version` | `cloud.lwm2m.registrations.installed_version` |
+| IP Addresses | `/4/0/4` | `0x07` | `net.iface.active.ip` | `cloud.lwm2m.registrations.lan_ip` |
+| GPS latitude/longitude | `/6/0/0`, `/6/0/1` | `0x08`, `0x09` | `gps.lat`/`gps.lon` (cellular GNSS) | `cloud.vehicle.telemetry` |
+| Vehicle signals + DTCs | `/33000/0/{0,1,2,3,4,5,6,7,8,10}` | `0x0A`–`0x13` | `vehicle.*` (iot-vehicled / OBD-II) | `cloud.vehicle.telemetry` |
 
 **Flow** (`apps/src/main.cpp`, DM-side poll loop):
 
-1. The DM poll loop issues a CoAP **Read** for each registered endpoint —
-   `/3/0/3` (tagged `0x06`) and `/4/0/4` (oid 4, iid 0, rid 4, tagged `0x07`).
-2. `dmResponseHandler` routes the tagged responses: `0x06` → version map,
-   `0x07` → `epLanIps` map.
-3. `publish_regs` folds both into `cloud.lwm2m.registrations`
-   (`installed_version`, `lan_ip`) alongside the online/offline state.
-4. **iot-cloudd** merges them into `cloud.endpoints` (`update_version`,
-   `update_lan_ip`) — display-only, no reverse index, same single-writer
-   discipline as §4 so the device-reported facts never clobber
-   `tun_ip`/`proxy_port`.
+1. The poll loop issues a CoAP **Read** per registered endpoint, stamping each
+   request's CoAP token with `[tag, seq24]` (tag selects the resource, `seq`
+   correlates the async reply to its endpoint via `seqToEp`). The vehicle
+   signals are driven from a single `kVehReads` table of `(tag, rid, field)`.
+2. `dmResponseHandler` matches the tag and stores the payload into the right
+   per-endpoint map (`epVersions`/`epLanIps`/`epGpsLat`/`epGpsLon`, or the
+   nested `epVeh[endpoint][field]` for Object 33000).
+3. `publish_regs` folds version/lan_ip into `cloud.lwm2m.registrations`, **and**
+   writes a `cloud.vehicle.telemetry` row `{endpoint, lat, lon, speed, rpm, …}`
+   (VOLATILE, latest-wins) for every endpoint that has a GPS fix.
+4. **iot-cloudd** merges version/lan_ip into `cloud.endpoints`; the **cloud-ui
+   Fleet Map** reads `cloud.vehicle.telemetry` directly (live markers + popups).
+   A device with no GNSS/Vehicle object replies empty/4.04 → no row/field.
+
+> Note: this server-Read path makes the **live** map work with **no LwM2M Send**
+> — the cloud polls. The 60-day history pipeline (device buffer → Send → cloud
+> Mongo) is separate; see `apps/docs/tdd-vehicle-telemetry.md`. The custom
+> **Vehicle object (OID 33000)** is installed device-side by `install_vehicle`
+> (`apps/src/lwm2m_object_stubs.cpp`) with reader hooks bound to `vehicle.*`.
 
 The device serves `/4/0/4` live: `install_connmon` takes an `ipReader` wired in
 `install_canonical_objects` to `deviceHooks.ipAddresses`, which reads
