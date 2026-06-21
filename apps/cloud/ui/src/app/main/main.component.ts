@@ -17,7 +17,7 @@ export class MainComponent implements OnInit {
   menus = [
     { id: 'dashboard', label: 'Dashboard', svg: 'assets/icons/dashboard.svg' },
     { id: 'endpoints', label: 'Endpoints', svg: 'assets/icons/endpoints.svg' },
-    { id: 'map',       label: 'Map',       svg: 'assets/icons/endpoints.svg' },
+    { id: 'map',       label: 'Map',       svg: 'assets/icons/map.svg' },
     { id: 'vpn',       label: 'VPN',       svg: 'assets/icons/vpn.svg' },
     { id: 'http',      label: 'HTTP',      svg: 'assets/icons/http.svg' },
     { id: 'wan',       label: 'WAN',       svg: 'assets/icons/wan.svg' },
