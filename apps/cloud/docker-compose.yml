@@ -165,6 +165,33 @@ services:
   # CAVEAT: Watchtower recreates containers but does NOT refresh the
   # iot-etc config volume, so a release that changes ds *schemas* still
   # needs a manual `./run.sh` on the host. Code/UI-only releases are fine.
+  # ── Telemetry store (60-day vehicle history; §3b of the TDD) ────
+  # x86 VM → mongod 5.0 supports native time-series collections. iot-httpd will
+  # ingest LwM2M-Send telemetry here (IOT_HTTPD_MONGO build, a later PR); the
+  # cold-storage archiver (§3c) mongodumps + prunes aged data. Idle until wired.
+  mongo:
+    image: docker.io/library/mongo:5.0
+    container_name: iot-mongo
+    command: ["--bind_ip_all"]
+    volumes:
+      - iot-mongo:/data/db
+      - iot-archive:/archive          # cold-storage archives (operator copies to HDD)
+    restart: unless-stopped
+    profiles: ["telemetry"]           # opt-in until the ingest pipeline lands
+
+  # ── Self-hosted map tiles (§3d) ────────────────────────────────
+  # tileserver-gl serves a region MBTiles extract so the cloud-ui map is
+  # first-party (no Google/Mapbox). Seed /data with a region .mbtiles + style.
+  tileserver:
+    image: docker.io/maptiler/tileserver-gl:latest
+    container_name: iot-tileserver
+    volumes:
+      - iot-tiles:/data               # region .mbtiles + style.json (operator-seeded)
+    ports:
+      - "${TILESERVER_PORT:-8081}:8080"
+    restart: unless-stopped
+    profiles: ["telemetry"]           # opt-in; the map page points at this
+
   watchtower:
     image: containrrr/watchtower
     container_name: iot-watchtower
@@ -183,3 +210,6 @@ volumes:
   iot-ca-key: # CA private key (secret — auto-generated on first run)
   iot-firmware: # OTA .ipk packages (seeded by operator; served by iot-httpd)
   iot-tls:    # self-signed https cert (auto-provisioned by the image entrypoint)
+  iot-mongo:    # 60-day vehicle telemetry time-series store (§3b)
+  iot-archive:  # cold-storage telemetry archives (mongodump, §3c → external HDD)
+  iot-tiles:    # self-hosted map tiles (region .mbtiles + style, §3d)
