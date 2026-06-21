@@ -610,7 +610,7 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
 
     app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll,
                                        publish_regs, dsCertPush, otaSent,
-                                       seqToEp, verMtx, verSeq]() {
+                                       seqToEp, verMtx, verSeq, epVersions]() {
         // Local constexpr inside the lambda body — gcc 11 wouldn't let
         // us reference an outer-scope constexpr without an explicit
         // capture even though it's a constant expression.
@@ -852,6 +852,37 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                                     if (url.empty()) break;
                                     auto prev = otaSent->find(reg.endpoint);
                                     if (prev != otaSent->end() && prev->second == cid) break;
+
+                                    // Downgrade guard: never push a job that is not
+                                    // strictly NEWER (semver major.minor.patch) than
+                                    // the device's last-read /3/0/3 version. Stops the
+                                    // cloud re-installing the SAME build or clobbering
+                                    // a freshly-flashed unit with a stale-but-same/older
+                                    // bundle (the downgrade loop). +build metadata is
+                                    // ignored. Unknown installed version → allow (first
+                                    // push before /3/0/3 has been read).
+                                    {
+                                        std::string installed;
+                                        {
+                                            std::lock_guard<std::mutex> lk(*verMtx);
+                                            auto vit = epVersions->find(reg.endpoint);
+                                            if (vit != epVersions->end()) installed = vit->second;
+                                        }
+                                        auto semv = [](const std::string& v) -> long {
+                                            long a = 0, b = 0, c = 0;
+                                            std::sscanf(v.c_str(), "%ld.%ld.%ld", &a, &b, &c);
+                                            return a * 1000000L + b * 1000L + c;
+                                        };
+                                        if (!installed.empty() && !ver.empty() &&
+                                            semv(ver) <= semv(installed)) {
+                                            ACE_DEBUG((LM_INFO,
+                                                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l skipping OTA to "
+                                                         "%C: ver=%C not newer than installed=%C\n"),
+                                                reg.endpoint.c_str(), ver.c_str(),
+                                                installed.c_str()));
+                                            break;
+                                        }
+                                    }
                                     std::string utok{static_cast<char>(0x05)};
                                     auto w = ::lwm2m::dmsrv::build_write(
                                         next_msgid(), utok, /*oid*/5, /*iid*/0,
