@@ -1,4 +1,4 @@
-import { Component, AfterViewInit, OnDestroy } from '@angular/core';
+import { Component, AfterViewInit, OnDestroy, Input } from '@angular/core';
 import { Subscription, timer } from 'rxjs';
 import { switchMap } from 'rxjs/operators';
 import * as L from 'leaflet';
@@ -35,9 +35,12 @@ interface Telem {
   `]
 })
 export class MapComponent implements AfterViewInit, OnDestroy {
+  /// Optional endpoint to center on (set when arriving via an Endpoints link).
+  @Input() focus = '';
   count = 0;
   private map?: L.Map;
   private markers: Record<string, L.CircleMarker> = {};
+  private centeredFor = '';
   private sub = new Subscription();
 
   // Self-hosted tileserver (PR-10a; default :8081). Operator-configurable per
@@ -90,6 +93,17 @@ export class MapComponent implements AfterViewInit, OnDestroy {
       }
     }
     this.count = n;
+
+    // Arrived via an Endpoints "show on map" link → center + open that marker
+    // once it exists (do it once per focus value).
+    if (this.focus && this.focus !== this.centeredFor) {
+      const fm = this.markers[this.focus];
+      if (fm) {
+        map.setView(fm.getLatLng(), 14);
+        fm.openPopup();
+        this.centeredFor = this.focus;
+      }
+    }
   }
 
   ngOnDestroy(): void {
