@@ -39,11 +39,18 @@ control / actuation, OBD security (Mode 27) — deferred.
    │      ├─► lwm2m client  reader-hook lambdas (LocationHooks pattern) →
    │      │      Vehicle LwM2M object + GPS Object 6 → cloud-iot → MAP
    │      │
-   │      └─► iot-mqttd (NEW, OFF by default)  watch vehicle.* → publish
-   │             JSON to broker, topic <serial>/<user-suffix>
+   │      ├─► iot-mqttd (NEW, OFF by default)  watch vehicle.* → publish
+   │      │      JSON to broker, topic <serial>/<user-suffix>
+   │      │
+   │      └─► TelemetryMirror (NEW ACE_Task)  non-blocking post() → on-device
+   │             MongoDB time-series collection (HISTORY, TTL-pruned)
    ▼
   can0 brought up by a oneshot unit: ip link set can0 up type can bitrate 500000
 ```
+
+The **cloud map stays live** (latest lat/lon); **history lives on the device**
+in MongoDB, queried on demand — so neither the ds nor the cloud carries the
+time-series weight.
 
 Why two new daemons (not one): **privilege split** (the repo's rule —
 "unprivileged client reads ds, privileged daemons own the hardware"). The CAN
@@ -78,6 +85,43 @@ single batched JSON-string key written volatile once per tick (~2.4 µs/key
 amortized), and downsample the LwM2M/cloud stream. Recorded here so the v1
 per-key choice is a deliberate, reversible simplification — not a ceiling.
 
+## 3a. Storage plane — on-device MongoDB telemetry history
+
+**Decision: reuse iot's existing `DbClient`** (`apps/inc/db_adapter.hpp`,
+mongocxx) — it is **already compiled into the device image**
+(`IOT_ENABLE_MONGO=ON`, `mongo-c-driver`/`mongo-cxx-driver` Yocto recipes
+wired). No new dependency.
+
+**Insert path: clone the proven async pattern.** Add
+`TelemetryMirror : public ACE_Task<ACE_MT_SYNCH>`, a near-copy of
+`lwm2m::RegistryMirror` (`apps/src/lwm2m_registry_mirror.cpp`): a bounded queue
+(`kHighWater`), non-blocking `post(record)` called from the vehicle daemon's
+reactor tick, and a `svc()` worker that drains the queue and calls
+`DbClient::create_documents()` (batch insert). On overflow → drop + count
+(telemetry is lossy-tolerant; the live ds copy stays authoritative). This also
+fills in `RegistryMirror`'s currently-stubbed `persist()` by example.
+
+- **Collection:** `telemetry` (db `iot`), document per poll:
+  `{ "ts": ISODate, "ep": "<serial>", "speed":…, "rpm":…, …, "lat":…, "lon":… }`.
+- **Retention:** **MongoDB time-series collection + TTL** (`timeField:"ts"`,
+  `expireAfterSeconds` e.g. 7 days) — auto-pruned, purpose-built for this.
+- **Connection:** new ds key `iot.mongo.uri` (e.g.
+  `mongodb://127.0.0.1:27017/iot`), read at startup → `DbClient(uri)`. Empty →
+  mirror disabled (telemetry still flows to ds/LwM2M/MQTT; just no history).
+- Guard all new code with `#ifdef IOT_ENABLE_MONGO` so the cloud build (Mongo
+  OFF) still compiles.
+
+> ⚠️ **Hardware caveat — Mongo version vs RPi CPU.** Native **time-series
+> collections need mongod ≥ 5.0**, and mongod ≥ 5.0 requires **ARMv8.2-A**.
+> The **RPi 3B/4 (Cortex-A53/A72) is ARMv8.0-A**, so the newest mongod that
+> runs there is **4.4** — which has **TTL indexes but NOT time-series
+> collections**. So the on-device server likely caps at 4.4. **Design for both:**
+> create a time-series collection where supported, else fall back to a normal
+> collection with a TTL index (`expireAfterSeconds`) — identical insert code,
+> only the one-time collection-creation differs. Confirm what mongod (and which
+> arch) actually runs on the target before PR-7. (If Mongo runs in a container
+> or off-device, 5.0+ may be available.)
+
 ## 4. New data-store keys
 
 ### Device (`iot.lua` or a new `vehicle.lua` schema)
@@ -98,6 +142,9 @@ per-key choice is a deliberate, reversible simplification — not a ceiling.
 | `vehicle.maf` | string | **volatile** | g/s |
 | `vehicle.dtc` | string | yes | JSON array of active DTCs (Mode 03), on-change |
 | `vehicle.link` | string | **volatile** | `up`/`down`/`no-ecu` (bus health for UI) |
+| `iot.mongo.uri` | string | yes | on-device Mongo URI; empty → history disabled |
+| `vehicle.history.enable` | bool | yes | default true; gates the TelemetryMirror insert |
+| `vehicle.history.ttl.sec` | uint32 | yes | retention, default `604800` (7 days) |
 
 (Values are formatted decimal strings, matching the `iot.sensor.*` convention,
 so the existing ds-hint/debug + LwM2M string-reader plumbing applies unchanged.)
@@ -251,23 +298,35 @@ in `vehicle.dtc`. MIL/readiness via Mode 01 PID `0x01`.
 
 ## 8. Suggested merge order (small PRs)
 
+**v1 — live telemetry + map:**
 1. `modules/vehicle/obd/pid_decode` + gtest (pure, no hardware) — lands the
    decode logic testable in CI first.
 2. `iot-vehicled` daemon + `vehicle.lua` + units + ServiceGate (ingest →
    volatile ds). device-ui Vehicle page.
-3. Vehicle LwM2M object + reader hooks (device) → cloud observe → cloud ds.
+3. Vehicle LwM2M object `33000` + reader hooks (device) → cloud observe → cloud ds.
 4. cloud-ui Map page (reuses GPS Object 6 + vehicle volatile keys).
+
+**v1.1 — history, diagnostics, mirror:**
 5. DTC path (ISO-TP Mode 03 → `vehicle.dtc` → UI).
 6. `iot-mqttd` + MQTT config page + Yocto `libmosquitto`.
+7. **`TelemetryMirror` ACE_Task → on-device MongoDB** (reuse `DbClient`; clone
+   `RegistryMirror`); time-series/TTL collection (or TTL-index fallback per the
+   §3a caveat); `iot.mongo.uri` + retention config; device-ui history view.
 
 ## 9. Open items to confirm before coding
 
-- **CAN controller hardware** for the target (RPi MCP2515 HAT vs USB-CAN) — sets
-  the kernel module + `iot-can0-up` details.
-- **Bus speed**: 500 kbps (ISO 15765-4 11-bit) vs 250 kbps — make it the
-  `vehicle.can.bitrate` default but confirm the target vehicle.
-- **Custom LwM2M object ID** for vehicle telemetry (pick from the reusable
-  range; document in `apps/docs/lwm2m-object-handling.md`).
-- **MQTT payload schema** (one JSON blob of all signals vs per-signal topics).
-  Default: one retained JSON message per poll on `<serial>/<suffix>`.
-- **TLS to broker** scope for v1 (plain 1883 first, 8883/CA later?).
+Resolved this round: SocketCAN/can0; live-map-only (history on device);
+~1 Hz; signal set (powertrain+fuel/intake+DTC+GPS); **Vehicle object `33000`**;
+**one retained JSON payload** per poll on `<serial>/<suffix>`; **reuse iot
+`DbClient`** + `TelemetryMirror`; **Mongo time-series + TTL** retention.
+
+Still to confirm before the relevant PR:
+
+- **CAN controller hardware** (RPi MCP2515 HAT vs USB-CAN) — sets the kernel
+  module + `iot-can0-up` details. (PR-2)
+- **Bus speed** 500 vs 250 kbps — `vehicle.can.bitrate` default 500000, confirm
+  per target vehicle. (PR-2)
+- **On-device mongod version + arch** — time-series needs ≥5.0 (ARMv8.2-A); RPi
+  3B/4 caps at 4.4 (TTL index only). Confirm what runs on the target, else use
+  the TTL-index fallback. (PR-7) See §3a caveat.
+- **TLS to broker** — plain 1883 in v1.1; 8883/CA fast-follow. (PR-6)
