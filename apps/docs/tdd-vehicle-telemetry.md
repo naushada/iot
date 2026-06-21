@@ -1,7 +1,32 @@
 # TDD Plan — Vehicle Telemetry over CAN (ISO 15765-4 / OBD-II)
 
-Status: **PLAN / proposed** (2026-06-21). Greenfield — no CAN code exists in
-the repo today.
+Status: **IN PROGRESS** (2026-06-21). The device-side vertical slice is
+implemented + merged; the cloud/transport half is still planned.
+
+### Implementation status
+
+**Done (merged to main, device-side):**
+- ✅ PR-1 (#329) — `modules/vehicle` pure OBD-II decode core + gtest (CI green).
+- ✅ PR-2 (#330) — `iot-vehicled` SocketCAN/OBD daemon → volatile `vehicle.*`.
+- ✅ PR-2b (#332) — systemd units (`iot-vehicled` + `iot-can0-up`, CAP_NET_RAW).
+- ✅ PR-2c (#333) — device-ui **Vehicle** page (live `vehicle.*` datagrid).
+- ✅ PR-3 (#331) — Vehicle **LwM2M object 33000** + reader hooks (→ cloud).
+- ✅ PR-4a (#334) — `cloud.vehicle.telemetry` cloud schema key.
+- ✅ PR-5 (#335) — OBD-II **DTC** (Mode 03) read → `vehicle.dtc` (single-frame).
+
+**Remaining (planned — cloud/transport half; needs build verification, each
+adds deep C++ and/or new deps):**
+- ⬜ Cloud plumbing: lwm2m-dm observe Object 6/33000 → `cloud.vehicle.telemetry`.
+- ⬜ PR-4 — cloud-ui **Map** (Leaflet) + self-hosted **tileserver-gl** compose +
+  endpoint-name hyperlink (§3d).
+- ⬜ PR-6 — `iot-mqttd` (ACE adapter over **libmosquitto**) + MQTT config page.
+- ⬜ PR-7 — `TelemetryMirror` → on-device **MongoDB** buffer (§3a).
+- ⬜ PR-8 — **LwM2M Send + SenML/CBOR + full RFC 7959 Block-Wise** (§3b — the
+  critical-path enabler; deep CoAP work).
+- ⬜ PR-9..12 — device uploader, cloud **mongod** + iot-httpd ingest,
+  history/replay + charts, cold-storage **archiver** (§3c).
+
+Greenfield baseline: no CAN code existed in the repo before PR-1.
 
 ## 1. Goal
 
