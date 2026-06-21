@@ -96,6 +96,55 @@ TEST(SenmlJson, REQ_ENC_003_decode_rejects_non_array) {
     EXPECT_EQ(-1, s::decode_json("not json", out));
 }
 
+/* ───── SenML time fields (bt/t) — timestamped telemetry batches ───── */
+
+TEST(SenmlJson, time_roundtrip_bt_and_per_record_t) {
+    // A 3-sample batch of /33000/0/10 (speed): base time + per-record offsets.
+    std::vector<s::Record> in;
+    for (int k = 0; k < 3; ++k) {
+        s::Record r;
+        r.baseName = "/33000/0/"; r.name = "10";
+        r.kind = s::ValueKind::Numeric; r.numericValue = 60 + k; r.isFloat = false;
+        r.hasBaseTime = true; r.baseTime = 1718000000.0;   // bt on first record only
+        r.hasTime = true;     r.time = k * 2.0;             // +0, +2, +4 s
+        in.push_back(r);
+    }
+
+    auto wire = s::encode_json(in);
+    EXPECT_NE(std::string::npos, wire.find("\"bt\":1718000000"));
+    EXPECT_NE(std::string::npos, wire.find("\"t\":4"));
+
+    std::vector<s::Record> out;
+    ASSERT_EQ(0, s::decode_json(wire, out));
+    ASSERT_EQ(3u, out.size());
+    for (int k = 0; k < 3; ++k) {
+        EXPECT_TRUE(out[k].hasBaseTime);
+        EXPECT_EQ(1718000000.0, out[k].baseTime);    // bt accumulates to all
+        EXPECT_TRUE(out[k].hasTime);
+        EXPECT_EQ(k * 2.0, out[k].time);
+        EXPECT_EQ(1718000000.0 + k * 2.0, out[k].effectiveTime());
+    }
+}
+
+TEST(SenmlJson, time_decode_rejects_bt_not_on_first) {
+    std::vector<s::Record> out;
+    EXPECT_EQ(-1, s::decode_json(R"([{"n":"0","v":1},{"bt":1,"n":"1","v":2}])", out));
+}
+
+TEST(SenmlJson, time_absent_means_no_time_flags) {
+    std::vector<s::Record> in;
+    s::Record a; a.baseName = "/3/0/"; a.name = "9";
+    a.kind = s::ValueKind::Numeric; a.numericValue = 42;
+    in.push_back(a);
+    auto wire = s::encode_json(in);
+    EXPECT_EQ(std::string::npos, wire.find("\"bt\""));   // no time emitted
+    EXPECT_EQ(std::string::npos, wire.find("\"t\""));
+    std::vector<s::Record> out;
+    ASSERT_EQ(0, s::decode_json(wire, out));
+    EXPECT_FALSE(out[0].hasBaseTime);
+    EXPECT_FALSE(out[0].hasTime);
+}
+
 /* ─────────────────────────── REQ-ENC-004 SenML CBOR ───────────────── */
 
 TEST(SenmlCbor, REQ_ENC_004_roundtrip_numeric_int) {
@@ -128,6 +177,30 @@ TEST(SenmlCbor, REQ_ENC_004_roundtrip_float) {
     ASSERT_EQ(0, s::decode_cbor(wire, out));
     EXPECT_TRUE(out[0].isFloat);
     EXPECT_EQ(1.5, out[0].numericValue);
+}
+
+TEST(SenmlCbor, time_roundtrip_bt_and_t) {
+    // Same timestamped batch as the JSON test, over CBOR. Integral times are
+    // emitted as compact CBOR uints (emit_time) and read back via read_number.
+    std::vector<s::Record> in;
+    for (int k = 0; k < 3; ++k) {
+        s::Record r;
+        r.baseName = "/33000/0/"; r.name = "10";
+        r.kind = s::ValueKind::Numeric; r.numericValue = 60 + k;
+        r.hasBaseTime = true; r.baseTime = 1718000000.0;
+        r.hasTime = true;     r.time = k * 2.0;
+        in.push_back(r);
+    }
+    auto wire = s::encode_cbor(in);
+    std::vector<s::Record> out;
+    ASSERT_EQ(0, s::decode_cbor(wire, out));
+    ASSERT_EQ(3u, out.size());
+    for (int k = 0; k < 3; ++k) {
+        EXPECT_TRUE(out[k].hasBaseTime);
+        EXPECT_EQ(1718000000.0, out[k].baseTime);
+        EXPECT_EQ(k * 2.0, out[k].time);
+        EXPECT_EQ(1718000000.0 + k * 2.0, out[k].effectiveTime());
+    }
 }
 
 TEST(SenmlCbor, REQ_ENC_004_roundtrip_string_bool_data) {

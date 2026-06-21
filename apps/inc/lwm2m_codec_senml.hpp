@@ -12,10 +12,12 @@
  * Closes REQ-ENC-003 and REQ-ENC-004 per RFC 8428 §5 / §6.
  *
  * Scope: the LwM2M-relevant subset of SenML — Base Name (`bn`), Name
- * (`n`), Numeric Value (`v`), String Value (`vs`), Boolean Value
- * (`vb`), Data Value (`vd`). Time fields (`bt`, `t`, `ut`), Unit
- * (`u`, `bu`), Sum (`s`, `bs`), and Value-Sum aggregation are out of
- * v1 scope — Core spec doesn't require them on a 1.1 device.
+ * (`n`), Base Time (`bt`), Time (`t`), Numeric Value (`v`), String
+ * Value (`vs`), Boolean Value (`vb`), Data Value (`vd`). `bt`/`t` carry
+ * per-record timestamps for batched telemetry (LwM2M Send backfill).
+ * Unix-Time (`ut`), Unit (`u`, `bu`), Sum (`s`, `bs`), and Value-Sum
+ * aggregation remain out of v1 scope — Core spec doesn't require them on
+ * a 1.1 device.
  *
  * The codec produces / consumes a flat `std::vector<Record>`. Base
  * Name accumulation (RFC 8428 §4.5: subsequent records inherit the
@@ -63,6 +65,23 @@ struct Record {
     /// Raw binary for `vd`. The codec handles base64url encode/decode
     /// for SenML JSON; SenML CBOR carries it as a byte-string directly.
     std::string dataValue;
+
+    /// Base Time (`bt`, RFC 8428 §4.5.2). Like `bn`, it is carried by the
+    /// first record on the wire and kept on every output record so resolving
+    /// a record's absolute time is an addition, not a state machine. A
+    /// record's effective time is `baseTime + time`. Needed for timestamped
+    /// telemetry batches (LwM2M Send backfill); absent on plain reads.
+    double baseTime{0.0};
+    bool   hasBaseTime{false};
+    /// Per-record Time (`t`), a relative offset added to `baseTime` (or an
+    /// absolute time when no `bt` is present, per §4.5.3). Absent → hasTime
+    /// false (a 0 offset).
+    double time{0.0};
+    bool   hasTime{false};
+
+    /// Effective absolute time = baseTime + time. Only meaningful when
+    /// hasBaseTime || hasTime.
+    double effectiveTime() const { return baseTime + time; }
 };
 
 /* ────────── JSON (RFC 8428 §5) ────────── */
