@@ -5,6 +5,7 @@
 #include <ace/Time_Value.h>
 
 #include "data_store/log_buffer.hpp"
+#include "data_store/stats_publisher.hpp"
 #include "data_store/value.hpp"
 
 #include "obd_pid.hpp"
@@ -147,6 +148,12 @@ int VehicleClient::run() {
     g_log.open(m_ds, 5, 1);
     // Self-report for the Services page.
     m_ds.set(std::string("services.vehicle.state"), data_store::Value{std::string("running")});
+
+    // L22 resource telemetry → services.vehicle.{cpu,mem,fd,threads}. This daemon
+    // pumps the singleton reactor in-thread, so schedule on it (no extra thread).
+    data_store::StatsPublisher stats("services.vehicle",
+        [this](const std::vector<data_store::KV>& kv) { m_ds.set(kv); });
+    stats.open(data_store::StatsPublisher::STATS_FLUSH_SEC, false);
 
     ACE_DEBUG((LM_INFO,
         ACE_TEXT("%D [veh] up: iface=%C poll=%ums (%u PIDs, %ums/PID)\n"),

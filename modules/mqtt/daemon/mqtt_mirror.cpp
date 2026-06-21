@@ -11,6 +11,7 @@
 #include <ace/Time_Value.h>
 
 #include "data_store/log_buffer.hpp"
+#include "data_store/stats_publisher.hpp"
 #include "data_store/value.hpp"
 
 namespace mqtt {
@@ -174,6 +175,12 @@ int MqttMirror::run() {
     g_log.open(m_ds, 5, 1);
     // Self-report for the Services page.
     m_ds.set(std::string("services.mqtt.state"), data_store::Value{std::string("running")});
+
+    // L22 resource telemetry → services.mqtt.{cpu,mem,fd,threads}. Singleton
+    // reactor is pumped in-thread here, so schedule on it (no extra thread).
+    data_store::StatsPublisher stats("services.mqtt",
+        [this](const std::vector<data_store::KV>& kv) { m_ds.set(kv); });
+    stats.open(data_store::StatsPublisher::STATS_FLUSH_SEC, false);
 
     ACE_DEBUG((LM_INFO,
         ACE_TEXT("%D [mqtt] up: broker=%C:%d topic=%C (parks until host set)\n"),
