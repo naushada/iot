@@ -116,6 +116,17 @@ export class HttpsvcService {
       { withCredentials: true });
   }
 
+  /// Historical vehicle track for one endpoint (§3b read-back). iot-httpd
+  /// serves the recent window the iot-telemetry-ingest sidecar mongoexports;
+  /// `track` is oldest-first [{ts,lat,lon,speed,...}]. Empty until the
+  /// telemetry profile is up and the sidecar has exported once.
+  getVehicleHistory(ep: string): Observable<Array<Record<string, string|number>>> {
+    return this.http.get<{ok:boolean;track:Array<Record<string,string|number>>}>(
+      `${this.api}/api/v1/cloud/telemetry/history?ep=${encodeURIComponent(ep)}`,
+      { withCredentials: true })
+      .pipe(map(r => r.track || []), catchError(() => of([])));
+  }
+
   // ── User management ───────────────────────────────────────────────
 
   listUsers(): Observable<UserListResponse> {

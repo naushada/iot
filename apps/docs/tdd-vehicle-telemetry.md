@@ -53,8 +53,13 @@ Needs a build-and-run loop + new deps:**
   ingest: `iot-httpd` links mongocxx behind a new `IOT_HTTPD_MONGO` flag,
   watches `cloud.telemetry.inbox`, writes the cloud `telemetry` collection
   (normal coll + TTL backstop; the **mongo service from PR-10a** is ready).
-- ⬜ PR-11 — Map history/replay + **time-series charts** (Chart.js) over a new
-  `iot-httpd` Mongo query endpoint. (Leaflet dep + pattern already in PR-4.)
+- ✅ PR-11 (read-back) — Map **history track**: the iot-telemetry-ingest sidecar
+  `mongoexport`s a recent window to `history.json`; `iot-httpd` serves it at
+  `GET /api/v1/cloud/telemetry/history?ep=<ep>` (file-served, no mongo driver);
+  the cloud-ui Map draws the selected endpoint's track as a Leaflet polyline
+  (start/end dots, fit-to-bounds) — reuses the PR-4 Leaflet dep, **no charting
+  library**. ⬜ Time-series **charts** (speed/rpm over time, Chart.js/ECharts)
+  remain an optional future add over the same endpoint.
 
 Greenfield baseline: no CAN code existed in the repo before PR-1.
 
@@ -286,7 +291,10 @@ device ──Send(SenML)──► lwm2m-dm ──ds inbox key──► iot-httpd
 - **ACK-then-prune end to end:** device prunes a point only after the Send it
   rode in got a 2.04; the cloud's dedup makes an un-acked re-send safe.
 - cloud-ui Map reads **live** position from `cloud.vehicle.telemetry` (volatile)
-  and **history/replay** from Mongo via a new `iot-httpd` query endpoint.
+  and **history/replay** via `GET /api/v1/cloud/telemetry/history?ep=` — which
+  iot-httpd serves straight from `history.json` (the sidecar's periodic
+  `mongoexport` of the recent window), drawn as a Leaflet track polyline.
+  ✅ **Implemented** — see the §3b IMPLEMENTED note above.
 
 ## 3c. Cold-storage archiver (offload after 60 days → external HDD)
 

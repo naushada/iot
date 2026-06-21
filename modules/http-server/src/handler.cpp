@@ -1146,6 +1146,60 @@ void install_handlers(Router& router,
             return r;
         });
 
+    // ── GET /api/v1/cloud/telemetry/history?ep=<ep> ──────────────────
+    // Vehicle history read-back (§3b). The iot-telemetry-ingest sidecar
+    // periodically mongoexports a recent window of the Mongo `telemetry`
+    // collection to /var/lib/iot/telemetry-spool/history.json — a JSON array
+    // of {ts, endpoints:[...]} snapshots, oldest-first. Served straight from
+    // that file (no mongo driver in this build). With ?ep= we flatten it to
+    // that endpoint's track [{ts,lat,lon,speed,...}] for the map polyline;
+    // without, the raw snapshots. Empty array until the sidecar has run once.
+    router.add("GET", "/api/v1/cloud/telemetry/history",
+        [](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            json resp;
+            resp["ok"] = true;
+            json snaps = json::array();
+            {
+                std::ifstream f("/var/lib/iot/telemetry-spool/history.json");
+                if (f) {
+                    std::string s((std::istreambuf_iterator<char>(f)),
+                                  std::istreambuf_iterator<char>());
+                    if (!s.empty()) {
+                        try {
+                            auto parsed = json::parse(s);
+                            if (parsed.is_array()) snaps = parsed;
+                        } catch (const std::exception&) { /* leave empty */ }
+                    }
+                }
+            }
+            auto it = req.query.find("ep");
+            if (it != req.query.end()) {
+                const std::string& ep = it->second;
+                json track = json::array();
+                for (const auto& snap : snaps) {
+                    if (!snap.contains("endpoints") || !snap["endpoints"].is_array())
+                        continue;
+                    auto tsIt = snap.find("ts");
+                    for (const auto& e : snap["endpoints"]) {
+                        if (e.value("endpoint", std::string()) != ep) continue;
+                        json pt = e;
+                        if (tsIt != snap.end()) pt["ts"] = *tsIt;
+                        track.push_back(pt);
+                        break;   // one entry per snapshot
+                    }
+                }
+                resp["endpoint"] = ep;
+                resp["count"]    = track.size();
+                resp["track"]    = track;
+            } else {
+                resp["count"]     = snaps.size();
+                resp["snapshots"] = snaps;
+            }
+            r.body = resp.dump();
+            return r;
+        });
+
     // ── GET /api/v1/cloud/endpoint?ep=<ep> ─────────────────────────
     router.add("GET", "/api/v1/cloud/endpoint",
         [ds](const HttpParser::Request& req) -> HttpResponse {
