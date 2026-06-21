@@ -128,6 +128,8 @@ local stats_services = {
   "services.lwm2m.client",
   "services.lwm2m.server",
   "services.wifi.client",
+  "services.vehicle",
+  "services.mqtt",
   "services.cloud.iot.cloudd",
   "services.cloud.iot.httpd",
   "services.cloud.openvpn.server",

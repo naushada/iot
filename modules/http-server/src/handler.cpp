@@ -746,6 +746,12 @@ void install_handlers(Router& router,
                 "services.wifi.client.cpu.permille", "services.wifi.client.cpu.count",
                 "services.wifi.client.mem.rss.kb",
                 "services.wifi.client.fd.count", "services.wifi.client.threads",
+                "services.vehicle.cpu.permille", "services.vehicle.cpu.count",
+                "services.vehicle.mem.rss.kb",
+                "services.vehicle.fd.count", "services.vehicle.threads",
+                "services.mqtt.cpu.permille", "services.mqtt.cpu.count",
+                "services.mqtt.mem.rss.kb",
+                "services.mqtt.fd.count", "services.mqtt.threads",
                 // ── Cloud service states/enables + telemetry (cloud UI
                 // Services page reads these via the shared status poll) ──
                 "services.cloud.iot.cloudd.enable", "services.cloud.iot.cloudd.state",
@@ -939,6 +945,16 @@ void install_handlers(Router& router,
                 else if (k == "services.wifi.client.mem.rss.kb")      services["wifi_client"]["mem_kb"] = iv();
                 else if (k == "services.wifi.client.fd.count")        services["wifi_client"]["fd_count"] = iv();
                 else if (k == "services.wifi.client.threads")         services["wifi_client"]["threads"] = iv();
+                else if (k == "services.vehicle.cpu.permille")        services["vehicle"]["cpu_permille"] = iv();
+                else if (k == "services.vehicle.cpu.count")           services["vehicle"]["cpu_count"] = iv();
+                else if (k == "services.vehicle.mem.rss.kb")          services["vehicle"]["mem_kb"] = iv();
+                else if (k == "services.vehicle.fd.count")            services["vehicle"]["fd_count"] = iv();
+                else if (k == "services.vehicle.threads")             services["vehicle"]["threads"] = iv();
+                else if (k == "services.mqtt.cpu.permille")           services["mqtt"]["cpu_permille"] = iv();
+                else if (k == "services.mqtt.cpu.count")              services["mqtt"]["cpu_count"] = iv();
+                else if (k == "services.mqtt.mem.rss.kb")             services["mqtt"]["mem_kb"] = iv();
+                else if (k == "services.mqtt.fd.count")               services["mqtt"]["fd_count"] = iv();
+                else if (k == "services.mqtt.threads")                services["mqtt"]["threads"] = iv();
 
                 // Cloud Service rows + bump keys: pass through verbatim under
                 // their ds key, typed by suffix (state→string, enable→bool,
