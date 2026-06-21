@@ -4,11 +4,16 @@
 #include <ace/Reactor.h>
 #include <ace/Time_Value.h>
 
+#include "data_store/log_buffer.hpp"
 #include "data_store/value.hpp"
 
 #include "obd_pid.hpp"
 
 namespace vehicle {
+
+// Captures this daemon's ACE log output to log.vehicled.text and applies the
+// per-daemon level from log.level.vehicle (falls back to log.level).
+static data_store::LogBuffer g_log("vehicled", "log.vehicled.text", "log.level.vehicle");
 
 namespace {
 
@@ -134,6 +139,14 @@ int VehicleClient::run() {
     if (tick_ms == 0) tick_ms = 1;
     ACE_Time_Value period(tick_ms / 1000, (tick_ms % 1000) * 1000);
     ACE_Reactor::instance()->schedule_timer(this, nullptr, ACE_Time_Value(1), period);
+
+    // ACE is initialised now (reactor used above): capture logs to
+    // log.vehicled.text, apply log.level.vehicle, drive the flush timer.
+    g_log.start();
+    g_log.apply_level(m_ds);
+    g_log.open(m_ds, 5, 1);
+    // Self-report for the Services page.
+    m_ds.set(std::string("services.vehicle.state"), data_store::Value{std::string("running")});
 
     ACE_DEBUG((LM_INFO,
         ACE_TEXT("%D [veh] up: iface=%C poll=%ums (%u PIDs, %ums/PID)\n"),

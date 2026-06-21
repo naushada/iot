@@ -60,6 +60,19 @@ local keys = {
     ["services.lwm2m.server.state"]        = {
         access  = "Viewer", type = "string",  default = "stopped" },
 
+    -- vehicle (iot-vehicled, CAN/OBD-II) + mqtt (iot-mqttd mirror). Optional
+    -- producer daemons; enable defaults true but they park until configured
+    -- (CAN bus present / mqtt.broker.host set), so they are no-ops until set up.
+    -- The daemons self-report .state on startup.
+    ["services.vehicle.enable"]            = {
+        access  = "Admin", type = "boolean", default = true, write_acl = {"uid:0"} },
+    ["services.vehicle.state"]             = {
+        access  = "Viewer", type = "string",  default = "stopped" },
+    ["services.mqtt.enable"]               = {
+        access  = "Admin", type = "boolean", default = true, write_acl = {"uid:0"} },
+    ["services.mqtt.state"]                = {
+        access  = "Viewer", type = "string",  default = "stopped" },
+
     -- wifi-client — the WAN uplink, so NO dependency on net.router (routing
     -- layers on top of the uplink; the inverse dep deadlocked WiFi whenever
     -- net-router was down). Matches the (lack of) DepWatch in supervisor.cpp.
