@@ -142,8 +142,19 @@ fills in `RegistryMirror`'s currently-stubbed `persist()` by example.
 **Transport: LwM2M 1.1 Send (client-initiated batch push).** The device drains
 its buffer oldest-first and pushes batches as a **SenML pack** via LwM2M **Send**
 (CoAP POST to `/dp`) — multiple timestamped records in one message, exactly what
-Send is for. Cadence: opportunistic (when the tunnel is up); offline → the
-buffer grows and flushes on reconnect (backfill).
+Send is for. Cadence: opportunistic (when the **direct LwM2M/DTLS link to the
+cloud is up** — i.e. the device is registered; **NOT** the VPN tunnel); when that
+link is down the buffer grows and flushes on reconnect (backfill).
+
+> **Guardrail — the VPN is ONLY for rendering the device-ui.** Bootstrap,
+> registration, telemetry Send, and all Object reads/notifies ride the **direct
+> device→cloud DTLS-CoAP/UDP plane** (`:5683`/`:5684` to the cloud's public IP),
+> exactly like the existing control plane (cloud CLAUDE.md: "direct device→cloud
+> DTLS over UDP", Update = NAT keepalive). Nothing in this telemetry/storage/map
+> design may depend on the OpenVPN tunnel; the tunnel is solely the per-device
+> reverse-proxy for the operator to reach a device's local UI. Telemetry must
+> keep flowing with the VPN down (device has WAN + is registered). The MQTT
+> mirror likewise goes device→broker over the WAN, not the tunnel.
 
 **Encoding + framing — STANDARDS ONLY, no proprietary chunking.** Every
 CoAP/LwM2M payload follows one rule: **compact-encode, then RFC 7959
