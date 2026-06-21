@@ -30,6 +30,7 @@ implemented + merged; the cloud/transport half is still planned.
   table-driven `kVehReads` (tags 0x0A+) → map popups.
 - ✅ PR-15 (#349) — full OBD signal set + DTCs (`/33000/0/{3..8}`) to cloud.
 - ✅ PR-16 (#350) — full telemetry in the map popup.
+- ✅ PR-17 (#352) — Endpoints "show on map" link (focus the map on an endpoint).
 
 > **🎉 The LIVE map feature is complete + (mostly) CI-validated:** device
 > CAN/GPS → LwM2M objects → DM-server server-Reads → `cloud.vehicle.telemetry`

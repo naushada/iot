@@ -72,15 +72,16 @@ apps/cloud/
 ## Cloud UI Nav
 
 ```
-Dashboard  Endpoints  VPN  HTTP  WAN  Routing  LwM2M              Services  Logs
-                                                      ├─ Device Management
-                                                      └─ Bootstrap Config
+Dashboard  Endpoints  Map  VPN  HTTP  WAN  Routing  LwM2M         Services  Logs
+                                                         ├─ Device Management
+                                                         └─ Bootstrap Config
 ```
 
 | Page | Writes to |
 |------|-----------|
 | Dashboard | reads /api/v1/status (long-poll) |
-| Endpoints | reads /api/v1/cloud/endpoints; provision form → cloud.provision.bs.psk + cloud.provision.request; delete deprovisions |
+| Endpoints | reads /api/v1/cloud/endpoints; provision form → cloud.provision.bs.psk + cloud.provision.request; delete deprovisions. Endpoint name links to **Map** (focus) |
+| Map | **Fleet Map** — client-side Leaflet, markers from `cloud.vehicle.telemetry` (live GPS + OBD-II popups); tiles from the self-hosted `tileserver` compose service. See `apps/docs/tdd-vehicle-telemetry.md` |
 | VPN | cloud.vpn.* |
 | HTTP | http.* (reused from device) + http.auth.enabled |
 | WAN | vpn.* / wifi.* / net.* (copied from device UI) |
@@ -547,7 +548,19 @@ cloud.lwm2m.registrations → JSON array of currently-registered endpoints.
                             a two-writer clobber on tun_ip/proxy_port).
   [{ "endpoint": "100000abcd", "registered": true, "last_seen_unix": 1718123456,
      "installed_version": "1.2.0", "lan_ip": "192.168.1.3" }]
+cloud.vehicle.telemetry  → live vehicle telemetry per endpoint, JSON array.
+                            SOLE writer = lwm2m-dm (server-Reads device Object 6
+                            GPS + Object 33000 OBD-II via the token-tagged poll —
+                            see apps/docs/lwm2m-object-handling.md §5). VOLATILE,
+                            latest-wins. The cloud-ui Fleet Map reads it live.
+  [{ "endpoint": "100000abcd", "lat": "12.97", "lon": "77.59",
+     "speed": "62", "rpm": "2150", "coolant": "89", "throttle": "18",
+     "load": "34", "fuel": "71", "iat": "31", "maf": "5.2",
+     "link": "up", "dtc": "[]" }]
 ```
+The 60-day vehicle history (Mongo + archiver) is a separate, opt-in pipeline —
+see the `mongo`/`tileserver`/`iot-archiver` compose services (`profiles:
+[telemetry]`) and `apps/docs/tdd-vehicle-telemetry.md`.
 
 **Two device IP columns (`isp_ip` / `lan_ip`).** The Endpoints table shows both
 the device's public IP and its local IP — sourced from *different* planes:
