@@ -142,17 +142,42 @@ New module `modules/vehicle/` (mirrors `modules/wan/cellular/`):
 
 ### Phase 2 — LwM2M bridge + cloud map [DEVICE + CLOUD]
 
-- Define a **Vehicle LwM2M object** (custom ID in the reusable range, e.g.
-  `10350`) with one resource per signal; bind reader-hook lambdas reading the
-  `vehicle.*` ds keys — the exact `LocationHooks` pattern at `main.cpp:1006`.
-  (Evaluate reusing IPSO objects where a clean match exists; OBD has no standard
-  IPSO object, so a custom object is expected.)
-- GPS already flows to **Object 6** via the cellular daemon — the map reuses it.
-- cloud `lwm2m-dm` observes the vehicle object + Object 6, writes **volatile**
-  latest values into the cloud ds (latest-wins, per-endpoint).
-- **cloud-ui Map page** — Leaflet (or Clarity map) plotting each online
-  endpoint's latest lat/lon + a telemetry popover. New nav entry.
-- DTCs surfaced in cloud-ui (persistent `vehicle.dtc`).
+**Decision: one custom single-instance Vehicle Telemetry object** — not a
+spray of IPSO instances. OBD has no standard IPSO object, and mixing
+3303/3320/… instances for coolant/throttle/etc. is messy to observe and map.
+Object ID **`33000`** (LwM2M **private-use** range 32769–42768 — unregistered,
+safe; distinct from the repo's existing OMA-3rd-party Object 2048 VPN push).
+
+`/33000/0` resources (all `R` + observable; floats are SenML-friendly):
+
+| RID | Resource | Unit | ds source |
+| --- | --- | --- | --- |
+| 0 | Speed | km/h | `vehicle.speed` |
+| 1 | RPM | rpm | `vehicle.rpm` |
+| 2 | Coolant temp | °C | `vehicle.coolant` |
+| 3 | Throttle | % | `vehicle.throttle` |
+| 4 | Engine load | % | `vehicle.load` |
+| 5 | Fuel level | % | `vehicle.fuel` |
+| 6 | Intake air temp | °C | `vehicle.iat` |
+| 7 | MAF | g/s | `vehicle.maf` |
+| 8 | DTC list | — | `vehicle.dtc` (JSON string) |
+| 9 | MIL on | bool | `vehicle.mil` |
+| 10 | Link state | — | `vehicle.link` |
+
+- Bind reader-hook lambdas reading the `vehicle.*` ds keys — the exact
+  `LocationHooks` pattern at `main.cpp:1006`. Register the object in
+  `apps/docs/lwm2m-object-handling.md`.
+- **GPS = Object 6** (already flows from the cellular daemon) — that *is* the
+  map position; the Vehicle object is the telemetry overlay. (Note: OBD speed
+  RID 0 ≠ GPS speed /6/0/6 — keep both, they differ.)
+- cloud `lwm2m-dm` **observes** `/33000/0` + `/6/0` at ~1 Hz and merges latest
+  values into a new **volatile** cloud key
+  **`cloud.vehicle.telemetry`** = JSON array `[{endpoint, lat, lon, speed, rpm,
+  …, ts}]`, latest-wins. Same sole-writer/merge discipline as
+  `cloud.lwm2m.registrations` (lwm2m-dm writes; iot-cloudd needn't touch it).
+- **cloud-ui Map page** — Leaflet markers from `cloud.vehicle.telemetry`
+  (long-poll), telemetry popover per endpoint. New nav entry.
+- DTCs surfaced in cloud-ui (persistent `vehicle.dtc`, RID 8).
 
 ### Phase 3 — `iot-mqttd` mirror [DEVICE + PKG]
 
@@ -170,6 +195,25 @@ New module `modules/vehicle/` (mirrors `modules/wan/cellular/`):
 - **Yocto:** add a `libmosquitto` dependency (meta-openembedded ships a
   `mosquitto` recipe) + the new units to the image; `iot-sysusers` /
   privilege as needed (network + ds only).
+
+**Decisions (MQTT):**
+
+- **Two-level gate, by design:** `services.mqtt.enable` = *daemon runs +
+  maintains the broker connection* (UI sets it true on Save **iff** broker host
+  non-empty; false when host cleared). `mqtt.mirror.enable` = *publish vehicle
+  telemetry or not*. This lets the connection exist for future use (remote
+  commands) without forcing mirroring on. The `ServiceGate("mqtt")` parks the
+  daemon whenever `services.mqtt.enable` is false or the host is empty.
+- **Topic:** `<serial>/<mqtt.topic.suffix>` (default suffix `telemetry`) →
+  e.g. `100000abcd/telemetry`. Plus a retained **status** topic
+  `<serial>/status` driven by an MQTT **Last-Will** (`offline`) + `online` on
+  connect, so a dashboard sees device liveness for free.
+- **Payload:** ONE JSON object per poll (not per-signal topics):
+  `{"ts":1718…, "speed":62, "rpm":2150, "coolant":89, …, "lat":…, "lon":…}`.
+  Published **`retain=true`** (a late subscriber gets the last frame), **QoS 0**
+  default (telemetry is lossy-tolerant; QoS configurable via `mqtt.qos`).
+- **TLS:** schema keys land now (`mqtt.tls.enable`, `mqtt.tls.ca`), but v1
+  implements **plain 1883**; 8883/CA is a fast-follow toggle.
 
 ## 6. OBD-II PID reference (Mode 01, single-frame)
 
