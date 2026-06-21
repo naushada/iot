@@ -30,15 +30,19 @@ implemented + merged; the cloud/transport half is still planned.
 from tracing the code, so this is an exact handoff:**
 
 - ⬜ **Cloud observe plumbing** — populate `cloud.vehicle.telemetry` from the
-  device's Object 6 + Object 33000. The existing `lan_ip` flow is the template
-  but it is *spread out*: the server-side resource read/decode lives in
-  `apps/src/lwm2m_adapter.cpp` (the `ConnectivityMonitoring`/object dispatch),
-  the per-endpoint store is `modules/server/lwm2m/src/endpoint_registry.cpp`
-  (`update_lan_ip`/`installed_version` setters), and the merge into the cloud ds
-  is `apps/cloud/server/src/main.cpp` (parses `cloud.lwm2m.registrations` →
-  `EndpointRegistry`). Add Object-6 lat/lon + Object-33000 reads on the same
-  path → write a `cloud.vehicle.telemetry` JSON row per endpoint (sole-writer =
-  lwm2m-dm). The cloud-ui Map (PR-4) already reads that key live.
+  device's Object 6 + Object 33000. **Exact mechanism (traced):** in
+  `apps/src/main.cpp` (server role) the DM server issues **token-tagged
+  server-Reads** — the CoAP token is `[tag, seq24bit...]` where `tag 0x06` =
+  Read `/3/0/3` (fw version), `tag 0x07` = Read `/4/0/4` (lan_ip). The
+  `ctx->coapAdapter()->dmResponseHandler(...)` lambda (≈ main.cpp:460) matches
+  the tag, maps `seq → endpoint` via `seqToEp`, and fills the `epVersions` /
+  `epLanIps` maps; `publish_regs` (≈ main.cpp:400) serializes those into the
+  `cloud.lwm2m.registrations` rows (`row["lan_ip"]` at :428). **To extend:** add
+  new tags (e.g. `0x08`=`/6/0/0..1` GPS, `0x09`=`/33000/0/*`), issue those Reads
+  where `/3/0/3`+`/4/0/4` are issued, add per-endpoint maps + handler cases, and
+  add a sibling `publish_vehicle()` writing `cloud.vehicle.telemetry` (volatile).
+  **Blast radius:** this is the core `lwm2m` binary (both images) — do it against
+  a build. The cloud-ui Map (PR-4) already reads `cloud.vehicle.telemetry` live.
 - ⬜ PR-7 — `TelemetryMirror` (clone `apps/src/lwm2m_registry_mirror.cpp`) →
   on-device MongoDB buffer (§3a). Reuse `apps/inc/db_adapter.hpp` (`DbClient`).
   **Gating:** guard with `#ifdef IOT_ENABLE_MONGO` and, in
