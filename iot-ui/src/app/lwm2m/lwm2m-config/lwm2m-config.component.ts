@@ -26,6 +26,12 @@ export class Lwm2mConfigComponent implements OnInit, OnDestroy {
   generatedPsk = '';           // last generated BS PSK (hex), shown once to copy
   generatingPsk = false;
 
+  // Third-party BS PSK override: when on, the device uses an operator-supplied
+  // identity + key (verbatim) for the bootstrap handshake instead of the
+  // sha256(endpoint) derivation. The DM credential path is unaffected.
+  bsOverride = false;          // iot.bs.psk.override
+  savingOverride = false;
+
   private sub = new Subscription();
   private readonly CFG_KEYS = [
     'iot.serial', 'iot.dev.mode', 'iot.bs.uri', 'iot.binding', 'iot.lifetime',
@@ -33,10 +39,17 @@ export class Lwm2mConfigComponent implements OnInit, OnDestroy {
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
+  /** True while the override checkbox is ticked (drives the extra fields). */
+  get overrideOn(): boolean { return this.serverForm.get('bs_override')?.value === true; }
+
   constructor(private http: HttpsvcService, private ds: DataStoreService, fb: FormBuilder, private session: SessionService, private toast: ToastService) {
     this.serverForm = fb.group({
       serial:     [''],
       bs_uri:     ['coaps://'],
+      // Third-party BS PSK override (commissioning).
+      bs_override: [false],
+      bs_identity: [''],
+      bs_key:      [''],
       // Bootstrap-provided (read-only on the Server tab).
       server_uri: [''],
       binding:    ['U'],
@@ -66,6 +79,30 @@ export class Lwm2mConfigComponent implements OnInit, OnDestroy {
       this.sub.add(this.ds.observe('iot.dm.uri').subscribe(() => this.refreshDmUri()));
       this.sub.add(this.ds.observe('iot.server.uri').subscribe(() => this.refreshDmUri()));
     }
+
+    // Security tab: hydrate the third-party BS PSK override toggle + identity
+    // from the data-store (gid:engineer keys, readable to httpd under dev-mode).
+    // The key itself is write-only and never read back.
+    if (this.mode === 'security' && this.isAdmin) this.loadBsOverride();
+  }
+
+  /** Load the current override flag + custom identity (never the key). */
+  private loadBsOverride(): void {
+    this.http.dbGet(['iot.bs.psk.override', 'iot.bs.psk.identity']).subscribe({
+      next: (r) => {
+        if (!r.ok || !r.data) return;
+        this.bsOverride = r.data['iot.bs.psk.override'] === true;
+        // Only adopt the stored identity while the form is pristine, so a late
+        // response never clobbers an in-progress edit.
+        if (!this.serverForm.get('bs_identity')?.dirty) {
+          this.serverForm.patchValue({
+            bs_override: this.bsOverride,
+            bs_identity: (r.data['iot.bs.psk.identity'] as string) || '',
+          });
+        }
+      },
+      error: () => { /* keep defaults */ }
+    });
   }
 
   private applyData(d: Record<string, unknown>): void {
@@ -139,6 +176,53 @@ export class Lwm2mConfigComponent implements OnInit, OnDestroy {
         else this.toast.error(r.err || 'PSK store failed');
       },
       error: () => { this.generatingPsk = false; this.toast.error('PSK store failed'); }
+    });
+  }
+
+  /**
+   * Persist the third-party BS PSK override. Writes the override flag and (when
+   * enabled) the operator-supplied identity. The hex key is written only when a
+   * new value was typed, so re-saving without re-entering it leaves the stored
+   * secret intact (write-only). The client must be restarted to pick the new
+   * credentials up. Requires commissioning mode.
+   */
+  saveBsOverride(): void {
+    if (!this.devMode || !this.isAdmin) return;
+    const on = this.overrideOn;
+    const identity = (this.serverForm.get('bs_identity')?.value || '').trim();
+    const key = (this.serverForm.get('bs_key')?.value || '').trim();
+
+    if (on && !identity) { this.toast.error('Enter the bootstrap PSK identity'); return; }
+    if (key && !/^[0-9a-fA-F]+$/.test(key)) {
+      this.toast.error('PSK key must be hex (0-9, a-f)'); return;
+    }
+    if (key && key.length % 2 !== 0) {
+      this.toast.error('PSK key hex length must be even'); return;
+    }
+
+    const pairs: { key: string; value: unknown }[] = [
+      { key: 'iot.bs.psk.override', value: on },
+    ];
+    if (on) {
+      pairs.push({ key: 'iot.bs.psk.identity', value: identity });
+      if (key) pairs.push({ key: 'iot.bs.psk.key', value: key.toLowerCase() });
+    }
+
+    this.savingOverride = true;
+    this.http.dbSet(pairs).subscribe({
+      next: (r) => {
+        this.savingOverride = false;
+        if (r.ok) {
+          this.bsOverride = on;
+          this.serverForm.get('bs_key')?.reset('');   // never retain the secret in the form
+          this.toast.success(on
+            ? 'Custom bootstrap PSK saved — restart the LwM2M client to apply'
+            : 'Custom bootstrap PSK disabled — reverted to derived identity');
+        } else {
+          this.toast.error(r.err || 'Save failed');
+        }
+      },
+      error: () => { this.savingOverride = false; this.toast.error('Save failed'); }
     });
   }
 }

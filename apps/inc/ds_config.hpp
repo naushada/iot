@@ -59,6 +59,7 @@ public:
         Serial,
         BsPskIdentity,
         BsPskKey,
+        BsPskOverride,
         DmPskIdentity,
         DmPskKey,
         DevMode,
@@ -92,6 +93,10 @@ public:
     std::optional<std::string>   serial()           const;
     std::optional<std::string>   bs_psk_identity()  const;
     std::optional<std::string>   bs_psk_key()        const;
+    /// True when the operator pinned a custom BS PSK identity/key for a
+    /// third-party bootstrap server. When set, the client uses
+    /// bs_psk_identity() verbatim instead of deriving sha256(endpoint).
+    bool                         bs_psk_override()  const;
     std::optional<std::string>   dm_psk_identity()  const;
     std::optional<std::string>   dm_psk_key()        const;
     bool                         dev_mode()         const;

@@ -99,6 +99,49 @@
         <label>Generated BS PSK (copy now)</label>
         <input clrInput readonly [value]="generatedPsk" style="width:34rem;font-family:monospace;" />
       </clr-input-container>
+
+      <!-- ── Third-party BS PSK override ──────────────────────────────────
+           For bootstrap servers that mint their own identity + PSK (the
+           sha256(endpoint) derivation won't match). When enabled the device
+           uses the values below VERBATIM for the bootstrap DTLS handshake.
+           DM (Device Management) config is unaffected. Key is write-only. -->
+      <div style="margin-top:24px;border-top:1px solid #ccc;padding-top:16px;">
+        <clr-checkbox-container>
+          <clr-checkbox-wrapper>
+            <input type="checkbox" clrCheckbox [disabled]="!devMode"
+                   formControlName="bs_override" />
+            <label>Use custom Bootstrap PSK (third-party vendor)</label>
+          </clr-checkbox-wrapper>
+          <clr-control-helper>
+            Off → identity is derived as sha256(endpoint) (default). On → use the
+            vendor-supplied identity + key below. Does not change DM config.
+          </clr-control-helper>
+        </clr-checkbox-container>
+
+        <div class="form-grid" *ngIf="overrideOn" style="margin-top:12px;">
+          <clr-input-container>
+            <label>BS PSK Identity</label>
+            <input clrInput formControlName="bs_identity" [readonly]="!devMode"
+                   placeholder="vendor bootstrap identity" />
+            <clr-control-helper>Used verbatim as the DTLS PSK identity</clr-control-helper>
+            <clr-control-helper *dsDebug><app-ds-hint key="iot.bs.psk.identity"></app-ds-hint></clr-control-helper>
+          </clr-input-container>
+          <clr-input-container>
+            <label>BS PSK Key (hex)</label>
+            <input clrInput type="password" formControlName="bs_key" [readonly]="!devMode"
+                   autocomplete="new-password" placeholder="hex, e.g. 64 chars — leave blank to keep current" />
+            <clr-control-helper>Write-only. Blank on save keeps the stored key.</clr-control-helper>
+          </clr-input-container>
+        </div>
+
+        <button type="button" class="btn btn-outline" style="margin-top:12px;"
+                [disabled]="savingOverride || !devMode" (click)="saveBsOverride()">
+          {{ savingOverride ? 'Saving…' : 'Save custom BS PSK' }}
+        </button>
+        <p *ngIf="overrideOn" class="hint" style="margin-top:8px;">
+          Restart the LwM2M client after saving for the new credentials to apply.
+        </p>
+      </div>
     </div>
   </div>
 </div>
