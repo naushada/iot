@@ -725,6 +725,8 @@ void install_handlers(Router& router,
                 "services.lwm2m.server.enable",
                 "services.lwm2m.server.state",
                 "services.wifi.client.enable", "services.wifi.client.state",
+                "services.vehicle.enable", "services.vehicle.state",
+                "services.mqtt.enable", "services.mqtt.state",
                 // L22 — per-container resource telemetry.
                 "services.ds.cpu.permille", "services.ds.cpu.count",
                 "services.ds.mem.rss.kb",
@@ -898,6 +900,13 @@ void install_handlers(Router& router,
                 else if (k == "services.lwm2m.server.state")      services["lwm2m_server"]["state"] = sv();
                 else if (k == "services.wifi.client.enable")      services["wifi_client"]["enable"] = bv(true);
                 else if (k == "services.wifi.client.state")       services["wifi_client"]["state"] = sv();
+                // Optional producer daemons (iot-vehicled / iot-mqttd). Short keys
+                // match the device-ui Services rows ('vehicle' / 'mqtt'). No
+                // StatsPublisher telemetry → the page shows "—" for cpu/mem.
+                else if (k == "services.vehicle.enable")          services["vehicle"]["enable"] = bv(true);
+                else if (k == "services.vehicle.state")           services["vehicle"]["state"] = sv();
+                else if (k == "services.mqtt.enable")             services["mqtt"]["enable"] = bv(true);
+                else if (k == "services.mqtt.state")              services["mqtt"]["state"] = sv();
 
                 // L22 — resource telemetry per service.
                 else if (k == "services.ds.cpu.permille")             { services["ds"]["cpu_permille"] = iv(); cloud[k] = iv(); }
