@@ -5,6 +5,9 @@ Documentation=https://github.com/naushada/iot
 
 [Service]
 Type=oneshot
-# Remove the trigger first so the .path unit re-arms, then reboot.
-ExecStartPre=/bin/rm -f /run/iot/reboot.request
-ExecStart=/bin/systemctl reboot
+# Run via a shell so `systemctl`/`rm` resolve via PATH (matching the proven
+# iot-swupdate convention) — a unit ExecStart needs an absolute path, and
+# /bin/systemctl does not exist on every image (systemctl may be /usr/bin only),
+# which silently no-op'd the reboot. Remove the trigger first so the .path
+# unit re-arms, then reboot.
+ExecStart=/bin/sh -c 'rm -f /run/iot/reboot.request; exec systemctl reboot'
