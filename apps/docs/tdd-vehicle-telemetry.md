@@ -194,6 +194,26 @@ fills in `RegistryMirror`'s currently-stubbed `persist()` by example.
 
 ## 3b. Cloud telemetry pipeline — LwM2M Send → cloud MongoDB (60-day)
 
+> ✅ **IMPLEMENTED (v1, snapshot-derived) — no mongocxx, no LwM2M Send.**
+> The live map already populates `cloud.vehicle.telemetry` from `lwm2m-dm`'s
+> token-tagged **server-Reads** of Object 6 + 33000 (§5). v1 history simply
+> **persists that stream**: `iot-httpd` watches `cloud.vehicle.telemetry` and
+> appends one NDJSON line per poll cycle — `{ts, endpoints:[…]}` — to a spool
+> file on a dedicated `iot-telemetry-spool` volume (plain `ofstream`, so the
+> **cloud C++ build keeps `IOT_ENABLE_MONGO=OFF` — no mongocxx, no new build
+> flag**). The `iot-telemetry-ingest` sidecar (mongo image) atomically renames
+> the spool aside and `mongoimport`s it into the `telemetry` collection, then
+> the §3c archiver prunes. This deliberately **does not need client-side Send +
+> SenML codec** (the critical-path item below) because the server already pulls
+> the data live. The Send/SenML/Block-Wise path below remains the **v2
+> upgrade** — it adds *device-buffered backfill with true per-point
+> timestamps + offline catch-up*, which the snapshot stream can't (it only
+> records what the server polled while the device was registered).
+>
+> Wiring: `iot-httpd` watch+spool in `modules/http-server/src/main.cpp`;
+> `iot-telemetry-ingest` + `iot-telemetry-spool` volume in
+> `apps/cloud/docker-compose.yml` (`profiles: [telemetry]`).
+
 **Transport: LwM2M 1.1 Send (client-initiated batch push).** The device drains
 its buffer oldest-first and pushes batches as a **SenML pack** via LwM2M **Send**
 (CoAP POST to `/dp`) — multiple timestamped records in one message, exactly what

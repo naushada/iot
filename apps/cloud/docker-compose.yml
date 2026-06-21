@@ -145,6 +145,7 @@ services:
       - iot-run:/var/run/iot
       - iot-firmware:/var/lib/iot/firmware      # OTA .ipk feed (served at /firmware/; RW so the cloud-ui can upload bundles via POST /api/v1/firmware/upload)
       - iot-tls:/etc/iot/tls                    # self-signed cert — auto-provisioned by the image entrypoint
+      - iot-telemetry-spool:/var/lib/iot/telemetry-spool  # NDJSON spool: iot-httpd appends cloud.vehicle.telemetry snapshots; iot-telemetry-ingest bulk-loads → Mongo (§3b)
     environment:
       - TLS_HOST=${TLS_HOST:-}                  # cert CN/SAN for https (run.sh passes the host IP)
     depends_on:
@@ -166,8 +167,9 @@ services:
   # iot-etc config volume, so a release that changes ds *schemas* still
   # needs a manual `./run.sh` on the host. Code/UI-only releases are fine.
   # ── Telemetry store (60-day vehicle history; §3b of the TDD) ────
-  # x86 VM → mongod 5.0 supports native time-series collections. iot-httpd will
-  # ingest LwM2M-Send telemetry here (IOT_HTTPD_MONGO build, a later PR); the
+  # x86 VM → mongod 5.0 supports native time-series collections. The
+  # iot-telemetry-ingest sidecar bulk-loads vehicle snapshots here from the
+  # NDJSON spool iot-httpd writes (no mongo driver in the cloud C++ build); the
   # cold-storage archiver (§3c) mongodumps + prunes aged data. Idle until wired.
   mongo:
     image: docker.io/library/mongo:5.0
@@ -210,6 +212,26 @@ services:
     restart: unless-stopped
     profiles: ["telemetry"]
 
+  # ── Telemetry ingest (§3b) ─────────────────────────────────────
+  # iot-httpd appends each cloud.vehicle.telemetry snapshot to an NDJSON spool
+  # ({ts, endpoints:[...]} per line) — no mongo driver in the cloud C++ build.
+  # This sidecar atomically renames the spool aside and bulk-loads it into the
+  # `telemetry` collection with mongoimport, then drops the processed file.
+  # iot-httpd opens+appends+closes per snapshot, so the rename never races a
+  # held descriptor; the next snapshot recreates the spool. Reuses the mongo
+  # image for mongoimport. Opt-in with the mongo store.
+  iot-telemetry-ingest:
+    image: docker.io/library/mongo:5.0
+    container_name: iot-telemetry-ingest
+    depends_on: [mongo]
+    volumes:
+      - iot-telemetry-spool:/var/lib/iot/telemetry-spool
+    environment:
+      - MONGO_HOST=mongo
+    entrypoint: ["/bin/sh","-c","f=/var/lib/iot/telemetry-spool/spool.ndjson; while true; do if [ -s \"$$f\" ]; then mv \"$$f\" \"$$f.proc\" && mongoimport --quiet --host \"$$MONGO_HOST\" --db iot --collection telemetry --file \"$$f.proc\" && rm -f \"$$f.proc\"; fi; sleep ${TELEMETRY_INGEST_SEC:-30}; done"]
+    restart: unless-stopped
+    profiles: ["telemetry"]
+
   watchtower:
     image: containrrr/watchtower
     container_name: iot-watchtower
@@ -229,5 +251,6 @@ volumes:
   iot-firmware: # OTA .ipk packages (seeded by operator; served by iot-httpd)
   iot-tls:    # self-signed https cert (auto-provisioned by the image entrypoint)
   iot-mongo:    # 60-day vehicle telemetry time-series store (§3b)
+  iot-telemetry-spool:  # NDJSON hand-off: iot-httpd writer → iot-telemetry-ingest reader (§3b)
   iot-archive:  # cold-storage telemetry archives (mongodump, §3c → external HDD)
   iot-tiles:    # self-hosted map tiles (region .mbtiles + style, §3d)
