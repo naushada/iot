@@ -52,6 +52,15 @@ return {
       default = "[]",
     },
 
+    -- Telemetry ingest inbox (§3b) — lwm2m-dm appends each LwM2M-Send batch
+    -- (SenML decoded → JSON array of points) here; iot-httpd (IOT_HTTPD_MONGO)
+    -- drains it into the cloud `telemetry` Mongo collection and clears it.
+    -- VOLATILE handoff, sole writer = lwm2m-dm. Empty until the transport lands.
+    ["cloud.telemetry.inbox"] = {
+      type    = "string",
+      default = "[]",
+    },
+
     -- Bootstrap Server (L21/D3).  iot-cloudd reads these keys to
     -- configure the CoAP /bs endpoint and to build the Security +
     -- Server object TLV payloads that are pushed to devices during
