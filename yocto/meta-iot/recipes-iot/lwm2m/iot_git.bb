@@ -383,6 +383,7 @@ PACKAGE_BEFORE_PN = "\
     ${PN}-httpd \
     ${PN}-sensord \
     ${PN}-cellular \
+    ${PN}-vehicle \
     ${PN}-config \
     ${PN}-bcm2837-selftest \
 "
@@ -545,6 +546,15 @@ FILES:${PN}-cellular = "\
     ${systemd_system_unitdir}/iot-cellular-client.service \
 "
 RDEPENDS:${PN}-cellular = "ace-tao"
+
+# vehicle — iot-vehicled CAN/OBD-II (ISO 15765-4) telemetry producer.
+# Publishes vehicle.* to ds; the lwm2m client mirrors them into a Vehicle
+# object + GPS Object 6 for the cloud map. vehicle.lua schema ships in
+# ${PN}-config (${sysconfdir}/iot). systemd unit + can0 bring-up land in a
+# follow-up PR; for now the binary ships and is run manually / on demand.
+# See apps/docs/tdd-vehicle-telemetry.md.
+FILES:${PN}-vehicle = "${bindir}/iot-vehicled"
+RDEPENDS:${PN}-vehicle = "ace-tao"
 # A real data path also wants a modem manager + tools on the image; left to the
 # integrator per WP firmware (ModemManager / libqmi / usb-modeswitch).
 RRECOMMENDS:${PN}-cellular = "\

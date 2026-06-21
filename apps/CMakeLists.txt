@@ -145,6 +145,14 @@ set(CELLULAR_BUILD_DAEMON ON CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/wan/cellular
                  ${CMAKE_BINARY_DIR}/cellular)
 
+# vehicle module (CAN/OBD-II telemetry). Builds iot-vehicled, the privileged
+# producer that drives the SocketCAN bus, decodes OBD-II PIDs (vehicle::obd),
+# and publishes vehicle.* to ds. Reuses the datastore_client target added above.
+# See modules/vehicle/README.md + apps/docs/tdd-vehicle-telemetry.md.
+set(VEHICLE_BUILD_DAEMON ON CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/vehicle
+                 ${CMAKE_BINARY_DIR}/vehicle)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
