@@ -63,7 +63,7 @@ done
 NAME="$(basename "$BASE")"
 BUNDLE=0
 case "$NAME" in
-    *.tar.gz|*.tgz) BUNDLE=1 ;;
+    *.tar.gz|*.tgz|*.tar) BUNDLE=1 ;;
     *.ipk) ;;
     *) NAME="fw.ipk" ;;
 esac
@@ -158,15 +158,18 @@ if [ -n "$SHA" ]; then
 fi
 
 # A bundle expands into the spool so iot-swupdate's `opkg install *.ipk` glob
-# applies every package atomically. Decompress via gzip|tar (busybox-safe:
-# avoids relying on tar's built-in -z) and drop the tarball.
+# applies every package atomically. Compression is detected by CONTENT (gzip -t)
+# rather than the extension, so a plain .tar (e.g. a .tar.gz auto-decompressed by
+# the operator's browser) extracts too. busybox-safe: gzip|tar (avoids relying on
+# tar's built-in -z). Drop the tarball afterwards.
 if [ "$BUNDLE" = 1 ]; then
-    if ( cd "$SPOOL" && gzip -dc "$DL" | tar -xf - ) 2>/dev/null; then
-        rm -f "$DL"
+    if gzip -t "$DL" 2>/dev/null; then
+        ok=$( ( cd "$SPOOL" && gzip -dc "$DL" | tar -xf - ) 2>/dev/null && echo 1 )
     else
-        rm -f "$DL"
-        fail 9 "bundle extract failed"
+        ok=$( ( cd "$SPOOL" && tar -xf "$DL" ) 2>/dev/null && echo 1 )
     fi
+    rm -f "$DL"
+    [ "$ok" = 1 ] || fail 9 "bundle extract failed"
     ls "$SPOOL"/*.ipk >/dev/null 2>&1 || fail 9 "no .ipk in bundle"
     log "extracted bundle $NAME -> $(ls "$SPOOL"/*.ipk | wc -l) package(s)"
 fi

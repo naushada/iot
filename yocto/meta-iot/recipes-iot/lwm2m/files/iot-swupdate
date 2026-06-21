@@ -85,15 +85,23 @@ fi
 WORK="$SPOOL/.work-$$"
 mkdir -p "$WORK"
 
-# A drag-and-drop bundle (.tar.gz/.tgz) lands here UN-extracted: the device-ui
-# /api/v1/update/upload path drops the tarball and trips us directly, bypassing
-# iot-ota-stage (which is what normally expands a bundle for the cloud/URL push).
-# Expand any bundle in the spool into its .ipks so the *.ipk snapshot below
-# installs them all. busybox-safe: gzip -dc | tar (not tar -z). On the cloud/URL
-# path iot-ota-stage already extracted + removed the tarball, so this is a no-op.
-for b in "$SPOOL"/*.tar.gz "$SPOOL"/*.tgz; do
+# A drag-and-drop bundle (.tar/.tar.gz/.tgz) lands here UN-extracted: the
+# device-ui /api/v1/update/upload path drops the tarball and trips us directly,
+# bypassing iot-ota-stage (which is what normally expands a bundle for the
+# cloud/URL push). Expand any bundle in the spool into its .ipks so the *.ipk
+# snapshot below installs them all. Compression is detected by CONTENT (gzip -t),
+# not the extension: macOS auto-decompresses a downloaded .tar.gz to a plain
+# .tar, so the name is unreliable. busybox-safe: gzip -dc | tar (not tar -z). On
+# the cloud/URL path iot-ota-stage already extracted + removed the tarball, so
+# this is a no-op.
+for b in "$SPOOL"/*.tar "$SPOOL"/*.tar.gz "$SPOOL"/*.tgz; do
     [ -e "$b" ] || continue
-    if ( cd "$SPOOL" && gzip -dc "$b" | tar -xf - ) 2>/dev/null; then
+    if gzip -t "$b" 2>/dev/null; then
+        ok=$( ( cd "$SPOOL" && gzip -dc "$b" | tar -xf - ) 2>/dev/null && echo 1 )
+    else
+        ok=$( ( cd "$SPOOL" && tar -xf "$b" ) 2>/dev/null && echo 1 )
+    fi
+    if [ "$ok" = 1 ]; then
         log "expanded bundle $(basename "$b")"
     else
         log "bundle extract FAILED: $(basename "$b")"
@@ -101,8 +109,11 @@ for b in "$SPOOL"/*.tar.gz "$SPOOL"/*.tgz; do
     rm -f "$b"
 done
 
+# Snapshot the installable artifacts. .ipk → opkg path; .raucb → A/B rauc path
+# (handled in §3). Either kind counts as "staged" so a raucb-only drop isn't
+# mistaken for an empty trigger.
 moved=0
-for f in "$SPOOL"/*.ipk; do
+for f in "$SPOOL"/*.ipk "$SPOOL"/*.raucb; do
     [ -e "$f" ] || continue
     mv "$f" "$WORK/" && moved=1
 done
@@ -110,7 +121,7 @@ done
 rm -f "$SPOOL/update"   # re-arm the .path unit
 
 if [ "$moved" = 0 ]; then
-    log "trigger but no .ipk staged; nothing to do"
+    log "trigger but no .ipk/.raucb staged; nothing to do"
     rm -rf "$WORK"
     exit 0
 fi

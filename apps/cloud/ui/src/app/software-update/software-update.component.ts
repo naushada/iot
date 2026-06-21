@@ -42,7 +42,7 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
         <div class="dropzone" [class.over]="dragOver" [class.busy]="uploading"
              (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)"
              (drop)="onDrop($event)" (click)="fileInput.click()">
-          <input #fileInput type="file" accept=".ipk,.tar.gz,.tgz" hidden (change)="onPick($event)" />
+          <input #fileInput type="file" accept=".ipk,.tar,.tar.gz,.tgz" hidden (change)="onPick($event)" />
           <clr-icon shape="upload-cloud" size="28"></clr-icon>
           <span *ngIf="!uploading && !pendingFile">Drag &amp; drop an <code>.ipk</code> or <code>.tar.gz</code> bundle, or click to browse</span>
           <span *ngIf="!uploading && pendingFile">{{ pendingFile?.name }} ({{ ((pendingFile?.size ?? 0)/1048576) | number:'1.0-1' }} MB) — confirm details and upload</span>
@@ -272,11 +272,13 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
 
   // Stage the file + pre-fill pkg/version/arch from its name (operator edits).
   private stageFile(f: File): void {
-    if (!/\.(ipk|tar\.gz|tgz)$/i.test(f.name)) {
-      this.toast.error('Pick a .ipk, .tar.gz or .tgz file'); return;
+    // .tar covers a .tar.gz the operator's browser auto-decompressed on
+    // download; the device detects gzip by content, so it installs the same.
+    if (!/\.(ipk|tar\.gz|tgz|tar)$/i.test(f.name)) {
+      this.toast.error('Pick a .ipk, .tar, .tar.gz or .tgz file'); return;
     }
     this.pendingFile = f;
-    const base = f.name.replace(/\.(tar\.gz|tgz|ipk)$/i, '');
+    const base = f.name.replace(/\.(tar\.gz|tgz|tar|ipk)$/i, '');
     this.upPkg = base; this.upVersion = ''; this.upArch = '';
     // .ipk = name_version_arch ; bundle = pkg-version-arch (version starts w/ a digit)
     let m = base.match(/^(.+)_([^_]+)_([^_]+)$/);
