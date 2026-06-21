@@ -46,13 +46,22 @@ Needs a build-and-run loop + new deps:**
   `db_adapter.cpp` when `IOT_ENABLE_MONGO` — else the cloud build of
   `iot-vehicled` (which has no mongocxx) breaks. The recipe already passes
   `-DMONGOCXX_INCLUDE_DIR`/`-DBSONCXX_LIBRARY` etc.
-- ⬜ PR-8 — **LwM2M Send (`/dp`) + SenML/CBOR pack + full RFC 7959 Block-Wise**
-  in the CoAP adapter (§3b). The deepest piece — the device pushes buffered
-  batches up; do it against a build. (Block-Wise is currently only partial.)
-- ⬜ PR-9/10 — device uploader (drain buffer → Send → prune on 2.04) + cloud
-  ingest: `iot-httpd` links mongocxx behind a new `IOT_HTTPD_MONGO` flag,
-  watches `cloud.telemetry.inbox`, writes the cloud `telemetry` collection
-  (normal coll + TTL backstop; the **mongo service from PR-10a** is ready).
+- 🟡 PR-8 — **LwM2M Send (`/dp`) + SenML/CBOR pack** — pure pipeline DONE +
+  unit-validated in the podman dev-build (PR-26):
+  - ✅ SenML `bt`/`t` time fields in the codec (PR-25) — per-sample timestamps.
+  - ✅ `telemetry::build_pack`/`parse_pack` — samples ⇄ SenML records (PR-28).
+  - ✅ `send::build_send_request` — client POST `/dp` frame, CF 112 (PR-29).
+  - ✅ `SendServer::handle` — server `/dp` decode → samples + 2.04 (PR-30).
+  - ✅ `/dp` dispatch wired additively into `CoAPAdapter::processRequest` +
+    an `onSendReport` hook (PR-31); full `lwm2m` binary compiles.
+  - ⬜ **full RFC 7959 Block-Wise** (>1024 B packs) — still only partial; the
+    remaining deep CoAP-adapter work, HW-verified.
+- ⬜ PR-9/10 — the **integration** that needs the running system / HW:
+  - client uploader: bounded sample buffer in `iot-vehicled` → drain → Send →
+    prune on 2.04 (ACK-then-prune).
+  - server persist: wire `onSendReport` → a telemetry store. **Design TBD** —
+    feed the existing `cloud.vehicle.telemetry` spool (PR-22/23, already drains
+    to Mongo) vs a parallel `cloud.telemetry.inbox`. Decide with HW in the loop.
 - ✅ PR-11 (read-back) — Map **history track**: the iot-telemetry-ingest sidecar
   `mongoexport`s a recent window to `history.json`; `iot-httpd` serves it at
   `GET /api/v1/cloud/telemetry/history?ep=<ep>` (file-served, no mongo driver);
