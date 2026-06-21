@@ -162,7 +162,9 @@ export class HttpConfigComponent implements OnInit, OnDestroy {
       ip:      ['0.0.0.0'],
       port:    [8080],
       scheme:  ['http'],
-      workers: [0],
+      workers: [4],   // match the schema default (http.lua). A 0 fallback here
+                      // clobbered http.workers to 0 on save whenever ds had no
+                      // explicit value (the daemon's effective default is 4).
       cert:    [''],
       key:     [''],
       ca:      [''],
