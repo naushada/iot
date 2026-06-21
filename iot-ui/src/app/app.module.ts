@@ -24,6 +24,7 @@ import { CellularStatusComponent } from './wan/cellular-status/cellular-status.c
 import { CellularConfigComponent } from './wan/cellular-config/cellular-config.component';
 import { SensorsStatusComponent } from './sensors/sensors-status/sensors-status.component';
 import { GpsStatusComponent } from './sensors/gps-status/gps-status.component';
+import { VehicleStatusComponent } from './vehicle/vehicle-status.component';
 
 import { RoutingSubmenuComponent } from './routing/routing-submenu/routing-submenu.component';
 import { PortForwardComponent } from './routing/port-forward/port-forward.component';
@@ -57,6 +58,7 @@ import { DsDebugDirective } from '../common/ds-debug.directive';
     VpnSubmenuComponent, VpnConfigComponent, VpnStatusComponent,
     WanSubmenuComponent, WifiConfigComponent, WifiScanComponent, IfacePriorityComponent,
     CellularStatusComponent, CellularConfigComponent, SensorsStatusComponent, GpsStatusComponent,
+    VehicleStatusComponent,
     RoutingSubmenuComponent, PortForwardComponent, CustomRulesComponent,
     Lwm2mSubmenuComponent, Lwm2mConfigComponent,
     ServicesSubmenuComponent, ServicesListComponent,
