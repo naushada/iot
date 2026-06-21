@@ -23,6 +23,43 @@ target_include_directories(vehicle_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc)
 target_compile_options(vehicle_core PRIVATE -Wall -Wextra)
 add_library(vehicle::core ALIAS vehicle_core)
 
+# ── Install the vehicle.* schema (operator + daemon contract) ──
+include(GNUInstallDirs)
+if(NOT DEFINED IOT_PACKAGING_INSTALL OR IOT_PACKAGING_INSTALL)
+    install(FILES schemas/vehicle.lua
+            DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot/ds-schemas)
+endif()
+
+# ── iot-vehicled daemon (privileged producer; reactor-driven, ACE-only) ──
+# Built when VEHICLE_BUILD_DAEMON=ON (forced on in the iot image build). Off by
+# default for a plain `cmake modules/vehicle` core/test build.
+if(VEHICLE_BUILD_DAEMON)
+    if(NOT DEFINED ACE_ROOT)
+        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
+    endif()
+    if(NOT TARGET datastore_client)
+        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../data-store
+                         ${CMAKE_BINARY_DIR}/data-store)
+    endif()
+
+    add_executable(iot-vehicled
+        daemon/main.cpp
+        daemon/vehicle_client.cpp
+        daemon/can_socket.cpp)
+    target_include_directories(iot-vehicled PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/daemon
+        ${CMAKE_CURRENT_SOURCE_DIR}/inc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../data-store/inc
+        ${ACE_ROOT}/include)
+    target_link_directories(iot-vehicled PRIVATE ${ACE_ROOT}/lib)
+    target_link_libraries(iot-vehicled PRIVATE
+        vehicle_core datastore_client ACE pthread)
+
+    if(NOT DEFINED IOT_PACKAGING_INSTALL OR IOT_PACKAGING_INSTALL)
+        install(TARGETS iot-vehicled RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    endif()
+endif()
+
 if(VEHICLE_BUILD_TESTS)
     enable_testing()
     find_package(GTest REQUIRED)
