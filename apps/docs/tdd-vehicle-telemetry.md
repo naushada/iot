@@ -16,12 +16,12 @@ configured + saved.
 | Question | Decision |
 | --- | --- |
 | CAN interface | **SocketCAN** (`can0`) — MCP2515 SPI HAT or USB-CAN; OBD PIDs over raw CAN, DTCs over ISO-TP |
-| Map | **Live position only** — latest lat/lon, no historical track / time-series store |
+| Map | **Live position** (v1) + **history/replay** (v2) — device buffers, cloud is the 60-day store |
 | Cloud cadence | **~1 Hz** batched poll → cloud |
 | Signals (v1) | Core powertrain (speed/RPM/coolant/throttle/load), Fuel & intake (fuel level/IAT/MAF), **DTCs** (Mode 03), **GPS** (reuses existing cellular GPS → Object 6) |
 
-Non-goals for v1: historical track replay, J1939 (heavy-duty), bidirectional
-control / actuation, OBD security (Mode 27) — deferred.
+Historical track/replay moves to **v2** (cloud-stored, §3b). Non-goals overall:
+J1939 (heavy-duty), bidirectional control / actuation, OBD security (Mode 27).
 
 ## 2. Architecture (three planes)
 
@@ -43,14 +43,24 @@ control / actuation, OBD security (Mode 27) — deferred.
    │      │      JSON to broker, topic <serial>/<user-suffix>
    │      │
    │      └─► TelemetryMirror (NEW ACE_Task)  non-blocking post() → on-device
-   │             MongoDB time-series collection (HISTORY, TTL-pruned)
-   ▼
-  can0 brought up by a oneshot unit: ip link set can0 up type can bitrate 500000
+   │             MongoDB = store-and-forward BUFFER (short TTL safety net)
+   │                   │
+   │                   └─► LwM2M 1.1 SEND (SenML batch) ─► cloud lwm2m-dm
+   ▼                            │  ds inbox key  │
+  can0 up (oneshot)             ▼                ▼
+                         iot-httpd drains ─► CLOUD MongoDB (native time-series,
+                                              60-day TTL) ◄─ system of record
+                                              │
+                                              └─► cloud-ui Map + history/replay
 ```
 
-The **cloud map stays live** (latest lat/lon); **history lives on the device**
-in MongoDB, queried on demand — so neither the ds nor the cloud carries the
-time-series weight.
+**Two-tier storage:** the **device MongoDB is a short store-and-forward buffer**
+(offline-tolerant; prune points once the cloud durably ACKs them, plus a small
+TTL safety net). The **cloud MongoDB is the 60-day system of record** — and
+because the cloud is the **x86 Vultr VM**, it runs **mongod ≥ 5.0 → native
+time-series collections** (the device's ARM/4.4 limitation, §3a, does not apply
+to the cloud). The map now shows **live position AND history/replay** from the
+cloud store.
 
 Why two new daemons (not one): **privilege split** (the repo's rule —
 "unprivileged client reads ds, privileged daemons own the hardware"). The CAN
@@ -101,13 +111,18 @@ reactor tick, and a `svc()` worker that drains the queue and calls
 (telemetry is lossy-tolerant; the live ds copy stays authoritative). This also
 fills in `RegistryMirror`'s currently-stubbed `persist()` by example.
 
+- **Role: store-and-forward BUFFER, not the long-term store.** Each point is
+  marked `sent:false`; once the cloud durably ACKs it (§3b) the daemon flips it
+  `sent:true` and prunes (or lets a short TTL reap it). An "upload watermark"
+  (last-acked `ts`/seq) drives oldest-first batch uploads + survives restarts.
 - **Collection:** `telemetry` (db `iot`), document per poll:
-  `{ "ts": ISODate, "ep": "<serial>", "speed":…, "rpm":…, …, "lat":…, "lon":… }`.
-- **Retention:** **MongoDB time-series collection + TTL** (`timeField:"ts"`,
-  `expireAfterSeconds` e.g. 7 days) — auto-pruned, purpose-built for this.
+  `{ "ts": ISODate, "ep":"<serial>", "seq":N, "sent":false, "speed":…, …, "lat":…, "lon":… }`.
+- **Retention:** short **TTL safety net** (e.g. 24–48 h) so an extended offline
+  stretch can't lose data, plus prune-on-ACK. Time-series collection where the
+  device mongod supports it, else a TTL-indexed normal collection (§3a caveat).
 - **Connection:** new ds key `iot.mongo.uri` (e.g.
   `mongodb://127.0.0.1:27017/iot`), read at startup → `DbClient(uri)`. Empty →
-  mirror disabled (telemetry still flows to ds/LwM2M/MQTT; just no history).
+  buffer disabled (telemetry still flows to ds/LwM2M/MQTT; just no local spool).
 - Guard all new code with `#ifdef IOT_ENABLE_MONGO` so the cloud build (Mongo
   OFF) still compiles.
 
@@ -121,6 +136,47 @@ fills in `RegistryMirror`'s currently-stubbed `persist()` by example.
 > only the one-time collection-creation differs. Confirm what mongod (and which
 > arch) actually runs on the target before PR-7. (If Mongo runs in a container
 > or off-device, 5.0+ may be available.)
+
+## 3b. Cloud telemetry pipeline — LwM2M Send → cloud MongoDB (60-day)
+
+**Transport: LwM2M 1.1 Send (client-initiated batch push).** The device drains
+its buffer oldest-first and pushes batches as a **SenML pack** via LwM2M **Send**
+(CoAP POST to `/dp`) — multiple timestamped records in one message, exactly what
+Send is for. Cadence: opportunistic (when the tunnel is up); offline → the
+buffer grows and flushes on reconnect (backfill).
+
+> ⚠️ **Prerequisite — Send + SenML are NOT implemented yet.** They're on the
+> deferred-interop list (`apps/docs/leshan-interop.md`: SenML/CBOR, LwM2M Send).
+> This choice makes **implementing client-side Send + a SenML pack codec** (and
+> the server-side `/dp` receive) the **critical path** for cloud history.
+> **Fallback** if Send is too heavy for v1: a custom batch Object resource the
+> device fills and `lwm2m-dm` pulls via Observe/Notify — uglier, no new verb.
+
+**Cloud path (chosen: ingest in `iot-httpd`, Mongo as a compose service):**
+
+```
+device ──Send(SenML)──► lwm2m-dm ──ds inbox key──► iot-httpd ──► cloud MongoDB
+            (CoAP /dp)      │  cloud.telemetry.inbox   (drain)     (time-series,
+            ◄── 2.04 ACK ───┘  (volatile JSON batch)               60-day TTL)
+```
+
+- `lwm2m-dm` receives the Send, appends the batch to a **volatile** ds key
+  `cloud.telemetry.inbox`, and **2.04-ACKs only after the handoff** (so the
+  device won't prune un-handed-off data). Sole-writer discipline as with
+  `cloud.lwm2m.registrations`.
+- **`iot-httpd` owns the Mongo write** — watches `cloud.telemetry.inbox`, batch-
+  inserts into the cloud `telemetry` time-series collection, **dedups on
+  `(endpoint, ts)`** (idempotent — a re-sent batch never double-writes).
+- **Cloud Mongo deployment:** add a **`mongod` service to
+  `apps/cloud/docker-compose.yml`** (x86 VM → mongod ≥ 5.0 → native time-series
+  + `expireAfterSeconds = 5184000` (60 d)). `iot-httpd` links **mongocxx**
+  behind a new build flag (e.g. `IOT_HTTPD_MONGO=ON` cloud-only) so the device
+  httpd stays lean. Reuse the same `DbClient` (lift it to a shared spot, or a
+  thin copy in `modules/http-server`).
+- **ACK-then-prune end to end:** device prunes a point only after the Send it
+  rode in got a 2.04; the cloud's dedup makes an un-acked re-send safe.
+- cloud-ui Map reads **live** position from `cloud.vehicle.telemetry` (volatile)
+  and **history/replay** from Mongo via a new `iot-httpd` query endpoint.
 
 ## 4. New data-store keys
 
@@ -306,19 +362,32 @@ in `vehicle.dtc`. MIL/readiness via Mode 01 PID `0x01`.
 3. Vehicle LwM2M object `33000` + reader hooks (device) → cloud observe → cloud ds.
 4. cloud-ui Map page (reuses GPS Object 6 + vehicle volatile keys).
 
-**v1.1 — history, diagnostics, mirror:**
+**v1.1 — diagnostics, mirror, local buffer:**
 5. DTC path (ISO-TP Mode 03 → `vehicle.dtc` → UI).
 6. `iot-mqttd` + MQTT config page + Yocto `libmosquitto`.
-7. **`TelemetryMirror` ACE_Task → on-device MongoDB** (reuse `DbClient`; clone
-   `RegistryMirror`); time-series/TTL collection (or TTL-index fallback per the
-   §3a caveat); `iot.mongo.uri` + retention config; device-ui history view.
+7. **`TelemetryMirror` ACE_Task → on-device MongoDB buffer** (reuse `DbClient`;
+   clone `RegistryMirror`); store-and-forward schema (`sent`/`seq`/watermark);
+   TTL safety net; `iot.mongo.uri` config.
+
+**v2 — cloud history pipeline (depends on Send):**
+8. **LwM2M Send + SenML pack codec** (client push + server `/dp` receive) — the
+   critical-path enabler; lands with its own gtest. (Or the Observe/Notify
+   fallback per §3b.)
+9. Device uploader: drain buffer oldest-first → Send batches → prune on 2.04-ACK.
+10. Cloud: `mongod` in `apps/cloud/docker-compose.yml`; `iot-httpd` Mongo link
+    (`IOT_HTTPD_MONGO`); `lwm2m-dm` → `cloud.telemetry.inbox` → iot-httpd drain →
+    cloud time-series (60-day TTL) with `(endpoint,ts)` dedup.
+11. cloud-ui Map history/replay (query endpoint over the cloud Mongo).
 
 ## 9. Open items to confirm before coding
 
-Resolved this round: SocketCAN/can0; live-map-only (history on device);
-~1 Hz; signal set (powertrain+fuel/intake+DTC+GPS); **Vehicle object `33000`**;
-**one retained JSON payload** per poll on `<serial>/<suffix>`; **reuse iot
-`DbClient`** + `TelemetryMirror`; **Mongo time-series + TTL** retention.
+Resolved this round: SocketCAN/can0; ~1 Hz; signal set
+(powertrain+fuel/intake+DTC+GPS); **Vehicle object `33000`**; **one retained
+JSON payload** per poll on `<serial>/<suffix>`; **reuse iot `DbClient`** +
+`TelemetryMirror`. **Two-tier storage**: device Mongo = store-and-forward
+buffer (short TTL); **cloud Mongo = 60-day system of record** (x86 → native
+time-series). **Transport = LwM2M Send (SenML)**; **cloud ingest = iot-httpd +
+mongod compose service**.
 
 Still to confirm before the relevant PR:
 
@@ -330,3 +399,7 @@ Still to confirm before the relevant PR:
   3B/4 caps at 4.4 (TTL index only). Confirm what runs on the target, else use
   the TTL-index fallback. (PR-7) See §3a caveat.
 - **TLS to broker** — plain 1883 in v1.1; 8883/CA fast-follow. (PR-6)
+- **LwM2M Send + SenML** — confirm scope/effort vs the Observe/Notify fallback;
+  this gates the whole cloud-history pipeline. (PR-8) See §3b.
+- **Cloud mongod footprint** on the Vultr VM (RAM/disk for 60-day time-series at
+  fleet scale) + `iot-httpd` mongocxx link via `IOT_HTTPD_MONGO`. (PR-10)
