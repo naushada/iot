@@ -134,7 +134,7 @@ import { ToastService } from '../../common/toast.service';
         <div class="dropzone" [class.over]="dragOver" [class.busy]="uploading"
              (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)"
              (drop)="onDrop($event)" (click)="fileInput.click()">
-          <input #fileInput type="file" accept=".ipk,.tar.gz,.tgz,.raucb" hidden
+          <input #fileInput type="file" accept=".ipk,.tar,.tar.gz,.tgz,.raucb" hidden
                  (change)="onPick($event)" />
           <clr-icon shape="upload-cloud" size="28"></clr-icon>
           <span *ngIf="!uploading">Drag &amp; drop a <code>.ipk</code> / <code>.tar.gz</code> / <code>.raucb</code>, or click to browse</span>
@@ -319,8 +319,11 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
 
   private uploadFile(file: File): void {
     if (this.uploading) return;
-    if (!/\.(ipk|tar\.gz|tgz|raucb)$/i.test(file.name)) {
-      this.toast.error('Pick a .ipk, .tar.gz, .tgz or .raucb file'); return;
+    // .tar covers a .tar.gz that the browser/OS auto-decompressed on download
+    // (macOS Safari/Archive Utility strips the .gz); the device detects gzip by
+    // content, so an uncompressed tar installs the same way.
+    if (!/\.(ipk|tar\.gz|tgz|tar|raucb)$/i.test(file.name)) {
+      this.toast.error('Pick a .ipk, .tar, .tar.gz, .tgz or .raucb file'); return;
     }
     this.uploading = true; this.uploadName = file.name; this.uploadPct = 0;
     const total = file.size;

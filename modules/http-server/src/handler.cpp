@@ -434,9 +434,16 @@ void install_handlers(Router& router,
                 return safe.size() >= s.size() &&
                        safe.compare(safe.size() - s.size(), s.size(), s) == 0;
             };
-            if (safe.empty() || !(ends_with(".ipk") || ends_with(".tar.gz") || ends_with(".tgz"))) {
+            // Accept .tar too: macOS Safari/Archive Utility silently gunzips a
+            // downloaded .tar.gz, leaving a plain .tar the operator then drops
+            // here; the stager/swupdate detect compression by content, so an
+            // uncompressed tar is fine. .raucb is the A/B full-image bundle
+            // (iot-swupdate routes it to `rauc install`).
+            if (safe.empty() || !(ends_with(".ipk") || ends_with(".tar") ||
+                                  ends_with(".tar.gz") || ends_with(".tgz") ||
+                                  ends_with(".raucb"))) {
                 r.status = 400;
-                r.body = R"({"ok":false,"err":"name must end in .ipk, .tar.gz or .tgz"})";
+                r.body = R"({"ok":false,"err":"name must end in .ipk, .tar, .tar.gz, .tgz or .raucb"})";
                 return r;
             }
             // Chunked append: large bundles (.raucb) exceed the 8 MiB body cap,
@@ -518,8 +525,12 @@ void install_handlers(Router& router,
                 return safe.size() >= s.size() &&
                        safe.compare(safe.size() - s.size(), s.size(), s) == 0;
             };
-            if (safe.empty() || !(ends_with(".ipk") || ends_with(".tar.gz") || ends_with(".tgz"))) {
-                r.status = 400; r.body = R"({"ok":false,"err":"name must end in .ipk, .tar.gz or .tgz"})"; return r;
+            // Same accepted set as /update/upload — .tar covers a macOS-
+            // auto-decompressed .tar.gz; .raucb is the A/B full-image bundle.
+            if (safe.empty() || !(ends_with(".ipk") || ends_with(".tar") ||
+                                  ends_with(".tar.gz") || ends_with(".tgz") ||
+                                  ends_with(".raucb"))) {
+                r.status = 400; r.body = R"({"ok":false,"err":"name must end in .ipk, .tar, .tar.gz, .tgz or .raucb"})"; return r;
             }
             bool first = true, final = true;
             if (auto it = req.query.find("offset"); it != req.query.end())
