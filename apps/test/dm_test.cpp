@@ -409,7 +409,7 @@ TEST(CertPush, server_push_materializes_family_on_device) {
     EXPECT_EQ(cert, slurp_file(certDir + "/client.crt"));
     EXPECT_EQ(key,  slurp_file(certDir + "/client.key"));
     ASSERT_EQ(0, ::stat((certDir + "/client.key").c_str(), &st));
-    EXPECT_EQ(0600, st.st_mode & 0777);                            // key private
+    EXPECT_EQ(0640, st.st_mode & 0777);            // key 0640: group-readable by design
 
     for (auto* f : {"/ca.crt", "/client.crt", "/client.key"})
         std::remove((certDir + f).c_str());

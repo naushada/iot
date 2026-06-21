@@ -314,9 +314,12 @@ TEST(CertObject, write_then_apply_materializes_cert_family) {
     EXPECT_EQ("-----CERT PEM-----\n", slurp(certDir + "/client.crt"));
     EXPECT_EQ("-----KEY PEM-----\n",  slurp(certDir + "/client.key"));
 
-    // Private key must be 0600; cert/CA world-readable.
+    // Private key is 0640 — group-readable by design so the openvpn-client
+    // DynamicUser (sharing group `iot` via the certDir) can read it; world has
+    // no access. Cert/CA are world-readable. See default_store() in
+    // lwm2m_object_cert.cpp.
     ASSERT_EQ(0, ::stat((certDir + "/client.key").c_str(), &stbuf));
-    EXPECT_EQ(0600, stbuf.st_mode & 0777);
+    EXPECT_EQ(0640, stbuf.st_mode & 0777);
     ASSERT_EQ(0, ::stat((certDir + "/client.crt").c_str(), &stbuf));
     EXPECT_EQ(0644, stbuf.st_mode & 0777);
 
