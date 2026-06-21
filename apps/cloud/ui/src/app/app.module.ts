@@ -11,6 +11,7 @@ import { MainComponent } from './main/main.component';
 import { LoginComponent } from './login/login.component';
 import { DashboardComponent } from './dashboard/dashboard.component';
 import { EndpointListComponent } from './endpoint-list/endpoint-list.component';
+import { MapComponent } from './map/map.component';
 import { StatusBadgeComponent } from './common/status-badge/status-badge.component';
 import { ToastComponent } from './common/toast/toast.component';
 import { LogViewerComponent } from './log-level/log-viewer.component';
@@ -43,7 +44,7 @@ import { DsDebugDirective } from '../common/ds-debug.directive';
 @NgModule({
   declarations: [
     AppComponent, MainComponent, LoginComponent,
-    DashboardComponent, EndpointListComponent, StatusBadgeComponent, ToastComponent, LogViewerComponent,
+    DashboardComponent, EndpointListComponent, MapComponent, StatusBadgeComponent, ToastComponent, LogViewerComponent,
     VpnSubmenuComponent, VpnConfigComponent, VpnStatusComponent,
     WanSubmenuComponent, WifiConfigComponent, WifiScanComponent, IfacePriorityComponent,
     RoutingSubmenuComponent, CustomRulesComponent, DeviceForwardingComponent,
