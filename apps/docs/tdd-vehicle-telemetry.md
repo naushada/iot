@@ -18,17 +18,43 @@ implemented + merged; the cloud/transport half is still planned.
   Yocto unit ExecStart paths (`/usr/bin`).
 - ✅ PR-6b (#338) — device-ui **MQTT config** page (broker + mirror toggle).
 
-**Remaining (planned — cloud-history half; an interdependent unit best done
-together with build verification; each adds deep C++ and/or new deps):**
-- ⬜ Cloud plumbing: lwm2m-dm observe Object 6/33000 → `cloud.vehicle.telemetry`.
-- ⬜ PR-4 — cloud-ui **Map** (Leaflet) + self-hosted **tileserver-gl** compose +
-  endpoint-name hyperlink (§3d).
-- ⬜ PR-7 — `TelemetryMirror` → on-device **MongoDB** buffer (§3a, needs
-  mongocxx gated into iot-vehicled for device-only).
-- ⬜ PR-8 — **LwM2M Send + SenML/CBOR + full RFC 7959 Block-Wise** (§3b — the
-  critical-path enabler; deep CoAP work).
-- ⬜ PR-9..12 — device uploader, cloud **mongod** + iot-httpd ingest,
-  history/replay + charts, cold-storage **archiver** (§3c).
+- ✅ PR-10a (#340) — cloud **mongod + tileserver** compose services (opt-in
+  `telemetry` profile) — the 60-day store + first-party map tiles.
+- ✅ PR-12 (#341) — cold-storage **archiver** script + opt-in compose service
+  (mongodump → verify → prune → manifest).
+- ✅ PR-4 (#342) — cloud-ui **Fleet Map** (Leaflet, self-hosted tiles, markers
+  from `cloud.vehicle.telemetry`).
+
+**Remaining — the telemetry TRANSPORT that fills `cloud.vehicle.telemetry`
+(one interdependent unit; needs a build-and-run loop). Implementation pointers
+from tracing the code, so this is an exact handoff:**
+
+- ⬜ **Cloud observe plumbing** — populate `cloud.vehicle.telemetry` from the
+  device's Object 6 + Object 33000. The existing `lan_ip` flow is the template
+  but it is *spread out*: the server-side resource read/decode lives in
+  `apps/src/lwm2m_adapter.cpp` (the `ConnectivityMonitoring`/object dispatch),
+  the per-endpoint store is `modules/server/lwm2m/src/endpoint_registry.cpp`
+  (`update_lan_ip`/`installed_version` setters), and the merge into the cloud ds
+  is `apps/cloud/server/src/main.cpp` (parses `cloud.lwm2m.registrations` →
+  `EndpointRegistry`). Add Object-6 lat/lon + Object-33000 reads on the same
+  path → write a `cloud.vehicle.telemetry` JSON row per endpoint (sole-writer =
+  lwm2m-dm). The cloud-ui Map (PR-4) already reads that key live.
+- ⬜ PR-7 — `TelemetryMirror` (clone `apps/src/lwm2m_registry_mirror.cpp`) →
+  on-device MongoDB buffer (§3a). Reuse `apps/inc/db_adapter.hpp` (`DbClient`).
+  **Gating:** guard with `#ifdef IOT_ENABLE_MONGO` and, in
+  `modules/vehicle/CMakeLists.txt`, only link `mongocxx`/`bsoncxx` +
+  `db_adapter.cpp` when `IOT_ENABLE_MONGO` — else the cloud build of
+  `iot-vehicled` (which has no mongocxx) breaks. The recipe already passes
+  `-DMONGOCXX_INCLUDE_DIR`/`-DBSONCXX_LIBRARY` etc.
+- ⬜ PR-8 — **LwM2M Send (`/dp`) + SenML/CBOR pack + full RFC 7959 Block-Wise**
+  in the CoAP adapter (§3b). The deepest piece — the device pushes buffered
+  batches up; do it against a build. (Block-Wise is currently only partial.)
+- ⬜ PR-9/10 — device uploader (drain buffer → Send → prune on 2.04) + cloud
+  ingest: `iot-httpd` links mongocxx behind a new `IOT_HTTPD_MONGO` flag,
+  watches `cloud.telemetry.inbox`, writes the cloud `telemetry` collection
+  (normal coll + TTL backstop; the **mongo service from PR-10a** is ready).
+- ⬜ PR-11 — Map history/replay + **time-series charts** (Chart.js) over a new
+  `iot-httpd` Mongo query endpoint. (Leaflet dep + pattern already in PR-4.)
 
 Greenfield baseline: no CAN code existed in the repo before PR-1.
 
