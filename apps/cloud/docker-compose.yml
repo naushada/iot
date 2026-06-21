@@ -192,6 +192,24 @@ services:
     restart: unless-stopped
     profiles: ["telemetry"]           # opt-in; the map page points at this
 
+  # ── Cold-storage archiver (§3c) ────────────────────────────────
+  # Monthly: mongodump telemetry older than ARCHIVE_HOT_DAYS → verify → prune,
+  # writing archives to the iot-archive volume (operator copies to external HDD).
+  # Reuses the mongo image for mongodump/mongosh. Opt-in with the mongo store.
+  iot-archiver:
+    image: docker.io/library/mongo:5.0
+    container_name: iot-archiver
+    depends_on: [mongo]
+    volumes:
+      - iot-archive:/archive
+      - ./scripts/iot-telemetry-archiver.sh:/usr/local/bin/iot-telemetry-archiver:ro
+    environment:
+      - MONGO_HOST=mongo
+      - ARCHIVE_HOT_DAYS=${ARCHIVE_HOT_DAYS:-60}
+    entrypoint: ["/bin/sh","-c","while true; do /usr/local/bin/iot-telemetry-archiver || true; sleep ${ARCHIVE_INTERVAL_SEC:-2592000}; done"]
+    restart: unless-stopped
+    profiles: ["telemetry"]
+
   watchtower:
     image: containrrr/watchtower
     container_name: iot-watchtower
