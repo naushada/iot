@@ -178,6 +178,31 @@ device ──Send(SenML)──► lwm2m-dm ──ds inbox key──► iot-httpd
 - cloud-ui Map reads **live** position from `cloud.vehicle.telemetry` (volatile)
   and **history/replay** from Mongo via a new `iot-httpd` query endpoint.
 
+## 3c. Map rendering & basemap (cloud-ui — client-side, NO plotting daemon)
+
+Plotting is **entirely client-side** in the cloud-ui SPA — there is **no
+separate plotting process and no third-party app** in the data path:
+
+- **Library:** **Leaflet** (raster tiles, lightweight) — a map component on the
+  new cloud-ui Map page: a marker per online endpoint, a popover with live
+  telemetry, and a polyline track + replay for history.
+- **Data:** the existing **iot-httpd REST** surface — live position from
+  `cloud.vehicle.telemetry` (long-poll), history from the cloud Mongo via a
+  query endpoint (§3b). No new backend process.
+- **Basemap tiles — SELF-HOSTED (first-party, no third party):** a
+  **tileserver-gl** container on the cloud VM (added to
+  `apps/cloud/docker-compose.yml`) serving a **region MBTiles extract** (a
+  country/region, NOT the planet — keep it small). The operator's browser
+  fetches tiles from the cloud, so the whole stack stays first-party /
+  on-prem-capable — no Google/Mapbox dependency, no per-request cost. Leaflet's
+  tile URL is pluggable, so a commercial provider stays a drop-in if ever wanted.
+  Footprint: tileserver-gl + a region MBTiles ≈ hundreds of MB to a few GB
+  (vs a ~60 GB+ planet extract) — size the region to the fleet's geography.
+- **Vehicle-data charts (v1 viz choice = charts):** time-series plots
+  (speed/RPM/coolant/… over time) via a **client-side charting lib**
+  (Chart.js or ECharts), fed from the cloud Mongo history query — also no
+  backend process. Live values still render in the marker popover.
+
 ## 4. New data-store keys
 
 ### Device (`iot.lua` or a new `vehicle.lua` schema)
@@ -376,7 +401,9 @@ in `vehicle.dtc`. MIL/readiness via Mode 01 PID `0x01`.
 2. `iot-vehicled` daemon + `vehicle.lua` + units + ServiceGate (ingest →
    volatile ds). device-ui Vehicle page.
 3. Vehicle LwM2M object `33000` + reader hooks (device) → cloud observe → cloud ds.
-4. cloud-ui Map page (reuses GPS Object 6 + vehicle volatile keys).
+4. cloud-ui Map page — **Leaflet** live markers (reuses GPS Object 6 + vehicle
+   volatile keys) + popover; **self-hosted `tileserver-gl` container** (region
+   MBTiles) in the cloud compose; endpoint-name → map hyperlink (§5 Phase 2).
 
 **v1.1 — diagnostics, mirror, local buffer:**
 5. DTC path (ISO-TP Mode 03 → `vehicle.dtc` → UI).
@@ -393,7 +420,8 @@ in `vehicle.dtc`. MIL/readiness via Mode 01 PID `0x01`.
 10. Cloud: `mongod` in `apps/cloud/docker-compose.yml`; `iot-httpd` Mongo link
     (`IOT_HTTPD_MONGO`); `lwm2m-dm` → `cloud.telemetry.inbox` → iot-httpd drain →
     cloud time-series (60-day TTL) with `(endpoint,ts)` dedup.
-11. cloud-ui Map history/replay (query endpoint over the cloud Mongo).
+11. cloud-ui Map history/replay (track polyline) + **time-series charts**
+    (Chart.js/ECharts) over the cloud Mongo history query endpoint.
 
 ## 9. Open items to confirm before coding
 
@@ -407,6 +435,9 @@ mongod compose service**. **Endpoints page (lean)**: the endpoint NAME becomes a
 map hyperlink when position is available (hidden `lat`/`lon` gating merged into
 `cloud.endpoints` from Object 6) — no new columns/buttons; the existing
 "Location" column stays the LwM2M reg/heartbeat URI (`/rd/<id>`).
+**Map rendering**: client-side **Leaflet** in cloud-ui (no plotting daemon);
+**self-hosted `tileserver-gl`** on the cloud VM (region MBTiles — first-party, no
+Google/Mapbox); vehicle data via popover + **client-side time-series charts**.
 
 Still to confirm before the relevant PR:
 
