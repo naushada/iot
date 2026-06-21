@@ -94,7 +94,12 @@ interface EpCred {
           <clr-dg-cell><code>{{ e.lan_ip || '—' }}</code></clr-dg-cell>
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
           <clr-dg-cell>
-            <code>{{ nextHeartbeat(e) }}</code>
+            <!-- Online: countdown to the next registration Update. Offline:
+                 how long since the device was last seen (the row's retained
+                 LAN/ISP IPs are a snapshot from that time). -->
+            <code *ngIf="e.registered">{{ nextHeartbeat(e) }}</code>
+            <code *ngIf="!e.registered" class="stale"
+                  title="time since the device was last registered">last seen {{ lastSeen(e) }}</code>
             <!-- Debug mode: reveal the raw ds values the countdown derives from
                  (cloud.endpoints[].lifetime + .last_seen_unix), mirroring the
                  *dsDebug hint convention used on the config forms. -->
@@ -173,6 +178,7 @@ interface EpCred {
     .page{padding:24px;} h3{color:#333;margin:0;font-size:16px;font-weight:600;}
     .header-row{display:flex;align-items:center;justify-content:space-between;margin:0 0 16px 0;}
     .hint{font-size:12px;color:#888;}
+    .stale{color:#999;font-style:italic;}
     .cred-list{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0;}
     .cred-list dt{color:#666;font-weight:600;}
     .cred-list dd{margin:0;word-break:break-all;}
@@ -237,6 +243,18 @@ export class EndpointListComponent implements OnInit, OnDestroy {
   nextHeartbeat(e: EpInfo): string {
     if (!e.lifetime || !e.last_seen_unix) return '—';
     return this.hhmmss(e.last_seen_unix + e.lifetime - this.now);
+  }
+
+  /** Relative time since the device was last seen (shown when offline, so the
+   *  retained LAN/ISP IPs read as a dated snapshot). '—' if never seen. */
+  lastSeen(e: EpInfo): string {
+    if (!e.last_seen_unix) return '—';
+    const ago = this.now - e.last_seen_unix;
+    if (ago < 0)      return 'just now';
+    if (ago < 60)     return ago + 's ago';
+    if (ago < 3600)   return Math.floor(ago / 60) + 'm ago';
+    if (ago < 86400)  return Math.floor(ago / 3600) + 'h ago';
+    return Math.floor(ago / 86400) + 'd ago';
   }
 
   ngOnInit(): void {

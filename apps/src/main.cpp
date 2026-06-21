@@ -463,6 +463,14 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                         if (lit != epLanIps->end() && !lit->second.empty())
                             row["lan_ip"] = lit->second;
                     }
+                    // Device public/ISP IP = the DTLS registration peer address
+                    // (the NAT public IP the device's DIRECT Register/Update
+                    // arrives from, :5683). Captured here on the LwM2M plane so
+                    // it is VPN-INDEPENDENT and, carried in the reg record, is
+                    // retained across offline like lan_ip/version — vs the old
+                    // OpenVPN-status source that cleared when the tunnel dropped.
+                    if (!kv.second.peerHost.empty())
+                        row["isp_ip"] = kv.second.peerHost;
                     arr.push_back(std::move(row));
                 }
                 *lastSeen = std::move(kept);

@@ -185,6 +185,7 @@ bool reconcile_registrations(data_store::Client& ds,
     std::unordered_map<std::string, std::int64_t> online;  // ep → last_seen_unix
     std::unordered_map<std::string, std::string>  versions;  // ep → /3/0/3
     std::unordered_map<std::string, std::string>  lanIps;    // ep → /4/0/4
+    std::unordered_map<std::string, std::string>  ispIps;    // ep → DTLS peer (public/ISP)
     std::unordered_map<std::string, std::uint32_t> lifetimes; // ep → lifetime(s)
     std::unordered_map<std::string, std::string>  locations;  // ep → /rd/<id>
     try {
@@ -199,6 +200,8 @@ bool reconcile_registrations(data_store::Client& ds,
                 if (!ver.empty()) versions[ep] = std::move(ver);
                 auto lan = e.value("lan_ip", std::string());
                 if (!lan.empty()) lanIps[ep] = std::move(lan);
+                auto isp = e.value("isp_ip", std::string());
+                if (!isp.empty()) ispIps[ep] = std::move(isp);
                 if (auto lt = e.value("lifetime", std::uint32_t{0}); lt != 0)
                     lifetimes[ep] = lt;
                 if (auto loc = e.value("location", std::string()); !loc.empty())
@@ -223,6 +226,12 @@ bool reconcile_registrations(data_store::Client& ds,
             changed = true;
         auto nit = lanIps.find(ep.ep);
         if (nit != lanIps.end() && reg.update_lan_ip(ep.ep, nit->second))
+            changed = true;
+        // Public/ISP IP from the registration peer — retained across offline
+        // (only updated when the device reports one, never cleared here), so it
+        // survives a VPN drop. See publish_regs in apps/src/main.cpp.
+        auto iit = ispIps.find(ep.ep);
+        if (iit != ispIps.end() && reg.update_wan_ip(ep.ep, iit->second))
             changed = true;
         // Heartbeat interval + /rd location (Endpoints table columns).
         {
@@ -1114,15 +1123,17 @@ int main(int argc, char** argv) {
                         server::openvpn::CertAuthority::sanitize_cn(e.ep));
                     if (it != ips.end()) {
                         ip_changed |= ep_reg.update_dev_tun_ip(e.ep, it->second.vip);
-                        ep_reg.update_wan_ip(e.ep, it->second.wan_ip);
                     } else {
                         // Tunnel down for this endpoint — clear the stale
                         // assigned IP so the cloud UI gates Launch UI off and
                         // the DNAT stops targeting a dead vip (dev_tun_ip is
                         // the per-device "VPN up" signal the UI keys on).
                         ip_changed |= ep_reg.update_dev_tun_ip(e.ep, "");
-                        ep_reg.update_wan_ip(e.ep, "");
                     }
+                    // NOTE: wan_ip (public/ISP IP) is NOT touched here anymore.
+                    // It now comes from the LwM2M registration peer (reconcile_
+                    // registrations), so it is VPN-independent + retained across
+                    // a tunnel drop. The OpenVPN real-addr is the same NAT IP.
                 }
                 if (ip_changed) {
                     sync_endpoints_to_ds(ds, ep_reg);
