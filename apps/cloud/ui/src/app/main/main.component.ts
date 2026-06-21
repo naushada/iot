@@ -20,7 +20,6 @@ export class MainComponent implements OnInit {
     { id: 'map',       label: 'Map',       svg: 'assets/icons/map.svg' },
     { id: 'vpn',       label: 'VPN',       svg: 'assets/icons/vpn.svg' },
     { id: 'http',      label: 'HTTP',      svg: 'assets/icons/http.svg' },
-    { id: 'wan',       label: 'WAN',       svg: 'assets/icons/wan.svg' },
     { id: 'routing',   label: 'Routing',   svg: 'assets/icons/routing.svg' },
     { id: 'lwm2m',     label: 'LwM2M',     svg: 'assets/icons/lwm2m.svg' },
     { id: 'services',  label: 'Services',  svg: 'assets/icons/services.svg' },
