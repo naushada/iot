@@ -373,6 +373,17 @@ return {
       type    = "string",
       default = "",
     },
+    -- iot-vehicled (CAN/OBD-II) + iot-mqttd (MQTT mirror) per-daemon levels.
+    ["log.level.vehicle"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
+    ["log.level.mqtt"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
     -- Bumped by every daemon on log flush so the cloud UI can long-poll
     -- a single key instead of round-robining through all log.*.text keys.
     ["log.version"] = {
@@ -410,6 +421,16 @@ return {
       default = "",
     },
     ["log.lwm2m.dm.text"] = {
+        access  = "Viewer",
+      type    = "string",
+      default = "",
+    },
+    ["log.vehicled.text"] = {
+        access  = "Viewer",
+      type    = "string",
+      default = "",
+    },
+    ["log.mqttd.text"] = {
         access  = "Viewer",
       type    = "string",
       default = "",

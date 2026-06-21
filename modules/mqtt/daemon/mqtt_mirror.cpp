@@ -10,9 +10,18 @@
 #include <ace/Reactor.h>
 #include <ace/Time_Value.h>
 
+#include "data_store/log_buffer.hpp"
 #include "data_store/value.hpp"
 
 namespace mqtt {
+
+// Owns the libmosquitto handle via std::unique_ptr (no raw owning pointer).
+void MosqDeleter::operator()(::mosquitto* m) const noexcept { if (m) mosquitto_destroy(m); }
+
+// Captures this daemon's ACE log output to log.mqttd.text and applies the
+// per-daemon level from log.level.mqtt (falls back to log.level). See
+// data_store::LogBuffer.
+static data_store::LogBuffer g_log("mqttd", "log.mqttd.text", "log.level.mqtt");
 
 namespace {
 const void* const kLoopAct = reinterpret_cast<const void*>(1);  // mosquitto_loop
@@ -29,8 +38,8 @@ const char* const kVehicleKeys[] = {
 
 MqttMirror::~MqttMirror() {
     if (m_mosq) {
-        mosquitto_disconnect(m_mosq);
-        mosquitto_destroy(m_mosq);
+        mosquitto_disconnect(m_mosq.get());
+        m_mosq.reset();   // deleter → mosquitto_destroy
     }
     mosquitto_lib_cleanup();
 }
@@ -69,7 +78,7 @@ void MqttMirror::ensure_connected() {
 
     if (!m_mosq) {
         std::string cid = read_key("mqtt.client.id");
-        m_mosq = mosquitto_new(cid.empty() ? nullptr : cid.c_str(), true, this);
+        m_mosq.reset(mosquitto_new(cid.empty() ? nullptr : cid.c_str(), true, this));
         if (!m_mosq) {
             ACE_ERROR((LM_ERROR, ACE_TEXT("%D [mqtt] mosquitto_new failed\n")));
             return;
@@ -77,11 +86,11 @@ void MqttMirror::ensure_connected() {
         std::string user = read_key("mqtt.broker.user");
         std::string pass = read_key("mqtt.broker.pass");
         if (!user.empty())
-            mosquitto_username_pw_set(m_mosq, user.c_str(),
+            mosquitto_username_pw_set(m_mosq.get(), user.c_str(),
                                       pass.empty() ? nullptr : pass.c_str());
     }
 
-    int rc = mosquitto_connect(m_mosq, m_host.c_str(), m_port, 60);
+    int rc = mosquitto_connect(m_mosq.get(), m_host.c_str(), m_port, 60);
     if (rc == MOSQ_ERR_SUCCESS) {
         m_connected = true;
         ACE_DEBUG((LM_INFO, ACE_TEXT("%D [mqtt] connected %C:%d topic=%C\n"),
@@ -122,16 +131,16 @@ void MqttMirror::publish_telemetry() {
     }
     json += "}";
 
-    mosquitto_publish(m_mosq, nullptr, m_topic.c_str(),
+    mosquitto_publish(m_mosq.get(), nullptr, m_topic.c_str(),
                       static_cast<int>(json.size()), json.data(), m_qos, true /*retain*/);
 }
 
 int MqttMirror::handle_timeout(const ACE_Time_Value&, const void* act) {
     if (act == kLoopAct) {
         if (m_mosq && m_connected) {
-            int rc = mosquitto_loop(m_mosq, 0, 1);
+            int rc = mosquitto_loop(m_mosq.get(), 0, 1);
             if (rc != MOSQ_ERR_SUCCESS) {
-                if (mosquitto_reconnect(m_mosq) != MOSQ_ERR_SUCCESS) m_connected = false;
+                if (mosquitto_reconnect(m_mosq.get()) != MOSQ_ERR_SUCCESS) m_connected = false;
             }
         } else {
             // Parked / disconnected: retry every ~5 s (not every 100 ms tick),
@@ -157,6 +166,14 @@ int MqttMirror::run() {
     // Publish timer: mirror vehicle.* to the broker at the configured cadence.
     ACE_Time_Value pub(m_cfg.publish_ms / 1000, (m_cfg.publish_ms % 1000) * 1000);
     ACE_Reactor::instance()->schedule_timer(this, kPubAct, ACE_Time_Value(2), pub);
+
+    // ACE is initialised now (the reactor was used above): capture logs to
+    // log.mqttd.text, apply log.level.mqtt, and drive the flush timer.
+    g_log.start();
+    g_log.apply_level(m_ds);
+    g_log.open(m_ds, 5, 1);
+    // Self-report for the Services page.
+    m_ds.set(std::string("services.mqtt.state"), data_store::Value{std::string("running")});
 
     ACE_DEBUG((LM_INFO,
         ACE_TEXT("%D [mqtt] up: broker=%C:%d topic=%C (parks until host set)\n"),

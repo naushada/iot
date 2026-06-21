@@ -2,6 +2,7 @@
 #define __mqtt_mirror_hpp__
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include <ace/Event_Handler.h>
@@ -9,6 +10,12 @@
 #include "data_store/client.hpp"
 
 struct mosquitto;  // libmosquitto opaque handle (fwd-decl)
+
+namespace mqtt {
+/// Custom deleter so the libmosquitto handle is owned by a std::unique_ptr
+/// (no raw owning pointer). Defined in the .cpp where mosquitto.h is visible.
+struct MosqDeleter { void operator()(::mosquitto* m) const noexcept; };
+}
 
 /// iot-mqttd — mirror device telemetry to an operator-owned MQTT broker.
 ///
@@ -45,10 +52,10 @@ class MqttMirror : public ACE_Event_Handler {
         void        ensure_connected();
         void        publish_telemetry();
 
-        Config             m_cfg;
-        data_store::Client m_ds;
-        struct mosquitto*  m_mosq = nullptr;
-        bool               m_connected = false;
+        Config                                   m_cfg;
+        data_store::Client                       m_ds;
+        std::unique_ptr<::mosquitto, MosqDeleter> m_mosq;  // owns the handle (RAII)
+        bool                                     m_connected = false;
         std::string        m_host;
         int                m_port = 1883;
         std::string        m_topic;          ///< <serial>/<suffix>
