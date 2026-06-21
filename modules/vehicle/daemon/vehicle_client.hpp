@@ -45,6 +45,7 @@ class VehicleClient : public ACE_Event_Handler {
     private:
         void load_config_from_ds();
         void on_frame(std::uint32_t id, const std::uint8_t* data, std::uint8_t dlc);
+        void handle_dtc(const std::uint8_t* data, std::uint8_t dlc);
         void publish_link(const char* state);
 
         Config                       m_cfg;
@@ -54,6 +55,8 @@ class VehicleClient : public ACE_Event_Handler {
         std::size_t                  m_next = 0;    ///< index into m_pids
         bool                         m_any_reply = false;
         std::string                  m_link;        ///< last published link state
+        unsigned                     m_round = 0;   ///< completed PID rounds (paces DTC polls)
+        std::string                  m_dtc;         ///< last published vehicle.dtc JSON
 };
 
 } // namespace vehicle
