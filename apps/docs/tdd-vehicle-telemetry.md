@@ -1,7 +1,12 @@
 # TDD Plan — Vehicle Telemetry over CAN (ISO 15765-4 / OBD-II)
 
-Status: **IN PROGRESS** (2026-06-21). The device-side vertical slice is
-implemented + merged; the cloud/transport half is still planned.
+Status: **IN PROGRESS** (2026-06-21). The full **live map** feature ships
+(device CAN/GPS → LwM2M → cloud-ui Fleet Map) and the **60-day history**
+pipeline (store + read-back + charts) ships. The **v2 LwM2M Send** path is
+complete at the **pure-logic level** (codec → pack → frame → buffer → uploader →
+server receive, all unit-validated in the podman dev-build); only its
+session-I/O glue + server persist + Block-Wise + the on-device Mongo buffer
+remain — all needing a real device in the loop.
 
 ### Implementation status
 
@@ -37,39 +42,69 @@ implemented + merged; the cloud/transport half is still planned.
 > → cloud-ui Fleet Map (markers + speed/rpm/coolant/throttle/load/fuel/iat/maf/
 > link/DTC popups). No LwM2M Send needed for live — the server polls via Reads.
 
-**Remaining — only the 60-day HISTORY pipeline (the live map does not need it).
-Needs a build-and-run loop + new deps:**
-- ⬜ PR-7 — `TelemetryMirror` (clone `apps/src/lwm2m_registry_mirror.cpp`) →
-  on-device MongoDB buffer (§3a). Reuse `apps/inc/db_adapter.hpp` (`DbClient`).
-  **Gating:** guard with `#ifdef IOT_ENABLE_MONGO` and, in
-  `modules/vehicle/CMakeLists.txt`, only link `mongocxx`/`bsoncxx` +
-  `db_adapter.cpp` when `IOT_ENABLE_MONGO` — else the cloud build of
-  `iot-vehicled` (which has no mongocxx) breaks. The recipe already passes
-  `-DMONGOCXX_INCLUDE_DIR`/`-DBSONCXX_LIBRARY` etc.
-- 🟡 PR-8 — **LwM2M Send (`/dp`) + SenML/CBOR pack** — pure pipeline DONE +
-  unit-validated in the podman dev-build (PR-26):
-  - ✅ SenML `bt`/`t` time fields in the codec (PR-25) — per-sample timestamps.
-  - ✅ `telemetry::build_pack`/`parse_pack` — samples ⇄ SenML records (PR-28).
-  - ✅ `send::build_send_request` — client POST `/dp` frame, CF 112 (PR-29).
-  - ✅ `SendServer::handle` — server `/dp` decode → samples + 2.04 (PR-30).
-  - ✅ `/dp` dispatch wired additively into `CoAPAdapter::processRequest` +
-    an `onSendReport` hook (PR-31); full `lwm2m` binary compiles.
-  - ⬜ **full RFC 7959 Block-Wise** (>1024 B packs) — still only partial; the
-    remaining deep CoAP-adapter work, HW-verified.
-- ⬜ PR-9/10 — the **integration** that needs the running system / HW:
-  - client uploader: bounded sample buffer in `iot-vehicled` → drain → Send →
-    prune on 2.04 (ACK-then-prune).
-  - server persist: wire `onSendReport` → a telemetry store. **Design TBD** —
-    feed the existing `cloud.vehicle.telemetry` spool (PR-22/23, already drains
-    to Mongo) vs a parallel `cloud.telemetry.inbox`. Decide with HW in the loop.
-- ✅ PR-11 (read-back) — Map **history track**: the iot-telemetry-ingest sidecar
-  `mongoexport`s a recent window to `history.json`; `iot-httpd` serves it at
-  `GET /api/v1/cloud/telemetry/history?ep=<ep>` (file-served, no mongo driver);
-  the cloud-ui Map draws the selected endpoint's track as a Leaflet polyline
-  (start/end dots, fit-to-bounds) — reuses the PR-4 Leaflet dep, **no charting
-  library**. ✅ Time-series **charts** (speed/rpm/coolant/throttle/load/fuel over
-  the window) also done — rendered as **dep-free inline SVG sparklines** under
-  the map from the same `/telemetry/history` endpoint (no Chart.js/ECharts dep).
+**Done — 60-day cloud HISTORY pipeline (no mongocxx in the cloud C++ build):**
+- ✅ PR-22 (#358) — history **store/ingest**: `iot-httpd` watches
+  `cloud.vehicle.telemetry` and appends `{ts, endpoints:[…]}` NDJSON to a spool
+  volume; the `iot-telemetry-ingest` sidecar `mongoimport`s it into the Mongo
+  `telemetry` collection. Reuses the live server-Read stream — **no LwM2M Send
+  dependency, no mongo driver in iot-httpd** (plain `ofstream`).
+- ✅ PR-23 (#359) — history **read-back**: the sidecar also `mongoexport`s a
+  recent window to `history.json`; `iot-httpd` serves it at
+  `GET /api/v1/cloud/telemetry/history?ep=<ep>`; the cloud-ui Map draws the
+  endpoint's track as a Leaflet polyline (start/end dots, fit-to-bounds) — no
+  charting lib.
+- ✅ PR-24 (#360) — history **charts**: dep-free inline-SVG sparklines
+  (speed/rpm/coolant/throttle/load/fuel) under the map, from the same endpoint.
+- ✅ PR-12 (#341) — cold-storage **archiver** (mongodump → verify → prune).
+
+**Done — v2 LwM2M Send, PURE pipeline (all unit-validated in the podman
+dev-build, PR-26; see "validation" note below):**
+- ✅ PR-25 (#361) — SenML `bt`/`t` time fields in the codec — per-sample
+  timestamps for batched telemetry (RFC 8428 §4.5.2 / §6).
+- ✅ PR-28 (#364) — `telemetry::build_pack`/`parse_pack` — samples ⇄ SenML
+  records (one base time + per-sample offsets).
+- ✅ PR-29 (#365) — `send::build_send_request` — client CON POST `/dp` frame,
+  Content-Format 112 (SenML CBOR).
+- ✅ PR-30 (#366) — `SendServer::handle` — server `/dp` decode → samples +
+  2.04 ACK (4.15/4.00 on bad CF/SenML; None for non-`/dp`).
+- ✅ PR-31 (#367) — `/dp` dispatch wired **additively** into
+  `CoAPAdapter::processRequest` + an `onSendReport` hook; full `lwm2m` binary
+  compiles.
+- ✅ PR-33 (#369) — bounded `telemetry::SampleBuffer` (ACK-then-prune FIFO;
+  drop-oldest on overflow).
+- ✅ PR-34 (#370) — stop-and-wait `send::Uploader` (offer → poll emits one
+  `/dp` frame → on_ack prunes / on_timeout requeues). The client upload policy,
+  complete minus the I/O glue.
+
+**Done — dev tooling:**
+- ✅ PR-26 (#362) — **podman dev-build** (`docker/Dockerfile.devbuild` +
+  `devbuild.sh`): compiles + runs the `apps/` gtest suite against the mounted
+  tree (cache-hits the ACE layer); also repaired the suite's link rot.
+- ✅ PR-27 (#363) — fixed two stale cert-mode test assertions (key is 0640 by
+  design). Full `apps/` suite now green.
+
+**Remaining — needs a real device in the loop (HW session):**
+- ⬜ **Session I/O glue** (client) — transmit `Uploader::poll()` bytes over the
+  registered DM session, route the 2.04 to `on_ack`, schedule retransmit
+  timeouts (`on_timeout`), and feed `iot-vehicled`'s ds readings into `offer()`.
+  Pure plumbing, but only verifiable against a live device.
+- ⬜ **Server persist** — wire `onSendReport` → a telemetry store. **Design
+  decision (make with HW in loop):** feed the existing `cloud.vehicle.telemetry`
+  spool (PR-22/23, already drains to Mongo) vs a parallel `cloud.telemetry.inbox`
+  with its own drain.
+- ⬜ **Full RFC 7959 Block-Wise** (>1024 B packs) — only partial in the CoAP
+  adapter; deferrable while `maxBatch` keeps packs sub-block. The one piece that
+  *modifies the live adapter* (regression risk) rather than adding isolated units.
+- ⬜ **On-device Mongo buffer** (PR-7, §3a) — `iot-vehicled` store-and-forward
+  buffer for offline backfill. Needs `mongod` on the RPi (ARMv8.0 → mongod 4.4)
+  and `#ifdef IOT_ENABLE_MONGO` CMake gating so the cloud build (no mongocxx)
+  still links `iot-vehicled`. Only useful once the client uploader is live.
+
+> **Validation note:** every pure piece above was compiled + run in the
+> **podman dev-build** (PR-26), not merely CI-built — the full `apps/` gtest
+> suite is green, with new suites `Senml`(bt/t), `TelemetryPack`, `Send`,
+> `SendServer`, `SampleBuffer`, `Uploader` exercising real CoAP frames. CI's
+> image build (device + cloud) additionally confirms the live binary links.
 
 Greenfield baseline: no CAN code existed in the repo before PR-1.
 
