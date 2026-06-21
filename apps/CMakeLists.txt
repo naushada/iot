@@ -153,6 +153,13 @@ set(VEHICLE_BUILD_DAEMON ON CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/vehicle
                  ${CMAKE_BINARY_DIR}/vehicle)
 
+# mqtt module (iot-mqttd MQTT mirror). Daemon OFF by default here — only the
+# device Yocto build enables it (-DMQTT_BUILD_DAEMON=ON in the recipe), since the
+# cloud Docker builder has no libmosquitto. This add_subdirectory just exposes
+# the option + installs the mqtt.lua schema. See modules/mqtt + Phase 3 of the TDD.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/mqtt
+                 ${CMAKE_BINARY_DIR}/iotmqtt)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
@@ -272,6 +279,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-cellular-client.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-vehicled.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-can0-up.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-mqttd.service
             DESTINATION lib/systemd/system)
 
     # tmpfiles.d fallback for hosts where RuntimeDirectory= doesn't

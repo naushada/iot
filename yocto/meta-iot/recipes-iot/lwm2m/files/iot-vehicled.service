@@ -9,7 +9,7 @@ StartLimitIntervalSec=60s
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/iot-vehicled
+ExecStart=/usr/bin/iot-vehicled
 
 # SocketCAN is a netdev (no /dev node), so the daemon needs CAP_NET_RAW to open
 # the PF_CAN socket — but nothing else.
