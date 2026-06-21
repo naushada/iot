@@ -307,6 +307,7 @@ TEST(Schema, real_iot_lua_declares_psk_keys) {
         {"iot.dev.mode",        ds::SchemaType::Boolean, false},
         {"iot.bs.psk.identity", ds::SchemaType::String,  true },
         {"iot.bs.psk.key",      ds::SchemaType::Opaque,  true },
+        {"iot.bs.psk.override", ds::SchemaType::Boolean, false},
         {"iot.dm.psk.identity", ds::SchemaType::String,  true },
         {"iot.dm.psk.key",      ds::SchemaType::Opaque,  true },
     };

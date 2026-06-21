@@ -1584,13 +1584,20 @@ int main(std::int32_t argc, char *argv[]) {
         bool logged_wait = false;
         for (;;) {
             bsUri = ds.bs_uri().value_or(argValueMap["bs"]);
-            // BS PSK identity is DERIVED from the endpoint (sha256), so only
-            // the secret (iot.bs.psk.key) is commissioned — not the identity.
+            // BS PSK identity is normally DERIVED from the endpoint (sha256),
+            // so only the secret (iot.bs.psk.key) is commissioned. With the
+            // third-party override on, the operator-supplied identity must also
+            // be present before we proceed.
             auto pkey = ds.bs_psk_key();
             const bool have_psk =
                 (pkey && !pkey->empty()) ||
                 (!argValueMap["identity"].empty() && !argValueMap["secret"].empty());
-            if (!bsUri.empty() && have_psk) break;
+            bool have_identity = true;
+            if (ds.bs_psk_override()) {
+                auto bid = ds.bs_psk_identity();
+                have_identity = bid && !bid->empty();
+            }
+            if (!bsUri.empty() && have_psk && have_identity) break;
             if (!logged_wait) {
                 ACE_DEBUG((LM_INFO,
                            ACE_TEXT("%D lwm2m:thread:%t %M %N:%l awaiting provisioning "
@@ -1617,13 +1624,30 @@ int main(std::int32_t argc, char *argv[]) {
     if(scheme == UDPAdapter::Scheme_t::CoAPs) {
         auto dsKey = ds.bs_psk_key();
         if (UDPAdapter::Role_t::CLIENT == role) {
-            // BS DTLS PSK: identity is DERIVED from the endpoint — both the
-            // device and the cloud BS compute identity = sha256(endpoint), so
-            // it is never stored/commissioned. Only the secret (iot.bs.psk.key)
-            // is commissioned, with secret= CLI as a dev fallback.
-            // 128-bit identity (first 32 hex chars of sha256) — same size as
-            // the 128-bit BS PSK, and fits tinydtls' 32-byte identity buffer.
-            identity = iot::sha256_hex(endpoint).substr(0, 32);
+            // BS DTLS PSK identity. Two modes:
+            //   * default — DERIVED from the endpoint: both the device and the
+            //     cloud BS compute identity = sha256(endpoint), so it is never
+            //     stored/commissioned. 128-bit identity (first 32 hex chars of
+            //     sha256) — same size as the 128-bit BS PSK, and fits tinydtls'
+            //     32-byte identity buffer.
+            //   * override (iot.bs.psk.override=true) — the operator pinned a
+            //     custom identity in iot.bs.psk.identity for a third-party
+            //     bootstrap server that mints its own identity/PSK pair; use it
+            //     VERBATIM. The DM credential path is unaffected either way.
+            if (ds.bs_psk_override()) {
+                auto bsId = ds.bs_psk_identity();
+                if (bsId && !bsId->empty()) {
+                    identity = *bsId;
+                } else {
+                    ACE_ERROR((LM_ERROR,
+                               ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK override on "
+                                        "but iot.bs.psk.identity empty — provision it via "
+                                        "device-ui\n")));
+                    return(-2);
+                }
+            } else {
+                identity = iot::sha256_hex(endpoint).substr(0, 32);
+            }
             if (dsKey && !dsKey->empty())            secret = *dsKey;
             else if (!argValueMap["secret"].empty()) secret = argValueMap["secret"];
             else {
@@ -1633,8 +1657,9 @@ int main(std::int32_t argc, char *argv[]) {
                 return(-2);
             }
             ACE_DEBUG((LM_INFO,
-                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK identity=sha256(endpoint)=%C\n"),
-                       identity.c_str()));
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK identity=%C (%C)\n"),
+                       identity.c_str(),
+                       ds.bs_psk_override() ? "custom override" : "sha256(endpoint)"));
         } else {
             // SERVER role: per-endpoint PSKs come from cloud.endpoint.credentials
             // (registered below). An explicit shared identity/secret may still
@@ -1995,7 +2020,9 @@ int main(std::int32_t argc, char *argv[]) {
     if (clientPlumbing.reg) {
         std::weak_ptr<::lwm2m::RegistrationClient>      wreg = clientPlumbing.reg;
         std::shared_ptr<ClientPlumbing::Rebind>         rebind = clientPlumbing.rebind;
-        ds.on_change([wreg, rebind, &ds, started_bs_psk = secret]
+        ds.on_change([wreg, rebind, &ds, started_bs_psk = secret,
+                      started_bs_override = ds.bs_psk_override(),
+                      started_bs_identity = ds.bs_psk_identity().value_or(std::string())]
                      (iot::DsConfig::Key k) {
             // Task G — a BS PSK change underneath us (e.g. an engineer
             // edits iot.bs.psk.key via ds-cli in dev-mode) means the next
@@ -2011,6 +2038,32 @@ int main(std::int32_t argc, char *argv[]) {
                                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK changed "
                                         "— exiting for systemd restart with new "
                                         "credentials\n")));
+                    ::exit(0);
+                }
+                return;
+            }
+            // Third-party BS override / custom identity change: the on-the-wire
+            // BS identity changes when the override flag flips (derived
+            // sha256(endpoint) <-> custom) or when the custom identity is edited
+            // while override is on. Either way the next bootstrap DTLS handshake
+            // needs the new identity, so self-exit for a clean systemd restart —
+            // same policy as the BS PSK key above, yielding a fresh DTLS session.
+            // A bare iot.bs.psk.identity write while override is OFF is a no-op
+            // for the handshake (the derived identity is used), so it must NOT
+            // churn the process — e.g. the RPi serial auto-fill writes that key
+            // on every boot.
+            if (k == iot::DsConfig::Key::BsPskOverride ||
+                k == iot::DsConfig::Key::BsPskIdentity) {
+                const bool override_now = ds.bs_psk_override();
+                const std::string id_now = ds.bs_psk_identity().value_or("");
+                const bool override_changed = (override_now != started_bs_override);
+                const bool identity_changed =
+                    override_now && (id_now != started_bs_identity);
+                if (override_changed || identity_changed) {
+                    ACE_ERROR((LM_WARNING,
+                               ACE_TEXT("%D lwm2m:thread:%t %M %N:%l BS PSK "
+                                        "identity/override changed — exiting for "
+                                        "systemd restart with new credentials\n")));
                     ::exit(0);
                 }
                 return;

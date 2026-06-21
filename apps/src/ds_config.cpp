@@ -25,6 +25,7 @@ constexpr const char* kKeyLifetime  = "iot.lifetime";
 constexpr const char* kKeySerial      = "iot.serial";
 constexpr const char* kKeyBsPskId     = "iot.bs.psk.identity";
 constexpr const char* kKeyBsPskKey    = "iot.bs.psk.key";
+constexpr const char* kKeyBsPskOvr    = "iot.bs.psk.override";
 constexpr const char* kKeyDmPskId     = "iot.dm.psk.identity";
 constexpr const char* kKeyDmPskKey    = "iot.dm.psk.key";
 constexpr const char* kKeyDevMode     = "iot.dev.mode";
@@ -53,6 +54,7 @@ struct DsConfig::Impl {
     std::optional<std::string>          serial;
     std::optional<std::string>          bs_psk_identity;
     std::optional<std::string>          bs_psk_key;
+    bool                                bs_psk_override = false;
     std::optional<std::string>          dm_psk_identity;
     std::optional<std::string>          dm_psk_key;
     bool                                dev_mode = false;
@@ -70,6 +72,10 @@ struct DsConfig::Impl {
         if (key == kKeySerial)     { serial = data_store::to_string(v); return Key::Serial; }
         if (key == kKeyBsPskId)    { bs_psk_identity = data_store::to_string(v); return Key::BsPskIdentity; }
         if (key == kKeyBsPskKey)   { bs_psk_key = data_store::to_string(v); return Key::BsPskKey; }
+        if (key == kKeyBsPskOvr)   {
+            if (auto b = data_store::to_bool(v)) bs_psk_override = *b;
+            return Key::BsPskOverride;
+        }
         if (key == kKeyDmPskId)    { dm_psk_identity = data_store::to_string(v); return Key::DmPskIdentity; }
         if (key == kKeyDmPskKey)   { dm_psk_key = data_store::to_string(v); return Key::DmPskKey; }
         if (key == kKeyDevMode)    {
@@ -100,7 +106,7 @@ DsConfig::DsConfig(std::string socketPath)
     // All keys this reader caches + watches.
     const std::vector<std::string> kKeys = {
         kKeyEndpoint, kKeyServerUri, kKeyBsUri, kKeyLifetime,
-        kKeySerial, kKeyBsPskId, kKeyBsPskKey,
+        kKeySerial, kKeyBsPskId, kKeyBsPskKey, kKeyBsPskOvr,
         kKeyDmPskId, kKeyDmPskKey, kKeyDevMode,
     };
 
@@ -204,6 +210,12 @@ std::optional<std::string> DsConfig::bs_psk_key() const {
     return m_impl->bs_psk_key;
 }
 
+bool DsConfig::bs_psk_override() const {
+    if (!m_ok) return false;
+    std::lock_guard<std::mutex> g(m_impl->mtx);
+    return m_impl->bs_psk_override;
+}
+
 std::optional<std::string> DsConfig::dm_psk_identity() const {
     if (!m_ok) return std::nullopt;
     std::lock_guard<std::mutex> g(m_impl->mtx);
@@ -224,18 +236,27 @@ bool DsConfig::dev_mode() const {
 
 bool DsConfig::set_serial(const std::string& serial) {
     if (!m_ok || !m_impl) return false;
-    // RPi auto-fill: the serial IS the endpoint and the BS PSK identity.
-    auto s = m_impl->client.set({
+    // When a third-party BS PSK override is active the operator owns
+    // iot.bs.psk.identity verbatim, so the serial auto-fill must NOT
+    // clobber it. Otherwise the serial IS the endpoint and BS PSK identity.
+    bool override_on;
+    {
+        std::lock_guard<std::mutex> g(m_impl->mtx);
+        override_on = m_impl->bs_psk_override;
+    }
+    std::vector<data_store::KV> pairs = {
         {kKeySerial,   data_store::Value{serial}},
         {kKeyEndpoint, data_store::Value{serial}},
-        {kKeyBsPskId,  data_store::Value{serial}},
-    });
+    };
+    if (!override_on)
+        pairs.push_back({kKeyBsPskId, data_store::Value{serial}});
+    auto s = m_impl->client.set(pairs);
     // Reflect locally so a subsequent self-write watch event is absorbed.
     if (s.ok) {
         std::lock_guard<std::mutex> g(m_impl->mtx);
         m_impl->serial = serial;
         m_impl->endpoint = serial;
-        m_impl->bs_psk_identity = serial;
+        if (!override_on) m_impl->bs_psk_identity = serial;
     }
     return s.ok;
 }
