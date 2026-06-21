@@ -386,6 +386,15 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     // and published to cloud.vehicle.telemetry for the cloud-ui Fleet Map.
     auto epGpsLat   = std::make_shared<std::unordered_map<std::string, std::string>>();
     auto epGpsLon   = std::make_shared<std::unordered_map<std::string, std::string>>();
+    // Vehicle signals (Object 33000) enriching the map rows. The (tag, rid,
+    // field) table is iterated by BOTH the tick (issues the Read) and the
+    // response handler (routes the reply) — static, so the lambdas reference it
+    // without a capture. Values land in a nested map[endpoint][field].
+    auto epVeh = std::make_shared<std::unordered_map<std::string,
+                          std::unordered_map<std::string, std::string>>>();
+    static const struct { std::uint8_t tag; int rid; const char* field; } kVehReads[] = {
+        {0x0A, 0, "speed"}, {0x0B, 1, "rpm"}, {0x0C, 2, "coolant"}, {0x0D, 10, "link"},
+    };
     auto seqToEp    = std::make_shared<std::unordered_map<std::uint32_t, std::string>>();
     auto verMtx     = std::make_shared<std::mutex>();
     auto verSeq     = std::make_shared<std::uint32_t>(0);
@@ -402,7 +411,7 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         };
         publish_regs = std::make_shared<std::function<void()>>(
             [registry, dsClient, lastSeen, now_unix, epVersions, epLanIps,
-             epGpsLat, epGpsLon, verMtx]() {
+             epGpsLat, epGpsLon, epVeh, verMtx]() {
                 if (!dsClient) return;
                 const std::int64_t nowUnix = now_unix();
                 nlohmann::json arr = nlohmann::json::array();
@@ -452,9 +461,13 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                         auto lo = epGpsLon->find(ep);
                         if (la == epGpsLat->end() || lo == epGpsLon->end()) continue;
                         if (la->second.empty() || lo->second.empty()) continue;
-                        varr.push_back({{"endpoint", ep},
-                                        {"lat", la->second},
-                                        {"lon", lo->second}});
+                        nlohmann::json row = {{"endpoint", ep},
+                                              {"lat", la->second},
+                                              {"lon", lo->second}};
+                        auto vit = epVeh->find(ep);   // enrich with Object-33000 signals
+                        if (vit != epVeh->end())
+                            for (const auto& f : vit->second) row[f.first] = f.second;
+                        varr.push_back(std::move(row));
                     }
                 }
                 dsClient->set_volatile(std::string("cloud.vehicle.telemetry"),
@@ -485,14 +498,14 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         for (auto& [type, ctx] : services) {
             (void)type;
             ctx->coapAdapter()->dmResponseHandler(
-                [epVersions, epLanIps, epGpsLat, epGpsLon, seqToEp, verMtx, publish_regs]
+                [epVersions, epLanIps, epGpsLat, epGpsLon, epVeh, seqToEp, verMtx, publish_regs]
                 (const CoAPAdapter::CoAPMessage& m) {
                     const auto& tok = m.tokens;
                     // Token tag selects which read reply this is: 0x06 /3/0/3 (fw
                     // version), 0x07 /4/0/4 (LAN IP), 0x08 /6/0/0 (GPS lat),
-                    // 0x09 /6/0/1 (GPS lon). All stamp a 24-bit seq we map back to
-                    // the endpoint; the tag selects which field the reply fills.
-                    if (tok.size() < 4 || tok[0] < 0x06 || tok[0] > 0x09) return;
+                    // 0x09 /6/0/1 (GPS lon), 0x0A..0x0D Object-33000 vehicle
+                    // signals (kVehReads). All stamp a 24-bit seq → endpoint.
+                    if (tok.size() < 4 || tok[0] < 0x06 || tok[0] > 0x0D) return;
                     const std::uint8_t  kind = tok[0];
                     const std::uint32_t seq =
                         (static_cast<std::uint32_t>(tok[1]) << 16) |
@@ -505,17 +518,31 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                         if (it == seqToEp->end()) return;
                         const std::string ep = it->second;
                         seqToEp->erase(it);
-                        std::unordered_map<std::string, std::string>* target = nullptr;
-                        switch (kind) {
-                            case 0x06: target = epVersions.get(); break;
-                            case 0x07: target = epLanIps.get();   break;
-                            case 0x08: target = epGpsLat.get();   break;
-                            case 0x09: target = epGpsLon.get();   break;
-                            default:   return;
-                        }
-                        if (!m.payload.empty() && (*target)[ep] != m.payload) {
-                            (*target)[ep] = m.payload;
-                            changed = true;
+                        if (kind >= 0x0A) {
+                            // Object-33000 vehicle signal → nested map[ep][field].
+                            const char* field = nullptr;
+                            for (const auto& vr : kVehReads)
+                                if (vr.tag == kind) { field = vr.field; break; }
+                            if (field) {
+                                auto& slot = (*epVeh)[ep][field];
+                                if (!m.payload.empty() && slot != m.payload) {
+                                    slot = m.payload;
+                                    changed = true;
+                                }
+                            }
+                        } else {
+                            std::unordered_map<std::string, std::string>* target = nullptr;
+                            switch (kind) {
+                                case 0x06: target = epVersions.get(); break;
+                                case 0x07: target = epLanIps.get();   break;
+                                case 0x08: target = epGpsLat.get();   break;
+                                case 0x09: target = epGpsLon.get();   break;
+                                default:   return;
+                            }
+                            if (!m.payload.empty() && (*target)[ep] != m.payload) {
+                                (*target)[ep] = m.payload;
+                                changed = true;
+                            }
                         }
                     }
                     if (changed && publish_regs) (*publish_regs)();
@@ -744,6 +771,29 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                             /*oid*/ 6, /*iid*/ 0, /*rid*/ gp.second,
                             /*accept*/ -1);
                         ctx->send_async(greq, reg.peerHost, reg.peerPort);
+                    }
+
+                    // Read the Object-33000 vehicle signals (speed/rpm/coolant/
+                    // link) so the map popup shows live telemetry, not just
+                    // position. Same token-tag scheme (kVehReads). A device with
+                    // no Vehicle object replies empty/4.04 → field simply absent.
+                    for (const auto& vr : kVehReads) {
+                        std::uint32_t vseq;
+                        {
+                            std::lock_guard<std::mutex> lk(*verMtx);
+                            vseq = (++(*verSeq)) & 0x00FFFFFFu;
+                            (*seqToEp)[vseq] = reg.endpoint;
+                        }
+                        std::string vtok2;
+                        vtok2.push_back(static_cast<char>(vr.tag));
+                        vtok2.push_back(static_cast<char>((vseq >> 16) & 0xFF));
+                        vtok2.push_back(static_cast<char>((vseq >> 8)  & 0xFF));
+                        vtok2.push_back(static_cast<char>( vseq        & 0xFF));
+                        auto vreq2 = ::lwm2m::dmsrv::build_read(
+                            next_msgid(), vtok2,
+                            /*oid*/ 33000, /*iid*/ 0, /*rid*/ vr.rid,
+                            /*accept*/ -1);
+                        ctx->send_async(vreq2, reg.peerHost, reg.peerPort);
                     }
                 }
 
