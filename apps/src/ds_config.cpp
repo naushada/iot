@@ -276,6 +276,18 @@ bool DsConfig::set_dm_credentials(const std::string& identity,
     return s.ok;
 }
 
+namespace {
+// Extract the host from a "scheme://host[:port][/path]" URI (e.g.
+// coaps://65.20.74.23:5683 → 65.20.74.23). Empty on malformed input. IPv4 /
+// hostname only (the DM URI in this stack is never a bracketed IPv6 literal).
+std::string host_from_uri(const std::string& uri) {
+    auto p = uri.find("://");
+    std::string rest = (p == std::string::npos) ? uri : uri.substr(p + 3);
+    std::size_t end = rest.find_first_of(":/");
+    return (end == std::string::npos) ? rest : rest.substr(0, end);
+}
+} // namespace
+
 bool DsConfig::set_dm_uri(const std::string& uri) {
     if (!m_ok || !m_impl) return false;
     // iot.dm.uri is published, never read back into the cache — the client
@@ -283,6 +295,18 @@ bool DsConfig::set_dm_uri(const std::string& uri) {
     auto s = m_impl->client.set({
         {kKeyDmUri, data_store::Value{uri}},
     });
+    // Co-derive vpn.remote.host so it ALWAYS tracks the DM URI (the VPN
+    // concentrator is co-located with the DM). Deriving HERE — at the sole
+    // dm.uri writer — keeps the two in lockstep: any DM-URI change (bootstrap,
+    // re-bootstrap, cloud update) re-derives the VPN host, and the openvpn-client
+    // watches vpn.remote.host to reconnect — so the VPN never needs to parse a
+    // CoAP URI itself. An empty/cleared URI is NOT propagated: the VPN endpoint
+    // is reachability info, preserved across a DM-credential reset so the tunnel
+    // survives a registration-failure flush.
+    if (s.ok && !uri.empty()) {
+        std::string host = host_from_uri(uri);
+        if (!host.empty()) set_vpn_remote_host(host);
+    }
     return s.ok;
 }
 
