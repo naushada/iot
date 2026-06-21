@@ -44,6 +44,21 @@ export class HttpsvcService {
       { headers: this.jsonHeaders(), withCredentials: true });
   }
 
+  // ── System actions (Advanced) ─────────────────────────────────────
+  // Admin-only. The server arms a /run/iot trigger that a root systemd .path
+  // unit acts on (reboot, or wipe-to-defaults+reboot). See modules/http-server.
+  systemReboot(): Observable<{ ok: boolean; err?: string }> {
+    return this.http.post<{ ok: boolean; err?: string }>(
+      `${this.api}/api/v1/system/reboot`, {},
+      { headers: this.jsonHeaders(), withCredentials: true });
+  }
+
+  systemFactoryReset(): Observable<{ ok: boolean; err?: string }> {
+    return this.http.post<{ ok: boolean; err?: string }>(
+      `${this.api}/api/v1/system/factory-reset`, {},
+      { headers: this.jsonHeaders(), withCredentials: true });
+  }
+
   // ── Status ────────────────────────────────────────────────────────
 
   getStatus(): Observable<StatusSnapshot> {

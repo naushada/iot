@@ -489,6 +489,78 @@ void install_handlers(Router& router,
             return r;
         });
 
+    // ── POST /api/v1/system/reboot ────────────────────────────────
+    // Admin-only. iot-httpd is unprivileged (DynamicUser, group iot) so it
+    // cannot reboot directly; it arms a trigger file in /run/iot that the root
+    // iot-reboot.path systemd unit watches → iot-reboot.service runs
+    // `systemctl reboot`. Same privilege-separation pattern as the OTA stager.
+    // Yocto/systemd only (the .path/.service units live there).
+    router.add("POST", "/api/v1/system/reboot",
+        [auth](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            std::string access_level = "Admin";
+            if (auth && auth->enabled()) {
+                std::string token = extract_session_cookie(req.headers, auth->cookie_name());
+                if (!token.empty()) {
+                    const auto* session = auth->validate(token);
+                    if (session) access_level = session->access;
+                }
+            }
+            if (access_level != "Admin") {
+                r.status = 403;
+                r.body = R"({"ok":false,"err":"admin required"})";
+                return r;
+            }
+            std::ofstream trig("/run/iot/reboot.request", std::ios::trunc);
+            if (!trig) {
+                r.status = 500;
+                r.body = R"({"ok":false,"err":"cannot arm reboot - perms or non-Yocto host"})";
+                return r;
+            }
+            trig << "reboot\n";
+            ACE_DEBUG((LM_WARNING,
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l SYSTEM REBOOT requested "
+                                "via device-ui (armed iot-reboot.path)\n")));
+            r.body = R"({"ok":true})";
+            return r;
+        });
+
+    // ── POST /api/v1/system/factory-reset ─────────────────────────
+    // Admin-only + DESTRUCTIVE. Arms the trigger that the root
+    // iot-factory-reset.service acts on: it removes the persisted data-store
+    // (/var/lib/iot/data_store.lua, the operator-override layer) + generated VPN
+    // certs, so the device falls back to the schema (Lua) defaults, then
+    // reboots into that first-boot state. Yocto/systemd only.
+    router.add("POST", "/api/v1/system/factory-reset",
+        [auth](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            std::string access_level = "Admin";
+            if (auth && auth->enabled()) {
+                std::string token = extract_session_cookie(req.headers, auth->cookie_name());
+                if (!token.empty()) {
+                    const auto* session = auth->validate(token);
+                    if (session) access_level = session->access;
+                }
+            }
+            if (access_level != "Admin") {
+                r.status = 403;
+                r.body = R"({"ok":false,"err":"admin required"})";
+                return r;
+            }
+            std::ofstream trig("/run/iot/factory-reset.request", std::ios::trunc);
+            if (!trig) {
+                r.status = 500;
+                r.body = R"({"ok":false,"err":"cannot arm factory-reset - perms or non-Yocto host"})";
+                return r;
+            }
+            trig << "factory-reset\n";
+            ACE_DEBUG((LM_WARNING,
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l FACTORY RESET requested "
+                                "via device-ui (armed iot-factory-reset.path)\n")));
+            r.body = R"({"ok":true})";
+            return r;
+        });
+
     // ── POST /api/v1/firmware/upload?name=<f>&version=&arch=&pkg= ──
     // Cloud-side: browse / drag-drop a .ipk or .tar.gz bundle in the cloud-ui
     // straight into the firmware FEED (firmware_dir, served at /firmware/) and
