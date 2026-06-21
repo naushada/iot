@@ -84,12 +84,21 @@ std::string encode_json(const std::vector<Record>& records) {
         if (r.baseName != bn) return {};      // bn must be consistent
     }
 
+    // Base Time, like bn, is the first record's and must be consistent.
+    const bool   hasBt = records.front().hasBaseTime;
+    const double bt    = records.front().baseTime;
+    for (const auto& r : records) {
+        if (r.hasBaseTime != hasBt || (hasBt && r.baseTime != bt)) return {};
+    }
+
     json out = json::array();
     for (std::size_t i = 0; i < records.size(); ++i) {
         const auto& r = records[i];
         json rec = json::object();
         if (i == 0 && !bn.empty()) rec["bn"] = bn;
+        if (i == 0 && hasBt)       rec["bt"] = bt;
         if (!r.name.empty()) rec["n"] = r.name;
+        if (r.hasTime)       rec["t"] = r.time;
         switch (r.kind) {
             case ValueKind::Numeric:
                 if (r.isFloat) rec["v"] = r.numericValue;
@@ -116,6 +125,8 @@ int decode_json(const std::string& bytes, std::vector<Record>& out) {
     if (!doc.is_array()) return -1;
 
     std::string bn;
+    double bt = 0.0;
+    bool   hasBt = false;
     for (std::size_t i = 0; i < doc.size(); ++i) {
         const auto& rec = doc.at(i);
         if (!rec.is_object()) return -1;
@@ -124,12 +135,24 @@ int decode_json(const std::string& bytes, std::vector<Record>& out) {
             if (i != 0 || !rec["bn"].is_string()) return -1;
             bn = rec["bn"].get<std::string>();
         }
+        if (rec.contains("bt")) {
+            if (i != 0 || !rec["bt"].is_number()) return -1;
+            bt = rec["bt"].get<double>();
+            hasBt = true;
+        }
 
         Record r;
         r.baseName = bn;
+        r.baseTime = bt;
+        r.hasBaseTime = hasBt;
         if (rec.contains("n")) {
             if (!rec["n"].is_string()) return -1;
             r.name = rec["n"].get<std::string>();
+        }
+        if (rec.contains("t")) {
+            if (!rec["t"].is_number()) return -1;
+            r.time = rec["t"].get<double>();
+            r.hasTime = true;
         }
 
         int valueCount = 0;
@@ -185,7 +208,9 @@ constexpr std::uint8_t CBOR_F64      = 0xFB;
 
 /* SenML CBOR integer labels per RFC 8428 §6. */
 constexpr int LBL_BN = -2;
+constexpr int LBL_BT = -3;
 constexpr int LBL_N  =  0;
+constexpr int LBL_T  =  6;
 constexpr int LBL_V  =  2;
 constexpr int LBL_VS =  3;
 constexpr int LBL_VB =  4;
@@ -243,6 +268,18 @@ void emit_double(std::string& out, double v) {
     std::memcpy(&bits, &v, sizeof(bits));
     for (int s = 56; s >= 0; s -= 8) {
         out.push_back(static_cast<char>((bits >> s) & 0xFF));
+    }
+}
+
+/// Time (`bt`/`t`): emit as a compact CBOR unsigned int when the value is a
+/// non-negative whole number (the usual unix-seconds case), else as a float64.
+/// Round-trips losslessly either way (decode reads both via read_number).
+void emit_time(std::string& out, double t) {
+    std::int64_t it = static_cast<std::int64_t>(t);
+    if (it >= 0 && static_cast<double>(it) == t) {
+        emit_head(out, CBOR_UINT, static_cast<std::uint64_t>(it));
+    } else {
+        emit_double(out, t);
     }
 }
 
@@ -338,6 +375,16 @@ bool read_signed_int(CborCursor& c, std::int64_t& out) {
     return false;
 }
 
+/// Read a SenML time/number that may be encoded as a CBOR int OR a float64
+/// (emit_time picks the compact form). Always yields a double.
+bool read_number(CborCursor& c, double& out) {
+    if (c.peek_is_double()) return c.read_double(out);
+    std::int64_t v;
+    if (!read_signed_int(c, v)) return false;
+    out = static_cast<double>(v);
+    return true;
+}
+
 bool skip_value(CborCursor& c) {
     std::uint8_t major;
     std::uint64_t arg;
@@ -378,6 +425,12 @@ std::string encode_cbor(const std::vector<Record>& records) {
     for (const auto& r : records) {
         if (r.baseName != bn) return {};
     }
+    // Base Time, like bn, is the first record's and must be consistent.
+    const bool   hasBt = records.front().hasBaseTime;
+    const double bt    = records.front().baseTime;
+    for (const auto& r : records) {
+        if (r.hasBaseTime != hasBt || (hasBt && r.baseTime != bt)) return {};
+    }
 
     std::string out;
     emit_head(out, CBOR_ARRAY, records.size());
@@ -386,7 +439,9 @@ std::string encode_cbor(const std::vector<Record>& records) {
         const auto& r = records[i];
         std::size_t entries = 0;
         if (i == 0 && !bn.empty()) ++entries;
+        if (i == 0 && hasBt)       ++entries;
         if (!r.name.empty()) ++entries;
+        if (r.hasTime)       ++entries;
         if (r.kind != ValueKind::None) ++entries;
 
         emit_head(out, CBOR_MAP, entries);
@@ -394,8 +449,14 @@ std::string encode_cbor(const std::vector<Record>& records) {
         if (i == 0 && !bn.empty()) {
             emit_int(out, LBL_BN); emit_text(out, bn);
         }
+        if (i == 0 && hasBt) {
+            emit_int(out, LBL_BT); emit_time(out, bt);
+        }
         if (!r.name.empty()) {
             emit_int(out, LBL_N); emit_text(out, r.name);
+        }
+        if (r.hasTime) {
+            emit_int(out, LBL_T); emit_time(out, r.time);
         }
         switch (r.kind) {
             case ValueKind::Numeric:
@@ -433,6 +494,8 @@ int decode_cbor(const std::string& bytes, std::vector<Record>& out) {
     if (major != CBOR_ARRAY) return -1;
 
     std::string bn;
+    double bt = 0.0;
+    bool   hasBt = false;
     for (std::uint64_t i = 0; i < nRecs; ++i) {
         std::uint8_t m;
         std::uint64_t nFields;
@@ -450,6 +513,16 @@ int decode_cbor(const std::string& bytes, std::vector<Record>& out) {
                     if (!read_text(c, bn)) return -1;
                     break;
                 }
+                case LBL_BT: {
+                    if (i != 0) return -1;
+                    if (!read_number(c, bt)) return -1;
+                    hasBt = true;
+                    break;
+                }
+                case LBL_T:
+                    if (!read_number(c, r.time)) return -1;
+                    r.hasTime = true;
+                    break;
                 case LBL_N:
                     if (!read_text(c, r.name)) return -1;
                     break;
@@ -496,6 +569,8 @@ int decode_cbor(const std::string& bytes, std::vector<Record>& out) {
         }
         if (valueCount > 1) return -1;
         r.baseName = bn;
+        r.baseTime = bt;
+        r.hasBaseTime = hasBt;
         out.push_back(std::move(r));
     }
     return 0;
