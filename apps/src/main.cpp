@@ -393,7 +393,10 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     auto epVeh = std::make_shared<std::unordered_map<std::string,
                           std::unordered_map<std::string, std::string>>>();
     static const struct { std::uint8_t tag; int rid; const char* field; } kVehReads[] = {
-        {0x0A, 0, "speed"}, {0x0B, 1, "rpm"}, {0x0C, 2, "coolant"}, {0x0D, 10, "link"},
+        {0x0A, 0,  "speed"},    {0x0B, 1, "rpm"},      {0x0C, 2, "coolant"},
+        {0x0D, 10, "link"},     {0x0E, 3, "throttle"}, {0x0F, 4, "load"},
+        {0x10, 5,  "fuel"},     {0x11, 6, "iat"},      {0x12, 7, "maf"},
+        {0x13, 8,  "dtc"},
     };
     auto seqToEp    = std::make_shared<std::unordered_map<std::uint32_t, std::string>>();
     auto verMtx     = std::make_shared<std::mutex>();
@@ -503,9 +506,9 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                     const auto& tok = m.tokens;
                     // Token tag selects which read reply this is: 0x06 /3/0/3 (fw
                     // version), 0x07 /4/0/4 (LAN IP), 0x08 /6/0/0 (GPS lat),
-                    // 0x09 /6/0/1 (GPS lon), 0x0A..0x0D Object-33000 vehicle
+                    // 0x09 /6/0/1 (GPS lon), 0x0A..0x13 Object-33000 vehicle
                     // signals (kVehReads). All stamp a 24-bit seq → endpoint.
-                    if (tok.size() < 4 || tok[0] < 0x06 || tok[0] > 0x0D) return;
+                    if (tok.size() < 4 || tok[0] < 0x06 || tok[0] > 0x13) return;
                     const std::uint8_t  kind = tok[0];
                     const std::uint32_t seq =
                         (static_cast<std::uint32_t>(tok[1]) << 16) |
