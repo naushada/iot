@@ -13,6 +13,7 @@
 
 #include "cbor_adapter.hpp"
 #include "lwm2m_adapter.hpp"
+#include "lwm2m_telemetry_pack.hpp"   // telemetry::Sample for the Send report callback
 
 extern "C" {
     #include "dtls.h"
@@ -21,6 +22,7 @@ extern "C" {
 }
 
 namespace lwm2m { class RegistrationServer; }
+namespace lwm2m { class SendServer; }
 namespace lwm2m { class RegistrationClient; }
 namespace lwm2m { class DmClient; }
 namespace lwm2m { namespace bootstrap { class Server; } }
@@ -317,6 +319,24 @@ class CoAPAdapter {
             return m_regServer;
         }
 
+        /// v2 Send: optional server-side receiver for POST /dp (LwM2M Send).
+        /// Purely additive — /dp matches no other route, so attaching this
+        /// cannot change /bs, /rd, or /push dispatch. nullptr means "no Send
+        /// support". The samples are surfaced via onSendReport(); persistence
+        /// (e.g. to a telemetry store) is the caller's choice, deferred.
+        void sendServer(std::shared_ptr<lwm2m::SendServer> ss) {
+            m_sendServer = std::move(ss);
+        }
+        /// Callback fired with the decoded samples of each accepted /dp Send
+        /// (base path = SenML bn, e.g. "/33000/0/"). The ACK is shipped
+        /// regardless; this is the report hook the wrapping context wires to
+        /// persist or log. Optional.
+        using SendReportCb = std::function<void(
+            const std::string& basePath,
+            const std::vector<lwm2m::telemetry::Sample>& samples,
+            const std::string& peerHost, std::uint16_t peerPort)>;
+        void onSendReport(SendReportCb cb) { m_sendReportCb = std::move(cb); }
+
         /// L4: optional Bootstrap server. Attached on the
         /// BootstrapServer ServiceContext_t. Same dispatch shape as
         /// `registrationServer()`.
@@ -378,6 +398,8 @@ class CoAPAdapter {
 
     private:
         std::shared_ptr<lwm2m::RegistrationServer>    m_regServer;
+        std::shared_ptr<lwm2m::SendServer>            m_sendServer;
+        SendReportCb                                  m_sendReportCb;
         std::shared_ptr<lwm2m::bootstrap::Server>     m_bsServer;
         std::shared_ptr<lwm2m::DmClient>              m_dmClient;
         std::shared_ptr<lwm2m::bootstrap::Client>     m_bsClient;

@@ -48,6 +48,7 @@
 #include "lwm2m_registration.hpp"
 #include "lwm2m_registration_client.hpp"
 #include "lwm2m_registration_server.hpp"
+#include "lwm2m_send_server.hpp"
 
 #include "ds_config.hpp"
 #include "rpi_serial.hpp"
@@ -353,10 +354,27 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     // both Bootstrap and Registration. A future multi-socket deploy
     // gets both handlers per socket for free.
     auto regServer = std::make_shared<::lwm2m::RegistrationServer>(registry);
+    // v2 Send (POST /dp) receiver — additive; /dp matches no existing route.
+    auto sendServer = std::make_shared<::lwm2m::SendServer>();
     auto& services = app->udpAdapter()->services();
     for (auto& [type, ctx] : services) {
         ctx->coapAdapter()->bootstrapServer(bsServer);
         ctx->coapAdapter()->registrationServer(regServer);
+        // Accept + ACK + log inbound Sends. Persistence to a telemetry store is
+        // deferred (design TBD — apps/docs/tdd-vehicle-telemetry.md §3b: feed
+        // the existing cloud.vehicle.telemetry spool vs a parallel inbox); this
+        // wiring proves the server receive path without prejudging that choice.
+        ctx->coapAdapter()->sendServer(sendServer);
+        ctx->coapAdapter()->onSendReport(
+            [](const std::string& base,
+               const std::vector<::lwm2m::telemetry::Sample>& samples,
+               const std::string& peer, std::uint16_t port) {
+                ACE_DEBUG((LM_INFO,
+                    ACE_TEXT("%D lwm2m:thread:%t %M %N:%l Send /dp report base=%C "
+                             "samples=%u peer=%C:%d (persist deferred)\n"),
+                    base.c_str(), static_cast<unsigned>(samples.size()),
+                    peer.c_str(), static_cast<int>(port)));
+            });
     }
 
     // Online/offline endpoint state. Only the DM instance sees /rd traffic,

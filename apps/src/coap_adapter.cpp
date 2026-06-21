@@ -7,6 +7,7 @@
 #include "lwm2m_dm_client.hpp"
 #include "lwm2m_registration_client.hpp"
 #include "lwm2m_registration_server.hpp"
+#include "lwm2m_send_server.hpp"
 #include "nlohmann/json.hpp"
 #include <ace/Log_Msg.h>
 
@@ -1106,6 +1107,19 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
         }
     }
 
+    // v2 Send (POST /dp). Additive: /dp matches no /rd/bs/push route, so this
+    // fires only on a Send and cannot alter existing dispatch. Decoded samples
+    // go to the optional report callback; the ACK ships regardless.
+    if (!isAmIClient && m_sendServer) {
+        auto so = m_sendServer->handle(coapmessage, *this);
+        if (so.kind != ::lwm2m::SendOutcome::None) {
+            if (so.kind == ::lwm2m::SendOutcome::Reported && m_sendReportCb)
+                m_sendReportCb(so.basePath, so.samples, std::string{}, 0);
+            if (!so.response.empty()) out.push_back(std::move(so.response));
+            return static_cast<std::int32_t>(out.size());
+        }
+    }
+
     // While bootstrapping, inbound /{oid}/{iid} frames are Bootstrap-Writes,
     // not DM Writes — let the bootstrap client (below) claim them instead of
     // the DM Write handler, which would otherwise answer 2.01 and swallow the
@@ -1325,6 +1339,21 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
         auto outcome = m_regServer->handle(coapmessage, *this, peerHost, peerPort);
         if (outcome.kind != ::lwm2m::RegistrationOutcome::None) {
             if (!outcome.response.empty()) out.push_back(std::move(outcome.response));
+            return static_cast<std::int32_t>(out.size());
+        }
+    }
+
+    // v2 Send (POST /dp) — session path, so the peer is known + passed to the
+    // report callback for endpoint attribution. Additive (see the UDP-only
+    // path above).
+    if (!isAmIClient && m_sendServer && session != nullptr) {
+        std::string peerHost(inet_ntoa(session->addr.sin.sin_addr));
+        std::uint16_t peerPort = ntohs(session->addr.sin.sin_port);
+        auto so = m_sendServer->handle(coapmessage, *this);
+        if (so.kind != ::lwm2m::SendOutcome::None) {
+            if (so.kind == ::lwm2m::SendOutcome::Reported && m_sendReportCb)
+                m_sendReportCb(so.basePath, so.samples, peerHost, peerPort);
+            if (!so.response.empty()) out.push_back(std::move(so.response));
             return static_cast<std::int32_t>(out.size());
         }
     }
