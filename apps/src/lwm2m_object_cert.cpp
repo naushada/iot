@@ -206,6 +206,25 @@ ObjectInstance make_instance(std::uint32_t iid,
                     }
                 }
             }
+            // Idempotency gate: the cloud re-pushes the cert family every ~30s
+            // until the tunnel reports up, which re-triggers this Apply. If the
+            // staged family is byte-identical to what's already applied (RID 4
+            // fingerprint), skip the store + reload entirely — otherwise we
+            // bounce openvpn every 30s and it can never finish a handshake. The
+            // fp is computed over the staged PEMs in the same ca,cert,key order
+            // as the committed one below.
+            if (applied && !applied->empty()) {
+                std::string cand;
+                for (auto& [type, s] : *staging) { if (s.present) cand += s.pem; }
+                if (!cand.empty() && fnv1a_hex(cand) == *applied) {
+                    ACE_DEBUG((LM_INFO,
+                        ACE_TEXT("%D [cert-obj] %M %N:%l apply skipped: family "
+                                 "unchanged (fp=%C) — not reloading\n"),
+                        applied->c_str()));
+                    staging->clear();
+                    return 0;   // already applied; no store, no reload
+                }
+            }
             int committed = 0;
             std::string fpInput;     // FNV-1a input: PEMs in ca,cert,key order
             for (auto& [type, s] : *staging) {
