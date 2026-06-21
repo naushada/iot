@@ -24,25 +24,20 @@ implemented + merged; the cloud/transport half is still planned.
   (mongodump → verify → prune → manifest).
 - ✅ PR-4 (#342) — cloud-ui **Fleet Map** (Leaflet, self-hosted tiles, markers
   from `cloud.vehicle.telemetry`).
+- ✅ PR-13 (#347) — **cloud observe plumbing (GPS)**: DM server token-tagged
+  Reads of `/6/0/0,1` (tags 0x08/0x09) → `cloud.vehicle.telemetry`.
+- ✅ PR-14 (#348) — **observe plumbing (vehicle signals)**: `/33000/0/*` via a
+  table-driven `kVehReads` (tags 0x0A+) → map popups.
+- ✅ PR-15 (#349) — full OBD signal set + DTCs (`/33000/0/{3..8}`) to cloud.
+- ✅ PR-16 (#350) — full telemetry in the map popup.
 
-**Remaining — the telemetry TRANSPORT that fills `cloud.vehicle.telemetry`
-(one interdependent unit; needs a build-and-run loop). Implementation pointers
-from tracing the code, so this is an exact handoff:**
+> **🎉 The LIVE map feature is complete + (mostly) CI-validated:** device
+> CAN/GPS → LwM2M objects → DM-server server-Reads → `cloud.vehicle.telemetry`
+> → cloud-ui Fleet Map (markers + speed/rpm/coolant/throttle/load/fuel/iat/maf/
+> link/DTC popups). No LwM2M Send needed for live — the server polls via Reads.
 
-- ⬜ **Cloud observe plumbing** — populate `cloud.vehicle.telemetry` from the
-  device's Object 6 + Object 33000. **Exact mechanism (traced):** in
-  `apps/src/main.cpp` (server role) the DM server issues **token-tagged
-  server-Reads** — the CoAP token is `[tag, seq24bit...]` where `tag 0x06` =
-  Read `/3/0/3` (fw version), `tag 0x07` = Read `/4/0/4` (lan_ip). The
-  `ctx->coapAdapter()->dmResponseHandler(...)` lambda (≈ main.cpp:460) matches
-  the tag, maps `seq → endpoint` via `seqToEp`, and fills the `epVersions` /
-  `epLanIps` maps; `publish_regs` (≈ main.cpp:400) serializes those into the
-  `cloud.lwm2m.registrations` rows (`row["lan_ip"]` at :428). **To extend:** add
-  new tags (e.g. `0x08`=`/6/0/0..1` GPS, `0x09`=`/33000/0/*`), issue those Reads
-  where `/3/0/3`+`/4/0/4` are issued, add per-endpoint maps + handler cases, and
-  add a sibling `publish_vehicle()` writing `cloud.vehicle.telemetry` (volatile).
-  **Blast radius:** this is the core `lwm2m` binary (both images) — do it against
-  a build. The cloud-ui Map (PR-4) already reads `cloud.vehicle.telemetry` live.
+**Remaining — only the 60-day HISTORY pipeline (the live map does not need it).
+Needs a build-and-run loop + new deps:**
 - ⬜ PR-7 — `TelemetryMirror` (clone `apps/src/lwm2m_registry_mirror.cpp`) →
   on-device MongoDB buffer (§3a). Reuse `apps/inc/db_adapter.hpp` (`DbClient`).
   **Gating:** guard with `#ifdef IOT_ENABLE_MONGO` and, in
