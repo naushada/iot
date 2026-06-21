@@ -46,6 +46,27 @@ struct LocationHooks {
 /// Resources are observable; unset hooks serve static "0".
 int install_location(ObjectStore& store, LocationHooks hooks = {});
 
+/// Live readers for the custom Vehicle Telemetry object (OID 33000). Each
+/// returns text/plain; an unset hook serves a static default. Bound to the
+/// vehicle.* ds keys (published by iot-vehicled) in the client build.
+struct VehicleHooks {
+    std::function<std::string()> speed;     ///< /33000/0 (km/h)
+    std::function<std::string()> rpm;       ///< /33000/1
+    std::function<std::string()> coolant;   ///< /33000/2 (deg C)
+    std::function<std::string()> throttle;  ///< /33000/3 (%)
+    std::function<std::string()> load;      ///< /33000/4 (%)
+    std::function<std::string()> fuel;      ///< /33000/5 (%)
+    std::function<std::string()> iat;       ///< /33000/6 (deg C)
+    std::function<std::string()> maf;       ///< /33000/7 (g/s)
+    std::function<std::string()> dtc;       ///< /33000/8 (JSON DTC list)
+    std::function<std::string()> link;      ///< /33000/10 (up/down/no-ecu)
+};
+
+/// Vehicle Telemetry (OID 33000, private-use range) — OBD-II signals mirrored
+/// from vehicle.* ds keys. Observable; unset hooks serve a static default.
+/// Custom (not OMA) → installed separately from install_canonical_objects.
+int install_vehicle(ObjectStore& store, VehicleHooks hooks = {});
+
 /// Connectivity Statistics (OID 7) — counters.
 int install_connstats(ObjectStore& store);
 

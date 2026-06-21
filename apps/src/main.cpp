@@ -1024,6 +1024,34 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                                                 std::move(fwHooks), std::move(certHooks),
                                                 std::move(locHooks));
 
+    // Vehicle Telemetry (custom OID 33000): bind OBD-II signals to the vehicle.*
+    // ds keys published by iot-vehicled (it owns the CAN bus). A server
+    // Read/Observe /33000/0/* surfaces live vehicle data to the cloud map. Each
+    // hook reuses the same ds reader as gps.* above; empty → static default.
+    ::lwm2m::objects::VehicleHooks vehHooks;
+    {
+        auto vehVal = [dsc](const char* key) -> std::string {
+            std::string v;
+            if (dsc) {
+                std::vector<data_store::Client::GetResult> got;
+                if (dsc->get({std::string(key)}, got).ok && !got.empty() && got[0].has_value)
+                    if (auto s = data_store::to_string(got[0].value)) v = *s;
+            }
+            return v;
+        };
+        vehHooks.speed    = [vehVal]() { return vehVal("vehicle.speed"); };
+        vehHooks.rpm      = [vehVal]() { return vehVal("vehicle.rpm"); };
+        vehHooks.coolant  = [vehVal]() { return vehVal("vehicle.coolant"); };
+        vehHooks.throttle = [vehVal]() { return vehVal("vehicle.throttle"); };
+        vehHooks.load     = [vehVal]() { return vehVal("vehicle.load"); };
+        vehHooks.fuel     = [vehVal]() { return vehVal("vehicle.fuel"); };
+        vehHooks.iat      = [vehVal]() { return vehVal("vehicle.iat"); };
+        vehHooks.maf      = [vehVal]() { return vehVal("vehicle.maf"); };
+        vehHooks.dtc      = [vehVal]() { return vehVal("vehicle.dtc"); };
+        vehHooks.link     = [vehVal]() { return vehVal("vehicle.link"); };
+    }
+    ::lwm2m::objects::install_vehicle(*plumb.store, std::move(vehHooks));
+
     // ── IPSO sensor objects (mangOH Yellow) ───────────────────────────────
     // Sensor values are produced by the privileged iot-sensord daemon (it owns
     // the I2C bus / mangOH board) and published to iot.sensor.* in the

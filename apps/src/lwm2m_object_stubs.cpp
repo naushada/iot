@@ -153,6 +153,32 @@ int install_connstats(ObjectStore& store) {
     return 0;
 }
 
+int install_vehicle(ObjectStore& store, VehicleHooks h) {
+    ObjectDescriptor d;
+    d.oid = 33000; d.name = "Vehicle Telemetry";
+    d.urn = "urn:oma:lwm2m:x:33000";          // private-use range (no OMA reg)
+    d.mandatory = false; d.multipleInstance = false;
+
+    auto inst = instance_with(0);
+    // Bound to vehicle.* (iot-vehicled / OBD-II) in the client build; unset →
+    // static default. A server Read/Observe /33000/0/* surfaces live vehicle
+    // telemetry to the cloud (map + dashboards). RID 8 (DTC) is fed once the
+    // ISO-TP Mode 03 path lands; RID 9 (MIL) is reserved.
+    inst.resources[0]  = live_or_static(0,  "Speed",           ResourceType::Float,  std::move(h.speed),    "0");
+    inst.resources[1]  = live_or_static(1,  "RPM",             ResourceType::Float,  std::move(h.rpm),      "0");
+    inst.resources[2]  = live_or_static(2,  "Coolant",         ResourceType::Float,  std::move(h.coolant),  "0");
+    inst.resources[3]  = live_or_static(3,  "Throttle",        ResourceType::Float,  std::move(h.throttle), "0");
+    inst.resources[4]  = live_or_static(4,  "Engine Load",     ResourceType::Float,  std::move(h.load),     "0");
+    inst.resources[5]  = live_or_static(5,  "Fuel Level",      ResourceType::Float,  std::move(h.fuel),     "0");
+    inst.resources[6]  = live_or_static(6,  "Intake Air Temp", ResourceType::Float,  std::move(h.iat),      "0");
+    inst.resources[7]  = live_or_static(7,  "MAF",             ResourceType::Float,  std::move(h.maf),      "0");
+    inst.resources[8]  = live_or_static(8,  "DTC List",        ResourceType::String, std::move(h.dtc),      "");
+    inst.resources[10] = live_or_static(10, "Link",            ResourceType::String, std::move(h.link),     "down");
+    d.instances[0] = std::move(inst);
+    store.add_object(std::move(d));
+    return 0;
+}
+
 // The Security (OID 0) and Server (OID 1) objects are NOT seeded from static
 // config — they are delivered entirely by the Bootstrap server at /bs and
 // created in the live store by the Bootstrap client's apply_commit (which
