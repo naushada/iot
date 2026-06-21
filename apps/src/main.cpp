@@ -381,6 +381,11 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     // null elsewhere), so non-DM instances issue no version reads.
     auto epVersions = std::make_shared<std::unordered_map<std::string, std::string>>();
     auto epLanIps   = std::make_shared<std::unordered_map<std::string, std::string>>();
+    // Vehicle telemetry: latest GPS lat/lon per endpoint, read from Object 6
+    // (/6/0/0, /6/0/1) on the same token-tagged server-Read scheme as lan_ip,
+    // and published to cloud.vehicle.telemetry for the cloud-ui Fleet Map.
+    auto epGpsLat   = std::make_shared<std::unordered_map<std::string, std::string>>();
+    auto epGpsLon   = std::make_shared<std::unordered_map<std::string, std::string>>();
     auto seqToEp    = std::make_shared<std::unordered_map<std::uint32_t, std::string>>();
     auto verMtx     = std::make_shared<std::mutex>();
     auto verSeq     = std::make_shared<std::uint32_t>(0);
@@ -396,7 +401,8 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                     .count());
         };
         publish_regs = std::make_shared<std::function<void()>>(
-            [registry, dsClient, lastSeen, now_unix, epVersions, epLanIps, verMtx]() {
+            [registry, dsClient, lastSeen, now_unix, epVersions, epLanIps,
+             epGpsLat, epGpsLon, verMtx]() {
                 if (!dsClient) return;
                 const std::int64_t nowUnix = now_unix();
                 nlohmann::json arr = nlohmann::json::array();
@@ -432,6 +438,27 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                 *lastSeen = std::move(kept);
                 dsClient->set(std::string("cloud.lwm2m.registrations"),
                               data_store::Value{arr.dump()});
+
+                // Vehicle telemetry plane: a row per endpoint that has a GPS fix
+                // (Object 6), read on the tick below. The cloud-ui Fleet Map
+                // reads cloud.vehicle.telemetry live. Volatile (latest-wins).
+                nlohmann::json varr = nlohmann::json::array();
+                {
+                    std::lock_guard<std::mutex> lk(*verMtx);
+                    for (const auto& kv : registry->all()) {
+                        const auto& ep = kv.second.endpoint;
+                        if (ep.empty()) continue;
+                        auto la = epGpsLat->find(ep);
+                        auto lo = epGpsLon->find(ep);
+                        if (la == epGpsLat->end() || lo == epGpsLon->end()) continue;
+                        if (la->second.empty() || lo->second.empty()) continue;
+                        varr.push_back({{"endpoint", ep},
+                                        {"lat", la->second},
+                                        {"lon", lo->second}});
+                    }
+                }
+                dsClient->set_volatile(std::string("cloud.vehicle.telemetry"),
+                                       data_store::Value{varr.dump()});
             });
 
         regServer->on_event(
@@ -458,13 +485,14 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         for (auto& [type, ctx] : services) {
             (void)type;
             ctx->coapAdapter()->dmResponseHandler(
-                [epVersions, epLanIps, seqToEp, verMtx, publish_regs]
+                [epVersions, epLanIps, epGpsLat, epGpsLon, seqToEp, verMtx, publish_regs]
                 (const CoAPAdapter::CoAPMessage& m) {
                     const auto& tok = m.tokens;
-                    // 0x06 tag = Read /3/0/3 (firmware version); 0x07 = Read
-                    // /4/0/4 (LAN IP). Both stamp a 24-bit seq we map back to the
-                    // endpoint; the tag selects which field the reply fills.
-                    if (tok.size() < 4 || (tok[0] != 0x06 && tok[0] != 0x07)) return;
+                    // Token tag selects which read reply this is: 0x06 /3/0/3 (fw
+                    // version), 0x07 /4/0/4 (LAN IP), 0x08 /6/0/0 (GPS lat),
+                    // 0x09 /6/0/1 (GPS lon). All stamp a 24-bit seq we map back to
+                    // the endpoint; the tag selects which field the reply fills.
+                    if (tok.size() < 4 || tok[0] < 0x06 || tok[0] > 0x09) return;
                     const std::uint8_t  kind = tok[0];
                     const std::uint32_t seq =
                         (static_cast<std::uint32_t>(tok[1]) << 16) |
@@ -477,9 +505,16 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                         if (it == seqToEp->end()) return;
                         const std::string ep = it->second;
                         seqToEp->erase(it);
-                        auto& target = (kind == 0x06) ? *epVersions : *epLanIps;
-                        if (!m.payload.empty() && target[ep] != m.payload) {
-                            target[ep] = m.payload;
+                        std::unordered_map<std::string, std::string>* target = nullptr;
+                        switch (kind) {
+                            case 0x06: target = epVersions.get(); break;
+                            case 0x07: target = epLanIps.get();   break;
+                            case 0x08: target = epGpsLat.get();   break;
+                            case 0x09: target = epGpsLon.get();   break;
+                            default:   return;
+                        }
+                        if (!m.payload.empty() && (*target)[ep] != m.payload) {
+                            (*target)[ep] = m.payload;
                             changed = true;
                         }
                     }
@@ -687,6 +722,29 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                         /*oid*/ 4, /*iid*/ 0, /*rid*/ 4,
                         /*accept*/ -1);
                     ctx->send_async(lreq, reg.peerHost, reg.peerPort);
+
+                    // Read /6/0/0 (GPS lat, tag 0x08) + /6/0/1 (GPS lon, tag 0x09)
+                    // → cloud.vehicle.telemetry for the Fleet Map. Same token-tag
+                    // correlation as lan_ip. A device with no GPS replies empty/
+                    // 4.04 → no row, which the map tolerates.
+                    for (const auto& gp : {std::make_pair(0x08, 0), std::make_pair(0x09, 1)}) {
+                        std::uint32_t gseq;
+                        {
+                            std::lock_guard<std::mutex> lk(*verMtx);
+                            gseq = (++(*verSeq)) & 0x00FFFFFFu;
+                            (*seqToEp)[gseq] = reg.endpoint;
+                        }
+                        std::string gtok;
+                        gtok.push_back(static_cast<char>(gp.first));
+                        gtok.push_back(static_cast<char>((gseq >> 16) & 0xFF));
+                        gtok.push_back(static_cast<char>((gseq >> 8)  & 0xFF));
+                        gtok.push_back(static_cast<char>( gseq        & 0xFF));
+                        auto greq = ::lwm2m::dmsrv::build_read(
+                            next_msgid(), gtok,
+                            /*oid*/ 6, /*iid*/ 0, /*rid*/ gp.second,
+                            /*accept*/ -1);
+                        ctx->send_async(greq, reg.peerHost, reg.peerPort);
+                    }
                 }
 
                 // OTA: push a pending firmware update over Object 5 (Package
