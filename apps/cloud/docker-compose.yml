@@ -212,23 +212,27 @@ services:
     restart: unless-stopped
     profiles: ["telemetry"]
 
-  # ── Telemetry ingest (§3b) ─────────────────────────────────────
-  # iot-httpd appends each cloud.vehicle.telemetry snapshot to an NDJSON spool
-  # ({ts, endpoints:[...]} per line) — no mongo driver in the cloud C++ build.
-  # This sidecar atomically renames the spool aside and bulk-loads it into the
-  # `telemetry` collection with mongoimport, then drops the processed file.
-  # iot-httpd opens+appends+closes per snapshot, so the rename never races a
-  # held descriptor; the next snapshot recreates the spool. Reuses the mongo
-  # image for mongoimport. Opt-in with the mongo store.
+  # ── Telemetry ingest + history export (§3b) ────────────────────
+  # Two-way bridge between the iot-httpd NDJSON spool and Mongo (no mongo
+  # driver in the cloud C++ build): mongoimport loads each cloud.vehicle.
+  # telemetry snapshot iot-httpd appends, and mongoexport dumps a recent window
+  # back to history.json, which iot-httpd serves at
+  # /api/v1/cloud/telemetry/history for the map's historical-track read-back.
+  # iot-httpd opens+appends+closes per snapshot, so the spool rename never races
+  # a held descriptor. Reuses the mongo image; logic lives in the mounted
+  # iot-telemetry-ingest script (like the archiver). Opt-in with the mongo store.
   iot-telemetry-ingest:
     image: docker.io/library/mongo:5.0
     container_name: iot-telemetry-ingest
     depends_on: [mongo]
     volumes:
       - iot-telemetry-spool:/var/lib/iot/telemetry-spool
+      - ./scripts/iot-telemetry-ingest.sh:/usr/local/bin/iot-telemetry-ingest:ro
     environment:
       - MONGO_HOST=mongo
-    entrypoint: ["/bin/sh","-c","f=/var/lib/iot/telemetry-spool/spool.ndjson; while true; do if [ -s \"$$f\" ]; then mv \"$$f\" \"$$f.proc\" && mongoimport --quiet --host \"$$MONGO_HOST\" --db iot --collection telemetry --file \"$$f.proc\" && rm -f \"$$f.proc\"; fi; sleep ${TELEMETRY_INGEST_SEC:-30}; done"]
+      - TELEMETRY_INGEST_SEC=${TELEMETRY_INGEST_SEC:-30}
+      - HISTORY_WINDOW_SEC=${HISTORY_WINDOW_SEC:-86400}
+    entrypoint: ["/bin/sh","-c","exec /usr/local/bin/iot-telemetry-ingest"]
     restart: unless-stopped
     profiles: ["telemetry"]
 
