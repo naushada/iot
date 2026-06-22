@@ -25,6 +25,7 @@
 #include "data_store/value.hpp"
 
 #include <ace/Log_Msg.h>
+#include <ace/OS_NS_time.h>
 #include <ace/INET_Addr.h>
 #include <ace/SOCK_Connector.h>
 #include <ace/SOCK_Stream.h>
@@ -533,6 +534,14 @@ int main(int argc, char** argv) {
                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch deprovision.request failed: %C\n"),
                    ws_depr.err.c_str()));
     }
+    // Transfer-out (release a device to a new owner): revoke its VPN cert +
+    // deprovision. cloud-ui writes the endpoint name here.
+    auto ws_rel = ds.watch("cloud.transfer.release.request", 1000);
+    if (!ws_rel.ok) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch transfer.release.request failed: %C\n"),
+                   ws_rel.err.c_str()));
+    }
     // Watch log.level so operator changes via cloud UI take effect
     // immediately (no need to wait for the periodic timeout tick).
     auto ws_loglevel = ds.watch("log.level", 5000);
@@ -664,9 +673,19 @@ int main(int argc, char** argv) {
             write_file(capaths.ca_crt, caCrt, 0644);
             if (!srvKey.empty()) write_file(capaths.srv_key, srvKey, 0600);
             if (!srvCrt.empty()) write_file(capaths.srv_crt, srvCrt, 0644);
+            // Also restore the CRL + CA database so revocation state (and the
+            // ability to revoke certs minted before the loss) survives a wiped
+            // iot-vpn volume. ensure_crl() keeps these (creates only if missing).
+            ::mkdir(capaths.ca_newdir.c_str(), 0755);
+            if (const auto crl = ds_str(ds, "cloud.vpn.crl.pem",      ""); !crl.empty())
+                write_file(capaths.crl,       crl, 0644);
+            if (const auto idx = ds_str(ds, "cloud.vpn.ca.index",     ""); !idx.empty())
+                write_file(capaths.ca_db,     idx, 0644);
+            if (const auto crn = ds_str(ds, "cloud.vpn.ca.crlnumber", ""); !crn.empty())
+                write_file(capaths.ca_crlnum, crn, 0644);
             ACE_DEBUG((LM_INFO,
                        ACE_TEXT("%D cloudd:thread:%t %M %N:%l restored runtime PKI "
-                                "from ds (iot-vpn volume not required)\n")));
+                                "+ CRL from ds (iot-vpn volume not required)\n")));
         }
     }
 
@@ -686,6 +705,24 @@ int main(int argc, char** argv) {
             {"cloud.vpn.server.key.pem", data_store::Value{read_file(capaths.srv_key)}},
             {"cloud.vpn.server.crt.pem", data_store::Value{read_file(capaths.srv_crt)}},
         });
+    }
+
+    // Persist the CRL + CA database to ds (durable across an iot-vpn volume
+    // loss). Called at startup and after every mint/revoke so a later revoke
+    // can still find a cert's serial and enforcement survives a volume wipe.
+    auto persist_ca_db = [&ds, &capaths]() {
+        ds.set({
+            {"cloud.vpn.crl.pem",      data_store::Value{read_file(capaths.crl)}},
+            {"cloud.vpn.ca.index",     data_store::Value{read_file(capaths.ca_db)}},
+            {"cloud.vpn.ca.crlnumber", data_store::Value{read_file(capaths.ca_crlnum)}},
+        });
+    };
+    // Enforce revocation: point openvpn at the CA's CRL (ensure() created an
+    // initial empty one). Conditional on the file existing so a CRL-init failure
+    // can't make openvpn refuse to start on a missing crl-verify target.
+    if (cert_ca.have_ca() && !read_file(capaths.crl).empty()) {
+        ovpn_cfg.crl = capaths.crl;
+        persist_ca_db();
     }
 
     server::openvpn::OpenVpnServer ovpn(ovpn_cfg);
@@ -869,6 +906,74 @@ int main(int argc, char** argv) {
         ds.set("cloud.provision.request",   data_store::Value{std::string("")});
     };
 
+    // Transfer-out (release): revoke the device's VPN cert (roll a fresh CRL +
+    // make openvpn enforce it), then deprovision (remove creds + registry +
+    // free the VPN IP), and audit. The device-side wipe (Phase 1) drops its own
+    // cert; revocation here stops a LEAKED key from reconnecting to this cloud.
+    auto handle_release = [&](const std::string& ep) {
+        ACE_DEBUG((LM_WARNING,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l TRANSFER-OUT release '%C'\n"),
+                   ep.c_str()));
+        bool revoked = false;
+        // 1. Find the device's stored VPN client cert and revoke it.
+        try {
+            std::string clientCert;
+            auto arr = nlohmann::json::parse(
+                ds_str(ds, "cloud.endpoint.credentials", "[]"));
+            if (arr.is_array()) for (const auto& e : arr) {
+                if (e.is_object() && e.value("serial", "") == ep) {
+                    clientCert = e.value("vpn.client.cert", "");
+                    break;
+                }
+            }
+            if (clientCert.empty()) {
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D cloudd:thread:%t %M %N:%l release %C: no VPN "
+                                    "cert on record — nothing to revoke\n"), ep.c_str()));
+            } else if (auto crl = cert_ca.revoke(clientCert)) {
+                ds.set("cloud.vpn.crl.pem", data_store::Value{*crl});
+                persist_ca_db();
+                revoked = true;
+                // Make openvpn enforce the new CRL. If crl-verify wasn't on the
+                // running config yet (first ever revoke), reconfigure() restarts
+                // it; otherwise only the CRL FILE changed (same config text), so
+                // force a restart to reload it deterministically across openvpn
+                // versions. Brief reconnect of other tunnels — acceptable for a
+                // rare ownership transfer + the revocation guarantee.
+                ovpn_cfg.crl = capaths.crl;
+                if (!ovpn.reconfigure(ovpn_cfg)) ovpn.stop();
+                ovpn_fails = 0; ovpn_last_start = {}; ovpn_retry_after = {};
+                supervise_ovpn();
+                ACE_DEBUG((LM_WARNING,
+                           ACE_TEXT("%D cloudd:thread:%t %M %N:%l release %C: VPN cert "
+                                    "revoked + CRL reloaded\n"), ep.c_str()));
+            } else {
+                ACE_ERROR((LM_ERROR,
+                           ACE_TEXT("%D cloudd:thread:%t %M %N:%l release %C: cert "
+                                    "revoke failed (minted before CRL feature?)\n"),
+                           ep.c_str()));
+            }
+        } catch (const std::exception& e) {
+            ACE_ERROR((LM_ERROR,
+                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l release %C revoke: %C\n"),
+                       ep.c_str(), e.what()));
+        }
+        // 2. Deprovision (clears creds + registry + VPN IP; clears the
+        //    provision/deprovision triggers as its one-shot tail).
+        handle_deprovision(ep);
+        // 3. Audit (append-only).
+        try {
+            auto aud = nlohmann::json::parse(ds_str(ds, "cloud.transfer.audit", "[]"));
+            if (!aud.is_array()) aud = nlohmann::json::array();
+            aud.push_back({{"serial", ep}, {"action", "release"},
+                           {"revoked", revoked},
+                           {"ts", static_cast<std::int64_t>(ACE_OS::time(nullptr))}});
+            ds.set("cloud.transfer.audit", data_store::Value{aud.dump()});
+        } catch (const std::exception&) {}
+        // 4. One-shot: clear the trigger.
+        ds.set("cloud.transfer.release.request", data_store::Value{std::string("")});
+    };
+
     // Startup self-heal: honor a deprovision request left pending in ds (the
     // edge-triggered watch won't replay it), then sync so cloud.endpoints
     // reflects the removal immediately instead of after the first periodic tick.
@@ -877,6 +982,14 @@ int main(int argc, char** argv) {
                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l honoring pending deprovision "
                             "request '%C' from ds at startup\n"), pending.c_str()));
         handle_deprovision(pending);
+        sync_endpoints_to_ds(ds, ep_reg);
+    }
+    // Same for a transfer-out release left pending across a restart.
+    if (auto pending = ds_str(ds, "cloud.transfer.release.request", ""); !pending.empty()) {
+        ACE_DEBUG((LM_INFO,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l honoring pending transfer "
+                            "release '%C' from ds at startup\n"), pending.c_str()));
+        handle_release(pending);
         sync_endpoints_to_ds(ds, ep_reg);
     }
 
@@ -955,6 +1068,10 @@ int main(int argc, char** argv) {
                                         mc->client_crt, mc->client_key);
                                 ds.set("cloud.endpoint.credentials",
                                        data_store::Value{next});
+                                // The mint recorded the cert in the CA database;
+                                // persist it so the cert stays revocable across a
+                                // restart / iot-vpn volume loss.
+                                persist_ca_db();
                                 ACE_DEBUG((LM_INFO,
                                            ACE_TEXT("%D cloudd:thread:%t %M %N:%l "
                                                     "minted+stored VPN client cert "
@@ -990,6 +1107,9 @@ int main(int argc, char** argv) {
             } else if (ev.key == "cloud.deprovision.request") {
                 if (auto ep = data_store::to_string(ev.value); ep && !ep->empty())
                     handle_deprovision(*ep);
+            } else if (ev.key == "cloud.transfer.release.request") {
+                if (auto ep = data_store::to_string(ev.value); ep && !ep->empty())
+                    handle_release(*ep);
             } else if (ev.key == "log.level") {
                 g_log.apply_level(ds);
                 ACE_DEBUG((LM_INFO,
