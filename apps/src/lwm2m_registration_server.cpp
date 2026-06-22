@@ -134,7 +134,7 @@ RegistrationOutcome RegistrationServer::handle(const CoAPAdapter::CoAPMessage& m
             advPtr = &newAdvertised;
         }
 
-        if (!m_registry->update(uri, newLt, newBinding, advPtr)) {
+        if (!m_registry->update(uri, newLt, newBinding, advPtr, peerHost, peerPort)) {
             out.kind     = RegistrationOutcome::NotFound;
             out.response = build_simple_ack(msg, /*4.04 Not Found*/ 0x84);
             return out;

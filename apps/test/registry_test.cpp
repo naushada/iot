@@ -61,13 +61,50 @@ TEST(Registry, REQ_REG_009_locations_are_unique_within_session) {
     EXPECT_EQ(3u, reg.size());
 }
 
+TEST(Registry, reregister_same_endpoint_reuses_location_no_duplicate) {
+    ClientRegistry reg;
+    auto first = reg.add(make_reg("urn:dev:1", /*lt*/ 100));
+    EXPECT_EQ(1u, reg.size());
+
+    // Same endpoint re-registers (device went offline and came back) from a
+    // NEW public/ISP address before the old registration expired.
+    auto again = make_reg("urn:dev:1", /*lt*/ 100);
+    again.peerHost = "203.0.113.9";
+    again.peerPort = 41000;
+    auto second = reg.add(again);
+
+    EXPECT_EQ(first, second);                 // location reused, not churned
+    EXPECT_EQ(1u, reg.size());                // replaced in place, no duplicate
+    auto* rec = reg.find(first);
+    ASSERT_NE(nullptr, rec);
+    EXPECT_EQ("203.0.113.9", rec->peerHost);  // record reflects the new peer
+    EXPECT_EQ(41000u, rec->peerPort);
+}
+
+TEST(Registry, update_refreshes_peer_address_but_empty_does_not_clobber) {
+    ClientRegistry reg;
+    auto loc = reg.add(make_reg("urn:dev:1", /*lt*/ 100));
+
+    // Keepalive Update from a new NAT address → recorded peer (ISP IP) follows.
+    ASSERT_TRUE(reg.update(loc, 0, "", nullptr, "198.51.100.7", 33333));
+    auto* r = reg.find(loc);
+    ASSERT_NE(nullptr, r);
+    EXPECT_EQ("198.51.100.7", r->peerHost);
+    EXPECT_EQ(33333u, r->peerPort);
+
+    // Plain-UDP dispatch path passes an empty peer — must NOT wipe the address.
+    ASSERT_TRUE(reg.update(loc, 0, "", nullptr, "", 0));
+    EXPECT_EQ("198.51.100.7", reg.find(loc)->peerHost);
+}
+
 TEST(Registry, REQ_REG_003_update_refreshes_lifetime) {
     ClientRegistry reg;
     auto t0 = std::chrono::steady_clock::now();
     auto loc = reg.add(make_reg("urn:dev:1", /*lt*/ 100), t0);
 
     auto t1 = t0 + std::chrono::seconds(50);
-    ASSERT_TRUE(reg.update(loc, /*lt*/ 200, /*binding*/ "", nullptr, t1));
+    ASSERT_TRUE(reg.update(loc, /*lt*/ 200, /*binding*/ "", nullptr,
+                           /*peerHost*/ "", /*peerPort*/ 0, t1));
 
     auto* r = reg.find(loc);
     ASSERT_NE(nullptr, r);
@@ -81,7 +118,8 @@ TEST(Registry, REQ_REG_003_update_can_keep_lifetime_with_lt_zero) {
     auto loc = reg.add(make_reg("urn:dev:1", 100), t0);
 
     auto t1 = t0 + std::chrono::seconds(60);
-    ASSERT_TRUE(reg.update(loc, /*lt*/ 0, "", nullptr, t1));
+    ASSERT_TRUE(reg.update(loc, /*lt*/ 0, "", nullptr,
+                           /*peerHost*/ "", /*peerPort*/ 0, t1));
     auto* r = reg.find(loc);
     ASSERT_NE(nullptr, r);
     EXPECT_EQ(100u, r->lifetime);                                // unchanged

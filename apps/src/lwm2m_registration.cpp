@@ -10,6 +10,26 @@ std::string default_id(std::uint64_t counter) {
 
 std::string ClientRegistry::add(ServerRegistration in,
                                 std::chrono::steady_clock::time_point now) {
+    // Re-registration of a known endpoint (device rebooted / came back online
+    // and re-registered while the prior registration still lingers): reuse its
+    // existing location and replace the record in place, rather than minting a
+    // new /rd/{id} and leaving a stale duplicate behind until it expires.
+    // Keeps the location stable per endpoint and prevents duplicate registry
+    // entries — which otherwise surface as duplicate cloud.lwm2m.registrations
+    // rows whose lexicographic location order makes a STALE row win the
+    // last-writer reconcile (e.g. the device's recorded ISP IP stops tracking).
+    if (!in.endpoint.empty()) {
+        for (auto& [loc, reg] : m_byLocation) {
+            if (reg.endpoint == in.endpoint) {
+                in.location     = loc;
+                in.registeredAt = now;
+                in.expiresAt    = now + std::chrono::seconds(in.lifetime);
+                reg = std::move(in);
+                return loc;
+            }
+        }
+    }
+
     auto gen = m_idGen ? m_idGen : default_id;
     std::string loc;
     do {
@@ -27,6 +47,8 @@ bool ClientRegistry::update(const std::string& location,
                             std::uint32_t newLifetime,
                             const std::string& newBinding,
                             const std::vector<linkformat::LinkEntry>* newAdvertised,
+                            const std::string& peerHost,
+                            std::uint16_t peerPort,
                             std::chrono::steady_clock::time_point now) {
     auto it = m_byLocation.find(location);
     if (it == m_byLocation.end()) return false;
@@ -40,6 +62,14 @@ bool ClientRegistry::update(const std::string& location,
     }
     if (newAdvertised) {
         reg.advertisedSet = *newAdvertised;
+    }
+    // Refresh the public/ISP peer on every Update (the registration Update
+    // doubles as the NAT keepalive, so it arrives from the device's current
+    // public address). Only when known — the plain-UDP dispatch path passes an
+    // empty peer and must not clobber a good address captured at Register.
+    if (!peerHost.empty()) {
+        reg.peerHost = peerHost;
+        reg.peerPort = peerPort;
     }
     reg.expiresAt = now + std::chrono::seconds(reg.lifetime);
     return true;

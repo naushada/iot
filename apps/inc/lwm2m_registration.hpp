@@ -51,21 +51,31 @@ class ClientRegistry {
 public:
     ClientRegistry() = default;
 
-    /// Insert a fresh registration. The `location` field is **populated by
-    /// this call** with a freshly-generated identifier; callers must read it
-    /// back from `out` to build the Location-Path response. The current
-    /// system clock and `lifetime` together define `expiresAt`.
-    /// Returns the generated location.
+    /// Insert a registration. If a registration for the **same endpoint**
+    /// already exists (e.g. the device rebooted / came back online and
+    /// re-registered before its prior lifetime expired), its existing
+    /// `location` is **reused** and the record replaced in place — so
+    /// `/rd/{location}` stays stable per endpoint and the registry never
+    /// accumulates duplicate entries for one device. Otherwise a fresh
+    /// identifier is generated. Either way `location` is populated on the
+    /// stored record; callers read the returned value to build the
+    /// Location-Path response. The current clock + `lifetime` define
+    /// `expiresAt`. Returns the (reused or generated) location.
     std::string add(ServerRegistration in,
                     std::chrono::steady_clock::time_point now =
                         std::chrono::steady_clock::now());
 
-    /// Refresh lifetime / advertised set / binding on an existing entry.
-    /// Returns true on success, false if the location is unknown.
+    /// Refresh lifetime / advertised set / binding on an existing entry, and
+    /// (when `peerHost` is non-empty) the public/ISP peer address+port — so a
+    /// device that keeps the same location but reconnects from a new NAT
+    /// address (the Update doubles as the keepalive) updates its recorded
+    /// peer. Returns true on success, false if the location is unknown.
     bool update(const std::string& location,
                 std::uint32_t newLifetime,
                 const std::string& newBinding,
                 const std::vector<linkformat::LinkEntry>* newAdvertised,
+                const std::string& peerHost = std::string(),
+                std::uint16_t peerPort = 0,
                 std::chrono::steady_clock::time_point now =
                     std::chrono::steady_clock::now());
 
