@@ -206,20 +206,34 @@ ObjectInstance make_instance(std::uint32_t iid,
                     }
                 }
             }
+            // The cloud-pushed VPN endpoint (RID 5/6/7) is folded into the
+            // idempotency fingerprint below. It is NOT a cert PEM, but it IS
+            // part of "what's currently applied" — without it, a proto/host/port
+            // change that keeps the same cert family would hash identically and
+            // be silently skipped, so the device never learns the new endpoint
+            // (e.g. an operator flipping cloud.vpn.proto tcp↔udp). The unit
+            // separator keeps the three fields unambiguous against PEM bytes.
+            const std::string ep_suffix =
+                vpn ? ("\x1f" + vpn->host + "\x1f" + vpn->port + "\x1f" + vpn->proto)
+                    : std::string();
             // Idempotency gate: the cloud re-pushes the cert family every ~30s
             // until the tunnel reports up, which re-triggers this Apply. If the
-            // staged family is byte-identical to what's already applied (RID 4
-            // fingerprint), skip the store + reload entirely — otherwise we
-            // bounce openvpn every 30s and it can never finish a handshake. The
-            // fp is computed over the staged PEMs in the same ca,cert,key order
-            // as the committed one below.
+            // staged family + endpoint is byte-identical to what's already
+            // applied (RID 4 fingerprint), skip the store + reload entirely —
+            // otherwise we bounce openvpn every 30s and it can never finish a
+            // handshake. The fp is computed over the staged PEMs in the same
+            // ca,cert,key order as the committed one below, plus ep_suffix.
             if (applied && !applied->empty()) {
                 std::string cand;
-                for (auto& [type, s] : *staging) { if (s.present) cand += s.pem; }
-                if (!cand.empty() && fnv1a_hex(cand) == *applied) {
+                bool any_pem = false;
+                for (auto& [type, s] : *staging) {
+                    if (s.present) { cand += s.pem; any_pem = true; }
+                }
+                if (any_pem) cand += ep_suffix;
+                if (any_pem && fnv1a_hex(cand) == *applied) {
                     ACE_DEBUG((LM_INFO,
-                        ACE_TEXT("%D [cert-obj] %M %N:%l apply skipped: family "
-                                 "unchanged (fp=%C) — not reloading\n"),
+                        ACE_TEXT("%D [cert-obj] %M %N:%l apply skipped: family + "
+                                 "endpoint unchanged (fp=%C) — not reloading\n"),
                         applied->c_str()));
                     staging->clear();
                     return 0;   // already applied; no store, no reload
@@ -249,6 +263,10 @@ ObjectInstance make_instance(std::uint32_t iid,
             }
             // Clear staging so a later partial push can't re-commit stale bytes.
             staging->clear();
+            // Fold the VPN endpoint into the committed fingerprint, matching the
+            // candidate hashed in the idempotency gate above — so a later
+            // endpoint-only change (same certs) hashes differently and applies.
+            fpInput += ep_suffix;
             if (applied) *applied = fnv1a_hex(fpInput);
             // Materialise the cloud-pushed VPN endpoint (if any) into ds before
             // the reload hook, so openvpn (re)starts against the right server.
