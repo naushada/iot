@@ -561,6 +561,49 @@ void install_handlers(Router& router,
             return r;
         });
 
+    // ── POST /api/v1/system/transfer ──────────────────────────────
+    // Admin-only + ownership-changing. Re-homes the device to a new owner:
+    // arms the trigger that the `engineer` iot-transfer.service acts on, which
+    // wipes the customer-scoped credentials + VPN trust + LwM2M bootstrap
+    // binding but KEEPS the network, then parks for re-commission (Phase 1 of
+    // apps/docs/tdd-device-transfer.md). Yocto/systemd only.
+    //
+    // FAIL-CLOSED auth (deliberately unlike reboot/factory-reset above, which
+    // default to Admin on an absent cookie): a destructive ownership change must
+    // require a valid Admin session whenever auth is enabled. With auth disabled
+    // the whole API is open by operator choice, so it is allowed.
+    router.add("POST", "/api/v1/system/transfer",
+        [auth](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            bool allowed = false;
+            if (auth && auth->enabled()) {
+                std::string token = extract_session_cookie(req.headers, auth->cookie_name());
+                if (!token.empty()) {
+                    const auto* session = auth->validate(token);
+                    if (session && session->access == "Admin") allowed = true;
+                }
+            } else {
+                allowed = true;   // auth disabled → API open by operator choice
+            }
+            if (!allowed) {
+                r.status = 403;
+                r.body = R"({"ok":false,"err":"admin required"})";
+                return r;
+            }
+            std::ofstream trig("/run/iot/transfer.request", std::ios::trunc);
+            if (!trig) {
+                r.status = 500;
+                r.body = R"({"ok":false,"err":"cannot arm transfer - perms or non-Yocto host"})";
+                return r;
+            }
+            trig << "transfer\n";
+            ACE_DEBUG((LM_WARNING,
+                       ACE_TEXT("%D httpd:thread:%t %M %N:%l DEVICE TRANSFER requested "
+                                "via device-ui (armed iot-transfer.path)\n")));
+            r.body = R"({"ok":true})";
+            return r;
+        });
+
     // ── POST /api/v1/firmware/upload?name=<f>&version=&arch=&pkg= ──
     // Cloud-side: browse / drag-drop a .ipk or .tar.gz bundle in the cloud-ui
     // straight into the firmware FEED (firmware_dir, served at /firmware/) and

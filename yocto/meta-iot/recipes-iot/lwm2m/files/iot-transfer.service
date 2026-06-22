@@ -1,0 +1,18 @@
+[Unit]
+Description=Device transfer — wipe customer credentials + VPN trust, keep network
+Documentation=https://github.com/naushada/iot
+# No [Install]: activated by iot-transfer.path, never enabled directly.
+After=iot-ds.service
+Wants=iot-ds.service
+
+[Service]
+Type=oneshot
+# Runs as `engineer`, not root: the credential ds keys are write_acl=gid:engineer
+# (ds-server has NO root bypass) and /etc/iot/vpn is engineer-owned. Group `iot`
+# (supplementary) is needed to reach the ds socket (/run/iot/data_store.sock,
+# 0660 iot-ds:iot). Mirrors iot-lwm2m-client.service's account.
+User=engineer
+Group=engineer
+SupplementaryGroups=iot
+ExecStart=/usr/bin/iot-transfer
+TimeoutStartSec=60

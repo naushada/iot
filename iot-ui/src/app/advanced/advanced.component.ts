@@ -43,10 +43,23 @@ import { SessionService } from '../../common/session.service';
         </div>
       </ng-container>
 
-      <!-- ── Transfer (placeholder) ───────────────────────────── -->
+      <!-- ── Transfer (re-home to a new owner) ─────────────────── -->
       <ng-container *ngIf="panel==='transfer'">
         <h3>Transfer</h3>
-        <p class="hint">Coming soon — device configuration / credential transfer.</p>
+        <p class="warn">⚠ This <b>re-homes the device to a new owner</b>: it wipes
+          the current customer's credentials and VPN trust and forgets the cloud
+          binding, then parks for re-commissioning. <b>Network settings (WiFi /
+          cellular) are kept</b> so the new owner can re-commission from this UI —
+          this is not a factory reset. The device leaves your fleet.</p>
+        <clr-input-container>
+          <label>Type <code>TRANSFER</code> to confirm:</label>
+          <input clrInput type="text" #tw (input)="transferWord = tw.value"
+                 placeholder="TRANSFER" autocomplete="off" />
+        </clr-input-container>
+        <div class="act">
+          <button class="btn btn-danger" [disabled]="transferWord!=='TRANSFER' || busy || !isAdmin"
+                  (click)="doTransfer()">{{ busy ? '…' : 'Transfer Device' }}</button>
+        </div>
       </ng-container>
 
       <p *ngIf="!isAdmin" class="warn">Admin access is required for these actions.</p>
@@ -71,6 +84,7 @@ export class AdvancedComponent {
   @Input() panel: 'reboot' | 'factory' | 'transfer' = 'reboot';
   rebootOk = false;
   resetWord = '';
+  transferWord = '';
   busy = false;
   msg = '';
 
@@ -99,6 +113,22 @@ export class AdvancedComponent {
                         : ('Error: ' + (r.err || 'failed'));
       },
       error: () => { this.busy = false; this.msg = 'Request sent; the device may already be resetting.'; }
+    });
+  }
+
+  doTransfer(): void {
+    this.busy = true; this.msg = '';
+    // Transfer keeps the network up (no reboot), so the HTTP connection stays
+    // alive — a transport error here is a real failure, reported honestly
+    // (unlike reboot/factory-reset where the drop is expected).
+    this.http.systemTransfer().subscribe({
+      next: (r) => {
+        this.busy = false;
+        this.msg = r.ok
+          ? 'Transfer requested — wiping owner credentials; the device will park for re-commissioning.'
+          : ('Error: ' + (r.err || 'failed'));
+      },
+      error: () => { this.busy = false; this.msg = 'Error: transfer request failed.'; }
     });
   }
 }

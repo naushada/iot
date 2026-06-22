@@ -59,6 +59,14 @@ export class HttpsvcService {
       { headers: this.jsonHeaders(), withCredentials: true });
   }
 
+  // Re-home the device to a new owner: wipes customer credentials + VPN trust,
+  // keeps the network, then parks for re-commission. See tdd-device-transfer.md.
+  systemTransfer(): Observable<{ ok: boolean; err?: string }> {
+    return this.http.post<{ ok: boolean; err?: string }>(
+      `${this.api}/api/v1/system/transfer`, {},
+      { headers: this.jsonHeaders(), withCredentials: true });
+  }
+
   // ── Status ────────────────────────────────────────────────────────
 
   getStatus(): Observable<StatusSnapshot> {

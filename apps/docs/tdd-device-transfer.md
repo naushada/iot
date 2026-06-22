@@ -1,13 +1,35 @@
 # TDD Plan — Device Ownership Transfer (Advanced → Transfer)
 
-Status: **PROPOSAL / DRAFT** — not yet implemented. Replaces the `panel='transfer'`
-placeholder in `iot-ui/src/app/advanced/advanced.component.ts` ("Coming soon —
-device configuration / credential transfer"). Build/test via **podman** (no
+Status: **PHASE 1 IMPLEMENTED** (device-local transfer / field swap); Phase 2
+(cloud release/claim + CRL + token) still to do. Build/test via **podman** (no
 local C++/node toolchain on the dev Mac; image CI builds on `main` only).
 
 This plan is deliberately phased: **Phase 1** ships a self-contained device-local
 transfer (field swap), **Phase 2** adds the two-sided cloud release/claim
 protocol + VPN cert revocation + data purge. Decide §7 before coding Phase 2.
+
+### Phase 1 implementation progress
+
+| Task | State | Notes |
+| --- | --- | --- |
+| A — units + wipe script + recipe | ✅ DONE | `files/iot-transfer` (script), `iot-transfer.{path,service}`; wired into `iot_git.bb` SRC_URI/install/FILES, `SYSTEMD_SERVICE:${PN}-httpd`, **and `90-iot.preset`** (the PR #394 enable lesson). |
+| B — selective wipe mechanism (D4) | ✅ DONE (simplified) | **No new ds-server op.** The script runs as `User=engineer` (matches `iot-lwm2m-client.service`) and clears the customer-scoped keys with `ds-cli set <k> ""` — engineer's primary gid satisfies the `gid:engineer` write_acl (ds-server has no root bypass), and engineer owns `/etc/iot/vpn`. Network keys + `iot.serial` are never touched. |
+| C — `POST /api/v1/system/transfer` | ✅ DONE | `modules/http-server/src/handler.cpp`. **Fail-closed** auth (valid Admin session required when auth enabled; open only when auth disabled) — deliberately unlike the reboot/factory-reset handlers, which default to Admin on an absent cookie. |
+| D — device-ui Advanced → Transfer | ✅ DONE | Replaced the placeholder: warning + "Type TRANSFER to confirm" Clarity input + Admin-gated button; `httpsvc.systemTransfer()`. Error reported honestly (no reboot → connection stays up). |
+| schema | ✅ DONE | `iot.transfer.state` added to `modules/data-store/schemas/iot.lua` (`idle`/`wiping`/`awaiting-commission`, `write_acl gid:engineer`, readable). |
+| E — re-home verification | ⏳ PENDING HW | Needs a device + a 2nd bootstrap server: confirm wipe → park → `should_rebootstrap` re-homes with no client code change. |
+
+**Phase 1 re-commission flow:** Transfer wipes A's creds + VPN trust and parks
+the device; the **new owner enters B's bootstrap URI + BS PSK on the device-ui
+Configuration page** (the same flow a fresh device uses) — no transfer token in
+Phase 1. The device keeps network, so this needs no console visit.
+
+**Deferred from Phase 1 (follow-up):** purging the device-side telemetry
+store-and-forward buffer (§5a) — it needs a privileged step (stop `iot-vehicled`
++ drop the Mongo collection) that the engineer-run wipe can't perform. Until
+then the buffer survives a transfer; flag if A's buffered telemetry must not
+reach B. Operator config keys (`vpn.remote.*` etc.) are likewise left as-is —
+B's cloud re-pushes them over Object 2048 at provision, overwriting A's.
 
 ## 1. Goal
 
