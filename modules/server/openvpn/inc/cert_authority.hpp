@@ -32,6 +32,16 @@ struct CaPaths {
     std::string ca_subj   = "/O=IoT Cloud/CN=iot-cloud-ca";
     std::string srv_subj  = "/O=IoT Cloud/CN=cloud-vpn";
     int         days      = 3650;
+    // CRL / CA-database material (Phase 2 of apps/docs/tdd-device-transfer.md).
+    // Minting goes through `openssl ca` (vs `x509 -req`) so issued certs land in
+    // `ca_db` (index.txt) and can later be revoked + rolled into a CRL.
+    std::string crl       = "/etc/iot/vpn/ca/crl.pem";
+    std::string ca_db     = "/etc/iot/vpn/ca/index.txt";
+    std::string ca_serial = "/etc/iot/vpn/ca/serial";
+    std::string ca_crlnum = "/etc/iot/vpn/ca/crlnumber";
+    std::string ca_cnf    = "/etc/iot/vpn/ca/openssl.cnf";
+    std::string ca_newdir = "/etc/iot/vpn/ca/newcerts";
+    int         crl_days  = 3650;
 };
 
 /// A freshly minted client credential family. ca_crt is included so the
@@ -57,9 +67,26 @@ public:
     /// True once a CA private key is present (after a successful ensure()).
     bool have_ca() const;
 
-    /// Mint a client cert + key signed by the CA, CN = sanitized `cn`.
-    /// Returns std::nullopt on failure (no CA, openssl error, IO error).
+    /// Mint a client cert + key signed by the CA, CN = sanitized `cn`. Signed
+    /// via `openssl ca` so the cert is recorded in the CA database and is
+    /// revocable later. Returns std::nullopt on failure (no CA, openssl/IO).
     std::optional<MintedCert> mint_client(const std::string& cn);
+
+    /// Ensure the CRL/CA-database scaffolding exists (openssl.cnf, index.txt,
+    /// serial, crlnumber, newcerts/, and an initial empty CRL). Idempotent and
+    /// safe to call on an already-initialised CA (e.g. a cloud upgraded into
+    /// the CRL feature). Called from ensure() and before mint/revoke. Returns
+    /// false if there is no CA or on openssl/IO failure.
+    bool ensure_crl();
+
+    /// Revoke a previously-minted client cert (passed as its PEM) and roll a
+    /// fresh CRL. Returns the new CRL PEM on success. Fails (nullopt) if the
+    /// cert was not minted by this CA's database (e.g. issued before the CRL
+    /// feature) — only `openssl ca`-minted certs are revocable.
+    std::optional<std::string> revoke(const std::string& client_cert_pem);
+
+    /// Current CRL PEM (empty optional if none yet). Read-only.
+    std::optional<std::string> crl_pem() const;
 
     /// CN sanitiser exposed for tests: keep [A-Za-z0-9._@-], map the rest to
     /// '_', cap at 64 chars, never empty.
@@ -67,6 +94,7 @@ public:
 
 private:
     bool run_openssl(const std::string& args) const;  // args appended to the binary
+    bool write_ca_cnf() const;                         // (re)write openssl.cnf
 
     CaPaths     m_p;
     std::string m_openssl;

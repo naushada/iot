@@ -72,6 +72,12 @@ std::string build_server_config(const OpenVpnServerConfig& c) {
     ss << "ca   " << c.ca_path   << "\n";
     ss << "cert " << c.cert_path << "\n";
     ss << "key  " << c.key_path  << "\n";
+    // Revocation: when a CRL is configured, openvpn rejects any client cert
+    // listed in it. Conditional — emitted only when set, so a deployment
+    // without a CRL is unchanged (and openvpn won't refuse to start on a
+    // missing crl-verify file). The CA writes the CRL; iot-cloudd points
+    // c.crl at it once it exists. See apps/docs/tdd-device-transfer.md.
+    if (!c.crl.empty()) ss << "crl-verify " << c.crl << "\n";
     ss << "dh none\n";                       // ECDH — no dh.pem needed
     ss << "cipher " << c.cipher  << "\n";
     ss << "keepalive 10 120\n";

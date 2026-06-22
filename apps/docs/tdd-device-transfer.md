@@ -224,10 +224,28 @@ How B's `bs.uri` + BS PSK reach the device after the wipe:
 
 ### Phase 2 — cloud release/claim + revocation
 
-- **F. CRL in `CertAuthority`** [CLOUD] — generate/maintain `crl.pem`, revoke a
-  serial, persist `cloud.vpn.crl.pem`; add `crl-verify` to `build_server_config`;
-  `OpenVpnServer::reconfigure` already restarts on a rendered-config change so a
-  CRL update propagates. Tests: revoked cert rejected.
+- **F. CRL in `CertAuthority`** [CLOUD] — **engine DONE** (this slice):
+  - `CertAuthority` now mints through `openssl ca` (was `x509 -req`) so issued
+    certs land in a CA database (`index.txt`) and are revocable; `ensure()`
+    stands up the CRL scaffolding (`openssl.cnf`, `index.txt`, `serial`,
+    `crlnumber`, `newcerts/`, initial empty CRL) idempotently — backfilled for a
+    CA created before this feature.
+  - `revoke(client_cert_pem)` → `openssl ca -revoke` + `-gencrl`, returns the
+    fresh CRL PEM; `crl_pem()` reads the current CRL.
+  - `build_server_config` emits `crl-verify <path>` **only when `cfg.crl` is set**
+    (default empty → unchanged; openvpn won't refuse to start on a missing file).
+  - Tests (real openssl, podman): initial CRL stood up; a revoked cert is
+    rejected by `openssl verify -crl_check` while others still pass; a foreign
+    cert can't be revoked; `build_server_config` crl-verify on/off.
+  - **Wiring still TODO** (next slice): set `ovpn_cfg.crl = capaths.crl` after
+    `ensure()`; persist/restore `crl.pem` (+ `index.txt`/`crlnumber`) in ds like
+    the runtime PKI so enforcement + future revokes survive an iot-vpn volume
+    loss; `OpenVpnServer::reconfigure` already restarts on a rendered-config
+    change so a first-time `crl-verify` propagates.
+  - **Caveat:** only `openssl ca`-minted certs are revocable. Devices whose cert
+    was issued by the OLD `x509 -req` path (pre-feature) aren't in the CA db —
+    they become revocable after a re-provision. Fresh deployments: all
+    revocable.
 - **G. Release backend** [CLOUD] — `cloud.transfer.release.request` watch →
   deprovision + revoke + purge telemetry (`cloud.vehicle.telemetry` + Mongo) +
   audit. One-shot trigger like provision/deprovision.

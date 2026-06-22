@@ -93,6 +93,21 @@ TEST(BuildServerConfig, noDnsPushWhenEmpty) {
     EXPECT_EQ(conf.find("dhcp-option DNS"), std::string::npos);
 }
 
+TEST(BuildServerConfig, crlVerifyEmittedWhenSet) {
+    OpenVpnServerConfig c;
+    c.subnet = "10.9.0.0/24";
+    c.crl = "/etc/iot/vpn/ca/crl.pem";
+    const std::string conf = build_server_config(c);
+    EXPECT_NE(conf.find("crl-verify /etc/iot/vpn/ca/crl.pem"), std::string::npos);
+}
+
+TEST(BuildServerConfig, noCrlVerifyWhenUnset) {
+    OpenVpnServerConfig c;
+    c.subnet = "10.9.0.0/24";   // c.crl left empty
+    const std::string conf = build_server_config(c);
+    EXPECT_EQ(conf.find("crl-verify"), std::string::npos);
+}
+
 TEST(Reconfigure, noopWhenRenderedConfigUnchanged) {
     // A redundant ds write (same effective config) must NOT report a change,
     // so the cloud hot-reload path doesn't bounce a healthy tunnel.

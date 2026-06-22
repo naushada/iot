@@ -36,7 +36,21 @@ CaPaths paths_under(const std::string& dir) {
     p.ca_crt  = dir + "/ca/ca.crt";
     p.srv_key = dir + "/server.key";
     p.srv_crt = dir + "/server.crt";
+    p.crl       = dir + "/ca/crl.pem";
+    p.ca_db     = dir + "/ca/index.txt";
+    p.ca_serial = dir + "/ca/serial";
+    p.ca_crlnum = dir + "/ca/crlnumber";
+    p.ca_cnf    = dir + "/ca/openssl.cnf";
+    p.ca_newdir = dir + "/ca/newcerts";
     return p;
+}
+
+// True if `openssl verify -crl_check` ACCEPTS the cert against the CA + CRL.
+bool crl_verify_ok(const std::string& ca_crt, const std::string& crl,
+                   const std::string& cert) {
+    return std::system(("/usr/bin/openssl verify -crl_check -CAfile '" + ca_crt +
+                        "' -CRLfile '" + crl + "' '" + cert +
+                        "' >/dev/null 2>&1").c_str()) == 0;
 }
 
 } // namespace
@@ -113,4 +127,68 @@ TEST(CertAuthority, mint_without_ca_fails) {
     CaPaths p = paths_under(dir);
     CertAuthority ca(p);                 // ensure() not called
     EXPECT_FALSE(ca.mint_client("x").has_value());
+}
+
+/* ─────────────────────── CRL / revocation (needs openssl) ─────────────── */
+
+TEST(CertAuthority, ensure_stands_up_crl_database_and_initial_crl) {
+    if (!have_openssl()) GTEST_SKIP() << "openssl CLI not available";
+    const std::string dir = scratch();
+    if (dir.empty()) GTEST_SKIP() << "no writable scratch dir";
+    CaPaths p = paths_under(dir);
+
+    CertAuthority ca(p);
+    ASSERT_TRUE(ca.ensure());
+    EXPECT_TRUE(exists(p.crl));
+    EXPECT_TRUE(exists(p.ca_db));
+    EXPECT_TRUE(exists(p.ca_cnf));
+    auto pem = ca.crl_pem();
+    ASSERT_TRUE(pem.has_value());
+    EXPECT_NE(std::string::npos, pem->find("BEGIN X509 CRL"));
+}
+
+TEST(CertAuthority, revoked_cert_is_rejected_while_others_still_verify) {
+    if (!have_openssl()) GTEST_SKIP() << "openssl CLI not available";
+    const std::string dir = scratch();
+    if (dir.empty()) GTEST_SKIP() << "no writable scratch dir";
+    CaPaths p = paths_under(dir);
+
+    CertAuthority ca(p);
+    ASSERT_TRUE(ca.ensure());
+
+    auto keep = ca.mint_client("rpi-keep@cloud.local");
+    auto gone = ca.mint_client("rpi-gone@cloud.local");
+    ASSERT_TRUE(keep.has_value());
+    ASSERT_TRUE(gone.has_value());
+
+    const std::string keepCrt = dir + "/keep.crt";
+    const std::string goneCrt = dir + "/gone.crt";
+    std::ofstream(keepCrt, std::ios::binary) << keep->client_crt;
+    std::ofstream(goneCrt, std::ios::binary) << gone->client_crt;
+
+    // Before revocation both verify against the (empty) CRL.
+    EXPECT_TRUE(crl_verify_ok(p.ca_crt, p.crl, keepCrt));
+    EXPECT_TRUE(crl_verify_ok(p.ca_crt, p.crl, goneCrt));
+
+    // Revoke one → a fresh CRL is returned + persisted.
+    auto crl = ca.revoke(gone->client_crt);
+    ASSERT_TRUE(crl.has_value());
+    EXPECT_NE(std::string::npos, crl->find("BEGIN X509 CRL"));
+
+    // Now the revoked cert is rejected; the other still passes.
+    EXPECT_FALSE(crl_verify_ok(p.ca_crt, p.crl, goneCrt));
+    EXPECT_TRUE(crl_verify_ok(p.ca_crt, p.crl, keepCrt));
+}
+
+TEST(CertAuthority, revoke_foreign_cert_fails) {
+    if (!have_openssl()) GTEST_SKIP() << "openssl CLI not available";
+    const std::string dir = scratch();
+    if (dir.empty()) GTEST_SKIP() << "no writable scratch dir";
+    CaPaths p = paths_under(dir);
+
+    CertAuthority ca(p);
+    ASSERT_TRUE(ca.ensure());
+    // A cert not minted by this CA's database cannot be revoked.
+    EXPECT_FALSE(ca.revoke("-----BEGIN CERTIFICATE-----\nnotacert\n"
+                           "-----END CERTIFICATE-----\n").has_value());
 }
