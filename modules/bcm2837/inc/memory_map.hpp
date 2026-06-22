@@ -4,6 +4,23 @@
 #include <cstdint>
 #include <cstdio>
 
+/**
+ * @brief Peripheral physical base for the *bare-metal* default placement
+ *        addresses below (the `operator new` fallbacks used when no region
+ *        pointer is supplied). Defaults to BCM2836/7 (Pi 2/3/Zero 2 W); override
+ *        at compile time to retarget a freestanding build:
+ *
+ *          -DBCM_PERIPH_BASE=0x20000000   // BCM2835: Pi 1, Pi Zero, Pi Zero W
+ *          -DBCM_PERIPH_BASE=0x3F000000   // BCM2836/7: Pi 2, Pi 3, Pi Zero 2 W
+ *          -DBCM_PERIPH_BASE=0xFE000000   // BCM2711: Pi 4, Pi 400, CM4
+ *
+ * The booted-Linux path (inc/mmio.hpp) ignores this and auto-detects the base
+ * at runtime, so a single Linux binary already targets every supported board.
+*/
+#ifndef BCM_PERIPH_BASE
+#define BCM_PERIPH_BASE 0x3F000000U
+#endif
+
 namespace BCM2837 {
 
     /**
@@ -133,7 +150,7 @@ namespace BCM2837 {
                         starting at 0x7E000000. Thus a peripheral advertised here at bus address 0x7Ennnnnn is
                         available at physical address 0x3Fnnnnnn.
                 */
-                return reinterpret_cast<void *>((0x3F000000) + (0x00200000));
+                return reinterpret_cast<void *>((BCM_PERIPH_BASE) + (0x00200000U));
             }
             return(region);
         }
@@ -242,7 +259,7 @@ namespace BCM2837 {
         void *operator new(std::size_t nBytes, void *region=nullptr) {
             (void)nBytes;
             if(nullptr == region) {
-                return reinterpret_cast<void *>((0x3F000000) + (0x00100000));
+                return reinterpret_cast<void *>((BCM_PERIPH_BASE) + (0x00100000U));
             }
             return(region);
         }
@@ -288,7 +305,7 @@ namespace BCM2837 {
         void *operator new(std::size_t nBytes, void *region=nullptr) {
             (void)nBytes;
             if(nullptr == region) {
-                return reinterpret_cast<void *>(0x3F00B200);
+                return reinterpret_cast<void *>((BCM_PERIPH_BASE) + (0x0000B200U));
             }
             return(region);
         }
@@ -414,8 +431,8 @@ namespace BCM2837 {
         void *operator new(std::size_t nBytes, void *region=nullptr) {
             (void)nBytes;
             if(nullptr == region) {
-                /* System Timer physical base (bus 0x7E003000 -> phys 0x3F003000). */
-                return reinterpret_cast<void *>(0x3F003000U);
+                /* System Timer physical base (bus 0x7E003000 -> phys base + 0x3000). */
+                return reinterpret_cast<void *>((BCM_PERIPH_BASE) + (0x00003000U));
             }
             return(region);
         }
@@ -478,8 +495,8 @@ namespace BCM2837 {
         void *operator new(std::size_t nBytes, void *region=nullptr) {
             (void)nBytes;
             if(nullptr == region) {
-                /* SPI0 physical base (bus 0x7E204000 -> phys 0x3F204000). */
-                return reinterpret_cast<void *>(0x3F204000U);
+                /* SPI0 physical base (bus 0x7E204000 -> phys base + 0x204000). */
+                return reinterpret_cast<void *>((BCM_PERIPH_BASE) + (0x00204000U));
             }
             return(region);
         }

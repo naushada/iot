@@ -45,14 +45,61 @@
 
 namespace BCM2837 {
 
-    /// @brief BCM2837 (Pi 2/3) peripheral physical bases. Datasheet bus
-    ///        addresses 0x7Ennnnnn map to physical 0x3Fnnnnnn.
-    inline constexpr std::uintptr_t PERIPH_BASE = 0x3F000000U;
-    inline constexpr std::uintptr_t GPIO_PHYS   = PERIPH_BASE + 0x200000U; ///< 0x3F200000
-    inline constexpr std::uintptr_t CLOCK_PHYS  = PERIPH_BASE + 0x101070U; ///< 0x3F101070 (CM_GP0CTL)
-    inline constexpr std::uintptr_t I2C1_PHYS   = PERIPH_BASE + 0x804000U; ///< 0x3F804000 (BSC1)
-    inline constexpr std::uintptr_t SPI0_PHYS   = PERIPH_BASE + 0x204000U; ///< 0x3F204000
-    inline constexpr std::uintptr_t SYSTIMER_PHYS = PERIPH_BASE + 0x3000U; ///< 0x3F003000 (System Timer)
+    /// @brief Peripheral *offsets* from the SoC peripheral base. These are the
+    ///        datasheet bus addresses 0x7Ennnnnn with the 0x7E000000 prefix
+    ///        stripped, and are identical across BCM2835, BCM2836/7 and BCM2711.
+    inline constexpr std::uintptr_t GPIO_OFFSET     = 0x200000U; ///< GPIO
+    inline constexpr std::uintptr_t CLOCK_OFFSET    = 0x101070U; ///< CM_GP0CTL
+    inline constexpr std::uintptr_t I2C1_OFFSET     = 0x804000U; ///< BSC1
+    inline constexpr std::uintptr_t SPI0_OFFSET     = 0x204000U; ///< SPI0
+    inline constexpr std::uintptr_t SYSTIMER_OFFSET = 0x3000U;   ///< System Timer
+
+    /// @brief Known Raspberry Pi SoC peripheral physical bases. Only the base
+    ///        differs between models; the per-peripheral offsets above do not.
+    enum class SocPeriphBase : std::uintptr_t {
+        BCM2835   = 0x20000000U, ///< Pi 1, Pi Zero, Pi Zero W
+        BCM2836_7 = 0x3F000000U, ///< Pi 2, Pi 3, Pi Zero 2 W
+        BCM2711   = 0xFE000000U, ///< Pi 4, Pi 400, CM4
+    };
+
+    /**
+     * @brief Detect the peripheral base of the running board from the device
+     *        tree (/proc/device-tree/soc/ranges), so one binary targets every
+     *        supported Pi. Returns BCM2836_7 (0x3F000000) if detection fails.
+     *
+     * The ranges blob stores the CPU-physical base big-endian. The second u32
+     * holds it on BCM2835/6/7; on BCM2711 that slot is 0, so fall through to the
+     * next u32. This matches the well-known bcm2835/pigpio detection.
+    */
+    inline std::uintptr_t detect_periph_base() {
+        unsigned char buf[16] = {0};
+        std::size_t n = 0;
+        if(std::FILE* fp = std::fopen("/proc/device-tree/soc/ranges", "rb")) {
+            n = std::fread(buf, 1U, sizeof(buf), fp);
+            std::fclose(fp);
+        }
+        if(n >= 8U) {
+            std::uintptr_t base = (std::uintptr_t(buf[4]) << 24) | (std::uintptr_t(buf[5]) << 16)
+                                | (std::uintptr_t(buf[6]) <<  8) |  std::uintptr_t(buf[7]);
+            if(base == 0U && n >= 12U) { // BCM2711 device-tree layout
+                base = (std::uintptr_t(buf[8])  << 24) | (std::uintptr_t(buf[9])  << 16)
+                     | (std::uintptr_t(buf[10]) <<  8) |  std::uintptr_t(buf[11]);
+            }
+            if(base != 0U) return base;
+        }
+        return static_cast<std::uintptr_t>(SocPeriphBase::BCM2836_7);
+    }
+
+    /**
+     * @brief Cached peripheral base used by the map_* factories. Auto-detected
+     *        on first use; pass a nonzero @p force_base to override the detected
+     *        base (e.g. a SocPeriphBase value) for testing or unusual boards.
+    */
+    inline std::uintptr_t periph_base(std::uintptr_t force_base = 0U) {
+        static std::uintptr_t base = detect_periph_base();
+        if(force_base != 0U) base = force_base;
+        return base;
+    }
 
     /**
      * @brief RAII mapping of one peripheral register block.
@@ -138,11 +185,11 @@ namespace BCM2837 {
             Driver m_drv;
     };
 
-    inline Mapped<GPIO>  map_gpio()  { return Mapped<GPIO>(GPIO_PHYS,  sizeof(GPIORegistersAddress)); }
-    inline Mapped<CLOCK> map_clock() { return Mapped<CLOCK>(CLOCK_PHYS, sizeof(ClockRegistersAddress)); }
-    inline Mapped<I2C>   map_i2c()   { return Mapped<I2C>(I2C1_PHYS,   sizeof(BSCRegistersAddress)); }
-    inline Mapped<SPI>   map_spi()   { return Mapped<SPI>(SPI0_PHYS,   sizeof(SPIRegistersAddress)); }
-    inline Mapped<SystemTimer> map_systimer() { return Mapped<SystemTimer>(SYSTIMER_PHYS, sizeof(SystemTimerRegistersAddress)); }
+    inline Mapped<GPIO>  map_gpio()  { return Mapped<GPIO>(periph_base() + GPIO_OFFSET,  sizeof(GPIORegistersAddress)); }
+    inline Mapped<CLOCK> map_clock() { return Mapped<CLOCK>(periph_base() + CLOCK_OFFSET, sizeof(ClockRegistersAddress)); }
+    inline Mapped<I2C>   map_i2c()   { return Mapped<I2C>(periph_base() + I2C1_OFFSET,   sizeof(BSCRegistersAddress)); }
+    inline Mapped<SPI>   map_spi()   { return Mapped<SPI>(periph_base() + SPI0_OFFSET,   sizeof(SPIRegistersAddress)); }
+    inline Mapped<SystemTimer> map_systimer() { return Mapped<SystemTimer>(periph_base() + SYSTIMER_OFFSET, sizeof(SystemTimerRegistersAddress)); }
 
     // No map_irq(): the IRQ driver pairs the interrupt-enable registers with an
     // IVT (ARM exception vector table) that its region ctor places *past* the
