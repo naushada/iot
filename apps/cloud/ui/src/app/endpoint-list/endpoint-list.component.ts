@@ -130,6 +130,7 @@ interface EpCred {
           </clr-dg-cell>
           <clr-dg-cell *ngIf="isAdmin">
             <button class="btn btn-sm btn-outline" (click)="editPsk(e.endpoint)">Edit</button>
+            <button class="btn btn-sm btn-warning" (click)="transferOut(e.endpoint)">Transfer out</button>
             <button class="btn btn-sm btn-danger" (click)="deprovision(e.endpoint)">Remove</button>
           </clr-dg-cell>
         </clr-dg-row>
@@ -356,6 +357,24 @@ export class EndpointListComponent implements OnInit, OnDestroy {
         else { this.toast.error(r.err || 'Failed'); }
       },
       error: () => this.toast.error('Deprovision failed')
+    });
+  }
+
+  /** Transfer-out: release the device to a new owner. iot-cloudd revokes its
+   *  VPN cert (CRL) + deprovisions. db/set-driven, like provision. */
+  transferOut(ep: string): void {
+    if (!window.confirm(
+          `Transfer out "${ep}"?\n\nThis REVOKES the device's VPN certificate and ` +
+          `removes it from this cloud. The new owner must re-commission the device. ` +
+          `This cannot be undone.`)) return;
+    this.http.dbSet([{ key: 'cloud.transfer.release.request', value: ep }]).subscribe({
+      next: (r) => {
+        if (r.ok) {
+          this.toast.success('Transfer-out requested for ' + ep);
+          this.endpoints = this.endpoints.filter(e => e.endpoint !== ep);
+        } else this.toast.error(r.err || 'Failed');
+      },
+      error: () => this.toast.error('Transfer-out failed')
     });
   }
 

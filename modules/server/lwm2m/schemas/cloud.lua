@@ -368,6 +368,38 @@ return {
         write_acl = {"gid:cloud-svc"},
     },
 
+    -- Runtime VPN CRL + CA database, persisted in ds like the PKI above so
+    -- revocation (device transfer) survives an iot-vpn volume loss. crl.pem is
+    -- what openvpn enforces (crl-verify); index.txt/crlnumber let iot-cloudd
+    -- revoke a cert minted before a volume loss. See apps/docs/tdd-device-transfer.md.
+    ["cloud.vpn.crl.pem"] = {
+        access = "Admin", type = "string", default = "",
+        write_acl = {"gid:cloud-svc"},
+    },
+    ["cloud.vpn.ca.index"] = {
+        access = "Admin", type = "string", default = "",
+        write_acl = {"gid:cloud-svc"},
+    },
+    ["cloud.vpn.ca.crlnumber"] = {
+        access = "Admin", type = "string", default = "",
+        write_acl = {"gid:cloud-svc"},
+    },
+
+    -- Transfer-out (release a device from this cloud to a new owner): the
+    -- cloud-ui writes the endpoint name here; iot-cloudd watches it, revokes the
+    -- device's VPN cert (CRL), deprovisions, and audits. One-shot like
+    -- cloud.provision.request. See apps/docs/tdd-device-transfer.md §G.
+    ["cloud.transfer.release.request"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
+    -- Append-only audit of releases/claims (JSON array).
+    ["cloud.transfer.audit"] = {
+        access = "Admin", type = "string", default = "[]",
+        write_acl = {"gid:cloud-svc"},
+    },
+
     -- Next available proxy port (bump-counter).
     ["cloud.vpn.port.next"] = {
       type    = "integer",

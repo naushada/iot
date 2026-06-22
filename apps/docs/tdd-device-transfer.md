@@ -237,15 +237,35 @@ How B's `bs.uri` + BS PSK reach the device after the wipe:
   - Tests (real openssl, podman): initial CRL stood up; a revoked cert is
     rejected by `openssl verify -crl_check` while others still pass; a foreign
     cert can't be revoked; `build_server_config` crl-verify on/off.
-  - **Wiring still TODO** (next slice): set `ovpn_cfg.crl = capaths.crl` after
-    `ensure()`; persist/restore `crl.pem` (+ `index.txt`/`crlnumber`) in ds like
-    the runtime PKI so enforcement + future revokes survive an iot-vpn volume
-    loss; `OpenVpnServer::reconfigure` already restarts on a rendered-config
-    change so a first-time `crl-verify` propagates.
+  - **Wiring DONE:** iot-cloudd sets `ovpn_cfg.crl = capaths.crl` after `ensure()`
+    (so the server enforces it); persists/restores `crl.pem` + `index.txt` +
+    `crlnumber` in ds (`cloud.vpn.crl.pem` / `cloud.vpn.ca.index` /
+    `cloud.vpn.ca.crlnumber`) like the runtime PKI, re-persisting after each
+    mint + revoke so enforcement and future revokes survive an iot-vpn volume
+    loss. iot-cloudd compiles clean in podman (iot-devbuild).
   - **Caveat:** only `openssl ca`-minted certs are revocable. Devices whose cert
     was issued by the OLD `x509 -req` path (pre-feature) aren't in the CA db —
     they become revocable after a re-provision. Fresh deployments: all
     revocable.
+
+- **G. Transfer-out (release) backend** [CLOUD] — **DONE**. `cloud.transfer.
+  release.request` (one-shot, like provision/deprovision) → `handle_release`:
+  looks up the device's `vpn.client.cert` in `cloud.endpoint.credentials`,
+  `cert_ca.revoke()` → rolls + persists a fresh CRL, forces an openvpn restart
+  so the CRL is reloaded (brief reconnect of other tunnels — acceptable for a
+  rare ownership change), then `handle_deprovision()` (creds + registry + VPN
+  IP) and an append-only `cloud.transfer.audit` record. Startup self-heal for a
+  pending release. The device-side wipe (Phase 1) drops its own cert; revocation
+  here stops a LEAKED key from reconnecting.
+- **H. cloud-ui "Transfer out"** [CLOUD/UI] — **DONE**. Endpoints page gains a
+  Transfer-out action (Admin, `window.confirm` → `db/set cloud.transfer.release.
+  request`). "Claim device" reuses the existing provision form (new owner's BS
+  PSK), so no new claim UI is needed.
+
+  **Telemetry purge** (device buffer + cloud 60-day Mongo history) remains the
+  one deferred item — the volatile `cloud.vehicle.telemetry` row falls off
+  naturally when the released device deregisters; the Mongo history purge needs
+  a Mongo client in iot-cloudd (out of scope here).
 - **G. Release backend** [CLOUD] — `cloud.transfer.release.request` watch →
   deprovision + revoke + purge telemetry (`cloud.vehicle.telemetry` + Mongo) +
   audit. One-shot trigger like provision/deprovision.
