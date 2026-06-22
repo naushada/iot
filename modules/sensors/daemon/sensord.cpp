@@ -85,12 +85,12 @@ int run(const Options& opt) {
     }
 
     try {
-        // BSC1 + GPIO live registers. Throws if /dev/mem is unreadable (missing
-        // CAP_SYS_RAWIO / not a Pi), caught below so we exit non-zero.
-        BCM2837::Mapped<I2C>  i2cMap(BCM2837::I2C1_PHYS,
-                                     sizeof(BCM2837::BSCRegistersAddress));
-        BCM2837::Mapped<GPIO> gpioMap(BCM2837::GPIO_PHYS,
-                                      sizeof(BCM2837::GPIORegistersAddress));
+        // BSC1 + GPIO live registers. The map_* factories auto-detect the SoC
+        // peripheral base from the device tree (BCM2835/2836-7/2711), so one
+        // binary targets every supported Pi. Throws if /dev/mem is unreadable
+        // (missing CAP_SYS_RAWIO / not a Pi), caught below so we exit non-zero.
+        auto i2cMap  = BCM2837::map_i2c();
+        auto gpioMap = BCM2837::map_gpio();
         Bcm2837I2cTransport bus(*i2cMap, *gpioMap);
         bus.bus_init();
         ACE_DEBUG((LM_INFO,
