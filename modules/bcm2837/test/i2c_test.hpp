@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 #include <vector>
+#include <cstring>
 
 #include "i2c.hpp"
 
@@ -14,7 +15,14 @@ class I2CTest : public ::testing::Test
          *        m_memory_region so register access hits the buffer, not MMIO.
         */
         I2CTest() : m_memory_region(BCM2837::BSCRegistersAddress::Register::BSC_MAX),
-                    m_i2c(I2C(m_memory_region.data())) {}
+                    m_i2c(I2C(m_memory_region.data())) {
+            // Zero the overlaid registers. The register block has a trivial ctor
+            // (so it doesn't clobber live MMIO), which lets -O2/-O3 drop the
+            // vector's value-init as a dead store; zeroing after the overlay is
+            // observed by the driver's volatile reads and is not elided.
+            std::memset(m_memory_region.data(), 0,
+                        m_memory_region.size() * sizeof(std::uint32_t));
+        }
         virtual ~I2CTest() override = default;
 
         virtual void SetUp() override;

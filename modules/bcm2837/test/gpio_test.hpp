@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include <unordered_map>
+#include <cstring>
 
 #include "gpio.hpp"
 
@@ -18,11 +19,12 @@ class GPIOTest : public ::testing::Test
          *        the GPIO instance layout will be done from m_memory_region.
         */
         GPIOTest() : m_memory_region(BCM2837::GPIORegistersAddress::Register::BCM2837_MAX), m_gpio(GPIO(m_memory_region.data())) {
-            /*
-            ::printf("start memory_region: 0x%X ", m_memory_region.data());
-            ::printf("end memory_region: 0x%X ", m_memory_region.data() + GPIORegistersAddress::Register::BCM2837_MAX+1);
-            ::printf("GPIO: 0x%X ", &m_gpio.memory().m_register[0]);
-            */
+            // Zero the overlaid registers. The register block has a trivial ctor
+            // (so it doesn't clobber live MMIO), which lets -O2/-O3 drop the
+            // vector's value-init as a dead store; zeroing after the overlay is
+            // observed by the driver's volatile reads and is not elided.
+            std::memset(m_memory_region.data(), 0,
+                        m_memory_region.size() * sizeof(std::uint32_t));
         }
         virtual ~GPIOTest() override = default;
         
