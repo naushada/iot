@@ -34,6 +34,13 @@ bool slurp(const std::string& path, std::string& out) {
     return true;
 }
 
+bool write_file(const std::string& path, const std::string& data) {
+    std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
+    if (!ofs.is_open()) return false;
+    ofs << data;
+    return ofs.good();
+}
+
 } // namespace
 
 CertAuthority::CertAuthority(CaPaths paths, std::string openssl)
@@ -80,6 +87,12 @@ bool CertAuthority::ensure() {
                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l CA key present (%C); "
                             "runtime CA already initialised\n"),
                    m_p.ca_key.c_str()));
+        // Backfill the CRL/CA-database scaffolding for a CA that predates the
+        // CRL feature. Best-effort: a CRL failure must not fail CA bring-up.
+        if (!ensure_crl())
+            ACE_ERROR((LM_WARNING,
+                       ACE_TEXT("%D cloudd:thread:%t %M %N:%l CRL scaffolding "
+                                "backfill failed (revocation unavailable)\n")));
         return true;
     }
 
@@ -114,11 +127,105 @@ bool CertAuthority::ensure() {
     ::unlink(csr.c_str());
     (void)srl;
 
+    // Stand up the CRL/CA-database scaffolding so per-device certs minted below
+    // are revocable. Best-effort: a CRL failure must not fail CA bring-up.
+    if (!ensure_crl())
+        ACE_ERROR((LM_WARNING,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l CRL scaffolding init "
+                            "failed (revocation unavailable)\n")));
+
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D cloudd:thread:%t %M %N:%l runtime CA + server cert "
                         "generated (ca=%C server=%C)\n"),
                m_p.ca_crt.c_str(), m_p.srv_crt.c_str()));
     return true;
+}
+
+bool CertAuthority::write_ca_cnf() const {
+    std::ostringstream c;
+    c << "[ ca ]\n"
+      << "default_ca = CA_default\n\n"
+      << "[ CA_default ]\n"
+      << "dir              = " << dirname_of(m_p.ca_crt) << "\n"
+      << "database         = " << m_p.ca_db     << "\n"
+      << "new_certs_dir    = " << m_p.ca_newdir << "\n"
+      << "serial           = " << m_p.ca_serial << "\n"
+      << "crlnumber        = " << m_p.ca_crlnum << "\n"
+      << "certificate      = " << m_p.ca_crt    << "\n"
+      << "private_key      = " << m_p.ca_key    << "\n"
+      << "default_md       = sha256\n"
+      << "default_days     = " << m_p.days      << "\n"
+      << "default_crl_days = " << m_p.crl_days  << "\n"
+      << "policy           = policy_any\n"
+      << "email_in_dn      = no\n"
+      << "unique_subject   = no\n"
+      << "copy_extensions  = none\n"
+      << "preserve         = no\n\n"
+      << "[ policy_any ]\n"
+      << "commonName             = supplied\n"
+      << "organizationName       = optional\n"
+      << "organizationalUnitName = optional\n"
+      << "countryName            = optional\n"
+      << "stateOrProvinceName    = optional\n"
+      << "localityName           = optional\n"
+      << "emailAddress           = optional\n";
+    return write_file(m_p.ca_cnf, c.str());
+}
+
+bool CertAuthority::ensure_crl() {
+    if (!have_ca()) return false;
+    ::mkdir(m_p.ca_newdir.c_str(), 0755);
+    if (!file_exists(m_p.ca_db)     && !write_file(m_p.ca_db, ""))         return false;
+    // openssl reads unique_subject from index.txt.attr if present; force "no"
+    // so re-provisioning the same CN (a re-mint) doesn't error on a duplicate.
+    write_file(m_p.ca_db + ".attr", "unique_subject = no\n");
+    if (!file_exists(m_p.ca_serial) && !write_file(m_p.ca_serial, "01\n")) return false;
+    if (!file_exists(m_p.ca_crlnum) && !write_file(m_p.ca_crlnum, "01\n")) return false;
+    if (!write_ca_cnf()) return false;
+    // Emit an initial (empty) CRL so the server always has a crl-verify target.
+    if (!file_exists(m_p.crl)) {
+        if (!run_openssl("ca -batch -config '" + m_p.ca_cnf +
+                         "' -gencrl -out '" + m_p.crl + "'")) return false;
+    }
+    return true;
+}
+
+std::optional<std::string> CertAuthority::crl_pem() const {
+    std::string pem;
+    if (!slurp(m_p.crl, pem)) return std::nullopt;
+    return pem;
+}
+
+std::optional<std::string> CertAuthority::revoke(const std::string& client_cert_pem) {
+    if (!have_ca() || !ensure_crl()) return std::nullopt;
+
+    char tmpl[] = "/tmp/iot-revoke-XXXXXX";
+    char* dir = ::mkdtemp(tmpl);
+    if (!dir) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l revoke: mkdtemp failed "
+                            "errno=%d\n"), errno));
+        return std::nullopt;
+    }
+    const std::string d    = dir;
+    const std::string cert = d + "/cert.pem";
+
+    std::optional<std::string> result;
+    if (write_file(cert, client_cert_pem) &&
+        run_openssl("ca -batch -config '" + m_p.ca_cnf + "' -revoke '" + cert + "'") &&
+        run_openssl("ca -batch -config '" + m_p.ca_cnf +
+                    "' -gencrl -out '" + m_p.crl + "'")) {
+        std::string pem;
+        if (slurp(m_p.crl, pem)) result = std::move(pem);
+    }
+    ::unlink(cert.c_str());
+    ::rmdir(d.c_str());
+
+    if (!result)
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l revoke failed (cert not "
+                            "minted by this CA's database, or openssl error)\n")));
+    return result;
 }
 
 std::optional<MintedCert> CertAuthority::mint_client(const std::string& cn) {
@@ -146,13 +253,17 @@ std::optional<MintedCert> CertAuthority::mint_client(const std::string& cn) {
     const std::string csr = d + "/client.csr";
     const std::string crt = d + "/client.crt";
 
+    // Sign through `openssl ca` (not `x509 -req`) so the cert is recorded in the
+    // CA database (index.txt) and can be revoked later. `-notext` keeps the
+    // output a clean PEM (no human-readable header). ensure_crl() first so the
+    // database + openssl.cnf exist.
     bool ok =
+        ensure_crl() &&
         run_openssl("genrsa -out '" + key + "' 2048") &&
         run_openssl("req -new -key '" + key + "' -out '" + csr +
                     "' -subj '/O=IoT Cloud/CN=" + safe + "'") &&
-        run_openssl("x509 -req -days " + std::to_string(m_p.days) + " -in '" + csr +
-                    "' -CA '" + m_p.ca_crt + "' -CAkey '" + m_p.ca_key +
-                    "' -CAcreateserial -out '" + crt + "'");
+        run_openssl("ca -batch -notext -config '" + m_p.ca_cnf + "' -days " +
+                    std::to_string(m_p.days) + " -in '" + csr + "' -out '" + crt + "'");
 
     MintedCert out;
     if (ok) {
