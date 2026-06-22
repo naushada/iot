@@ -1,0 +1,14 @@
+[Unit]
+Description=Watch the device-transfer trigger (device-ui Advanced -> Transfer)
+Documentation=https://github.com/naushada/iot
+
+[Path]
+# iot-httpd (unprivileged) arms this by creating the file; iot-transfer.service
+# (runs as engineer) then wipes the customer credentials + VPN trust, keeping
+# the network. The service removes the trigger to re-arm (a .path unit won't
+# re-fire until the path is gone again).
+PathExists=/run/iot/transfer.request
+Unit=iot-transfer.service
+
+[Install]
+WantedBy=multi-user.target

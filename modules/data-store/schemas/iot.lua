@@ -155,6 +155,18 @@ return {
         default = "idle",
     },
 
+    -- Device-transfer (customer re-home) lifecycle, surfaced in the device-ui
+    -- Advanced -> Transfer panel: "idle" / "wiping" / "awaiting-commission".
+    -- Written by iot-transfer (runs as engineer); readable so the UI reflects
+    -- when the device has been wiped and is parked for the new owner to
+    -- commission. See apps/docs/tdd-device-transfer.md.
+    ["iot.transfer.state"] = {
+        access    = "Viewer",
+        type      = "string",
+        default   = "idle",
+        write_acl = {"gid:engineer"},
+    },
+
     -- ── mangOH Yellow sensor telemetry (iot-sensord → ds → IPSO/UI) ──
     -- The privileged iot-sensord daemon owns the I2C bus, reads the onboard
     -- BME680 / BMI160 / light sensors and publishes their latest values here.

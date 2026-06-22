@@ -28,3 +28,4 @@ enable iot-ota-confirm.service
 # written but nothing acts on it — the reboot/factory-reset silently no-ops.
 enable iot-reboot.path
 enable iot-factory-reset.path
+enable iot-transfer.path

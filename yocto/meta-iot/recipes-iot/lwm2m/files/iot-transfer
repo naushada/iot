@@ -1,0 +1,45 @@
+#!/bin/sh
+# iot-transfer — re-home this device to a new owner (customer A -> B).
+#
+# Armed by the device-ui: POST /api/v1/system/transfer writes
+# /run/iot/transfer.request; iot-transfer.path fires this. Unlike Factory Reset
+# (which wipes EVERYTHING and drops the device off the network), Transfer wipes
+# only the customer-scoped credentials + VPN trust + the LwM2M bootstrap binding
+# and KEEPS the network (WiFi/cellular/net.*) and the hardware serial — so the
+# new owner can re-commission from the device-ui without a console visit.
+#
+# Runs as `engineer` (NOT root): the credential ds keys are write_acl=gid:engineer
+# (ds-server has no root bypass) and /etc/iot/vpn is engineer-owned. engineer is
+# in group `iot` (SupplementaryGroups) to reach the ds socket. See
+# apps/docs/tdd-device-transfer.md.
+set -u
+
+DS=/usr/bin/ds-cli
+log() { logger -t iot-transfer "$*"; }
+
+log "DEVICE TRANSFER: wiping customer credentials + VPN trust, keeping network"
+rm -f /run/iot/transfer.request
+$DS set iot.transfer.state wiping 2>/dev/null || true
+
+# 1. Sever LwM2M: clear the BS + DM PSKs, the DM URI and the BS URI so the
+#    client parks for re-commission, and reset the 3rd-party-BS override + the
+#    connection-state display. Clearing the BS PSK key makes the lwm2m client
+#    self-restart (Restart=always) and re-read the now-empty creds -> park.
+for k in iot.bs.uri iot.bs.psk.identity iot.bs.psk.key \
+         iot.dm.psk.identity iot.dm.psk.key iot.dm.uri iot.conn.state; do
+    $DS set "$k" "" 2>/dev/null || log "warn: could not clear $k"
+done
+$DS set iot.bs.psk.override false 2>/dev/null || log "warn: could not reset iot.bs.psk.override"
+
+# 2. Sever VPN trust: drop the old owner's CA + client cert/key. The dir
+#    (/etc/iot/vpn, 2750 engineer:iot) is kept; only its contents go. The
+#    openvpn-client parks without a cert; the new owner's cloud re-pushes a
+#    fresh family over LwM2M Object 2048 at provision time.
+rm -rf /etc/iot/vpn/* 2>/dev/null || log "warn: could not clear /etc/iot/vpn"
+
+# 3. Parked for re-commission. The new owner enters their bootstrap URI + BS PSK
+#    on the device-ui Configuration page (the same commissioning flow a fresh
+#    device uses); the device then bootstraps into the new owner's cloud.
+$DS set iot.transfer.state awaiting-commission 2>/dev/null || true
+sync
+log "transfer wipe done; device parked for re-commission (network preserved)"

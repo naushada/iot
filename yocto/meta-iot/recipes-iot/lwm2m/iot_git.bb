@@ -63,6 +63,9 @@ SRC_URI = "\
     file://iot-factory-reset \
     file://iot-factory-reset.path \
     file://iot-factory-reset.service \
+    file://iot-transfer \
+    file://iot-transfer.path \
+    file://iot-transfer.service \
     file://iot-bank-switch \
     file://migrations/README.md \
     file://migrations/0000-template.sh.example \
@@ -270,6 +273,9 @@ do_install() {
     # iot-factory-reset.path fires when the unprivileged iot-httpd drops
     # /run/iot/factory-reset.request). Reboot needs no script (systemctl reboot).
     install -m 0755 ${WORKDIR}/iot-factory-reset ${D}${bindir}/iot-factory-reset
+    # Device-transfer wipe script (run as engineer by iot-transfer.service, which
+    # iot-transfer.path fires when iot-httpd drops /run/iot/transfer.request).
+    install -m 0755 ${WORKDIR}/iot-transfer      ${D}${bindir}/iot-transfer
     install -m 0755 ${WORKDIR}/iot-bank-switch  ${D}${bindir}/iot-bank-switch
 
     # iot-dump: operator/debug tool — dumps all data-store keys + values for
@@ -316,6 +322,11 @@ do_install() {
         install -m 0644 ${WORKDIR}/iot-reboot.service         ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-factory-reset.path     ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-factory-reset.service  ${D}${systemd_system_unitdir}/
+        # device-ui Advanced -> Transfer: engineer .path/.service wipe customer
+        # creds + VPN trust, keep network (re-home to a new owner). Phase 1 of
+        # apps/docs/tdd-device-transfer.md.
+        install -m 0644 ${WORKDIR}/iot-transfer.path          ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-transfer.service       ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-net-router.service     ${D}${systemd_system_unitdir}/
         # iot-sensord: mangOH Yellow sensor producer (maps I2C, publishes
         # iot.sensor.*). NOT auto-enabled — it needs the mangOH board attached
@@ -539,6 +550,7 @@ FILES:${PN}-httpd = "\
     ${bindir}/iot-set-hostname \
     ${bindir}/iot-ds-seed \
     ${bindir}/iot-factory-reset \
+    ${bindir}/iot-transfer \
     ${systemd_system_unitdir}/iot-httpd.service \
     ${systemd_system_unitdir}/iot-hostname.service \
     ${systemd_system_unitdir}/iot-ds-seed.service \
@@ -546,6 +558,8 @@ FILES:${PN}-httpd = "\
     ${systemd_system_unitdir}/iot-reboot.service \
     ${systemd_system_unitdir}/iot-factory-reset.path \
     ${systemd_system_unitdir}/iot-factory-reset.service \
+    ${systemd_system_unitdir}/iot-transfer.path \
+    ${systemd_system_unitdir}/iot-transfer.service \
     ${sysconfdir}/avahi/services/iot-http.service \
     ${datadir}/iot/www \
 "
@@ -660,7 +674,7 @@ SYSTEMD_SERVICE:${PN}-wifi-client = "iot-wifi-client.service"
 # iot-reboot.path + iot-factory-reset.path are enabled (they watch the triggers
 # iot-httpd drops in /run/iot for device-ui Advanced -> Reboot/Factory Reset);
 # their .service units are path-activated, not enabled directly (no [Install]).
-SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service iot-ds-seed.service iot-reboot.path iot-factory-reset.path"
+SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service iot-ds-seed.service iot-reboot.path iot-factory-reset.path iot-transfer.path"
 # iot-sensord registered but NOT auto-enabled: it needs the mangOH Yellow board
 # + CAP_SYS_RAWIO, so on a board without it the daemon would Restart-loop. The
 # operator `systemctl enable --now iot-sensord` on sensor-equipped hardware.
