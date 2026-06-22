@@ -6,6 +6,7 @@
 #include <vector>
 #include <algorithm>
 #include <unordered_map>
+#include <cstring>
 
 #include "clock.hpp"
 
@@ -16,13 +17,17 @@ class CLOCKTest : public ::testing::Test
          * @brief Memory region for CLOCK instance will be taken from m_memory_region,
          *        the CLOCK instance layout will be done from m_memory_region.
         */
-        CLOCKTest() : m_memory_region(BCM2837::ClockRegistersAddress::Register::CM_GPn_MAX), 
+        CLOCKTest() : m_memory_region(BCM2837::ClockRegistersAddress::Register::CM_GPn_MAX),
                       m_clock(CLOCK(m_memory_region.data())) {
-            /*
-            ::printf("start memory_region: 0x%X ", m_memory_region.data());
-            ::printf("end memory_region: 0x%X ", m_memory_region.data() + GPIORegistersAddress::Register::BCM2837_MAX+1);
-            ::printf("GPIO: 0x%X ", &m_gpio.memory().m_register[0]);
-            */
+            // Reset the overlaid registers to a known 0 state. The driver
+            // placement-new's a register block whose constructor is trivial (so
+            // it does not clobber live MMIO), which ends the vector elements'
+            // lifetimes; at -O2/-O3 the compiler then drops the vector's value
+            // initialisation as a dead store, leaving the registers as heap
+            // garbage. Zeroing *after* the overlay is observed by the driver's
+            // volatile reads, so it is not elided.
+            std::memset(m_memory_region.data(), 0,
+                        m_memory_region.size() * sizeof(std::uint32_t));
         }
         virtual ~CLOCKTest() override = default;
         
