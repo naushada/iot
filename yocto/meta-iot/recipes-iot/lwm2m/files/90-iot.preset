@@ -22,3 +22,9 @@ enable iot-ota-stage.path
 enable iot-swupdate.path
 enable iot-vpn-cert.path
 enable iot-ota-confirm.service
+# device-ui Advanced -> Reboot / Factory Reset: these .path units watch the
+# /run/iot triggers iot-httpd drops. Without an explicit preset, preset-all on
+# first boot resets them to the default "disable" policy, so the trigger file is
+# written but nothing acts on it — the reboot/factory-reset silently no-ops.
+enable iot-reboot.path
+enable iot-factory-reset.path
