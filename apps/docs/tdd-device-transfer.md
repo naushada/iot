@@ -262,10 +262,18 @@ How B's `bs.uri` + BS PSK reach the device after the wipe:
   request`). "Claim device" reuses the existing provision form (new owner's BS
   PSK), so no new claim UI is needed.
 
-  **Telemetry purge** (device buffer + cloud 60-day Mongo history) remains the
-  one deferred item — the volatile `cloud.vehicle.telemetry` row falls off
-  naturally when the released device deregisters; the Mongo history purge needs
-  a Mongo client in iot-cloudd (out of scope here).
+  **Telemetry-history purge** [CLOUD] — **DONE**. iot-cloudd has no mongo driver,
+  so on release it appends the serial to `purge.list` in the shared
+  `iot-telemetry-spool` volume; the mongo-capable `iot-telemetry-ingest` sidecar
+  consumes it each loop and `db.telemetry.deleteMany({endpoint})` (serials
+  validated to a safe charset first). Spool volume now mounted on iot-cloudd;
+  purges survive (and apply later) even if the telemetry profile is enabled
+  after the fact. The volatile `cloud.vehicle.telemetry` row falls off on its
+  own when the released device deregisters. iot-cloudd recompiles clean in
+  podman; ingest script passes `sh -n`.
+
+  Still deferred (minor): the device-side store-and-forward buffer purge (needs
+  a privileged step on the device — `iot-vehicled`/Mongo); noted in §5a.
 - **G. Release backend** [CLOUD] — `cloud.transfer.release.request` watch →
   deprovision + revoke + purge telemetry (`cloud.vehicle.telemetry` + Mongo) +
   audit. One-shot trigger like provision/deprovision.

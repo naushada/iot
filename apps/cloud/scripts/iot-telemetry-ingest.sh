@@ -13,6 +13,7 @@
 set -u
 
 SPOOL=/var/lib/iot/telemetry-spool/spool.ndjson
+PURGE=/var/lib/iot/telemetry-spool/purge.list
 HISTORY=/var/lib/iot/telemetry-spool/history.json
 HOST="${MONGO_HOST:-mongo}"
 WINDOW="${HISTORY_WINDOW_SEC:-86400}"      # read-back window, default 24h
@@ -26,6 +27,25 @@ while true; do
         if mv "$SPOOL" "$SPOOL.proc" 2>/dev/null; then
             mongoimport --quiet --host "$HOST" --db iot --collection telemetry \
                 --file "$SPOOL.proc" && rm -f "$SPOOL.proc"
+        fi
+    fi
+
+    # 1b) PURGE — a transferred-out device's history is deleted. iot-cloudd has
+    #     no mongo driver, so it appends released serials here (one per line) on
+    #     transfer-out; we deleteMany({endpoint}) per serial. Claim the file so a
+    #     concurrent append starts fresh. Serials are validated to a safe charset
+    #     before reaching mongosh (operator-supplied via the release request).
+    if [ -s "$PURGE" ]; then
+        if mv "$PURGE" "$PURGE.proc" 2>/dev/null; then
+            while IFS= read -r serial; do
+                case "$serial" in
+                    ''|*[!A-Za-z0-9._@-]*) continue ;;   # skip empty / unsafe
+                esac
+                n=$(mongosh --quiet "mongodb://$HOST/iot" --eval \
+                    "db.telemetry.deleteMany({endpoint:\"$serial\"}).deletedCount" 2>/dev/null)
+                echo "iot-telemetry-ingest: purged ${n:-?} history doc(s) for $serial"
+            done < "$PURGE.proc"
+            rm -f "$PURGE.proc"
         fi
     fi
 
