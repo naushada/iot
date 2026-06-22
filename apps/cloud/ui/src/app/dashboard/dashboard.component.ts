@@ -1,7 +1,6 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { HttpsvcService } from '../../common/httpsvc.service';
-import { DataStoreService } from '../../common/datastore.service';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../environments/environment';
 
@@ -31,7 +30,7 @@ interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; proxy_por
         <clr-dg-row *clrDgItems="let e of endpoints">
           <clr-dg-cell><code>{{e.endpoint}}</code></clr-dg-cell>
           <clr-dg-cell><app-status-badge [label]="e.registered?'online':'offline'" [state]="e.registered?'connected':'exited'"></app-status-badge></clr-dg-cell>
-          <clr-dg-cell>{{ serverTunIp || '—' }}</clr-dg-cell>
+          <clr-dg-cell>{{ e.tun_ip || '—' }}</clr-dg-cell>
           <clr-dg-cell>{{ e.dev_tun_ip || '—' }}</clr-dg-cell>
           <clr-dg-cell>{{e.proxy_port}}</clr-dg-cell>
         </clr-dg-row>
@@ -46,23 +45,15 @@ interface EpInfo { endpoint:string; tun_ip:string; dev_tun_ip?:string; proxy_por
 export class DashboardComponent implements OnInit, OnDestroy {
   endpoints: EpInfo[] = [];
   private sub = new Subscription();
-  // VPN server's tunnel IP (first host of cloud.vpn.subnet) — the server end of
-  // every tunnel; shown in the "Tunnel IP" column.
-  serverTunIp = '';
   cards: {label:string;value:number;icon:string;cls:string}[] = [
     {label:'Online',value:0,icon:'check-circle',cls:'connected'},
     {label:'Offline',value:0,icon:'times-circle',cls:'disconnected'},
     {label:'Total',value:0,icon:'devices',cls:'starting'},
   ];
 
-  constructor(private http: HttpsvcService, private ds: DataStoreService) {}
+  constructor(private http: HttpsvcService) {}
 
   ngOnInit(): void {
-    // Server tunnel IP is derived from cloud.vpn.subnet — read it from the
-    // shared prefetched cache and stay live off the appglobal store.
-    this.applySubnet(this.ds.getString('cloud.vpn.subnet'));
-    this.sub.add(this.ds.observe('cloud.vpn.subnet')
-      .subscribe(v => this.applySubnet(typeof v === 'string' ? v : '')));
     this.http.getCloudEndpoints().subscribe({
       next: (eps) => {
         this.endpoints = eps;
@@ -74,10 +65,4 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void { this.sub.unsubscribe(); }
-
-  private applySubnet(subnet: string): void {
-    const base = String(subnet || '').split('/')[0];
-    const o = base.split('.');
-    if (o.length === 4) { o[3] = String((Number(o[3]) || 0) + 1); this.serverTunIp = o.join('.'); }
-  }
 }
