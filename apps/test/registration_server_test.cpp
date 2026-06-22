@@ -160,6 +160,47 @@ TEST(RegistrationServer, REQ_REG_003_POST_rd_loc_updates_lifetime) {
     EXPECT_EQ(600u, registry->find(created.location)->lifetime);
 }
 
+TEST(RegistrationServer, reregister_reuses_location_and_refreshes_peer) {
+    auto registry = std::make_shared<ClientRegistry>();
+    RegistrationServer srv(registry);
+    CoAPAdapter coap;
+
+    auto reg1 = make_msg(2, {"rd"}, {"ep=urn:dev:1", "lt=100"});
+    auto first = srv.handle(reg1, coap, "1.2.3.4", 5555);
+    ASSERT_EQ(RegistrationOutcome::Created, first.kind);
+
+    // Device went offline and re-registered from a new public/ISP address
+    // before its lifetime expired: same location, single entry, fresh peer.
+    auto reg2 = make_msg(2, {"rd"}, {"ep=urn:dev:1", "lt=100"});
+    auto second = srv.handle(reg2, coap, "203.0.113.9", 41000);
+    ASSERT_EQ(RegistrationOutcome::Created, second.kind);
+
+    EXPECT_EQ(first.location, second.location);   // /rd/{location} reused
+    EXPECT_EQ(1u, registry->size());              // no duplicate registration
+    const auto* r = registry->find(second.location);
+    ASSERT_NE(nullptr, r);
+    EXPECT_EQ("203.0.113.9", r->peerHost);        // ISP IP tracks the latest
+}
+
+TEST(RegistrationServer, update_refreshes_peer_address) {
+    auto registry = std::make_shared<ClientRegistry>();
+    RegistrationServer srv(registry);
+    CoAPAdapter coap;
+
+    auto reg = make_msg(2, {"rd"}, {"ep=urn:dev:1", "lt=100"});
+    auto created = srv.handle(reg, coap, "1.2.3.4", 5555);
+    ASSERT_EQ(RegistrationOutcome::Created, created.kind);
+    std::string id = created.location.substr(4);
+
+    // The keepalive Update arrives from a new NAT address → recorded ISP IP
+    // follows it (previously frozen at the Register-time address).
+    auto upd = make_msg(2, {"rd", id}, {"lt=0"});
+    auto out = srv.handle(upd, coap, "198.51.100.7", 33333);
+    EXPECT_EQ(RegistrationOutcome::Updated, out.kind);
+    EXPECT_EQ("198.51.100.7", registry->find(created.location)->peerHost);
+    EXPECT_EQ(33333u, registry->find(created.location)->peerPort);
+}
+
 TEST(RegistrationServer, REQ_REG_003_update_unknown_location_4_04) {
     auto registry = std::make_shared<ClientRegistry>();
     RegistrationServer srv(registry);
