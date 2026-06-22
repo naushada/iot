@@ -49,6 +49,10 @@ services:
       - iot-etc:/etc/iot
       - iot-vpn:/etc/iot/vpn
       - iot-ca-key:/run/secrets/iot-ca-key:ro
+      # On transfer-out, iot-cloudd queues the released serial here for the
+      # mongo-capable iot-telemetry-ingest sidecar to purge from the 60-day
+      # history (iot-cloudd has no mongo driver). Shared with iot-httpd + ingest.
+      - iot-telemetry-spool:/var/lib/iot/telemetry-spool
     cap_add:
       - NET_ADMIN           # openvpn tun + per-device nftables DNAT
     sysctls:

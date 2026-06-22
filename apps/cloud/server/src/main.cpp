@@ -970,7 +970,18 @@ int main(int argc, char** argv) {
                            {"ts", static_cast<std::int64_t>(ACE_OS::time(nullptr))}});
             ds.set("cloud.transfer.audit", data_store::Value{aud.dump()});
         } catch (const std::exception&) {}
-        // 4. One-shot: clear the trigger.
+        // 4. Queue the serial for cloud telemetry-history purge. iot-cloudd has
+        //    no mongo driver, so it appends to a file in the shared spool volume
+        //    that the mongo-capable iot-telemetry-ingest sidecar consumes
+        //    (db.telemetry.deleteMany({endpoint})). Best-effort + a no-op when the
+        //    telemetry profile (spool volume) isn't deployed. One serial per line.
+        {
+            const std::string dir = "/var/lib/iot/telemetry-spool";
+            ::mkdir(dir.c_str(), 0775);
+            std::ofstream pf(dir + "/purge.list", std::ios::app);
+            if (pf) pf << ep << "\n";
+        }
+        // 5. One-shot: clear the trigger.
         ds.set("cloud.transfer.release.request", data_store::Value{std::string("")});
     };
 
