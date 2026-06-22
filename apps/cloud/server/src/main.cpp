@@ -577,23 +577,30 @@ int main(int argc, char** argv) {
         }
     }
     // ── OpenVPN server — spawn + supervise (config from cloud.vpn.*) ──
-    server::openvpn::OpenVpnServerConfig ovpn_cfg;
-    ovpn_cfg.subnet    = ds_str(ds, "cloud.vpn.subnet",     "10.9.0.0/24");
-    // Operator-facing base form ("tcp"/"udp") — build_server_config adds the
-    // "-server" suffix for the TCP listen socket, and the device push uses the
-    // base as-is (client). Default "tcp"; legacy "tcp-server" still normalizes.
-    ovpn_cfg.proto     = ds_str(ds, "cloud.vpn.proto",      "tcp");
-    ovpn_cfg.ca_path   = ds_str(ds, "cloud.vpn.ca.crt",     "/etc/iot/vpn/ca/ca.crt");
-    ovpn_cfg.cert_path = ds_str(ds, "cloud.vpn.server.crt", "/etc/iot/vpn/server.crt");
-    ovpn_cfg.key_path  = ds_str(ds, "cloud.vpn.server.key", "/etc/iot/vpn/server.key");
-    ovpn_cfg.cipher    = ds_str(ds, "cloud.vpn.cipher",     "AES-256-GCM");
-    ovpn_cfg.dev       = ds_str(ds, "cloud.vpn.dev",        "tun");
-    ovpn_cfg.port      = static_cast<std::uint16_t>(ds_int(ds, "cloud.vpn.listen.port", 1194));
-    ovpn_cfg.mgmt_port = static_cast<std::uint16_t>(ds_int(ds, "cloud.vpn.mgmt.port", 7506));
-    ovpn_cfg.verb      = ds_int(ds, "cloud.vpn.verb", 3);
-    // DNS resolver pushed to devices (so the device surfaces vpn.assigned.dns).
-    // Empty disables the push; default 1.1.1.1 so the field is populated.
-    ovpn_cfg.dns       = ds_str(ds, "cloud.vpn.dns", "1.1.1.1");
+    // Read the server-config knobs from ds. Factored into a lambda so the live
+    // hot-reload path (the cloud.vpn.* watch in the main loop) rebuilds the
+    // exact same config an operator's UI change should produce.
+    auto load_ovpn_cfg = [&ds]() {
+        server::openvpn::OpenVpnServerConfig c;
+        c.subnet    = ds_str(ds, "cloud.vpn.subnet",     "10.9.0.0/24");
+        // Operator-facing base form ("tcp"/"udp") — build_server_config adds the
+        // "-server" suffix for the TCP listen socket, and the device push uses
+        // the base as-is (client). Default "tcp"; legacy "tcp-server" normalizes.
+        c.proto     = ds_str(ds, "cloud.vpn.proto",      "tcp");
+        c.ca_path   = ds_str(ds, "cloud.vpn.ca.crt",     "/etc/iot/vpn/ca/ca.crt");
+        c.cert_path = ds_str(ds, "cloud.vpn.server.crt", "/etc/iot/vpn/server.crt");
+        c.key_path  = ds_str(ds, "cloud.vpn.server.key", "/etc/iot/vpn/server.key");
+        c.cipher    = ds_str(ds, "cloud.vpn.cipher",     "AES-256-GCM");
+        c.dev       = ds_str(ds, "cloud.vpn.dev",        "tun");
+        c.port      = static_cast<std::uint16_t>(ds_int(ds, "cloud.vpn.listen.port", 1194));
+        c.mgmt_port = static_cast<std::uint16_t>(ds_int(ds, "cloud.vpn.mgmt.port", 7506));
+        c.verb      = ds_int(ds, "cloud.vpn.verb", 3);
+        // DNS resolver pushed to devices (so the device surfaces vpn.assigned.dns).
+        // Empty disables the push; default 1.1.1.1 so the field is populated.
+        c.dns       = ds_str(ds, "cloud.vpn.dns", "1.1.1.1");
+        return c;
+    };
+    server::openvpn::OpenVpnServerConfig ovpn_cfg = load_ovpn_cfg();
     // Seed the effective config back to ds so every cloud.vpn.* key exists
     // with its default (visible in the cloud UI / ds-cli).
     ds.set({
@@ -608,6 +615,24 @@ int main(int argc, char** argv) {
         {"cloud.vpn.verb",        data_store::Value{static_cast<std::int32_t>(ovpn_cfg.verb)}},
         {"cloud.vpn.dns",         data_store::Value{ovpn_cfg.dns}},
     });
+    // Live hot-reload of the VPN server config: watch the knobs that feed
+    // build_server_config so an operator changing proto/port/cipher/etc. in the
+    // cloud UI reconfigures + restarts openvpn without an iot-cloudd restart.
+    // Pull-style (drained in the main loop) so the restart runs on the SAME
+    // thread that owns the child process — no cross-thread waitpid race.
+    // Registered AFTER the seed above so the seed's own writes don't self-fire.
+    auto ws_vpncfg = ds.watch(std::vector<std::string>{
+        "cloud.vpn.proto", "cloud.vpn.listen.port", "cloud.vpn.cipher",
+        "cloud.vpn.dev", "cloud.vpn.subnet", "cloud.vpn.dns",
+        "cloud.vpn.verb", "cloud.vpn.mgmt.port",
+        "cloud.vpn.ca.crt", "cloud.vpn.server.crt", "cloud.vpn.server.key",
+    }, 1000);
+    if (!ws_vpncfg.ok) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch cloud.vpn.* config "
+                            "failed: %C — live VPN reconfigure disabled\n"),
+                   ws_vpncfg.err.c_str()));
+    }
     // ── Runtime VPN PKI (Phase 2) ─────────────────────────────────
     // The cloud image generates a CA + server cert at build time but PURGES
     // the CA key, so the shipped image can't sign new client certs. Generate
@@ -973,6 +998,24 @@ int main(int argc, char** argv) {
                 // lwm2m-dm published a registration change — fold online/
                 // offline into the endpoint registry before the sync below.
                 reconcile_registrations(ds, ep_reg);
+            } else if (ev.key.rfind("cloud.vpn.", 0) == 0) {
+                // A VPN server config knob changed (proto/port/cipher/…).
+                // Rebuild the config from ds and reconfigure: a no-op (returns
+                // false) when the rendered config is unchanged, so a redundant
+                // write doesn't bounce a healthy tunnel. On a real change it
+                // stops the child; we clear the crash-backoff (this is a
+                // DELIBERATE restart, not a failure) and supervise_ovpn() brings
+                // it back up with the new config — all on this main thread.
+                if (ovpn.reconfigure(load_ovpn_cfg())) {
+                    ACE_DEBUG((LM_INFO,
+                               ACE_TEXT("%D cloudd:thread:%t %M %N:%l cloud.vpn.* "
+                                        "changed ('%C') — restarting openvpn server "
+                                        "with new config\n"), ev.key.c_str()));
+                    ovpn_fails       = 0;
+                    ovpn_last_start  = {};
+                    ovpn_retry_after = {};
+                    supervise_ovpn();
+                }
             } else if (ev.key == "cloud.update.request") {
                 // OTA: validate the request against the firmware manifest +
                 // known endpoints, then emit per-endpoint jobs for lwm2m-dm.

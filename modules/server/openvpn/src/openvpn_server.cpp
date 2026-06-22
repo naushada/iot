@@ -115,6 +115,18 @@ OpenVpnServer::~OpenVpnServer() {
     if (!m_config_path.empty()) ::unlink(m_config_path.c_str());
 }
 
+bool OpenVpnServer::reconfigure(const OpenVpnServerConfig& cfg) {
+    // Compare on the RENDERED config, not field-by-field: it's the single
+    // source of truth for what actually reaches openvpn, so a change to any
+    // knob that affects the file (and only those) triggers a restart. A
+    // redundant ds write (same effective config) renders identically → no-op,
+    // so a healthy tunnel isn't bounced.
+    if (build_server_config(cfg) == build_server_config(m_cfg)) return false;
+    m_cfg = cfg;
+    if (running()) stop();                  // caller restarts with the new cfg
+    return true;
+}
+
 bool OpenVpnServer::start() {
     if (running()) return true;             // already up — idempotent
 

@@ -4,6 +4,7 @@
 
 #include "openvpn_server.hpp"
 
+using server::openvpn::OpenVpnServer;
 using server::openvpn::OpenVpnServerConfig;
 using server::openvpn::build_server_config;
 using server::openvpn::cidr_to_net_mask;
@@ -90,6 +91,32 @@ TEST(BuildServerConfig, noDnsPushWhenEmpty) {
     c.subnet = "10.9.0.0/24";   // c.dns left empty
     const std::string conf = build_server_config(c);
     EXPECT_EQ(conf.find("dhcp-option DNS"), std::string::npos);
+}
+
+TEST(Reconfigure, noopWhenRenderedConfigUnchanged) {
+    // A redundant ds write (same effective config) must NOT report a change,
+    // so the cloud hot-reload path doesn't bounce a healthy tunnel.
+    OpenVpnServerConfig c;
+    c.subnet = "10.9.0.0/24";
+    c.proto  = "tcp";
+    OpenVpnServer srv(c);              // never started → no child to manage
+    OpenVpnServerConfig same = c;
+    EXPECT_FALSE(srv.reconfigure(same));
+}
+
+TEST(Reconfigure, reportsChangeWhenProtoFlips) {
+    // The motivating case: operator flips cloud.vpn.proto tcp→udp. The rendered
+    // config differs (proto tcp-server → proto udp), so reconfigure() reports a
+    // change and the caller restarts the server on the new socket.
+    OpenVpnServerConfig c;
+    c.subnet = "10.9.0.0/24";
+    c.proto  = "tcp";
+    OpenVpnServer srv(c);
+    OpenVpnServerConfig flipped = c;
+    flipped.proto = "udp";
+    EXPECT_TRUE(srv.reconfigure(flipped));
+    // Idempotent: re-applying the now-current config is a no-op.
+    EXPECT_FALSE(srv.reconfigure(flipped));
 }
 
 }  // namespace

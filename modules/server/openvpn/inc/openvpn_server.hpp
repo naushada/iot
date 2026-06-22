@@ -58,6 +58,14 @@ public:
     /// running. Returns true on successful fork+exec.
     bool start();
 
+    /// Swap in a new config. If the rendered config is byte-identical to the
+    /// current one, this is a no-op and returns false (so a redundant ds write
+    /// can't bounce a healthy tunnel). On a real change it updates the config
+    /// and stops any running child, returning true — the caller restarts it
+    /// (e.g. via its supervisor) so the new config takes effect. Lets an
+    /// operator change cloud.vpn.* (proto/port/cipher/…) live, no daemon restart.
+    bool reconfigure(const OpenVpnServerConfig& cfg);
+
     /// SIGTERM (grace) then SIGKILL; reap. No-op if not running.
     void stop(std::chrono::milliseconds grace = std::chrono::seconds(3));
 
