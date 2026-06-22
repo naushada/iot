@@ -404,3 +404,47 @@ TEST(CertObject, applied_fingerprint_is_deterministic_for_same_family) {
     EXPECT_EQ(fp_of("A", "B", "C"), fp_of("A", "B", "C"));   // stable
     EXPECT_NE(fp_of("A", "B", "C"), fp_of("A", "B", "X"));   // sensitive to key
 }
+
+TEST(CertObject, endpoint_change_with_same_certs_reapplies_not_skipped) {
+    // Regression: an operator flips cloud.vpn.proto (tcp↔udp). The cloud
+    // re-pushes the SAME cert family with the new proto on RID 7. The
+    // idempotency gate must NOT short-circuit on the unchanged certs —
+    // otherwise set_vpn_endpoint never runs, the device keeps the stale proto,
+    // and the tunnel can never come up (the symptom that motivated this test).
+    int applied = 0;
+    std::string seen_proto;
+    objects::CertHooks h;
+    h.store_artifact = [](const std::string&, const std::string&) { return 0; };
+    h.apply = [&]() { ++applied; return 0; };
+    h.set_vpn_endpoint = [&](const std::string&, const std::string&,
+                             const std::string& proto) { seen_proto = proto; return 0; };
+
+    ObjectStore store;
+    objects::install_cert(store, "/unused", std::move(h));   // require_complete=true
+
+    auto push = [&](const std::string& proto) {
+        cwrite(store, 0, "CA");
+        cwrite(store, 1, "CERT");
+        cwrite(store, 2, "KEY");
+        store.find(2048, 0, 5)->write("vpn.example.com");    // host
+        store.find(2048, 0, 6)->write("1194");               // port
+        store.find(2048, 0, 7)->write(proto);                // proto
+        return store.find(2048, 0, 3)->execute("");
+    };
+
+    // First apply (tcp): reload + endpoint hook both fire.
+    ASSERT_EQ(0, push("tcp"));
+    EXPECT_EQ(1, applied);
+    EXPECT_EQ("tcp", seen_proto);
+    const std::string fp_tcp = store.find(2048, 0, 4)->read();
+
+    // Identical certs + same proto → idempotent skip (no openvpn bounce).
+    ASSERT_EQ(0, push("tcp"));
+    EXPECT_EQ(1, applied);                                    // reload NOT re-run
+
+    // Identical certs but proto flipped → must re-apply so the device learns it.
+    ASSERT_EQ(0, push("udp"));
+    EXPECT_EQ(2, applied);                                    // reload fired again
+    EXPECT_EQ("udp", seen_proto);                             // new proto materialised
+    EXPECT_NE(fp_tcp, store.find(2048, 0, 4)->read());        // fp tracks endpoint
+}
