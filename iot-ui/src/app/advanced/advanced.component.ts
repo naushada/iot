@@ -32,11 +32,11 @@ import { SessionService } from '../../common/session.service';
           and network settings</b>, returning the device to first-boot (Lua
           schema) defaults, then reboots. The device will likely drop off the
           network and need re-setup from the console. <b>This cannot be undone.</b></p>
-        <label class="ck">
-          Type <code>RESET</code> to confirm:
-          <input type="text" #rw (input)="resetWord = rw.value"
-                 placeholder="RESET" autocomplete="off">
-        </label>
+        <clr-input-container>
+          <label>Type <code>RESET</code> to confirm:</label>
+          <input clrInput type="text" #rw (input)="resetWord = rw.value"
+                 placeholder="RESET" autocomplete="off" />
+        </clr-input-container>
         <div class="act">
           <button class="btn btn-danger" [disabled]="resetWord!=='RESET' || busy || !isAdmin"
                   (click)="doFactoryReset()">{{ busy ? '…' : 'Factory Reset' }}</button>
@@ -60,7 +60,6 @@ import { SessionService } from '../../common/session.service';
     .warn { color: #b71c1c; font-size: 13px; background: #fdecea; border: 1px solid #f5c6cb;
             border-radius: 4px; padding: 10px 12px; }
     .ck { display: block; margin: 14px 0; font-size: 13px; color: #444; }
-    .ck input[type=text] { margin-left: 6px; padding: 3px 6px; }
     .act { margin-top: 8px; }
     .btn-warning { background: #e08e0b; color: #fff; }
     .btn-danger  { background: #c62828; color: #fff; }
