@@ -87,11 +87,21 @@ local_conf_header:
     # Serial console on the GPIO header (no-op on qemu machines).
     ENABLE_UART = "1"
 
+    # Disable the local hash-equivalence server. Poky defaults BB_HASHSERVE to
+    # a local "auto" server whose unihashes never match the upstream sstate
+    # mirror's object names — so bitbake probes the mirror for thousands of
+    # objects that all MISS (a long, hangy "Checking sstate mirror object
+    # availability" phase, and a near-cold build). With OEBasicHash the task
+    # hashes match the mirror, so probes hit and prebuilt sstate downloads.
+    # (This is exactly what bitbake's own warning recommends.)
+    BB_HASHSERVE = ""
+    BB_SIGNATURE_HANDLER = "OEBasicHash"
+
     # Upstream shared-state mirror — download prebuilt sstate for stock
     # recipes (kernel, base distro, toolchain, ...) instead of compiling them
     # on a cold build. Best-effort: bitbake builds anything the mirror lacks,
     # and a local sstate-cache still takes precedence. Coverage varies by
-    # release (scarthgap) / MACHINE.
+    # release (scarthgap) / MACHINE. Requires BB_HASHSERVE="" above to match.
     SSTATE_MIRRORS ?= "file://.* http://sstate.yoctoproject.org/all/PATH;downloadfilename=PATH"
 
 bblayers_conf_header:
