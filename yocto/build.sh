@@ -203,6 +203,7 @@ build_machine() {
         -e "IOT_FRESH=${IOT_FRESH:-}" \
         -e "IOT_AB=${IOT_AB:-}" \
         -e "IOT_BRANCH=${IOT_BRANCH:-}" \
+        -e "IOT_HASH_LOCAL=1" \
         -v "$SCRIPT_DIR/meta-iot:/home/builduser/yocto/meta-iot:ro" \
         -v "${DOWNLOADS_VOLUME}:/home/builduser/yocto/build/downloads:U" \
         -v "${SSTATE_VOLUME}:/home/builduser/yocto/build/sstate-cache:U" \

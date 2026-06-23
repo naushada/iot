@@ -205,6 +205,26 @@ fi
 echo 'SSTATE_MIRRORS += "file://.* http://sstate.yoctoproject.org/all/PATH;downloadfilename=PATH"' \
     >> conf/local.conf
 
+# Make the upstream network mirror actually usable on a COLD LOCAL build.
+# Poky defaults BB_HASHSERVE to a local hash-equivalence server whose unihashes
+# never match the upstream mirror's object names — so bitbake probes thousands
+# of objects that all MISS (a long, hangy "Checking sstate mirror object
+# availability" phase + a near-cold build). OEBasicHash makes task hashes match
+# the mirror so prebuilt sstate downloads.
+#   - Only when IOT_HASH_LOCAL is set (build.sh's `podman run` sets it; CI's
+#     `docker build` does NOT) → CI's warm sstate-cache (built under the default
+#     hash server) is never invalidated.
+#   - And only on a TRUE cold build: skip when a baked sstate-mirror is present
+#     (IOT_USE_CACHE builds), since that cache was built under hash-serve and
+#     would stop matching under OEBasicHash.
+if [ -n "${IOT_HASH_LOCAL:-}" ] && [ ! -d /home/builduser/yocto/sstate-mirror ]; then
+    echo '→ Cold local build: BB_HASHSERVE="" so the upstream sstate mirror matches'
+    cat >> conf/local.conf <<'HASHCONF'
+BB_HASHSERVE = ""
+BB_SIGNATURE_HANDLER = "OEBasicHash"
+HASHCONF
+fi
+
 # ── 4b. Force-refresh the iot recipe (opt-in: IOT_FRESH=1) ─────────
 # SRCREV = "${AUTOREV}" on IOT_BRANCH is meant to track the branch tip, but a
 # cached git mirror / the recipe's sstate (and the baked own-mirrors dl-mirror
