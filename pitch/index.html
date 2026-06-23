@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AETHER — Investor Pitch</title>
+
+  <!-- reveal.js (CDN) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reset.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/theme/black.css" id="theme">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/highlight/monokai.css">
+
+  <style>
+    :root {
+      --aether-cyan: #2ee6d6;
+      --aether-blue: #0a84ff;
+    }
+    .reveal { font-family: "Inter", "Segoe UI", system-ui, sans-serif; }
+    .reveal h1, .reveal h2, .reveal h3 { letter-spacing: -0.01em; }
+    .reveal h1 { color: var(--aether-cyan); text-shadow: 0 2px 24px rgba(46,230,214,0.25); }
+    .reveal h2 { color: #fff; }
+    .reveal h3 { color: var(--aether-cyan); font-weight: 600; }
+    .reveal strong { color: var(--aether-cyan); }
+    .reveal blockquote {
+      border-left: 4px solid var(--aether-blue);
+      background: rgba(10,132,255,0.08);
+      width: 92%; font-style: normal; box-shadow: none;
+    }
+    /* ASCII diagrams: tight monospace that fits the slide */
+    .reveal pre { box-shadow: 0 1px 24px rgba(0,0,0,0.4); width: 100%; }
+    .reveal pre code {
+      font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+      font-size: 0.46em; line-height: 1.32; padding: 16px 18px;
+      max-height: 620px; background: #11141b; color: #d7e0ea;
+      white-space: pre; overflow: auto;
+    }
+    .reveal table { font-size: 0.62em; }
+    .reveal table th { color: var(--aether-cyan); border-bottom: 2px solid var(--aether-blue); }
+    .reveal table td, .reveal table th { padding: 0.35em 0.7em; }
+    .reveal section img { border: none; box-shadow: none; }
+    /* subtle gradient backdrop */
+    .reveal .backgrounds { background:
+      radial-gradient(1200px 600px at 70% -10%, rgba(10,132,255,0.18), transparent 60%),
+      radial-gradient(900px 500px at 10% 110%, rgba(46,230,214,0.12), transparent 60%),
+      #0b0e14; }
+    .reveal .progress { color: var(--aether-cyan); }
+    .reveal .controls { color: var(--aether-cyan); }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+      <!--
+        Single source of truth: the deck content lives in aether-pitch.md.
+        reveal's markdown plugin fetches + splits it on `---` slide breaks.
+        NOTE: loading an external .md requires serving over http(s) — run a
+        local server (see pitch/README.md), don't just open this via file://.
+      -->
+      <section
+        data-markdown="aether-pitch.md"
+        data-separator="\r?\n---\r?\n"
+        data-separator-notes="^Note:">
+      </section>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reveal.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/markdown/markdown.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/highlight/highlight.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/notes/notes.js"></script>
+  <script>
+    Reveal.initialize({
+      width: 1280,
+      height: 800,
+      margin: 0.06,
+      minScale: 0.2,
+      maxScale: 1.6,
+      hash: true,
+      slideNumber: 'c/t',
+      transition: 'slide',
+      backgroundTransition: 'fade',
+      plugins: [ RevealMarkdown, RevealHighlight, RevealNotes ],
+    });
+  </script>
+</body>
+</html>
