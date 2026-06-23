@@ -62,6 +62,8 @@ ARG RPI_BRANCH=scarthgap
 # to bblayers for IOT_AB=1 builds (entrypoint.sh), so the default single-rootfs
 # image is unaffected.
 ARG RAUC_BRANCH=scarthgap
+# meta-virtualization provides crun, the OCI runtime iot-containerd drives.
+ARG VIRT_BRANCH=scarthgap
 
 RUN git clone --depth=1 -b ${POKY_BRANCH} \
         https://git.yoctoproject.org/poky && \
@@ -69,6 +71,8 @@ RUN git clone --depth=1 -b ${POKY_BRANCH} \
         https://git.openembedded.org/meta-openembedded && \
     git clone --depth=1 -b ${RPI_BRANCH} \
         https://git.yoctoproject.org/meta-raspberrypi && \
+    git clone --depth=1 -b ${VIRT_BRANCH} \
+        https://git.yoctoproject.org/meta-virtualization && \
     git clone --depth=1 -b ${RAUC_BRANCH} \
         https://github.com/rauc/meta-rauc && \
     git clone --depth=1 -b ${RAUC_BRANCH} \

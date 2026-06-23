@@ -1,0 +1,36 @@
+[Unit]
+Description=IoT single-container runtime shim (crun-backed; container.* in ds)
+Documentation=file:///usr/local/share/doc/iot/tdd-device-containers.md
+# Needs ds-server up (publishes container.* on connect; the daemon watches the
+# container.{pull,run,stop}.request command keys the device-ui bumps).
+After=network-online.target iot-ds.service
+Wants=iot-ds.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/iot-containerd
+
+# Runs as root: it mounts overlayfs for the container rootfs and drives crun,
+# which creates the namespaces + cgroups and execs the container. Delegate a
+# cgroup subtree so crun can manage the container's resource limits under this
+# unit's slice. The heavy ProtectControlGroups= / PrivateMounts= sandboxing the
+# producer daemons use is deliberately NOT applied here — it would block crun's
+# cgroup + mount operations.
+Delegate=yes
+
+# Storage lives in dedicated top-level paths created by tmpfiles.d (iot.conf):
+# the ephemeral overlay/bundle under /run/iot-containers and the persistent
+# image store under /var/lib/iot-containers. These are deliberately NOT under
+# /run/iot or /var/lib/iot — the latter is ds-server's DynamicUser
+# StateDirectory=iot, and RuntimeDirectory=iot would clobber the ds socket.
+
+Restart=on-failure
+RestartSec=10s
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

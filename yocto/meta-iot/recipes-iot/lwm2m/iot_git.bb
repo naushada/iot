@@ -38,6 +38,7 @@ SRC_URI = "\
     file://iot-cellular-client.service \
     file://iot-vehicled.service \
     file://iot-can0-up.service \
+    file://iot-containerd.service \
     file://iot-mqttd.service \
     file://10-iot-wired.network \
     file://iot-wifi-client.service \
@@ -341,6 +342,10 @@ do_install() {
         # vehicle/CAN-equipped units. iot-vehicled Wants= iot-can0-up (brings up can0).
         install -m 0644 ${WORKDIR}/iot-vehicled.service        ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-can0-up.service         ${D}${systemd_system_unitdir}/
+        # iot-containerd: single-container runtime shim (crun-backed). Runs as
+        # root (mounts overlayfs + drives crun). Enabled by default — idle until
+        # the device-ui issues a pull/run command; needs crun (RDEPENDS).
+        install -m 0644 ${WORKDIR}/iot-containerd.service      ${D}${systemd_system_unitdir}/
         # iot-mqttd: MQTT telemetry mirror. Enabled by default but parks until a
         # broker is configured (mqtt.broker.host), so it is harmless when unused.
         install -m 0644 ${WORKDIR}/iot-mqttd.service           ${D}${systemd_system_unitdir}/
@@ -424,6 +429,7 @@ PACKAGE_BEFORE_PN = "\
     ${PN}-sensord \
     ${PN}-cellular \
     ${PN}-vehicle \
+    ${PN}-containerd \
     ${PN}-mqtt \
     ${PN}-config \
     ${PN}-bcm2837-selftest \
@@ -613,6 +619,23 @@ RRECOMMENDS:${PN}-vehicle = "\
     ${PN}-config \
 "
 
+# containerd — iot-containerd single-container runtime shim. Pulls an OCI image,
+# mounts its layers (overlayfs) and drives crun, publishing container.* to ds for
+# the device-ui. Runs as root. container.lua schema ships in ${PN}-config.
+# RDEPENDS crun (from meta-virtualization). See apps/docs/tdd-device-containers.md.
+FILES:${PN}-containerd = "\
+    ${bindir}/iot-containerd \
+    ${systemd_system_unitdir}/iot-containerd.service \
+"
+# curl: the registry-v2 HTTP transport (puller shells out to it, like the OTA
+# path). openssl: libcrypto for blob sha256. zlib: gzip layer decompression.
+# (openssl/zlib are also auto-added by the shlib scan; listed for clarity.)
+RDEPENDS:${PN}-containerd = "ace-tao crun curl openssl zlib"
+RRECOMMENDS:${PN}-containerd = "\
+    ${PN}-ds-server \
+    ${PN}-config \
+"
+
 # mqtt — iot-mqttd telemetry mirror to an operator MQTT broker (libmosquitto).
 # Enabled by default; parks until mqtt.broker.host is configured. mqtt.lua
 # schema ships in ${PN}-config.
@@ -690,6 +713,13 @@ SYSTEMD_AUTO_ENABLE:${PN}-cellular = "disable"
 # enables it on vehicle/CAN-equipped hardware (Wants= pulls in iot-can0-up).
 SYSTEMD_SERVICE:${PN}-vehicle = "iot-vehicled.service iot-can0-up.service"
 SYSTEMD_AUTO_ENABLE:${PN}-vehicle = "disable"
+# containerd enabled by default so the device-ui container feature works out of
+# the box. It is idle (just watches ds) until an Admin issues a pull/run, so it
+# is a no-op on devices that never use it. Listed in 90-iot.preset so preset-all
+# keeps it enabled. Needs the kernel features (overlayfs, namespaces, cgroups)
+# the linux-raspberrypi container.cfg fragment turns on, plus crun (RDEPENDS).
+SYSTEMD_SERVICE:${PN}-containerd = "iot-containerd.service"
+SYSTEMD_AUTO_ENABLE:${PN}-containerd = "enable"
 # mqtt mirror enabled by default — it parks (no broker connection) until
 # mqtt.broker.host is configured, so it is a no-op until the operator sets it up.
 SYSTEMD_SERVICE:${PN}-mqtt = "iot-mqttd.service"
