@@ -37,6 +37,16 @@ import { ToastService } from '../../common/toast.service';
               <app-ds-hint *dsDebug key="container.image.size"></app-ds-hint></clr-dg-cell>
             <clr-dg-cell>{{ sizeLabel }}</clr-dg-cell>
           </clr-dg-row>
+          <clr-dg-row>
+            <clr-dg-cell>Network
+              <app-ds-hint *dsDebug key="container.net.mode"></app-ds-hint></clr-dg-cell>
+            <clr-dg-cell>{{ netMode === 'bridge' ? 'Bridge (own IP)' : 'Host (shared device IP)' }}</clr-dg-cell>
+          </clr-dg-row>
+          <clr-dg-row *ngIf="netIp">
+            <clr-dg-cell>IP
+              <app-ds-hint *dsDebug key="container.net.ip"></app-ds-hint></clr-dg-cell>
+            <clr-dg-cell><code>{{ netIp }}</code><span class="hint" *ngIf="netGateway"> · gw {{ netGateway }}</span></clr-dg-cell>
+          </clr-dg-row>
           <clr-dg-row *ngIf="state === 'running' && runPid">
             <clr-dg-cell>PID
               <app-ds-hint *dsDebug key="container.run.pid"></app-ds-hint></clr-dg-cell>
@@ -122,6 +132,17 @@ import { ToastService } from '../../common/toast.service';
             <input clrInput [(ngModel)]="limitCpus" placeholder="0.5" />
             <clr-control-helper *dsDebug><app-ds-hint key="container.limit.cpus"></app-ds-hint></clr-control-helper>
           </clr-input-container>
+          <clr-select-container>
+            <label>Network</label>
+            <select clrSelect [(ngModel)]="netMode">
+              <option value="host">Host (shared device IP)</option>
+              <option value="bridge">Bridge (own IP)</option>
+            </select>
+            <clr-control-helper *dsDebug><app-ds-hint key="container.net.mode"></app-ds-hint></clr-control-helper>
+          </clr-select-container>
+          <div></div>
+          <div></div>
+          <div></div>
           <div class="btn-cell">
             <button class="btn btn-success-outline" (click)="run()"
                     [disabled]="!canRun">
@@ -137,8 +158,10 @@ import { ToastService } from '../../common/toast.service';
         </div>
         <p class="hint">Entrypoint/CMD accept a JSON array
           (<code>["/bin/sh","-c","echo hi"]</code>) or a plain space-separated
-          string; leave blank to use the image defaults. Networking is shared
-          with the host. Memory/CPU are optional caps.</p>
+          string; leave blank to use the image defaults. Memory/CPU are optional
+          caps. <strong>Host</strong> networking shares the device's IP;
+          <strong>Bridge</strong> gives the container its own IP
+          (<code>10.88.0.2</code>) with masqueraded egress.</p>
       </ng-container>
 
       <ng-template #noAccess><p class="hint">You need Admin access to manage containers.</p></ng-template>
@@ -173,6 +196,8 @@ export class ContainersComponent implements OnInit, OnDestroy {
   imageSize = 0;
   runPid = '';
   runStarted = '';
+  netIp = '';
+  netGateway = '';
 
   // Form (loaded once; not overwritten by the poll so typing isn't clobbered).
   imageRef = '';
@@ -182,6 +207,7 @@ export class ContainersComponent implements OnInit, OnDestroy {
   cmd = '';
   limitMem = '';
   limitCpus = '';
+  netMode = 'host';
 
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -190,10 +216,11 @@ export class ContainersComponent implements OnInit, OnDestroy {
     'container.pull.progress', 'container.pull.detail',
     'container.image.id', 'container.image.size',
     'container.run.pid', 'container.run.started',
+    'container.net.ip', 'container.net.gateway',
   ];
   private readonly CONFIG_KEYS = [
     'container.image.ref', 'container.entrypoint', 'container.cmd',
-    'container.limit.mem', 'container.limit.cpus',
+    'container.limit.mem', 'container.limit.cpus', 'container.net.mode',
   ];
 
   get isAdmin(): boolean { return this.session.isAdmin; }
@@ -248,6 +275,7 @@ export class ContainersComponent implements OnInit, OnDestroy {
         this.cmd        = String(d['container.cmd'] ?? '');
         this.limitMem   = String(d['container.limit.mem'] ?? '');
         this.limitCpus  = String(d['container.limit.cpus'] ?? '');
+        this.netMode    = String(d['container.net.mode'] ?? 'host') === 'bridge' ? 'bridge' : 'host';
       }
     });
     this.poll();
@@ -271,6 +299,8 @@ export class ContainersComponent implements OnInit, OnDestroy {
       this.imageSize    = Number(d['container.image.size']) || 0;
       this.runPid       = String(d['container.run.pid'] ?? '');
       this.runStarted   = String(d['container.run.started'] ?? '');
+      this.netIp        = String(d['container.net.ip'] ?? '');
+      this.netGateway   = String(d['container.net.gateway'] ?? '');
     });
   }
 
@@ -298,6 +328,7 @@ export class ContainersComponent implements OnInit, OnDestroy {
       { key: 'container.cmd', value: this.cmd },
       { key: 'container.limit.mem', value: this.limitMem },
       { key: 'container.limit.cpus', value: this.limitCpus },
+      { key: 'container.net.mode', value: this.netMode },
       { key: 'container.run.request', value: String(Date.now()) },
     ]).subscribe({
       next: (r) => { if (r.ok) this.toast.success('Starting container…'); else this.toast.error(r.err || 'Run failed'); },

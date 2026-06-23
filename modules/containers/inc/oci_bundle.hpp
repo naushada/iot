@@ -66,6 +66,8 @@ struct OciSpec {
     long long                cpu_quota = 0;         ///< 0 → unbounded
     long long                cpu_period = 100000;
     bool                     bind_resolv_conf = true; ///< host /etc/resolv.conf (ro)
+    bool                     host_network = true;     ///< true → share host netns (no IP);
+                                                      ///< false → own netns (bridge mode)
     std::string              hostname = "iot-container";
 };
 

@@ -171,9 +171,13 @@ std::string generate_oci_config(const OciSpec& spec) {
     j["mounts"] = mounts;
 
     json lin;
-    // No "network" namespace → the container shares the host net namespace.
-    lin["namespaces"] = json::array({{{"type", "pid"}}, {{"type", "ipc"}},
-                                     {{"type", "uts"}}, {{"type", "mount"}}});
+    // Host networking (default) omits the network namespace → the container
+    // shares the host netns (no IP of its own). Bridge mode adds its own
+    // network namespace; net_bridge then wires a veth + IP into it.
+    json ns = json::array({{{"type", "pid"}}, {{"type", "ipc"}},
+                           {{"type", "uts"}}, {{"type", "mount"}}});
+    if (!spec.host_network) ns.push_back({{"type", "network"}});
+    lin["namespaces"] = ns;
     lin["maskedPaths"] = json::array({
         "/proc/acpi", "/proc/asound", "/proc/kcore", "/proc/keys", "/proc/latency_stats",
         "/proc/timer_list", "/proc/timer_stats", "/proc/sched_debug", "/proc/scsi", "/sys/firmware"});

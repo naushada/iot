@@ -12,6 +12,8 @@
 --   container.cmd             - override CMD (JSON array or string; "" = image default)
 --   container.limit.mem       - memory cap, e.g. "256M" ("" = unbounded)
 --   container.limit.cpus      - CPU quota, e.g. "0.5" ("" = unbounded)
+--   container.net.mode        - "host" (default; shares device netns/IP) | "bridge" (own IP)
+--   container.net.subnet      - bridge /24, default "10.88.0.0/24" (bridge mode only)
 --   container.pull.request    - bump to pull container.image.ref
 --   container.run.request     - bump to create + start the container
 --   container.stop.request    - bump to stop + delete the container
@@ -23,6 +25,8 @@
 --   container.pull.detail     - current layer digest / status message
 --   container.image.id        - resolved image config digest
 --   container.image.size      - total image size in bytes (decimal string)
+--   container.net.ip          - container IP in bridge mode ("" in host mode / stopped)
+--   container.net.gateway     - bridge gateway (container default route)
 --   container.run.pid         - running container PID (decimal string)
 --   container.run.started     - start timestamp
 --   container.exit.code       - last container exit code (decimal string)
@@ -36,6 +40,8 @@ return {
     ["container.cmd"]           = { access = "Admin",  type = "string", default = "" },
     ["container.limit.mem"]     = { access = "Admin",  type = "string", default = "" },
     ["container.limit.cpus"]    = { access = "Admin",  type = "string", default = "" },
+    ["container.net.mode"]      = { access = "Admin",  type = "string", default = "host" },
+    ["container.net.subnet"]    = { access = "Admin",  type = "string", default = "10.88.0.0/24" },
     ["container.pull.request"]  = { access = "Admin",  type = "string", default = "" },
     ["container.run.request"]   = { access = "Admin",  type = "string", default = "" },
     ["container.stop.request"]  = { access = "Admin",  type = "string", default = "" },
@@ -45,6 +51,8 @@ return {
     ["container.pull.detail"]   = { access = "Viewer", type = "string", default = "" },
     ["container.image.id"]      = { access = "Viewer", type = "string", default = "" },
     ["container.image.size"]    = { access = "Viewer", type = "string", default = "" },
+    ["container.net.ip"]        = { access = "Viewer", type = "string", default = "" },
+    ["container.net.gateway"]   = { access = "Viewer", type = "string", default = "" },
     ["container.run.pid"]       = { access = "Viewer", type = "string", default = "" },
     ["container.run.started"]   = { access = "Viewer", type = "string", default = "" },
     ["container.exit.code"]     = { access = "Viewer", type = "string", default = "" },

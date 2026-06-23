@@ -14,10 +14,12 @@
 #include "data_store/stats_publisher.hpp"
 #include "data_store/value.hpp"
 
+#include "container_net.hpp"   // kDefaultSubnet
 #include "crun_runtime.hpp"
 #include "http_client.hpp"     // mkdir_p
 #include "image_ref.hpp"
 #include "layer_store.hpp"
+#include "net_bridge.hpp"
 #include "oci_bundle.hpp"
 #include "registry.hpp"
 #include "registry_puller.hpp"
@@ -197,11 +199,14 @@ void Containerd::handle_run() {
         return;
     }
 
-    // Process overrides + resource limits (read on the reactor thread).
+    // Process overrides + resource limits + network mode (reactor thread).
     const std::string ov_entrypoint = get_str("container.entrypoint");
     const std::string ov_cmd        = get_str("container.cmd");
     const std::string lim_mem       = get_str("container.limit.mem");
     const std::string lim_cpus      = get_str("container.limit.cpus");
+    const std::string net_mode      = get_str("container.net.mode");      // "host" (default) | "bridge"
+    std::string       net_subnet    = get_str("container.net.subnet");
+    if (net_subnet.empty()) net_subnet = kDefaultSubnet;
 
     if (m_run_thread.joinable()) m_run_thread.join();
     m_stop_requested.store(false);
@@ -214,7 +219,9 @@ void Containerd::handle_run() {
     const std::string root     = m_cfg.root;
     const std::string run_root = m_cfg.run;
     m_run_thread = std::thread([this, image_id, root, run_root,
-                                ov_entrypoint, ov_cmd, lim_mem, lim_cpus]() {
+                                ov_entrypoint, ov_cmd, lim_mem, lim_cpus,
+                                net_mode, net_subnet]() {
+        const bool bridge = (net_mode == "bridge");
         const std::string hex  = image_id.substr(7);
         const std::string body = slurp(root + "/manifests/" + hex + ".json");
         ImageManifest im = parse_image_manifest(body);
@@ -275,6 +282,7 @@ void Containerd::handle_run() {
         resolve_user(ic.user, spec.uid, spec.gid);
         spec.mem_limit_bytes = parse_mem_limit(lim_mem);
         spec.cpu_quota       = parse_cpu_quota(lim_cpus, spec.cpu_period);
+        spec.host_network    = !bridge;   // bridge → own netns (IP wired below)
 
         if (!spit(bundle + "/config.json", generate_oci_config(spec))) {
             set_error("could not write OCI bundle config.json");
@@ -298,17 +306,40 @@ void Containerd::handle_run() {
             m_run_active.store(false);
             return;
         }
+
+        // crun create has set up the namespaces (incl. an empty netns in bridge
+        // mode); the init pid is available now, before start.
+        const long pid = crun.state(kContainerId).pid;
+
+        // Bridge mode: wire a veth + IP into the container netns before start.
+        if (bridge) {
+            BridgeNet bn = bridge_up(pid, net_subnet, kContainerId);
+            if (!bn.ok) {
+                set_error("bridge networking failed: " + bn.error);
+                set_state("error");
+                crun.remove(kContainerId, true, err);
+                bridge_down(kContainerId);
+                unmount_overlay(run_root, kContainerId, err);
+                m_run_active.store(false);
+                return;
+            }
+            std::vector<data_store::KV> net;
+            net.emplace_back("container.net.ip",      data_store::Value{bn.ip});
+            net.emplace_back("container.net.gateway", data_store::Value{bn.gateway});
+            m_ds.set_volatile(net);
+        }
+
         if (!crun.start(kContainerId, err)) {
             set_error("crun start failed: " + err);
             set_state("error");
             crun.remove(kContainerId, true, err);
+            if (bridge) bridge_down(kContainerId);
             unmount_overlay(run_root, kContainerId, err);
             m_run_active.store(false);
             return;
         }
 
-        // Grab the pid + announce running.
-        long pid = crun.state(kContainerId).pid;
+        // Announce running (pid already known from above).
         std::vector<data_store::KV> kv;
         kv.emplace_back("container.run.pid",     data_store::Value{std::to_string(pid)});
         kv.emplace_back("container.run.started", data_store::Value{std::to_string(
@@ -350,6 +381,7 @@ void Containerd::handle_run() {
 
         // ── Exited: clean up + report ──────────────────────────────────────
         crun.remove(kContainerId, true, err);
+        if (bridge) bridge_down(kContainerId);
         unmount_overlay(run_root, kContainerId, err);
         {
             std::lock_guard<std::mutex> lk(m_mtx);
@@ -357,6 +389,7 @@ void Containerd::handle_run() {
         }
         std::vector<data_store::KV> done;
         done.emplace_back("container.run.pid", data_store::Value{std::string()});
+        done.emplace_back("container.net.ip",  data_store::Value{std::string()});
         done.emplace_back("container.status",  data_store::Value{std::string("stopped")});
         done.emplace_back("container.state",   data_store::Value{std::string("stopped")});
         m_ds.set_volatile(done);
@@ -377,16 +410,19 @@ void Containerd::handle_stop() {
                           data_store::Value{std::string("stopping")});
         return;
     }
-    // Nothing running: clear any stale crun state + overlay mount.
+    // Nothing running: clear any stale crun state + overlay mount + veth.
     std::string err;
     CrunRuntime crun(m_cfg.run + "/state");
     crun.remove(kContainerId, true, err);
+    bridge_down(kContainerId);
     unmount_overlay(m_cfg.run, kContainerId, err);
     {
         std::lock_guard<std::mutex> lk(m_mtx);
         m_merged.clear();
     }
-    m_ds.set_volatile(std::string("container.status"), data_store::Value{std::string("stopped")});
+    m_ds.set_volatile(std::vector<data_store::KV>{
+        {"container.net.ip", data_store::Value{std::string()}},
+        {"container.status", data_store::Value{std::string("stopped")}}});
     set_error("");
     set_state("stopped");
 }
