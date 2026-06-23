@@ -44,6 +44,7 @@ export class MainComponent {
     { id: 'logs',      label: 'Logs',      svg: 'assets/icons/logs.svg', children: [] as {id:string,label:string}[] },
     { id: 'users',     label: 'Users',     svg: 'assets/icons/users.svg', children: [] as {id:string,label:string}[] },
     { id: 'software',  label: 'Software',  svg: 'assets/icons/software.svg', children: [] as {id:string,label:string}[] },
+    { id: 'containers',label: 'Containers',svg: 'assets/icons/containers.svg', children: [] as {id:string,label:string}[] },
     { id: 'shell',     label: 'Terminal',  svg: 'assets/icons/terminal.svg', children: [] as {id:string,label:string}[] },
     { id: 'advanced',  label: 'Advanced',  svg: 'assets/icons/advanced.svg',
       children: [{id:'reboot',label:'Reboot'},{id:'factory',label:'Factory Reset'},{id:'transfer',label:'Transfer'}] },
@@ -57,11 +58,12 @@ export class MainComponent {
 
   // Terminal is a remote shell (runs as the iot-httpd service user, not root):
   // only surface it to Admins when the operator has switched on
-  // http.shell.enabled. Everything else is always shown (each page enforces its
-  // own access).
+  // http.shell.enabled. Containers run as root, so that page is Admin-only too.
+  // Everything else is always shown (each page enforces its own access).
   get navMenus() {
     return this.menus.filter(m =>
-      m.id !== 'shell' || (this.shellEnabled && this.isAdmin));
+      (m.id !== 'shell' || (this.shellEnabled && this.isAdmin)) &&
+      (m.id !== 'containers' || this.isAdmin));
   }
 
   constructor(

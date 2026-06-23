@@ -29,3 +29,6 @@ enable iot-ota-confirm.service
 enable iot-reboot.path
 enable iot-factory-reset.path
 enable iot-transfer.path
+# iot-containerd: single-container runtime shim. Enabled so the device-ui
+# container feature works out of the box; idle until an Admin issues a pull/run.
+enable iot-containerd.service

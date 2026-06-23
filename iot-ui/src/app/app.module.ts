@@ -42,6 +42,7 @@ import { ToastComponent } from './common/toast/toast.component';
 import { UsersComponent } from './users/users.component';
 import { SoftwareUpdateComponent } from './software-update/software-update.component';
 import { HttpConfigComponent } from './http-config/http-config.component';
+import { ContainersComponent } from './containers/containers.component';
 import { ShellComponent } from './shell/shell.component';
 import { AdvancedComponent } from './advanced/advanced.component';
 
@@ -66,6 +67,7 @@ import { DsDebugDirective } from '../common/ds-debug.directive';
     ServicesSubmenuComponent, ServicesListComponent,
     LogLevelComponent, LogViewerComponent, ToastComponent,
     UsersComponent, SoftwareUpdateComponent, HttpConfigComponent,
+    ContainersComponent,
     ShellComponent,
     AdvancedComponent,
     DsHintComponent, DsDebugDirective,

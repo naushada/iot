@@ -153,6 +153,15 @@ set(VEHICLE_BUILD_DAEMON ON CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/vehicle
                  ${CMAKE_BINARY_DIR}/vehicle)
 
+# containers module (single-container runtime shim). Builds iot-containerd, the
+# privileged reactor-driven shim that pulls an OCI image, mounts its layers and
+# drives crun, publishing container.* to ds for the device-ui. Reuses the
+# datastore_client target added above; pure image-ref core is host-testable.
+# See modules/containers/README.md + apps/docs/tdd-device-containers.md.
+set(CONTAINERS_BUILD_DAEMON ON CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/containers
+                 ${CMAKE_BINARY_DIR}/containers)
+
 # mqtt module (iot-mqttd MQTT mirror). Daemon OFF by default here — only the
 # device Yocto build enables it (-DMQTT_BUILD_DAEMON=ON in the recipe), since the
 # cloud Docker builder has no libmosquitto. This add_subdirectory just exposes
@@ -279,6 +288,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-cellular-client.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-vehicled.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-can0-up.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-containerd.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-mqttd.service
             DESTINATION lib/systemd/system)
 

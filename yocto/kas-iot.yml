@@ -35,6 +35,7 @@ repos:
 
   # meta-openembedded — lua, nlohmann-json, gtest, openvpn (networking).
   # meta-networking depends on meta-python, so both are enabled.
+  # meta-filesystems is a meta-virtualization dependency (filesystems-layer).
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
     refspec: scarthgap
@@ -42,6 +43,16 @@ repos:
       meta-oe:
       meta-python:
       meta-networking:
+      meta-filesystems:
+
+  # meta-virtualization — provides crun, the small OCI runtime iot-containerd
+  # drives. LAYERDEPENDS: core, meta-oe, meta-python, meta-networking,
+  # meta-filesystems (all enabled above).
+  meta-virtualization:
+    url: https://git.yoctoproject.org/meta-virtualization
+    refspec: scarthgap
+    layers:
+      meta-virtualization:
 
   # meta-raspberrypi — raspberrypi3-64 MACHINE, bootfiles, pi-bluetooth,
   # and the rpidistro onboard Wi-Fi/Bluetooth firmware.

@@ -37,6 +37,11 @@ echo "→ Adding layers ..."
 bitbake-layers add-layer ../meta-openembedded/meta-oe
 bitbake-layers add-layer ../meta-openembedded/meta-python
 bitbake-layers add-layer ../meta-openembedded/meta-networking
+# meta-filesystems + meta-virtualization: provide crun, the OCI runtime
+# iot-containerd drives. meta-virtualization LAYERDEPENDS on meta-oe, meta-python,
+# meta-networking (added above) and meta-filesystems, so add that first.
+bitbake-layers add-layer ../meta-openembedded/meta-filesystems
+bitbake-layers add-layer ../meta-virtualization
 # meta-raspberrypi provides the raspberrypi3-64 MACHINE, bootfiles,
 # pi-bluetooth, and the rpidistro Wi-Fi firmware. Harmless for the qemu
 # machines (only its recipes for the selected MACHINE are pulled in).

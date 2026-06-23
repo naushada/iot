@@ -143,6 +143,9 @@
       <!-- Software Update -->
       <app-software-update *ngIf="selectedMenu==='software'"></app-software-update>
 
+      <!-- Containers (single-container runtime; Admin-only) -->
+      <app-containers *ngIf="selectedMenu==='containers' && isAdmin"></app-containers>
+
       <!-- Terminal (remote shell) -->
       <app-shell *ngIf="selectedMenu==='shell' && shellEnabled && isAdmin"></app-shell>
 
