@@ -43,7 +43,7 @@ This module lands incrementally (see the TDD doc):
   manifest is persisted under `/var/lib/iot-containers/manifests/` for the mount
   phase. Registry credentials are consumed write-only (cleared from ds).
 - **Phase 3 (done): layer extraction + overlay mount.** A `run` extracts each
-  layer (zlib gzip + in-process tar) into `/var/lib-containers/layers/<hex>/fs`
+  layer (zlib gzip + in-process tar) into `/var/lib/iot-containers/layers/<hex>/fs`
   — converting OCI whiteouts (`.wh.*` → char dev 0:0; `.wh..wh..opq` →
   `trusted.overlay.opaque`), guarding traversal, preserving mode/uid/gid — then
   `mount(2)`s an overlay (lowers base→top reversed, ephemeral upper/work under

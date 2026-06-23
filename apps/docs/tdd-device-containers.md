@@ -163,7 +163,7 @@ status long-poll only.
 - **P4 ✅ DONE** OCI bundle gen + crun create/start/state/kill/delete + supervision (poll-loop, TERM→grace→KILL, daemon-shutdown kill) + **cgroup mem/cpu limits** (folded in from P5). gtest: image-config parse, args resolution, mem/cpu/user parse, config.json (host-net/args/limits). `run`→running+pid, `stop`→stopped.
 - **P5 ✅ DONE (merged into P4)** cgroup mem/cpu limits wiring — `container.limit.mem`/`.cpus` → crun `linux.resources`.
 - **P6 ✅ DONE** device-ui **Containers** page (`iot-ui/src/app/containers/`): Admin-gated nav entry; status datagrid (state badge / image / size / pid / pull progress / error); pull form (ref + optional write-only creds); run form (Entrypoint / CMD / mem / cpu) + Run/Stop. Live via a 2s `dbGet` self-poll; commands via `dbSet` + bumped `*.request` tokens. (Did NOT extend the shared `/status` long-poll — avoids a C++ handler change for a page only open while managing a container.)
-- **P7** e2e on RPi3B: pull `busybox`/`nginx`, run, verify, stop. **Cgroup driver risk:** crun uses `--cgroup-manager cgroupfs` as root under the unit's `Delegate=yes` subtree — validate mem/cpu limits actually apply on the RPi cgroup-v2 hierarchy. Also validate `/var/lib-containers` is writable + has SD space on the target image.
+- **P7** e2e on RPi3B: pull `busybox`/`nginx`, run, verify, stop. Full recipe in §12. **Cgroup driver risk:** crun uses `--cgroup-manager cgroupfs` as root under the unit's `Delegate=yes` subtree — validate mem/cpu limits actually apply on the RPi cgroup-v2 hierarchy. Also validate `/var/lib/iot-containers` is writable + has SD space on the target image.
 
 ## 9. Testing
 
@@ -184,3 +184,142 @@ status long-poll only.
 - Multi-container, autostart/restart-policy, bridge networking, volume mounts,
   image GC/pruning, registry mirror/offline tar import — all **post-v1**.
 - Confirm RPi3B kernel already enables USER_NS + cgroup v2 hierarchy crun expects.
+- **Container IP:** with host networking the container shares the device's
+  network namespace — it has **no separate IP** (it uses the device's IP and
+  binds device ports directly). A per-container IP only exists under the
+  deferred bridge+NAT mode; until then the UI deliberately shows none.
+
+## 12. Phase 7 — hardware test recipe (RPi3B)
+
+End-to-end validation on a real device. Assumes an image built from this branch
+(crun + iot-containerd) and shell access. Device access per the project memory:
+`ssh root@<device-ip>` (LAN), device-ui at `http://<device-ip>:8080`
+(admin/admin). Control via `ds-cli` on the device (string values are JSON, so
+double-quote them): `ds-cli set <key> '"<val>"'`, `ds-cli get <key>`,
+`ds-cli watch --count=N <key>...`. The single-container id is `c0`; crun state
+lives under `/run/iot-containers/state`.
+
+### 12.0 Pre-flight — image + kernel + daemon
+
+```sh
+opkg list-installed | grep -E 'iot-containerd|crun'   # both present
+crun --version
+systemctl status iot-containerd                       # active (running)
+journalctl -u iot-containerd -n 5                      # "up: ... (pull/run/stop ready)"
+
+# storage dirs (tmpfiles), writable, on a writable fs with space
+ls -ld /var/lib/iot-containers /run/iot-containers
+df -h /var/lib
+
+# kernel features
+grep -q overlay /proc/filesystems && echo "overlayfs OK"
+ls /sys/fs/cgroup/cgroup.controllers                  # cgroup v2; lists "memory cpu ..."
+ls -l /proc/self/ns                                   # net/pid/mnt/uts/ipc/user present
+zcat /proc/config.gz 2>/dev/null | grep -E \
+  'CONFIG_(OVERLAY_FS|USER_NS|NET_NS|MEMCG|CFS_BANDWIDTH|SECCOMP)='
+
+ds-cli get container.state                            # idle
+```
+
+If the `memory`/`cpu` controllers are missing from a child cgroup, enable them on
+the parent: `echo +memory +cpu > /sys/fs/cgroup/cgroup.subtree_control`.
+
+### 12.1 Pull (busybox)
+
+```sh
+ds-cli set container.image.ref '"docker.io/library/busybox:latest"'
+ds-cli set container.pull.request "$(date +%s)"
+ds-cli watch --count=30 container.state container.pull.progress   # pulling → pulled
+ds-cli get container.state container.image.id container.image.size container.error
+```
+
+Expect `state=pulled`, `image.id=sha256:…`, `error` empty. Verify the store +
+that a blob's contents hash to its filename (the sha256-verify path):
+
+```sh
+ls /var/lib/iot-containers/blobs/sha256/ /var/lib/iot-containers/manifests/
+f=$(ls /var/lib/iot-containers/blobs/sha256/ | head -1)
+sha256sum /var/lib/iot-containers/blobs/sha256/$f      # digest == $f
+```
+
+### 12.2 Run + verify (busybox)
+
+```sh
+ds-cli set container.cmd '"sleep 600"'                 # ws-split → ["sleep","600"]
+ds-cli set container.run.request "$(date +%s)"
+ds-cli watch --count=10 container.state                # mounting → created → running
+ds-cli get container.state container.run.pid
+
+crun --root /run/iot-containers/state list             # c0  running
+mount | grep /run/iot-containers/c0/rootfs             # overlay mounted
+sed -n '1,5p' /run/iot-containers/c0/config.json       # generated bundle
+
+# exec in: confirm rootfs, host networking (shared device IP), DNS
+crun --root /run/iot-containers/state exec c0 /bin/sh -c \
+  'id; ip addr 2>/dev/null | grep "inet "; cat /etc/resolv.conf; \
+   wget -qO- http://example.com 2>/dev/null | head -1'
+```
+
+Host networking means `ip addr` inside the container shows the **device's**
+interfaces/IP — there is no separate container IP (expected for v1).
+
+### 12.3 Resource limits (cgroups)
+
+```sh
+ds-cli set container.stop.request "$(date +%s)" ; sleep 3
+ds-cli set container.limit.mem '"64M"'
+ds-cli set container.limit.cpus '"0.5"'
+ds-cli set container.run.request "$(date +%s)" ; sleep 3
+cat /sys/fs/cgroup/c0/memory.max                       # 67108864
+cat /sys/fs/cgroup/c0/cpu.max                          # "50000 100000"
+```
+
+(If `/sys/fs/cgroup/c0` isn't the path, find it: `grep -r '' \
+/sys/fs/cgroup/*/cgroup.procs 2>/dev/null | grep "$(ds-cli get container.run.pid)"`.)
+
+### 12.4 Stop
+
+```sh
+ds-cli set container.stop.request "$(date +%s)"
+ds-cli watch --count=6 container.state                 # stopping → stopped
+crun --root /run/iot-containers/state list             # empty
+mount | grep /run/iot-containers/c0 || echo "unmounted OK"
+```
+
+### 12.5 nginx (host-net port bind)
+
+```sh
+ds-cli set container.image.ref '"docker.io/library/nginx:stable"'
+ds-cli set container.pull.request "$(date +%s)" ; ds-cli watch --count=40 container.state
+ds-cli set container.entrypoint '""' ; ds-cli set container.cmd '""'   # image defaults
+ds-cli set container.run.request "$(date +%s)" ; ds-cli watch --count=10 container.state
+curl -s http://127.0.0.1:80/ | head -1                 # nginx serves on the device (host net)
+ds-cli set container.stop.request "$(date +%s)"
+```
+
+(nginx binds `:80` on the device via host net — confirm nothing else owns `:80`.)
+
+### 12.6 device-ui path
+
+Browse `http://<device-ip>:8080` → login (admin) → **Containers** (Admin-only).
+Pull form → `busybox:latest` → **Pull** (progress bar → pulled). Run form → CMD
+`sleep 600`, Memory `64M` → **Run** (badge → running, PID shown) → **Stop**.
+
+### 12.7 Troubleshooting
+
+| Symptom | Likely cause / fix |
+|---|---|
+| pull `registry unreachable` / TLS | clock unset (no-RTC) → NTP not synced; `date`, check timesyncd |
+| pull `401` | private image → set registry user/pass |
+| `image has no Entrypoint/Cmd` | set `container.cmd` (busybox has no default CMD in some tags) |
+| `crun create failed` cgroup | enable controllers in parent `cgroup.subtree_control` (see 12.0) |
+| `overlay mount failed` EINVAL | kernel missing `OVERLAY_FS`, or `/var`/`/run` fs quirk → `dmesg` |
+| DNS fails in container | host `/etc/resolv.conf` empty (host-net reuses it) |
+
+### 12.8 Cleanup
+
+```sh
+ds-cli set container.stop.request "$(date +%s)"
+rm -rf /var/lib/iot-containers/blobs /var/lib/iot-containers/layers \
+       /var/lib/iot-containers/manifests   # drop cached images
+```

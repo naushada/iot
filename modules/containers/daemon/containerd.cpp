@@ -431,8 +431,7 @@ int Containerd::run() {
     stats.open(data_store::StatsPublisher::STATS_FLUSH_SEC, false);
 
     ACE_DEBUG((LM_INFO,
-        ACE_TEXT("%D [ctr] up: root=%C run=%C (phase-1 skeleton: commands "
-                 "acknowledged; pull/run/stop not yet implemented)\n"),
+        ACE_TEXT("%D [ctr] up: root=%C run=%C (pull/run/stop ready)\n"),
         m_cfg.root.c_str(), m_cfg.run.c_str()));
 
     ACE_Reactor::instance()->run_reactor_event_loop();
