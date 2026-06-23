@@ -117,6 +117,17 @@ TEST(OciConfig, HostNetAndArgsAndLimits) {
     EXPECT_EQ(j["linux"]["resources"]["cpu"]["period"], 100000);
 }
 
+TEST(OciConfig, BridgeModeAddsNetworkNamespace) {
+    OciSpec s;
+    s.args = {"/bin/true"};
+    s.host_network = false;             // bridge mode → own netns
+    auto j = json::parse(generate_oci_config(s));
+    bool has_net = false;
+    for (const auto& n : j["linux"]["namespaces"])
+        if (n["type"] == "network") has_net = true;
+    EXPECT_TRUE(has_net);
+}
+
 TEST(OciConfig, NoLimitsOmitsResources) {
     OciSpec s;
     s.args = {"/bin/true"};

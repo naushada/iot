@@ -181,13 +181,49 @@ status long-poll only.
 
 ## 11. Open items / deferred
 
-- Multi-container, autostart/restart-policy, bridge networking, volume mounts,
-  image GC/pruning, registry mirror/offline tar import — all **post-v1**.
+- Multi-container, autostart/restart-policy, volume mounts, image GC/pruning,
+  registry mirror/offline tar import, container **port mapping** (DNAT) — all
+  **post-v1**.
 - Confirm RPi3B kernel already enables USER_NS + cgroup v2 hierarchy crun expects.
-- **Container IP:** with host networking the container shares the device's
-  network namespace — it has **no separate IP** (it uses the device's IP and
-  binds device ports directly). A per-container IP only exists under the
-  deferred bridge+NAT mode; until then the UI deliberately shows none.
+
+## 11a. Bridge networking (own container IP) — IMPLEMENTED
+
+Opt-in alternative to host networking, selected per-run via `container.net.mode`
+(`host` default | `bridge`). In bridge mode the container gets its **own IP**:
+- `generate_oci_config` adds a `network` namespace (own netns) instead of
+  omitting it.
+- `net_bridge` (daemon, root, via `ip`/`nft`): ensures a host bridge `iot-cni0`
+  (gateway `10.88.0.1`), enables IPv4 forwarding, installs a **scoped**
+  `inet iot_containers` nft table (postrouting masquerade for the subnet — never
+  touches net-router's `iot_router`), then creates a veth pair, attaches the
+  host end to the bridge and moves the peer into the container netns as `eth0`
+  with `10.88.0.2/24` + default route via the gateway. `crun create` → read pid
+  → `bridge_up(pid)` → publish `container.net.ip`/`.gateway` → `crun start`; teardown
+  on exit (`bridge_down` deletes the veth; the bridge + table persist).
+- Subnet overridable via `container.net.subnet` (a single /24; default
+  `10.88.0.0/24`). Single container ⇒ static `.2` (no IPAM).
+- UI: a **Network** select in the run form + a **Network**/**IP** row in the
+  status datagrid (shows `10.88.0.2` when bridge + running).
+- Kernel: `container.cfg` adds `BRIDGE`/`VETH`/`BRIDGE_NETFILTER`/`NF_NAT`.
+  `RDEPENDS` adds `iproute2`/`nftables`.
+- **Deferred within this:** container port mapping (host:port → container IP via
+  DNAT) and multi-container IPAM.
+
+### Bridge mode HW e2e (extends §12)
+
+```sh
+ds-cli set container.net.mode '"bridge"'
+ds-cli set container.image.ref '"docker.io/library/busybox:latest"'
+ds-cli set container.pull.request "$(date +%s)" ; ds-cli watch --count=30 container.state
+ds-cli set container.cmd '"sleep 600"'
+ds-cli set container.run.request "$(date +%s)" ; ds-cli watch --count=10 container.state
+ds-cli get container.net.ip container.net.gateway          # 10.88.0.2 / 10.88.0.1
+ip addr show iot-cni0                                       # bridge up, 10.88.0.1/24
+nft list table inet iot_containers                         # masquerade rule present
+crun --root /run/iot-containers/state exec c0 /bin/sh -c \
+  'ip addr show eth0; ping -c1 10.88.0.1; wget -qO- http://example.com | head -1'
+ds-cli set container.stop.request "$(date +%s)"            # veth torn down, net.ip cleared
+```
 
 ## 12. Phase 7 — hardware test recipe (RPi3B)
 

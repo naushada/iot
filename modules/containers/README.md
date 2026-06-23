@@ -62,8 +62,14 @@ This module lands incrementally (see the TDD doc):
   creds), and a run form (Entrypoint / CMD / mem / cpu) with Run/Stop. Drives the
   `container.*` keys: a 2s `dbGet` self-poll for live status, `dbSet` + bumped
   `*.request` tokens for commands.
-- **Phase 7 (next)**: e2e on RPi3B hardware (pull → run → stop), validating
-  overlayfs + crun + cgroups on the real kernel.
+- **Bridge networking (own IP):** opt-in `container.net.mode=bridge` gives the
+  container its own IP via a veth into a host bridge (`iot-cni0`,
+  `10.88.0.0/24`) with masqueraded egress (scoped `inet iot_containers` nft
+  table). `container_net` (core) plans the subnet + nft ruleset;
+  `net_bridge` (daemon) does the `ip`/`nft` plumbing; the UI adds a Network
+  select + IP row. Host networking stays the default. See TDD §11a.
+- **Phase 7 (next)**: e2e on RPi3B hardware (pull → run → stop, host + bridge),
+  validating overlayfs + crun + cgroups + veth/masquerade on the real kernel.
 
 ## Build
 

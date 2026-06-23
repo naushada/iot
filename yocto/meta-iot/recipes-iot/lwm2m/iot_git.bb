@@ -629,8 +629,9 @@ FILES:${PN}-containerd = "\
 "
 # curl: the registry-v2 HTTP transport (puller shells out to it, like the OTA
 # path). openssl: libcrypto for blob sha256. zlib: gzip layer decompression.
+# iproute2 + nftables: bridge-mode networking (veth/bridge/netns + masquerade).
 # (openssl/zlib are also auto-added by the shlib scan; listed for clarity.)
-RDEPENDS:${PN}-containerd = "ace-tao crun curl openssl zlib"
+RDEPENDS:${PN}-containerd = "ace-tao crun curl openssl zlib iproute2 nftables"
 RRECOMMENDS:${PN}-containerd = "\
     ${PN}-ds-server \
     ${PN}-config \

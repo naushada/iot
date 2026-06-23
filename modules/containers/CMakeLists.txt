@@ -28,7 +28,8 @@ add_library(containers_core STATIC
     src/image_ref.cpp
     src/registry.cpp
     src/oci_layer.cpp
-    src/oci_bundle.cpp)
+    src/oci_bundle.cpp
+    src/container_net.cpp)
 target_include_directories(containers_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/inc
     ${NLOHMANN_JSON_INCLUDE})
@@ -63,7 +64,8 @@ if(CONTAINERS_BUILD_DAEMON)
         daemon/http_client.cpp
         daemon/registry_puller.cpp
         daemon/layer_store.cpp
-        daemon/crun_runtime.cpp)
+        daemon/crun_runtime.cpp
+        daemon/net_bridge.cpp)
     target_include_directories(iot-containerd PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/daemon
         ${CMAKE_CURRENT_SOURCE_DIR}/inc
@@ -87,7 +89,8 @@ if(CONTAINERS_BUILD_TESTS)
         test/image_ref_test.cpp
         test/registry_test.cpp
         test/oci_layer_test.cpp
-        test/oci_bundle_test.cpp)
+        test/oci_bundle_test.cpp
+        test/container_net_test.cpp)
     target_link_libraries(containers-tests containers_core GTest::gtest GTest::gtest_main pthread)
     include(GoogleTest)
     if(CONTAINERS_TOP_LEVEL)
