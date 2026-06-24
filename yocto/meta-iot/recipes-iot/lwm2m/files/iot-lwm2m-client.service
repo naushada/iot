@@ -25,6 +25,15 @@ SupplementaryGroups=iot
 Restart=always
 RestartSec=5s
 
+# Software watchdog. The client's 1 Hz reactor tick pets it via
+# sd_notify(WATCHDOG=1) (systemd_watchdog_ping() in apps/src/main.cpp). If
+# the reactor ever wedges alive-but-inert — as it did after a VPN-reconnect
+# re-Register, sitting offline for hours without crashing — the pings stop
+# and systemd SIGABRTs + restarts the unit (Restart=always). 60s = ~60 missed
+# ticks of slack so transient hiccups don't trip it. Setting WatchdogSec= is
+# also what makes systemd export $NOTIFY_SOCKET to the process.
+WatchdogSec=60s
+
 StandardOutput=journal
 StandardError=journal
 
