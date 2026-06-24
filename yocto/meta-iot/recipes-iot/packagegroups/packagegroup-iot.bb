@@ -42,12 +42,16 @@ RDEPENDS:${PN}-full = "\
     iot-sensord \
     iot-cellular \
     iot-containerd \
+    iot-pcap \
     openvpn \
     nftables \
     iproute2 \
     wpa-supplicant \
     crun \
 "
+# iot-pcap: ships the iot-pcap.service capture unit (DISABLED by default) and
+# pulls tcpdump (+ libpcap) so field DTLS/CoAP capture is one `systemctl start`
+# away without a reflash.
 # crun: the OCI runtime iot-containerd shells out to (from meta-virtualization).
 # Also pulled transitively via RDEPENDS:iot-containerd, listed here explicitly.
 # Note: no wireless-tools (iwconfig/iwlist) — it was dropped from modern

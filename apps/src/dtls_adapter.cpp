@@ -11,6 +11,8 @@
 
 #include <ace/Log_Msg.h>
 #include <cctype>
+#include <cstdio>   // keylog dump (fopen/fprintf) — see dtlsGetPskInfoCb
+#include <cstdlib>  // getenv($IOT_DTLS_KEYLOG)
 
 log_t dtls_level_from_string(const std::string& s) {
     std::string up;
@@ -226,6 +228,22 @@ std::int32_t dtlsGetPskInfoCb(dtls_context_t *ctx, const session_t *session, dtl
                 dtls_warn("PSK (%zu B) exceeds caller buffer (%zu B)\n",
                           bin.size(), result_length);
                 return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
+            }
+            // Debug key-dump for offline pcap decryption. The negotiated suite
+            // is TLS_PSK_WITH_AES_128_CCM_8 (no ECDHE), so the PSK alone lets
+            // Wireshark derive the session keys: paste `secret` into DTLS ->
+            // Pre-Shared-Key. Both the BS and DM handshakes pass through here,
+            // so a single tap captures every session as the device connects.
+            // OFF unless $IOT_DTLS_KEYLOG names a file (SSLKEYLOGFILE-style) —
+            // NEVER the journal: the surrounding code deliberately keeps PSKs
+            // off the logs (BUG-001 / NFR-SEC-001). The file holds live PSKs;
+            // keep it root-only and wipe it after pulling the pcap.
+            if (const char* kl = ::getenv("IOT_DTLS_KEYLOG"); kl && *kl) {
+                if (FILE* f = ::fopen(kl, "ae")) {   // append, close-on-exec
+                    ::fprintf(f, "identity=%s key=%s\n", in.c_str(),
+                              secret.c_str());
+                    ::fclose(f);
+                }
             }
             ::memcpy(result, bin.data(), bin.size());
             return static_cast<std::int32_t>(bin.size());
