@@ -300,6 +300,43 @@ to advance the lifetime ticker. On expiry, schedule a registration update;
 the ACE handler `UDPAdapter::handle_exception` (the notify drain) then
 sends the CoAP frame.
 
+#### 5.3.1 Lost-ack recovery (`check_ack_timeout`)
+
+The FSM above advances *only* on a received response (`on_response`). With no
+timeout, a single dropped datagram strands it forever: a Register/Update/
+Deregister whose ack never arrives parks the FSM in an `Awaiting*Ack` state,
+`should_send_update()` (which only fires while `Registered`) goes quiet, the
+server expires the registration after the lifetime — yet `compute_conn_state()`
+still maps `AwaitingUpdateAck → "registered"`, so the device-ui shows
+**connected while the cloud lists it offline**. Observed in the field after a
+network blip dropped an in-flight Update.
+
+`RegistrationClient::check_ack_timeout(now)` runs each 1 Hz client tick and
+recovers (config in `ClientConfig`: `ackTimeoutSeconds` = 6, `maxAckRetransmits`
+= 3, sized so `maxAckRetransmits * ackTimeoutSeconds < updateMarginSeconds`,
+i.e. recovery completes inside the lifetime margin):
+
+| In state | After `ackTimeoutSeconds` with no response | Action returned to the tick |
+|----------|--------------------------------------------|-----------------------------|
+| `AwaitingUpdateAck`, budget left | likely a dropped datagram on a live session | `RetransmitUpdate` — tick resends the Update (FSM reverts to `Registered` so `build_update_request` re-arms it; `m_ackRetransmits++`) |
+| `AwaitingUpdateAck`, budget spent | session suspect | `ReRegister` — FSM → `Unregistered`; tick replays the boot path (`bootPhase = NotStarted`) to re-handshake DTLS, re-bootstrap and re-Register |
+| `AwaitingRegisterAck` / `AwaitingDeregisterAck` | lost Register/Deregister ack | `ReRegister` (same as above) |
+
+Any received ack resets the retransmit budget (`on_response`). `build_deregister_request`
+stamps `m_lastSendOrAck` like Register/Update so the Deregister deadline is
+measured from its own send.
+
+#### 5.3.2 systemd watchdog
+
+The recovery above handles a stuck *FSM*; a wedged *reactor* (alive process,
+no ticks) is a different failure class systemd should catch. `iot-lwm2m-client`
+sets `WatchdogSec=60s` and the client tick pets it via `systemd_watchdog_ping()`
+(the `sd_notify(WATCHDOG=1)` wire protocol written directly — no libsystemd
+dependency; a no-op when `$NOTIFY_SOCKET` is unset). If the reactor stalls the
+pings stop and systemd `SIGABRT`s + restarts the unit. **The unit's
+`WatchdogSec=` and the binary that sends `WATCHDOG=1` must ship together** — an
+older binary under a watchdog unit would be killed every 60 s.
+
 ### 5.4 Registration Server
 
 ```

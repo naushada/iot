@@ -187,19 +187,37 @@ ExecStart=/usr/bin/iot-swupdate
    campaign staged mid-install lands cleanly for the next activation and we never
    install a half-written new file.
 3. If no `.ipk` in the work dir → clean up, exit 0 (spurious trigger).
-4. `iot.update.state = 3` (updating).
-5. `opkg install --force-reinstall --force-downgrade <work>/*.ipk`
+4. **Downgrade guard:** if `update.meta` carries a `version=` and its semver
+   (`major.minor.patch`, `+build`/`-pre` ignored) is **strictly older** than the
+   running `iot.version`, skip the install: `iot.update.version` = the running
+   version, `iot.update.result = 10` (skipped — not newer), state 0, **exit 0**
+   (clean, *not* a failed unit). Same-semver re-installs (a newer `+git` build of
+   the same release) are allowed. This is the last line of defense — the cloud
+   push gate (`apps/src/main.cpp`, see `tdd-installed-version.md` §3b) also
+   refuses non-newer versions, but it fails closed only once it has read the
+   device's `/3/0/3` version; a push ~2 s after registration once slipped a
+   1.2.0 bundle onto a 1.3.0 unit and `opkg` blew up on the cross-version deps.
+   A `semv()` shell helper mirrors the cloud-side `semv()` so both gates agree.
+5. `iot.update.state = 3` (updating).
+6. `opkg install --force-reinstall --force-downgrade <work>/*.ipk`
    `> /run/iot/update/last.log 2>&1`. On failure: `iot.update.result = 9`,
    state 0, log tail, clean work dir, exit 1 (**no reboot, no restart**).
-6. Derive version (`update.meta` `version=` wins, else parsed from opkg log) →
+   (`--force-downgrade` remains for the allowed same-semver `+git` reinstall,
+   whose opkg version string can read as a downgrade; the step-4 guard already
+   blocked any real semver downgrade.)
+7. Derive version (`update.meta` `version=` wins, else parsed from opkg log) →
    `iot.update.version`.
-7. **Config/schema migration (§11)** — restart `ds-server` so it loads the new
+8. **Config/schema migration (§11)** — restart `ds-server` so it loads the new
    schemas, then run any pending migrations. On migration failure: `result=9`,
    skip the daemon restart, exit non-zero (operator intervention) — opkg is
    already applied, so we don't restart app daemons against a half-migrated ds.
-8. `iot.update.result = 1`; `iot.update.state = 0`.
-9. **Reboot decision (§4).**
-10. Clean `.work-$$/`.
+9. `iot.update.result = 1`; `iot.update.state = 0`.
+10. **Reboot decision (§4).**
+11. Clean `.work-$$/`.
+
+Result codes (`iot.update.result`): `0` initial, `1` success, `2` rolled-back
+(A/B), `5` integrity, `8` uri, `9` install/migration error, `10` skipped
+(offered not newer — downgrade refused).
 
 ds writes use `ds-cli --socket=/run/iot/data_store.sock` (root) — identical to
 today's script, and ds (`/var/lib/iot`) is persistent so the result survives a
