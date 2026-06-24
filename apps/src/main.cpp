@@ -868,8 +868,12 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                                     // cloud re-installing the SAME build or clobbering
                                     // a freshly-flashed unit with a stale-but-same/older
                                     // bundle (the downgrade loop). +build metadata is
-                                    // ignored. Unknown installed version → allow (first
-                                    // push before /3/0/3 has been read).
+                                    // ignored. Unknown installed version → DEFER (fail
+                                    // closed): the cloud Reads /3/0/3 right after
+                                    // registration, so a later pass pushes once the
+                                    // version is known. A blind push ~2 s after register
+                                    // is exactly what shipped a 1.2.0 bundle to a 1.3.0
+                                    // unit and wedged opkg on the cross-version deps.
                                     {
                                         std::string installed;
                                         {
@@ -882,13 +886,15 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                                             std::sscanf(v.c_str(), "%ld.%ld.%ld", &a, &b, &c);
                                             return a * 1000000L + b * 1000L + c;
                                         };
-                                        if (!installed.empty() && !ver.empty() &&
-                                            semv(ver) <= semv(installed)) {
+                                        if (!ver.empty() &&
+                                            (installed.empty() ||
+                                             semv(ver) <= semv(installed))) {
                                             ACE_DEBUG((LM_INFO,
-                                                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l skipping OTA to "
-                                                         "%C: ver=%C not newer than installed=%C\n"),
+                                                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l deferring OTA to "
+                                                         "%C: ver=%C not strictly newer than "
+                                                         "installed=%C\n"),
                                                 reg.endpoint.c_str(), ver.c_str(),
-                                                installed.c_str()));
+                                                installed.empty() ? "?(unread)" : installed.c_str()));
                                             break;
                                         }
                                     }

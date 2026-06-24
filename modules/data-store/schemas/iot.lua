@@ -246,7 +246,8 @@ return {
         default = 0,
     },
     ["iot.update.result"] = {       -- 0 initial,1 success,2 rolled-back (A/B),
-        access  = "Admin",          -- 5 integrity,8 uri,9 install
+        access  = "Admin",          -- 5 integrity,8 uri,9 install,
+                                    -- 10 skipped (offered not newer — downgrade refused)
         type    = "integer",
         default = 0,
     },
