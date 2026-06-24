@@ -68,6 +68,7 @@ Priority is MoSCoW: **M**ust / **S**hould / **C**ould / **W**on't.
 | REQ-REG-009 | Server registry SHALL persist `(ep, loc, lt, peer, advertised set)` for the duration of the registration; persistence storage is in-memory by default. | M | Core §6.2 | §5.4 |
 | REQ-REG-010 | Server registry SHALL mirror Register / Update / Deregister events to MongoDB (`DbClient`) via an async worker `ACE_Task`, so registrations survive process restart. Reactor thread MUST NOT block on DB I/O. | S | — | §5.4 / D3 |
 | REQ-REG-011 | All per-Server-Object state (registrations, observers, write-attributes) SHALL be keyed by **Short Server ID** even in single-server v1 deployments, so adding a second Server Object instance is a localized change. | M | Core §6.3 | D2 |
+| REQ-REG-012 | Client SHALL NOT remain in an `Awaiting*Ack` state indefinitely: after `ackTimeoutSeconds` with no response it SHALL retransmit a lost Update (up to `maxAckRetransmits`), then re-establish the session (re-handshake DTLS + re-Register). A lost ack MUST NOT leave the device reporting `registered` while the server has expired it. | M | — | §5.3.1 |
 
 ### 3.3 Device Management & Service Enablement
 
@@ -212,6 +213,7 @@ artifact.
 | REQ-REG-009 | Core §6.2    | §5.4 | L3 | `client_registry_test.cpp::tracks_advertised_set` |
 | REQ-REG-010 | — (D3) | §5.4 | L3 | `client_registry_test.cpp::mongo_mirror_async`, `client_registry_test.cpp::reconstruct_on_restart` |
 | REQ-REG-011 | Core §6.3 (D2) | §3.1 / §5.4 | L1/L3 | `client_registry_test.cpp::keyed_by_short_server_id` |
+| REQ-REG-012 | — | §5.3.1 | L3 | `registration_client_test.cpp::ack_timeout_retransmits_lost_update_within_budget`, `::ack_timeout_escalates_to_reregister_after_budget`, `::ack_received_resets_retransmit_budget`, `::ack_timeout_on_lost_register_reregisters`, `::deregister_send_is_stamped_against_instant_timeout` |
 | REQ-DM-001 | Core §6.3.4 | §3.1 | L5 | `dm_test.cpp::GET_returns_resource` |
 | REQ-DM-002 | Core §6.3.4 | §4.4 | L2/L5 | `dm_test.cpp::GET_discover_link_format` |
 | REQ-DM-003 | Core §6.3.4 | §3.1 | L5 | `dm_test.cpp::PUT_replaces_resource` |

@@ -121,6 +121,23 @@ updated by the response handler; `publish_regs` includes
 (We deliberately do **not** add `version` to `ServerRegistration` — that
 struct is rebuilt verbatim from registration frames and would clobber it.)
 
+### 3c. Downgrade guard (push gate)
+
+`epVersions` does double duty: besides the UI column, it gates the OTA push.
+Before writing `/5/0/1` + executing `/5/0/2` for a pending job, `lwm2m-dm`
+compares the job's `version` against `epVersions[endpoint]` (semver
+`major.minor.patch`, `+build` ignored) and pushes **only when it is strictly
+newer**. The check **fails closed**: if the device's version isn't known yet
+(the `/3/0/3` read is async and lands shortly *after* registration), the push
+is **deferred**, not sent — a later tick pushes once the version is known.
+
+This closes the original defect: a push fired ~2 s after registration, before
+the `/3/0/3` read completed, so `epVersions` was empty, the guard waved a 1.2.0
+bundle through, and the 1.3.0 device's `opkg install` died on the cross-version
+dependency conflict (`iot-swupdate.service` left failed). The device installer
+re-checks the same semver rule as a last line of defense — see
+`tdd-yocto-swupdate.md` step 4 (result code `10` = skipped, not newer).
+
 ## 4. The merge (`iot-cloudd`)
 
 `reconcile_registrations` (`apps/cloud/server/src/main.cpp:172-`) already
