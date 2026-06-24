@@ -37,6 +37,19 @@ set_result()  { $DSCLI set iot.update.result  "$1" >/dev/null 2>&1 || true; }
 set_version() { $DSCLI set iot.update.version "\"$1\"" >/dev/null 2>&1 || true; }
 log() { logger -t iot-swupdate "$*" 2>/dev/null; echo "iot-swupdate: $*"; }
 
+# Parse "major.minor.patch" (ignoring any +build / -pre suffix) into one
+# comparable integer; non-numeric fields count as 0. Mirrors the cloud-side
+# semv() in apps/src/main.cpp so both downgrade gates agree.
+semv() {
+    v="${1%%+*}"; v="${v%%-*}"
+    oIFS="$IFS"; IFS=.; set -- $v; IFS="$oIFS"
+    a="${1:-0}"; b="${2:-0}"; c="${3:-0}"
+    case "$a" in ''|*[!0-9]*) a=0 ;; esac
+    case "$b" in ''|*[!0-9]*) b=0 ;; esac
+    case "$c" in ''|*[!0-9]*) c=0 ;; esac
+    echo $(( a * 1000000 + b * 1000 + c ))
+}
+
 # Wait for ds-server to answer after a (re)start; mirrors the compose healthcheck.
 ds_wait() {
     i=0
@@ -132,6 +145,27 @@ if [ -f "$WORK/update.meta" ]; then
     while IFS='=' read -r k v; do
         case "$k" in version) VER="$v" ;; reboot) REBOOT="$v" ;; esac
     done < "$WORK/update.meta"
+fi
+
+# ── downgrade guard ────────────────────────────────────────────────
+# Refuse a bundle whose semver is OLDER than what's running. The cloud has
+# its own push gate, but it fails closed only once it has read the device's
+# /3/0/3 version — a push ~2 s after registration (before that read) once
+# offered a 1.2.0 bundle to this 1.3.0 unit, and `opkg install` then died on
+# the cross-version dependency conflict and left this service failed. This is
+# the last line of defense. Same-semver re-installs (a newer +git build of the
+# same release) are allowed; only a strictly-lower semver is rejected.
+if [ -n "$VER" ]; then
+    CUR="$($DSCLI get iot.version 2>/dev/null | sed 's/^iot\.version=//')"
+    if [ -n "$CUR" ] && [ "$(semv "$VER")" -lt "$(semv "$CUR")" ]; then
+        log "refusing downgrade: offered=$VER < installed=$CUR; skipping"
+        set_version "$CUR"   # report what is actually installed, not the offer
+        set_result 10        # 10 = skipped (offered not newer) — NOT an error
+        set_state 0
+        rm -rf "$WORK"
+        rm -f "/run/iot/update/.self.$$"
+        exit 0
+    fi
 fi
 
 # ── 3. install ─────────────────────────────────────────────────────
