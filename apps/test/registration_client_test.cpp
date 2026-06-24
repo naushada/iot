@@ -44,6 +44,29 @@ ClientConfig minimal_cfg(std::uint32_t lt = 3600) {
     return c;
 }
 
+// Keeps a server + registry alive so a client can be driven Registered and
+// then fed real Update acks (build_*_request → server → on_response).
+struct Harness {
+    std::shared_ptr<ClientRegistry> registry = std::make_shared<ClientRegistry>();
+    RegistrationServer              srv{registry};
+    CoAPAdapter                     coap;
+
+    void feed_register_ack(RegistrationClient& cli) {
+        auto wire = cli.build_register_request(1, std::string{0x01});
+        CoAPAdapter::CoAPMessage parsed; coap.parseRequest(wire, parsed);
+        auto outcome = srv.handle(parsed, coap, "1.1.1.1", 1);
+        CoAPAdapter::CoAPMessage ack;    coap.parseRequest(outcome.response, ack);
+        cli.on_response(ack, coap);
+    }
+    void feed_update_ack(RegistrationClient& cli) {
+        auto wire = cli.build_update_request(3, std::string{0x03}, false);
+        CoAPAdapter::CoAPMessage parsed; coap.parseRequest(wire, parsed);
+        auto outcome = srv.handle(parsed, coap, "1.1.1.1", 1);
+        CoAPAdapter::CoAPMessage ack;    coap.parseRequest(outcome.response, ack);
+        cli.on_response(ack, coap);
+    }
+};
+
 } // namespace
 
 /* ─────────────────────────── REQ-REG-001 / REQ-REG-007 ───────────────── */
@@ -306,4 +329,143 @@ TEST(RegistrationClient, FUP_DS_10_clear_pending_reregister_does_not_revert_endp
     cli.clear_pending_reregister();
     EXPECT_FALSE(cli.pending_reregister());
     EXPECT_EQ("urn:dev:NEW", cli.endpoint());
+}
+
+/* ─────────────────────────── ack-timeout recovery ────────────────────────
+ * The FSM leaves an Awaiting*Ack state only on a response, so a dropped
+ * datagram once stranded it forever ("registered" on-device, expired at the
+ * cloud). check_ack_timeout() retransmits a lost Update within budget, then
+ * escalates to a full re-Register. */
+
+using AR = RegistrationClient::AckRecovery;
+
+TEST(RegistrationClient, ack_timeout_noop_while_registered_or_in_window) {
+    auto store = minimal_store();
+    auto cfg = minimal_cfg(/*lt*/ 100);
+    cfg.ackTimeoutSeconds = 6;
+    RegistrationClient cli(cfg, store);
+    Harness h;
+    h.feed_register_ack(cli);
+    ASSERT_EQ(RegistrationState::Registered, cli.state());
+
+    // Not awaiting anything → never fires, even far in the future.
+    EXPECT_EQ(AR::None, cli.check_ack_timeout(
+                            std::chrono::steady_clock::now() +
+                            std::chrono::seconds(100000)));
+    EXPECT_EQ(RegistrationState::Registered, cli.state());
+
+    // Awaiting an Update but still inside the ack window → no action.
+    auto t = std::chrono::steady_clock::now();
+    (void)cli.build_update_request(2, std::string{0x02}, /*adv*/ false);
+    ASSERT_EQ(RegistrationState::AwaitingUpdateAck, cli.state());
+    EXPECT_EQ(AR::None, cli.check_ack_timeout(t + std::chrono::seconds(3)));
+    EXPECT_EQ(RegistrationState::AwaitingUpdateAck, cli.state());
+}
+
+TEST(RegistrationClient, ack_timeout_retransmits_lost_update_within_budget) {
+    auto store = minimal_store();
+    auto cfg = minimal_cfg(/*lt*/ 100);
+    cfg.ackTimeoutSeconds = 6;
+    cfg.maxAckRetransmits = 3;
+    RegistrationClient cli(cfg, store);
+    Harness h;
+    h.feed_register_ack(cli);
+
+    auto t = std::chrono::steady_clock::now();
+    (void)cli.build_update_request(2, std::string{0x02}, /*adv*/ false);
+    ASSERT_EQ(RegistrationState::AwaitingUpdateAck, cli.state());
+
+    // Past the window: retransmit, and the FSM reverts to Registered so the
+    // caller's build_update_request() can re-arm it.
+    EXPECT_EQ(AR::RetransmitUpdate,
+              cli.check_ack_timeout(t + std::chrono::seconds(7)));
+    EXPECT_EQ(RegistrationState::Registered, cli.state());
+}
+
+TEST(RegistrationClient, ack_timeout_escalates_to_reregister_after_budget) {
+    auto store = minimal_store();
+    auto cfg = minimal_cfg(/*lt*/ 100);
+    cfg.ackTimeoutSeconds = 6;
+    cfg.maxAckRetransmits = 2;
+    RegistrationClient cli(cfg, store);
+    Harness h;
+    h.feed_register_ack(cli);
+
+    // Burn the retransmit budget: each lost Update is retransmitted.
+    for (int i = 0; i < 2; ++i) {
+        auto t = std::chrono::steady_clock::now();
+        (void)cli.build_update_request(2, std::string{0x02}, /*adv*/ false);
+        ASSERT_EQ(RegistrationState::AwaitingUpdateAck, cli.state());
+        EXPECT_EQ(AR::RetransmitUpdate,
+                  cli.check_ack_timeout(t + std::chrono::seconds(7)));
+        EXPECT_EQ(RegistrationState::Registered, cli.state());
+    }
+
+    // Budget spent → the next lost Update escalates to a full re-Register:
+    // Unregistered, location cleared (caller replays bootstrap).
+    auto t = std::chrono::steady_clock::now();
+    (void)cli.build_update_request(2, std::string{0x02}, /*adv*/ false);
+    EXPECT_EQ(AR::ReRegister, cli.check_ack_timeout(t + std::chrono::seconds(7)));
+    EXPECT_EQ(RegistrationState::Unregistered, cli.state());
+    EXPECT_TRUE(cli.location().empty());
+}
+
+TEST(RegistrationClient, ack_received_resets_retransmit_budget) {
+    auto store = minimal_store();
+    auto cfg = minimal_cfg(/*lt*/ 100);
+    cfg.ackTimeoutSeconds = 6;
+    cfg.maxAckRetransmits = 1;
+    RegistrationClient cli(cfg, store);
+    Harness h;
+    h.feed_register_ack(cli);
+
+    // Use up the single retransmit...
+    auto t = std::chrono::steady_clock::now();
+    (void)cli.build_update_request(2, std::string{0x02}, /*adv*/ false);
+    EXPECT_EQ(AR::RetransmitUpdate,
+              cli.check_ack_timeout(t + std::chrono::seconds(7)));
+
+    // ...but a real Update ack now lands, which must reset the budget.
+    h.feed_update_ack(cli);
+    ASSERT_EQ(RegistrationState::Registered, cli.state());
+
+    // Next lost Update gets a fresh retransmit (not an immediate escalation).
+    auto t2 = std::chrono::steady_clock::now();
+    (void)cli.build_update_request(2, std::string{0x02}, /*adv*/ false);
+    EXPECT_EQ(AR::RetransmitUpdate,
+              cli.check_ack_timeout(t2 + std::chrono::seconds(7)));
+}
+
+TEST(RegistrationClient, ack_timeout_on_lost_register_reregisters) {
+    auto store = minimal_store();
+    auto cfg = minimal_cfg();
+    cfg.ackTimeoutSeconds = 6;
+    RegistrationClient cli(cfg, store);
+
+    auto t = std::chrono::steady_clock::now();
+    (void)cli.build_register_request(1, std::string{0x01});
+    ASSERT_EQ(RegistrationState::AwaitingRegisterAck, cli.state());
+
+    EXPECT_EQ(AR::None, cli.check_ack_timeout(t + std::chrono::seconds(3)));
+    EXPECT_EQ(AR::ReRegister, cli.check_ack_timeout(t + std::chrono::seconds(7)));
+    EXPECT_EQ(RegistrationState::Unregistered, cli.state());
+}
+
+TEST(RegistrationClient, deregister_send_is_stamped_against_instant_timeout) {
+    auto store = minimal_store();
+    auto cfg = minimal_cfg();
+    cfg.ackTimeoutSeconds = 6;
+    RegistrationClient cli(cfg, store);
+    Harness h;
+    h.feed_register_ack(cli);
+
+    auto t = std::chrono::steady_clock::now();
+    (void)cli.build_deregister_request(2, std::string{0x02});
+    ASSERT_EQ(RegistrationState::AwaitingDeregisterAck, cli.state());
+
+    // Deregister stamps the send time, so it does NOT fire on the next tick.
+    EXPECT_EQ(AR::None, cli.check_ack_timeout(t + std::chrono::seconds(3)));
+    // ...but a lost Deregister ack still recovers via re-Register.
+    EXPECT_EQ(AR::ReRegister, cli.check_ack_timeout(t + std::chrono::seconds(7)));
+    EXPECT_EQ(RegistrationState::Unregistered, cli.state());
 }

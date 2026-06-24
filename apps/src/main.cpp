@@ -19,6 +19,15 @@
 #include <sstream>
 #include <unordered_map>
 
+// systemd software watchdog: speak the sd_notify "WATCHDOG=1" wire protocol
+// directly so we don't pull in libsystemd. Raw-socket glue mirrors
+// dtls_adapter.cpp, which likewise drops to ::sendto for the tinydtls path.
+#include <cstddef>      // offsetof
+#include <cstring>      // std::memset / memcpy / strlen
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>     // close
+
 #include <ace/Log_Msg.h>
 #include <ace/OS_NS_unistd.h>   // ACE_OS::sleep
 #include <ace/Time_Value.h>
@@ -977,6 +986,44 @@ struct ClientPlumbing {
 /// Skipped is the plain-DM / no-BS fallback (or a bootstrap timeout).
 enum class BootPhase { NotStarted, InProgress, Done, Skipped };
 
+/// Pet systemd's software watchdog with one `WATCHDOG=1` datagram.
+///
+/// Background: the LwM2M client once wedged *alive-but-inert* after a
+/// VPN-reconnect re-Register — the 1 Hz reactor tick stopped, the DM
+/// socket was gone, yet the process never crashed, so systemd (Type=simple)
+/// still saw it "running" and never restarted it. The device sat offline
+/// for ~13 h. A systemd watchdog catches that whole class of failure: the
+/// unit sets WatchdogSec= and the client tick calls this every second; if
+/// the reactor ever stalls the pings stop and systemd kills + restarts it.
+///
+/// We write the sd_notify wire protocol by hand (a datagram to the AF_UNIX
+/// socket named by $NOTIFY_SOCKET) rather than linking libsystemd, so the
+/// dependency surface is unchanged. systemd exports NOTIFY_SOCKET whenever
+/// WatchdogSec= is set; absent it (non-systemd, or the server role whose
+/// unit has no WatchdogSec) this is a cheap no-op. NotifyAccess defaults to
+/// "main" and all our threads share the process PID, so any thread may ping.
+static void systemd_watchdog_ping() {
+    const char* sock = std::getenv("NOTIFY_SOCKET");
+    if (sock == nullptr || (sock[0] != '/' && sock[0] != '@')) return;
+
+    struct sockaddr_un addr;
+    const std::size_t len = std::strlen(sock);
+    if (len >= sizeof(addr.sun_path)) return;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    std::memcpy(addr.sun_path, sock, len);
+    if (addr.sun_path[0] == '@') addr.sun_path[0] = '\0';  // abstract namespace
+
+    const int fd = ::socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    static const char kMsg[] = "WATCHDOG=1";
+    const socklen_t alen =
+        static_cast<socklen_t>(offsetof(struct sockaddr_un, sun_path) + len);
+    (void)::sendto(fd, kMsg, sizeof(kMsg) - 1, 0,
+                   reinterpret_cast<const struct sockaddr*>(&addr), alen);
+    ::close(fd);
+}
+
 /// Derive the device-ui connection-lifecycle token from the live FSM
 /// signals. Published to iot.conn.state each tick (only when it changes).
 /// The progression mirrors what the operator sees on the dashboard:
@@ -1493,6 +1540,12 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                                        reboot_after, bootPhase, bootDeadline,
                                        bootRetryAfter, bootBackoff, bsHost, bsPort,
                                        dtls, &ds, lastConn]() {
+        // Liveness first: petting the watchdog here ties it to the reactor
+        // actually dispatching this 1 Hz tick. If the reactor stalls (the
+        // alive-but-wedged failure this guards against), the pings stop and
+        // systemd restarts the unit. No-op unless WatchdogSec= is set.
+        systemd_watchdog_ping();
+
         auto reg = wreg.lock();
         auto dm  = wdm.lock();
         auto a   = wapp.lock();
@@ -1506,6 +1559,36 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         // connection. Without this, a single dropped packet stalls bootstrap
         // forever.
         if (dtls) dtls->check_retransmit();
+
+        // Recover a lost registration ack. The FSM leaves an Awaiting*Ack
+        // state only on a response, so a dropped datagram (e.g. an Update lost
+        // in a network blip) once stranded it forever — "registered" on-device
+        // while the cloud had already expired it. Retransmit a lost Update a
+        // few times; if that budget is spent the session is suspect, so replay
+        // the boot path (re-handshake DTLS, re-bootstrap, re-Register).
+        switch (reg->check_ack_timeout(now)) {
+            case ::lwm2m::RegistrationClient::AckRecovery::RetransmitUpdate: {
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l Update ack timed "
+                                    "out — retransmitting\n")));
+                auto payload = reg->build_update_request(
+                    next_msgid(), std::string{static_cast<char>(0x02)},
+                    /*withAdvertisedSet*/ false);
+                tx_via(*a, payload, svc);
+                break;
+            }
+            case ::lwm2m::RegistrationClient::AckRecovery::ReRegister:
+                ACE_ERROR((LM_WARNING,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l registration ack "
+                                    "timed out — restarting bootstrap to "
+                                    "re-establish the session\n")));
+                *bootPhase      = BootPhase::NotStarted;
+                *bootBackoff    = 1;
+                *bootRetryAfter = now;
+                break;
+            case ::lwm2m::RegistrationClient::AckRecovery::None:
+                break;
+        }
 
         // Publish the connection lifecycle for the device-ui (only on change).
         {

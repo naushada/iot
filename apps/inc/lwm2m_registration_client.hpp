@@ -51,6 +51,17 @@ struct ClientConfig {
     std::string    lwm2mVersion{"1.1"};      ///< "lwm2m" query — pinned by D1
     /// 30 s default per RDD REQ-REG-006 minimum margin.
     std::uint32_t  updateMarginSeconds{30};
+    /// Lost-ack recovery. The FSM leaves an Awaiting*Ack state only on a
+    /// response, so without a timeout a single dropped datagram strands it
+    /// forever — the "registered on-device, expired at the cloud" failure.
+    /// After ackTimeoutSeconds with no response we retransmit a lost Update
+    /// up to maxAckRetransmits times; if that budget is spent (or a
+    /// Register/Deregister ack is lost) the session is suspect and the client
+    /// reconnects from scratch. Keep maxAckRetransmits * ackTimeoutSeconds <
+    /// updateMarginSeconds so a transient loss is recovered before the
+    /// server's lifetime expires.
+    std::uint32_t  ackTimeoutSeconds{6};
+    std::uint32_t  maxAckRetransmits{3};
 };
 
 class RegistrationClient {
@@ -83,6 +94,22 @@ public:
     /// Update — caller then invokes build_update_request and ships it.
     /// REQ-REG-006: triggers at `now + margin >= expiresAt`.
     bool should_send_update(std::chrono::steady_clock::time_point now) const;
+
+    /// What check_ack_timeout() wants the caller to do about a lost ack.
+    enum class AckRecovery : std::uint8_t {
+        None,             ///< not awaiting, or still within the ack window
+        RetransmitUpdate, ///< lost Update ack, within budget — caller resends
+                          ///< the Update (build_update_request re-arms the FSM)
+        ReRegister,       ///< budget spent, or a lost Register/Deregister ack:
+                          ///< FSM is now Unregistered — caller re-establishes
+                          ///< the session (replay bootstrap) and re-Registers
+    };
+
+    /// Reactor-driven; call once per tick. Detects a registration request
+    /// whose response never arrived (ackTimeoutSeconds elapsed in an
+    /// Awaiting*Ack state) and drives recovery so a dropped datagram can't
+    /// strand the FSM forever. See ClientConfig::ackTimeoutSeconds.
+    AckRecovery check_ack_timeout(std::chrono::steady_clock::time_point now);
 
     /// Record that an Update was sent at `t`; resets the next-expected
     /// expiry to `t + lifetime`.
@@ -168,6 +195,10 @@ private:
     mutable std::mutex      m_endpoint_mtx;
     std::string             m_endpoint;
     std::atomic<bool>       m_re_register_pending{false};
+    /// Consecutive lost-Update-ack retransmits (check_ack_timeout); reset on
+    /// any received ack or on escalation to a full re-Register. Reactor-only
+    /// (tick + on_response), so a plain int needs no atomic.
+    std::uint32_t           m_ackRetransmits{0};
     /// L16/D5b — operator-flipped service gate. When true, the
     /// reactor tick skips auto-Register on Unregistered.
     std::atomic<bool>       m_disabled{false};

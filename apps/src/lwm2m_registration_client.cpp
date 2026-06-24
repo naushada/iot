@@ -104,6 +104,10 @@ std::string RegistrationClient::build_deregister_request(std::uint16_t messageId
     std::uint16_t prev = 0;
     emit_uri_path(ss, m_location, prev);
 
+    // Stamp the send so check_ack_timeout() measures the Deregister ack from
+    // here (register/update stamp it too); otherwise a stale timestamp would
+    // make the deadline fire on the next tick.
+    m_lastSendOrAck = std::chrono::steady_clock::now();
     m_state = RegistrationState::AwaitingDeregisterAck;
     return ss.str();
 }
@@ -127,6 +131,7 @@ void RegistrationClient::on_response(const CoAPAdapter::CoAPMessage& msg,
 
     switch (m_state) {
         case RegistrationState::AwaitingRegisterAck:
+            m_ackRetransmits = 0;            // a response arrived — reset budget
             if (ok && code == 0x41 /*2.01*/) {
                 m_location      = extractLocation();
                 m_state         = RegistrationState::Registered;
@@ -137,6 +142,7 @@ void RegistrationClient::on_response(const CoAPAdapter::CoAPMessage& msg,
             return;
 
         case RegistrationState::AwaitingUpdateAck:
+            m_ackRetransmits = 0;            // a response arrived — reset budget
             if (ok) {
                 m_state         = RegistrationState::Registered;
                 m_lastSendOrAck = std::chrono::steady_clock::now();
@@ -146,6 +152,7 @@ void RegistrationClient::on_response(const CoAPAdapter::CoAPMessage& msg,
             return;
 
         case RegistrationState::AwaitingDeregisterAck:
+            m_ackRetransmits = 0;            // a response arrived — reset budget
             if (ok) {
                 m_state    = RegistrationState::Unregistered;
                 m_location.clear();
@@ -166,6 +173,38 @@ bool RegistrationClient::should_send_update(
              + std::chrono::seconds(lifetime())
              - std::chrono::seconds(m_cfg.updateMarginSeconds);
     return now >= due;
+}
+
+RegistrationClient::AckRecovery RegistrationClient::check_ack_timeout(
+    std::chrono::steady_clock::time_point now) {
+    const bool awaiting =
+        m_state == RegistrationState::AwaitingRegisterAck   ||
+        m_state == RegistrationState::AwaitingUpdateAck     ||
+        m_state == RegistrationState::AwaitingDeregisterAck;
+    if (!awaiting) return AckRecovery::None;
+
+    const auto deadline =
+        m_lastSendOrAck + std::chrono::seconds(m_cfg.ackTimeoutSeconds);
+    if (now < deadline) return AckRecovery::None;        // still within window
+
+    // A lost Update ack with retransmits left: the DTLS session most likely
+    // just dropped a datagram, so a fresh Update is the cheap fix. Revert to
+    // Registered so the caller's build_update_request() re-arms the FSM (sets
+    // AwaitingUpdateAck + m_lastSendOrAck = now).
+    if (m_state == RegistrationState::AwaitingUpdateAck &&
+        m_ackRetransmits < m_cfg.maxAckRetransmits) {
+        ++m_ackRetransmits;
+        m_state = RegistrationState::Registered;
+        return AckRecovery::RetransmitUpdate;
+    }
+
+    // Budget spent, or a Register/Deregister ack never came: the path to the
+    // server has been down long enough that the session is suspect. Drop to
+    // Unregistered and tell the caller to reconnect + re-Register.
+    m_ackRetransmits = 0;
+    m_state    = RegistrationState::Unregistered;
+    m_location.clear();
+    return AckRecovery::ReRegister;
 }
 
 void RegistrationClient::note_update_sent(
