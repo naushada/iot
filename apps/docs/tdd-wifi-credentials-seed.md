@@ -19,11 +19,19 @@ Test cmd: `python3 -m unittest discover -s yocto/meta-iot/recipes-iot/lwm2m/file
 
 ## 1. Goal
 
-Let a build integrator drop a **gitignored** `wifi_credentials.lua` into the
-recipe's designated dir; the Yocto build reads it and bakes the credentials
-into the `wifi.networks` schema default so a freshly-flashed image associates
-to the operator's AP with no runtime step. If the file is absent, the build is
-a no-op and the committed `changeme` placeholder default stands ("don't care").
+Let a build integrator opt in with `IOT_WIFI_SEED = "1"` **and** drop a
+**gitignored** `wifi_credentials.lua` into the recipe's designated dir; the Yocto
+build reads it and bakes the credentials into the `wifi.networks` schema default
+so a freshly-flashed image associates to the operator's AP with no runtime step.
+When `IOT_WIFI_SEED` is unset/`"0"` (the default), the build is a no-op and the
+committed `changeme` placeholder default stands ("don't care").
+
+> **Why a variable and not "file present"?** An earlier version gated `SRC_URI`
+> on `os.path.exists(... wifi_credentials.lua)`. That makes `do_fetch`'s basehash
+> depend on parse-time filesystem state, which bitbake rejects as
+> non-deterministic metadata ("the basehash value changed … on reparse"). The
+> gate is now the `IOT_WIFI_SEED` variable (part of the signature), so the file's
+> presence no longer perturbs the hash; set the var in `local.conf` / kas.
 
 This keeps real WiFi credentials **out of source control** — the committed
 `wifi.lua` always carries only the placeholder.
@@ -86,9 +94,11 @@ the committed source `wifi.lua` is untouched.
 ## 5. Recipe wiring (build-time, no-op when absent)
 
 ```python
-# Conditional — keeps the file optional AND part of the recipe signature so a
-# credential change triggers a rebuild.
-SRC_URI += "${@'file://wifi_credentials.lua' if os.path.exists(d.getVar('THISDIR') + '/files/wifi_credentials.lua') else ''}"
+# Variable-gated — keeps the file optional AND part of the recipe signature so a
+# credential change triggers a rebuild, WITHOUT a parse-time os.path.exists()
+# (which makes do_fetch's basehash non-deterministic; see §1 note).
+IOT_WIFI_SEED ??= "0"
+SRC_URI += "${@'file://wifi_credentials.lua' if d.getVar('IOT_WIFI_SEED') == '1' else ''}"
 SRC_URI += " file://gen_wifi_default.py"
 
 do_install:append() {

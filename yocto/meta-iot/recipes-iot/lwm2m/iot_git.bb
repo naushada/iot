@@ -82,14 +82,21 @@ SRC_URI = "\
     file://bcm2837-selftest.service \
 "
 
-# Optional, gitignored WiFi credential seed. When an integrator drops
-# files/wifi_credentials.lua into this layer, bake it into the wifi.networks
-# schema default at build time (see do_install:append + apps/docs/
-# tdd-wifi-credentials-seed.md). Adding it to SRC_URI only when present keeps
-# it optional AND part of the recipe signature, so changing the credentials
-# triggers a rebuild. Absent => no-op, the committed "changeme" placeholder
-# stands.
-SRC_URI += "${@'file://wifi_credentials.lua' if os.path.exists(d.getVar('THISDIR') + '/files/wifi_credentials.lua') else ''}"
+# Optional, gitignored WiFi credential seed. When enabled, files/wifi_credentials.lua
+# is baked into the wifi.networks schema default at build time (see do_install:append
+# + apps/docs/tdd-wifi-credentials-seed.md).
+#
+# Gate on a VARIABLE, never os.path.exists(): a parse-time filesystem probe made
+# do_fetch's basehash non-deterministic — bitbake reparses (-Snone) and the hash
+# flips when the (gitignored) file's presence differs between passes, failing with
+# "the metadata is not deterministic". IOT_WIFI_SEED is part of the signature, so
+# toggling it (or editing the fetched file's contents) still triggers a rebuild;
+# the do_install:append below stays guarded on the file actually being fetched.
+#
+# Integrator: set IOT_WIFI_SEED = "1" (local.conf / kas) AND drop the file. Default
+# off => no-op, the committed "changeme" placeholder stands.
+IOT_WIFI_SEED ??= "0"
+SRC_URI += "${@'file://wifi_credentials.lua' if d.getVar('IOT_WIFI_SEED') == '1' else ''}"
 
 SRCREV = "${AUTOREV}"
 
