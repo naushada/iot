@@ -95,10 +95,11 @@ dev-build, PR-26; see "validation" note below):**
 - ⬜ **Full RFC 7959 Block-Wise** (>1024 B packs) — only partial in the CoAP
   adapter; deferrable while `maxBatch` keeps packs sub-block. The one piece that
   *modifies the live adapter* (regression risk) rather than adding isolated units.
-- ⬜ **On-device Mongo buffer** (PR-7, §3a) — `iot-vehicled` store-and-forward
-  buffer for offline backfill. Needs `mongod` on the RPi (ARMv8.0 → mongod 4.4)
-  and `#ifdef IOT_ENABLE_MONGO` CMake gating so the cloud build (no mongocxx)
-  still links `iot-vehicled`. Only useful once the client uploader is live.
+- ⬜ **On-device durable buffer** (PR-7) — `iot-vehicled` store-and-forward
+  buffer for offline backfill. **Preferred impl: `DurableSampleBuffer` (SQLite
+  outbox, §3a.1)** — no `mongod` recipe, no ARMv8 cap, no `#ifdef`, compiles in
+  both builds. Original mongod-based design in §3a kept for reference. Only
+  useful once the client uploader is live.
 
 > **Validation note:** every pure piece above was compiled + run in the
 > **podman dev-build** (PR-26), not merely CI-built — the full `apps/` gtest
@@ -298,6 +299,60 @@ fills in `RegistryMirror`'s currently-stubbed `persist()` by example.
 > only the one-time collection-creation differs. Confirm what mongod (and which
 > arch) actually runs on the target before PR-7. (If Mongo runs in a container
 > or off-device, 5.0+ may be available.)
+
+## 3a.1 — Lightweight alternative to PR-7: `DurableSampleBuffer` (SQLite outbox)
+
+**Recommended over on-device mongod.** The buffer only needs *durability* across
+reboot/crash and beyond RAM — not a database server. The existing in-RAM
+`telemetry::SampleBuffer` (`apps/inc/lwm2m_sample_buffer.hpp`) already nails the
+queue semantics (bounded FIFO, oldest-first `take(n)`, `requeue()` on nack,
+overflow `dropped()`); make those operations durable behind the same interface
+and skip mongod entirely. This dodges all three PR-7 blockers at once: there is
+**no `mongod` server recipe** in the layers (only the C++ *driver*); the build
+disables mongo (`PACKAGECONFIG:remove:pn-iot = "mongo"` in `entrypoint.sh`); and
+mongod ≥5.0 (time-series) needs ARMv8.2 while the Pi 3B/4 is ARMv8.0 → capped at
+4.4. SQLite is in-process, ~1 MB, no daemon/port/auth, no `#ifdef IOT_ENABLE_MONGO`
+(compiles in **both** device and cloud builds; runtime-gated off in the cloud).
+
+**Design (full spec):**
+- **Interface extraction** — add an abstract `telemetry::ISampleBuffer`
+  (`push`/`size`/`empty`/`dropped`/`take`/`requeue`/**`commit`**). `SampleBuffer`
+  implements it (+ a no-op `commit()`); `DurableSampleBuffer` is the SQLite impl.
+  `send::Uploader` holds a `std::unique_ptr<ISampleBuffer>` instead of a concrete
+  buffer, chosen at runtime — so the buffer is selectable without templates.
+- **Lease, not delete (crash-safety).** Unlike the RAM buffer (which deletes on
+  `take()`), `take()` here marks rows in-flight (`sent=1`) and keeps them; the
+  Uploader's `on_ack` calls the new `commit()` (DELETE the leased batch),
+  `on_timeout`'s `requeue` un-leases (`sent=0`). Stop-and-wait ⇒ one leased batch,
+  tracked in `m_leased`. Crash recovery = `UPDATE outbox SET sent=0 WHERE sent=1`
+  at open → at-least-once (cloud dedups by `(ep, seq)`, already in §3b's schema).
+- **Schema** — `outbox(seq INTEGER PK AUTOINCREMENT, ts INTEGER, body BLOB,
+  sent INTEGER DEFAULT 0)`, partial index on `sent=0`, `journal_mode=WAL`,
+  `synchronous=NORMAL` (flash-friendly). `body` = Sample as compact JSON
+  (`{t, v:[[name,val]…]}`); `ts = llround(timeUnix*1000)` for the TTL reaper.
+- **Op map:** `push`→INSERT (+ evict oldest over `cap`, `dropped++`); `take(n)`→
+  SELECT `sent=0` oldest n then mark `sent=1`; `requeue`→`sent=0` (seqs unchanged
+  ⇒ order restored); `commit`→DELETE leased; `reap_expired()`→`DELETE ts<now-ttl`
+  off the client's 1 Hz tick.
+- **Uploader refactor:** ctor takes the `unique_ptr`; `m_buf.x()`→`m_buf->x()`;
+  **one new line** `m_buf->commit()` in `on_ack`. With the RAM buffer `commit()`
+  is the no-op, so behavior is byte-identical to today.
+- **Runtime gate:** `make_buffer()` factory — ds key `iot.telemetry.db.path`
+  empty (or open failure) → in-RAM `SampleBuffer`; set (e.g.
+  `/var/lib/iot/telemetry.db`) → `DurableSampleBuffer`. `iot.telemetry.ttl.secs`
+  → reaper window.
+- **Build:** system `libsqlite3` (oe-core `sqlite3` → `DEPENDS`/`RDEPENDS:${PN}-lwm2m`)
+  or vendor the amalgamation under `apps/3rdparty/` like tinydtls. No mongo.
+- **Tests** — `apps/test/durable_sample_buffer_test.cpp`: mirror the four
+  `sample_buffer_test.cpp` cases verbatim against a temp-file DB (proves
+  contract parity), then add: `survives_reopen`, `crash_recovery_rearms_leased`
+  (take without commit → reopen → batch back), `commit_then_reopen_drops_delivered`,
+  `ttl_reaps_old_rows`, and the factory fallback on empty/bad path.
+
+**Net:** offline backfill with true per-point timestamps and crash-safe
+at-least-once delivery — PR-7's entire goal — in ~150 LOC + a test, with none of
+mongod's packaging, RAM, or ARM-version cost. Keep §3a (on-device mongod) only if
+a future requirement specifically needs Mongo query semantics on the device.
 
 ## 3b. Cloud telemetry pipeline — LwM2M Send → cloud MongoDB (60-day)
 
