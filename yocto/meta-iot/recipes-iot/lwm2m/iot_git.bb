@@ -40,6 +40,7 @@ SRC_URI = "\
     file://iot-can0-up.service \
     file://iot-containerd.service \
     file://iot-mqttd.service \
+    file://iot-pcap.service \
     file://10-iot-wired.network \
     file://iot-wifi-client.service \
     file://iot-httpd.service \
@@ -51,6 +52,7 @@ SRC_URI = "\
     file://net-router.env \
     file://wifi-client.env \
     file://httpd.env \
+    file://pcap.env \
     file://iot-ota-stage \
     file://iot-ota-stage.path \
     file://iot-ota-stage.service \
@@ -349,6 +351,8 @@ do_install() {
         # iot-mqttd: MQTT telemetry mirror. Enabled by default but parks until a
         # broker is configured (mqtt.broker.host), so it is harmless when unused.
         install -m 0644 ${WORKDIR}/iot-mqttd.service           ${D}${systemd_system_unitdir}/
+        # iot-pcap: on-demand tcpdump capture, OFF by default (debug aid).
+        install -m 0644 ${WORKDIR}/iot-pcap.service            ${D}${systemd_system_unitdir}/
         # networkd wired profile: RequiredForOnline=no so a cable-less eth0 does
         # not pin the system "offline" and park systemd-timesyncd on a WiFi-only
         # unit (no-RTC clock would stay stale → TLS/VPN fails). See the file header.
@@ -386,6 +390,10 @@ do_install() {
         install -m 0644 ${WORKDIR}/net-router.env     ${D}${sysconfdir}/iot/
         install -m 0644 ${WORKDIR}/wifi-client.env    ${D}${sysconfdir}/iot/
         install -m 0644 ${WORKDIR}/httpd.env          ${D}${sysconfdir}/iot/
+        # pcap.env documents iot-pcap.service overrides; claimed by ${PN}-config
+        # via its ${sysconfdir}/iot glob (the unit reads it with a leading `-`,
+        # so it is optional).
+        install -m 0644 ${WORKDIR}/pcap.env           ${D}${sysconfdir}/iot/
 
         # Zero-touch mDNS device-UI discovery: derive iot-<serial> hostname at
         # boot and advertise iot-httpd (_http._tcp:8080) via Avahi. See
@@ -431,6 +439,7 @@ PACKAGE_BEFORE_PN = "\
     ${PN}-vehicle \
     ${PN}-containerd \
     ${PN}-mqtt \
+    ${PN}-pcap \
     ${PN}-config \
     ${PN}-bcm2837-selftest \
 "
@@ -649,6 +658,19 @@ RRECOMMENDS:${PN}-mqtt = "\
     ${PN}-ds-server \
     ${PN}-config \
 "
+
+# pcap — iot-pcap.service: on-demand tcpdump ring-buffer capture of the LwM2M
+# DTLS planes, for field debugging. No iot binary of its own — just the unit;
+# tcpdump (+ libpcap, pulled transitively) is the runtime dep. Ships DISABLED
+# (SYSTEMD_AUTO_ENABLE below + an explicit `disable` in 90-iot.preset); the
+# operator starts it only while diagnosing. pcap.env ships in ${PN}-config.
+FILES:${PN}-pcap = "\
+    ${systemd_system_unitdir}/iot-pcap.service \
+"
+RDEPENDS:${PN}-pcap = "tcpdump"
+RRECOMMENDS:${PN}-pcap = "\
+    ${PN}-config \
+"
 # A real data path also wants a modem manager + tools on the image; left to the
 # integrator per WP firmware (ModemManager / libqmi / usb-modeswitch).
 RRECOMMENDS:${PN}-cellular = "\
@@ -724,6 +746,12 @@ SYSTEMD_AUTO_ENABLE:${PN}-containerd = "enable"
 # mqtt mirror enabled by default — it parks (no broker connection) until
 # mqtt.broker.host is configured, so it is a no-op until the operator sets it up.
 SYSTEMD_SERVICE:${PN}-mqtt = "iot-mqttd.service"
+# pcap capture registered but NOT auto-enabled: a continuous packet capture is a
+# debug aid, not a boot service (flash wear + captures user traffic). Operator
+# `systemctl start iot-pcap` while diagnosing. Also `disable`d in 90-iot.preset
+# so preset-all keeps it off on first boot.
+SYSTEMD_SERVICE:${PN}-pcap = "iot-pcap.service"
+SYSTEMD_AUTO_ENABLE:${PN}-pcap = "disable"
 
 # ds-server and wifi-client auto-start. wifi-client comes up on every boot
 # and reads wifi.networks from the data-store (schema default seeds a

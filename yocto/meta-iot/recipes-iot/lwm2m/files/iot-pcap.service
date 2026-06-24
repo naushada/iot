@@ -1,0 +1,52 @@
+[Unit]
+Description=IoT wire capture (tcpdump ring buffer for DTLS/CoAP debugging)
+Documentation=file:///etc/iot/pcap.env
+# DEBUG aid — ships DISABLED (SYSTEMD_AUTO_ENABLE=disable + an explicit
+# `disable` in 90-iot.preset so preset-all keeps it off). Start on demand:
+#   systemctl start iot-pcap          # capture until stopped or reboot
+#   systemctl enable --now iot-pcap   # capture across reboots (disable when done)
+# The DTLS payload on the wire is ciphertext; for the decrypted view set
+# log.level.dtls=debug via ds-cli (the dtlsReadCb/dtlsWriteCb trace).
+After=network-online.target iot-ds.service iot-lwm2m-client.service
+Wants=network-online.target
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+# Optional override file — `-` so a missing pcap.env is not an error. The
+# Environment= lines below are the defaults; pcap.env documents how to widen
+# the filter / change rotation.
+EnvironmentFile=-/etc/iot/pcap.env
+Environment=IOT_PCAP_BIN=tcpdump
+Environment=IOT_PCAP_IFACE=any
+Environment=IOT_PCAP_DIR=/var/log/iot
+Environment=IOT_PCAP_FILES=10
+Environment=IOT_PCAP_SIZE=5
+Environment="IOT_PCAP_FILTER=udp port 5683 or udp port 5684"
+# Bounded ring buffer: IOT_PCAP_FILES files of IOT_PCAP_SIZE MB each (default
+# 10x5 = 50 MB total) so a forgotten capture can't fill the RPi flash. Run via
+# sh -c so the multi-word BPF filter word-splits ($IOT_PCAP_FILTER, unquoted)
+# and $IOT_PCAP_BIN resolves on PATH (tcpdump installs to /usr/sbin).
+ExecStart=/bin/sh -c 'exec "$IOT_PCAP_BIN" -i "$IOT_PCAP_IFACE" -n -p -s 0 -U -w "$IOT_PCAP_DIR/lwm2m.pcap" -C "$IOT_PCAP_SIZE" -W "$IOT_PCAP_FILES" $IOT_PCAP_FILTER'
+
+# tcpdump on -i any needs a raw socket. Runs as root (no User=) so CAP_NET_RAW
+# is held; no -Z privilege drop (that would need NoNewPrivileges=no).
+LogsDirectory=iot
+LogsDirectoryMode=0750
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_DAC_OVERRIDE
+
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target
