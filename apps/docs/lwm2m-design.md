@@ -337,6 +337,53 @@ pings stop and systemd `SIGABRT`s + restarts the unit. **The unit's
 `WatchdogSec=` and the binary that sends `WATCHDOG=1` must ship together** — an
 older binary under a watchdog unit would be killed every 60 s.
 
+#### 5.3.3 Two liveness timers — registration lifetime vs transport keepalive
+
+A recurring design question: *"if DTLS/CoAP traffic is already flowing, can we
+skip the periodic Update and treat that traffic as the heartbeat — only sending
+an Update after an idle period?"* The answer needs two timers kept separate.
+
+**Timer 1 — registration lifetime (LwM2M layer).** The client registers with a
+`Lifetime` (Server Object `/1/0/1`). Per the LwM2M Registration interface, the
+server keeps the registration until `lifetime` elapses, and that timer is
+refreshed **only by a Register or a registration Update** (`POST /rd/{loc}`).
+A Read / Write / Observe / Notify / Send does **not** reset it — those are other
+interfaces. This is what our server implements (§5.4: `expires_at` is refreshed
+only on `POST /rd/{loc}`; on `expires_at` passed it drops the client). So
+**relying on other traffic as the heartbeat is non-compliant**: a busy client
+exchanging Reads/Notifies all minute still gets expired at `lifetime`, because
+none of it touched `expires_at` — the exact "active on-device, offline at the
+cloud" failure. There is no normative "any message refreshes the registration"
+rule (some servers track a soft last-seen, but Leshan and this server do not —
+relying on it breaks interop).
+
+Therefore the **Update is mandatory before lifetime expiry regardless of other
+activity**, and it must be sent *before* expiry with margin for RTT + the
+`check_ack_timeout` retransmit budget — hence `should_send_update()` fires at
+`lifetime − updateMarginSeconds` (e.g. 90 − 30 = 60 s), never *at* the lifetime
+(which would race the server's `expires_at`). A short lifetime (90 s) just makes
+this chatty and widens loss exposure; the lever is a **longer lifetime** with a
+proportionate margin (~`lifetime/10`), not heartbeating at the deadline.
+
+**Timer 2 — NAT / DTLS keepalive (transport layer, not LwM2M).** Keeping a UDP
+NAT binding + DTLS session warm is a transport concern where **any** packet
+counts and idle-suppression *is* valid. Today the Update doubles as this
+keepalive ("Update = NAT keepalive"), which is why the two get conflated. The
+spec-clean design **splits them**: a long registration lifetime (infrequent,
+deadline-driven Updates) plus a separate lightweight, **idle-suppressed**
+keepalive (an empty CoAP `CON` ping on the DM session, sent only after N seconds
+of no traffic) to hold the NAT binding that the now-rare Update no longer covers.
+That is where the "send only when idle" instinct belongs — the transport ping,
+not the registration Update. (LwM2M **Queue Mode** is the spec-sanctioned path
+for a mostly-idle device that wants minimal chatter; the server queues downlinks
+and the client signals availability via Updates — but it still requires Updates
+for the lifetime.)
+
+This is orthogonal to §5.3.1: cadence tuning reduces how often a lost datagram
+can strand the FSM, while `check_ack_timeout` stops a lost one from stranding it
+*permanently*. Both are wanted; neither replaces the other. The split-keepalive
+is a follow-up to the lost-ack recovery, not a prerequisite.
+
 ### 5.4 Registration Server
 
 ```
