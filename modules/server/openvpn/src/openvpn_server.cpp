@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>     // strptime/mktime — Last-Ref freshness parse
 #include <signal.h>
 #include <sstream>
 #include <string>
@@ -40,6 +41,74 @@ bool cidr_to_net_mask(const std::string& cidr,
        << ((m >> 8) & 0xFF)  << '.' << (m & 0xFF);
     mask = ss.str();
     return true;
+}
+
+std::map<std::string, VpnRoute>
+parse_status_routing_table(const std::string& status,
+                           std::time_t now, int max_age_secs) {
+    std::map<std::string, VpnRoute> out;
+
+    // Isolate the ROUTING TABLE section: from its header to the next section
+    // ("GLOBAL STATS") or EOF. CLIENT LIST is left out on purpose — its rows
+    // lead with the real address, not the virtual IP.
+    auto rt = status.find("ROUTING TABLE");
+    if (rt == std::string::npos) return out;
+    auto secEnd = status.find("GLOBAL STATS", rt);
+    if (secEnd == std::string::npos) secEnd = status.size();
+
+    const std::string suffix = "@cloud.local";
+    std::istringstream iss(status.substr(rt, secEnd - rt));
+    std::string line;
+    while (std::getline(iss, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+
+        // Data row = "Virtual Address,Common Name,Real Address,Last Ref".
+        // Split on the first 3 commas; the remainder is Last Ref (asctime, no
+        // comma). The title line ("ROUTING TABLE") has no commas → skipped; the
+        // header line's CN field is "Common Name" → fails the rpi… check below.
+        std::string field[4];
+        std::size_t start = 0;
+        int n = 0;
+        for (; n < 3; ++n) {
+            auto c = line.find(',', start);
+            if (c == std::string::npos) break;
+            field[n] = line.substr(start, c - start);
+            start = c + 1;
+        }
+        if (n < 3) continue;                  // not a 4-column data row
+        field[3] = line.substr(start);        // Last Ref
+
+        const std::string& vip = field[0];
+        const std::string& cn  = field[1];
+        if (cn.compare(0, 3, "rpi") != 0) continue;
+        auto at = cn.find(suffix);
+        if (at == std::string::npos || at <= 3) continue;
+        std::string serial = cn.substr(3, at - 3);
+        std::string wan    = field[2].substr(0, field[2].find(':'));  // strip :port
+
+        // Freshness drop. Last Ref is asctime() local time, e.g.
+        // "Wed Jun 25 02:30:00 2026". mktime() reads it in the process TZ —
+        // the SAME host/TZ OpenVPN wrote it in (cloudd polls 127.0.0.1) — so
+        // `now - ref` is a correct age regardless of zone. Unparseable → keep.
+        if (max_age_secs > 0 && !field[3].empty()) {
+            std::tm tm{};
+            if (::strptime(field[3].c_str(), "%a %b %d %H:%M:%S %Y", &tm)) {
+                tm.tm_isdst = -1;
+                std::time_t ref = ::mktime(&tm);
+                if (ref != static_cast<std::time_t>(-1) &&
+                    now - ref > max_age_secs) {
+                    continue;                 // stale route → tunnel down
+                }
+            }
+        }
+
+        if (serial.empty() || vip.empty()) continue;
+        if (serial.find_first_of(",\r\n \t") != std::string::npos) continue;
+        if (vip.find_first_of(",\r\n \t")    != std::string::npos) continue;
+        if (wan.find_first_of(",\r\n \t")    != std::string::npos) wan.clear();
+        out[serial] = VpnRoute{vip, wan};
+    }
+    return out;
 }
 
 std::string build_server_config(const OpenVpnServerConfig& c) {
@@ -80,7 +149,14 @@ std::string build_server_config(const OpenVpnServerConfig& c) {
     if (!c.crl.empty()) ss << "crl-verify " << c.crl << "\n";
     ss << "dh none\n";                       // ECDH — no dh.pem needed
     ss << "cipher " << c.cipher  << "\n";
-    ss << "keepalive 10 120\n";
+    // ping every 10s; declare a peer dead after 60s of silence. On the SERVER
+    // OpenVPN uses 2x the restart value, so a hard-powered-off client's session
+    // (no clean disconnect) is reaped in ~120s instead of ~240s. The per-device
+    // "VPN up" view in the cloud UI is made accurate much sooner (~30s) by the
+    // Last-Ref freshness filter in parse_status_routing_table(); this modest
+    // tighten just stops a dead session lingering — kept conservative so a
+    // flaky-link device isn't dropped from a healthy tunnel.
+    ss << "keepalive 10 60\n";
     ss << "persist-key\n";
     ss << "persist-tun\n";
     ss << "management 127.0.0.1 " << c.mgmt_port << "\n";
