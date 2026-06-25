@@ -2,6 +2,7 @@
 #define __lwm2m_send_uploader_hpp__
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -29,20 +30,28 @@ class Uploader {
 public:
     /// `basePath` = SenML bn (e.g. "/33000/0/"); `capacity` = buffer depth;
     /// `maxBatch` = max samples per Send (keep small so packs stay < 1 block
-    /// until Block-Wise lands).
+    /// until Block-Wise lands). Convenience ctor — uses the in-RAM SampleBuffer.
     Uploader(std::string basePath, std::size_t capacity, std::size_t maxBatch,
              int contentFormat = CF_SENML_CBOR)
-        : m_buf(capacity), m_basePath(std::move(basePath)),
+        : Uploader(std::make_unique<telemetry::SampleBuffer>(capacity),
+                   std::move(basePath), maxBatch, contentFormat) {}
+
+    /// Inject any ISampleBuffer — e.g. DurableSampleBuffer (SQLite) for
+    /// offline backfill across reboots. Chosen at runtime by make_sample_buffer.
+    Uploader(std::unique_ptr<telemetry::ISampleBuffer> buf,
+             std::string basePath, std::size_t maxBatch,
+             int contentFormat = CF_SENML_CBOR)
+        : m_buf(std::move(buf)), m_basePath(std::move(basePath)),
           m_maxBatch(maxBatch ? maxBatch : 1), m_cf(contentFormat) {}
 
     /// Producer: enqueue a reading.
-    void offer(const telemetry::Sample& s) { m_buf.push(s); }
+    void offer(const telemetry::Sample& s) { m_buf->push(s); }
 
     /// Queued samples not counting the in-flight batch.
-    std::size_t pending() const { return m_buf.size(); }
+    std::size_t pending() const { return m_buf->size(); }
     bool in_flight() const { return m_inFlight; }
     std::uint16_t in_flight_msgid() const { return m_inflightMsgId; }
-    std::size_t dropped() const { return m_buf.dropped(); }
+    std::size_t dropped() const { return m_buf->dropped(); }
 
     /// Emit the next /dp Send frame when nothing is in flight and samples are
     /// pending; marks the taken batch in flight under (msgId, token). Returns
@@ -57,7 +66,7 @@ public:
     void on_timeout();
 
 private:
-    telemetry::SampleBuffer        m_buf;
+    std::unique_ptr<telemetry::ISampleBuffer> m_buf;
     std::string                    m_basePath;
     std::size_t                    m_maxBatch;
     int                            m_cf;

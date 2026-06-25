@@ -253,6 +253,7 @@ target_link_libraries(lwm2m
                         ${MONGOCXX_LINK_LIB}
                         ssl
                         crypto
+                        sqlite3   # DurableSampleBuffer (lwm2m_durable_sample_buffer.cpp)
                         ${LUA_LINK_LIBS})
 
 option(BUILD_APPS_TESTS "Build apps-level gtest suite (lwm2m_test)" OFF)

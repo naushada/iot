@@ -23,25 +23,44 @@
 
 namespace lwm2m { namespace telemetry {
 
-class SampleBuffer {
+/// The buffer surface the Uploader drives, so the in-RAM and durable (SQLite)
+/// backends are interchangeable at runtime (chosen by ds key, see
+/// make_sample_buffer). `take()` LEASES a batch (the durable backend keeps the
+/// rows so a crash mid-flight doesn't lose them); the Uploader then calls
+/// `commit()` on the 2.04 ACK (drop the leased batch) or `requeue()` on
+/// timeout (un-lease, retried oldest-first). The in-RAM SampleBuffer deletes on
+/// take(), so its commit() is a no-op — behaviour is identical to before.
+struct ISampleBuffer {
+    virtual ~ISampleBuffer() = default;
+    virtual void                push(const Sample& s)              = 0;
+    virtual std::size_t         size() const                       = 0;
+    virtual bool                empty() const                      = 0;
+    virtual std::size_t         dropped() const                    = 0;
+    virtual std::vector<Sample> take(std::size_t n)                = 0;
+    virtual void                requeue(std::vector<Sample>&& b)   = 0;
+    /// ACK'd → the last taken batch is delivered; free it. No-op for in-RAM.
+    virtual void                commit()                           = 0;
+};
+
+class SampleBuffer : public ISampleBuffer {
 public:
     /// `capacity` samples max (clamped to >= 1).
     explicit SampleBuffer(std::size_t capacity)
         : m_cap(capacity ? capacity : 1) {}
 
     /// Append a reading; evicts the oldest when full (counts it in dropped()).
-    void push(const Sample& s) {
+    void push(const Sample& s) override {
         if (m_q.size() >= m_cap) { m_q.pop_front(); ++m_dropped; }
         m_q.push_back(s);
     }
 
-    std::size_t size() const { return m_q.size(); }
-    bool        empty() const { return m_q.empty(); }
+    std::size_t size() const override { return m_q.size(); }
+    bool        empty() const override { return m_q.empty(); }
     /// Total samples evicted by overflow (here + requeue), for telemetry.
-    std::size_t dropped() const { return m_dropped; }
+    std::size_t dropped() const override { return m_dropped; }
 
     /// Remove and return up to `n` oldest samples — the batch to Send.
-    std::vector<Sample> take(std::size_t n) {
+    std::vector<Sample> take(std::size_t n) override {
         std::vector<Sample> out;
         const std::size_t k = n < m_q.size() ? n : m_q.size();
         out.reserve(k);
@@ -56,13 +75,16 @@ public:
     /// it retries first, preserving order. Honours capacity: if the buffer
     /// filled while the batch was in flight, the oldest overflow is dropped
     /// (newest-wins), counted in dropped().
-    void requeue(std::vector<Sample>&& batch) {
+    void requeue(std::vector<Sample>&& batch) override {
         for (auto it = batch.rbegin(); it != batch.rend(); ++it) {
             if (m_q.size() >= m_cap) { ++m_dropped; continue; }
             m_q.push_front(std::move(*it));
         }
         batch.clear();
     }
+
+    /// In-RAM take() already removed the batch — nothing to free.
+    void commit() override {}
 
 private:
     std::deque<Sample> m_q;
