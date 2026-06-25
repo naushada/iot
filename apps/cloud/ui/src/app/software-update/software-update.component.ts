@@ -103,8 +103,8 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
             <clr-dg-cell><code>{{ s.serial }}</code></clr-dg-cell>
             <clr-dg-cell>{{ s.pkg || '—' }}</clr-dg-cell>
             <clr-dg-cell>
-              <app-status-badge [label]="stateLabel(s.state)"
-                [state]="s.state===0 ? 'connected' : 'idle'"></app-status-badge>
+              <app-status-badge [label]="phaseLabel(s)"
+                [state]="phaseState(s)"></app-status-badge>
             </clr-dg-cell>
             <clr-dg-cell>
               <div class="pbar"><span [style.width.%]="progressPct(s)"
@@ -218,6 +218,20 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   stateLabel(s: number): string {
     return ['idle', 'downloading', 'downloaded', 'updating'][s] || 'unknown';
   }
+  // Lifecycle phase for the State column. A terminal `result` wins over the raw
+  // Object-5 `state`, which can stay at 'updating'/3 after the device reports
+  // success then restarts mid-report — so a finished job never shows 'updating'
+  // next to a 'success' result.
+  phaseLabel(s: UpdStatus): string {
+    if (s.result === 1) return 'done';
+    if (s.result >= 5) return 'failed';
+    return this.stateLabel(s.state);
+  }
+  phaseState(s: UpdStatus): string {
+    if (s.result === 1) return 'connected';
+    if (s.result >= 5) return 'exited';
+    return s.state >= 1 ? 'idle' : 'connected';   // in-flight
+  }
   resultLabel(r: number): string {
     if (r === 0) return '—';
     if (r === 1) return 'success';
@@ -250,7 +264,18 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     this.http.dbSet([{ key: 'cloud.update.request', value: JSON.stringify(req) }]).subscribe({
       next: (r) => {
         this.pushing = false;
-        if (r.ok) { this.toast.success('Update queued for ' + req.serials.length + ' device(s)'); }
+        if (r.ok) {
+          this.toast.success('Update queued for ' + req.serials.length + ' device(s)');
+          // Optimistic: show the new in-flight jobs immediately (mirrors what
+          // the cloud writes to cloud.update.status) instead of leaving the
+          // previous campaign's stale rows on screen until the next long-poll
+          // wake. observe('cloud.update.status') then keeps them live as the
+          // device reports download/install progress.
+          const ts = Date.now();
+          this.status = req.serials.map(serial => ({
+            serial, state: 1, result: 0, version: req.version, pkg: req.pkg, ts,
+          }));
+        }
         else { this.toast.error(r.err || 'Update failed'); }
       },
       error: () => { this.pushing = false; this.toast.error('Update failed'); }
