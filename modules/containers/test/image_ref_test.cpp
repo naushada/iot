@@ -96,3 +96,24 @@ TEST(ImageRef, TrailingAtIsRejected) {
     ImageRef r;
     EXPECT_FALSE(parse_image_ref("nginx@", r));
 }
+
+TEST(ImageRef, PastedDockerPullCommandIsForgiven) {
+    ImageRef r;
+    ASSERT_TRUE(parse_image_ref("docker pull arm64v8/hello-world", r));
+    EXPECT_EQ(r.registry, "registry-1.docker.io");
+    EXPECT_EQ(r.repository, "arm64v8/hello-world");
+    EXPECT_EQ(r.tag, "latest");
+}
+
+TEST(ImageRef, PastedPodmanPullWithTag) {
+    ImageRef r;
+    ASSERT_TRUE(parse_image_ref("podman pull nginx:1.25", r));
+    EXPECT_EQ(r.repository, "library/nginx");
+    EXPECT_EQ(r.tag, "1.25");
+}
+
+TEST(ImageRef, SurroundingWhitespaceTrimmed) {
+    ImageRef r;
+    ASSERT_TRUE(parse_image_ref("  nginx  ", r));
+    EXPECT_EQ(r.repository, "library/nginx");
+}

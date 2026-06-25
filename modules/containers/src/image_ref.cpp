@@ -18,15 +18,25 @@ bool looks_like_registry(const std::string& s) {
 } // namespace
 
 bool parse_image_ref(const std::string& ref, ImageRef& out) {
-    if (ref.empty()) return false;
-
     out = ImageRef{};
+
+    // 0. Forgive a pasted command. An image ref never contains whitespace, so
+    //    if the input has any — e.g. "docker pull nginx", "podman pull nginx" —
+    //    take the LAST whitespace-separated token as the ref (and trim). A bare
+    //    "nginx" is unchanged.
+    std::string s = ref;
+    auto b = s.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) return false;       // all-whitespace / empty
+    s = s.substr(b, s.find_last_not_of(" \t\r\n") - b + 1);
+    auto ws = s.find_last_of(" \t");
+    if (ws != std::string::npos) s = s.substr(ws + 1);
+    if (s.empty()) return false;
 
     // 1. Peel an optional registry off the front (component before the first
     //    '/', if it looks like a host). This must run before the tag split so a
     //    registry port (host:5000/...) is not mistaken for a tag.
     std::string registry;
-    std::string name = ref;             // repository[:tag][@digest]
+    std::string name = s;               // repository[:tag][@digest]
     auto slash = name.find('/');
     if (slash != std::string::npos && looks_like_registry(name.substr(0, slash))) {
         registry = name.substr(0, slash);
