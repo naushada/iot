@@ -7,9 +7,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get -o Acquire::Check-Date=false update && \
     apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config autoconf \
-    libssl-dev zlib1g-dev libreadline-dev \
+    libssl-dev zlib1g-dev libreadline-dev libsqlite3-dev \
     liblua5.3-dev lua5.3 wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+# libsqlite3-dev: the lwm2m binary links DurableSampleBuffer (always compiled
+# in; the cloud just never enables it via iot.telemetry.db.path).
 
 # ACE/TAO 7.0.0 (~60s)
 RUN wget -q https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_0_0/ACE+TAO-7.0.0.tar.gz \
@@ -118,7 +120,7 @@ FROM docker.io/library/ubuntu:22.04 AS runtime
 
 RUN apt-get -o Acquire::Check-Date=false update && \
     apt-get install -y --no-install-recommends \
-    libssl3 openssl zlib1g libreadline8 liblua5.3-0 iptables nftables openvpn ca-certificates \
+    libssl3 openssl zlib1g libreadline8 liblua5.3-0 libsqlite3-0 iptables nftables openvpn ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # PSK provisioning (task P): shared cloud service account/group. The cloud

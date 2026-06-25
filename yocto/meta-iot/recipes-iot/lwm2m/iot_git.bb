@@ -129,7 +129,11 @@ DEPENDS = "\
     nlohmann-json \
     nodejs-native \
     mosquitto \
+    sqlite3 \
 "
+# sqlite3: DurableSampleBuffer — the on-device telemetry store-and-forward
+# outbox (lwm2m_durable_sample_buffer.cpp). Not behind IOT_ENABLE_MONGO; the
+# lwm2m binary always links it (runtime-gated by iot.telemetry.db.path).
 
 # ── PACKAGECONFIG ──────────────────────────────────────────────────
 # mongo:          Enables mongocxx/bsoncxx link (~15 MB in final image).
@@ -502,6 +506,7 @@ RDEPENDS:${PN}-lwm2m = "\
     readline \
     openssl \
     tinydtls-staticdev \
+    sqlite3 \
     ${@bb.utils.contains('PACKAGECONFIG', 'mongo', \
         'mongo-cxx-driver-bsoncxx mongo-cxx-driver mongo-c-driver-bson mongo-c-driver', \
         '', d)} \

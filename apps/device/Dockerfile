@@ -47,7 +47,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get -o Acquire::Check-Date=false update && \
     apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config autoconf \
-    libssl-dev zlib1g-dev libreadline-dev \
+    libssl-dev zlib1g-dev libreadline-dev libsqlite3-dev \
     liblua5.3-dev lua5.3 wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -127,7 +127,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # (net-router), wpa_supplicant + udhcpc (wifi-client).
 RUN apt-get -o Acquire::Check-Date=false update && \
     apt-get install -y --no-install-recommends \
-    libssl3 zlib1g libreadline8 liblua5.3-0 ca-certificates \
+    libssl3 zlib1g libreadline8 liblua5.3-0 libsqlite3-0 ca-certificates \
     openvpn nftables iproute2 wpasupplicant udhcpc wireless-tools \
     && rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/*
 

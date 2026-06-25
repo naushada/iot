@@ -64,6 +64,7 @@ file(GLOB SOURCES "*.cpp"
                     "../src/lwm2m_send.cpp"
                     "../src/lwm2m_send_server.cpp"
                     "../src/lwm2m_send_uploader.cpp"
+                    "../src/lwm2m_durable_sample_buffer.cpp"
                     "../src/lwm2m_object_3_device.cpp"
                     "../src/lwm2m_object_sensors.cpp"
                     "../src/lwm2m_object_stubs.cpp"
@@ -85,6 +86,7 @@ target_link_libraries(lwm2m_test
     z
     ssl
     crypto
+    sqlite3
     ${LUA_LINK_LIBS})
 
 add_test(NAME lwm2m_gtests COMMAND lwm2m_test)
