@@ -393,6 +393,16 @@ class CoAPAdapter {
             m_dmRspHandler = std::move(h);
         }
 
+        /// Client-side hook for the 2.04 ACK to one of OUR confirmable Sends
+        /// (POST /dp). Fired for every inbound Acknowledgement alongside the
+        /// RegistrationClient FSM; the callback correlates by message-id
+        /// (CoAPMessage.coapheader.msgid) against the in-flight Send and ignores
+        /// non-matching acks. Send and registration Update are serialized by the
+        /// client tick so their 2.04s never overlap. nullptr → no-op.
+        void sendAckHandler(std::function<void(const CoAPMessage&)> h) {
+            m_sendAckCb = std::move(h);
+        }
+
         std::vector<std::string> handleLwM2MObjects(const CoAPAdapter::CoAPMessage& message, std::string uri, std::uint32_t oid,
                                                     std::uint32_t oiid, std::uint32_t rid, std::uint32_t riid);
 
@@ -405,6 +415,7 @@ class CoAPAdapter {
         std::shared_ptr<lwm2m::bootstrap::Client>     m_bsClient;
         std::shared_ptr<lwm2m::RegistrationClient>    m_regClient;
         std::function<void(const CoAPMessage&)>       m_dmRspHandler;
+        std::function<void(const CoAPMessage&)>       m_sendAckCb;
 
         std::unordered_map<std::uint32_t, std::string> OptionNumber;
         std::unordered_map<std::uint32_t, std::string> ContentFormat;

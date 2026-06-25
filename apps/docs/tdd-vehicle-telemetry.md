@@ -135,8 +135,16 @@ CAN/vehicle needed to validate** — synthesize samples with `ds-cli`.
     Send (after #1), and confirm a new row lands in Mongo `telemetry` with the
     sample's real `ts` (not just arrival time).
 
-- ⬜ **#1 — client session I/O glue.** Instantiate a `send::Uploader` in the
-  registered DM client (one per registered server, base path `"/33000/0/"`).
+- 🟡 **#1 — client session I/O glue. WIRED (gated off; HW-validation pending).**
+  `apps/src/main.cpp` builds a `send::Uploader` over `make_sample_buffer(
+  iot.telemetry.db.path, …)` and, in the 1 Hz client tick, samples the numeric
+  `vehicle.*` signals → `offer`, transmits one CON `/dp` batch when idle, times
+  out + requeues a lost ack, and routes the 2.04 back via the adapter's new
+  `sendAckHandler` (matched by msg-id). Send vs registration Update are
+  serialized so their 2.04s never overlap. OFF unless `iot.telemetry.send.enable`
+  (schema keys `iot.telemetry.*`); the Uploader/buffer/Send pipeline API was
+  compiled + run end-to-end in the podman dev-build. Still needs the acceptance
+  run below on real HW (and #2 server-persist) to close.
   - **Feed:** on the client tick, read `vehicle.*` from ds → build a
     `telemetry::Sample{timeUnix=now, values=[{"10",speed},{"11",rpm},…]}` →
     `uploader.offer(s)` (only while registered + link up — direct DTLS, never

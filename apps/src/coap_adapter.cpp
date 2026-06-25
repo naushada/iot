@@ -1083,6 +1083,10 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
         if (isAmIClient && m_regClient) {
             m_regClient->on_response(coapmessage, *this);
         }
+        // Also offer the ack to the telemetry Send uploader (matches by msg-id;
+        // ignores non-Send acks). Safe alongside the reg FSM — the client tick
+        // serializes Send vs registration Update so only one is ever in flight.
+        if (isAmIClient && m_sendAckCb) m_sendAckCb(coapmessage);
         return 0;
     }
 
@@ -1317,6 +1321,10 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
         if (isAmIClient && m_regClient) {
             m_regClient->on_response(coapmessage, *this);
         }
+        // Also offer the ack to the telemetry Send uploader (matches by msg-id;
+        // ignores non-Send acks). Safe alongside the reg FSM — the client tick
+        // serializes Send vs registration Update so only one is ever in flight.
+        if (isAmIClient && m_sendAckCb) m_sendAckCb(coapmessage);
         return 0;
     }
 
