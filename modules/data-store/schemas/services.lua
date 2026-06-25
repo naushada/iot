@@ -73,6 +73,15 @@ local keys = {
     ["services.mqtt.state"]                = {
         access  = "Viewer", type = "string",  default = "stopped" },
 
+    -- container (iot-containerd, crun-backed single-container shim). Systemd-
+    -- enabled, idle until a pull/run. The daemon self-reports .state on startup
+    -- + L22 telemetry; without these keys ds-server rejected the writes and the
+    -- daemon never appeared on the Services page.
+    ["services.container.enable"]          = {
+        access  = "Admin", type = "boolean", default = true, write_acl = {"uid:0"} },
+    ["services.container.state"]           = {
+        access  = "Viewer", type = "string",  default = "stopped" },
+
     -- wifi-client — the WAN uplink, so NO dependency on net.router (routing
     -- layers on top of the uplink; the inverse dep deadlocked WiFi whenever
     -- net-router was down). Matches the (lack of) DepWatch in supervisor.cpp.
@@ -130,6 +139,7 @@ local stats_services = {
   "services.wifi.client",
   "services.vehicle",
   "services.mqtt",
+  "services.container",
   "services.cloud.iot.cloudd",
   "services.cloud.iot.httpd",
   "services.cloud.openvpn.server",

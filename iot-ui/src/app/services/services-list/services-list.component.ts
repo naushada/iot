@@ -73,6 +73,7 @@ export class ServicesListComponent implements OnInit, OnDestroy {
     { key: 'wifi_client',    name: 'Wi-Fi Client',   label: 'services.wifi.client',    info: {}, restarting: false, msg: '' },
     { key: 'vehicle',        name: 'Vehicle (OBD-II)', label: 'services.vehicle',     info: {}, restarting: false, msg: '' },
     { key: 'mqtt',           name: 'MQTT Mirror',    label: 'services.mqtt',           info: {}, restarting: false, msg: '' },
+    { key: 'container',      name: 'Containers',     label: 'services.container',      info: {}, restarting: false, msg: '' },
   ];
   private sub = new Subscription();
 
