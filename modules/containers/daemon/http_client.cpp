@@ -85,38 +85,61 @@ bool http_get(const std::string&              url,
 
     const std::string hdr_path = make_temp("hdr");
     const std::string err_path = make_temp("err");
-    if (hdr_path.empty() || err_path.empty()) {
+    const std::string cfg_path = make_temp("cfg");
+    if (hdr_path.empty() || err_path.empty() || cfg_path.empty()) {
         err = "could not create temp files";
         if (!hdr_path.empty()) ::unlink(hdr_path.c_str());
         if (!err_path.empty()) ::unlink(err_path.c_str());
+        if (!cfg_path.empty()) ::unlink(cfg_path.c_str());
         return false;
     }
 
-    // Build argv. No -f: a 401/404 must still return so the caller can react
-    // (bearer auth / not-found) rather than curl exiting with an error.
-    std::vector<std::string> args = {
-        curl_path(), "-sS", "--connect-timeout", "20",
-        "-m", std::to_string(timeout_sec),
-        "-D", hdr_path,
-        "-o", body_path.empty() ? std::string("/dev/null") : body_path,
+    // Pass EVERY option via a curl config file (-K), not argv tokens. ACE's
+    // command_line(argv[]) round-trips the argv through a single space-joined
+    // buffer and re-splits it on whitespace, which shattered the multi-word
+    // header values ("Accept: …", "Authorization: Bearer …") — curl then saw a
+    // bare -H ("option -H: requires parameter"). A config file keeps those
+    // values quoted and off the argv entirely; the only argv tokens are the
+    // space-free `curl -K <cfg>`. (mkstemp gives 0600, so the bearer token in
+    // the file is not world-readable; we unlink it right after the wait.)
+    // No -f: a 401/404 must still return so the caller can react (bearer auth /
+    // not-found) rather than curl exiting with an error.
+    auto q = [](const std::string& s) {            // curl-config quoted value
+        std::string out = "\"";
+        for (char c : s) { if (c == '\\' || c == '"') out.push_back('\\'); out.push_back(c); }
+        out.push_back('"');
+        return out;
     };
-    if (follow_redirects) args.push_back("-L");
-    for (const auto& a : accept) { args.push_back("-H"); args.push_back("Accept: " + a); }
-    if (!bearer.empty()) { args.push_back("-H"); args.push_back("Authorization: Bearer " + bearer); }
-    if (!basic.empty())  { args.push_back("-u"); args.push_back(basic); }
-    args.push_back(url);
+    {
+        std::ostringstream cfg;
+        cfg << "silent\nshow-error\n"
+            << "connect-timeout = 20\n"
+            << "max-time = " << timeout_sec << "\n"
+            << "dump-header = " << q(hdr_path) << "\n"
+            << "output = " << q(body_path.empty() ? std::string("/dev/null") : body_path) << "\n";
+        if (follow_redirects) cfg << "location\n";
+        for (const auto& a : accept) cfg << "header = " << q("Accept: " + a) << "\n";
+        if (!bearer.empty()) cfg << "header = " << q("Authorization: Bearer " + bearer) << "\n";
+        if (!basic.empty())  cfg << "user = " << q(basic) << "\n";
+        cfg << "url = " << q(url) << "\n";
+        const std::string text = cfg.str();
+        FILE* cf = std::fopen(cfg_path.c_str(), "wb");
+        if (!cf || std::fwrite(text.data(), 1, text.size(), cf) != text.size()) {
+            if (cf) std::fclose(cf);
+            err = "could not write curl config";
+            ::unlink(hdr_path.c_str()); ::unlink(err_path.c_str()); ::unlink(cfg_path.c_str());
+            return false;
+        }
+        std::fclose(cf);
+    }
 
-    // Mutable char* vector for the argv-array command_line() overload (avoids
-    // the const-qualification mismatch with const char**). std::string::data()
-    // is non-const since C++17.
+    std::vector<std::string> args = { curl_path(), "-K", cfg_path };
     std::vector<char*> argv;
     argv.reserve(args.size() + 1);
     for (auto& s : args) argv.push_back(s.data());
     argv.push_back(nullptr);
 
     ACE_Process_Options opts;
-    // argv-array form: no shell tokenization, so header values with spaces stay
-    // intact (vs the format-string command_line()).
     opts.command_line(argv.data());
 
     // Redirect the child's std handles: stdin/stdout → /dev/null (curl writes
@@ -135,6 +158,7 @@ bool http_get(const std::string&              url,
         err = "failed to spawn curl";
         ::unlink(hdr_path.c_str());
         ::unlink(err_path.c_str());
+        ::unlink(cfg_path.c_str());
         return false;
     }
 
@@ -147,6 +171,7 @@ bool http_get(const std::string&              url,
     const std::string curl_err = read_file(err_path);
     ::unlink(hdr_path.c_str());
     ::unlink(err_path.c_str());
+    ::unlink(cfg_path.c_str());   // holds the bearer token — remove promptly
 
     // Transport failure: curl exited non-zero AND we never saw an HTTP status.
     if (exit_code != 0 && resp.status == 0) {
