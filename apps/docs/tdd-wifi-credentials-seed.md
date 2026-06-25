@@ -19,19 +19,23 @@ Test cmd: `python3 -m unittest discover -s yocto/meta-iot/recipes-iot/lwm2m/file
 
 ## 1. Goal
 
-Let a build integrator opt in with `IOT_WIFI_SEED = "1"` **and** drop a
-**gitignored** `wifi_credentials.lua` into the recipe's designated dir; the Yocto
-build reads it and bakes the credentials into the `wifi.networks` schema default
-so a freshly-flashed image associates to the operator's AP with no runtime step.
-When `IOT_WIFI_SEED` is unset/`"0"` (the default), the build is a no-op and the
+Let a build integrator just **drop a gitignored `wifi_credentials.lua`** into the
+recipe's designated dir; the Yocto build reads it and bakes the credentials into
+the `wifi.networks` schema default so a freshly-flashed image associates to the
+operator's AP with no runtime step. With no file the build is a no-op and the
 committed `changeme` placeholder default stands ("don't care").
 
-> **Why a variable and not "file present"?** An earlier version gated `SRC_URI`
-> on `os.path.exists(... wifi_credentials.lua)`. That makes `do_fetch`'s basehash
-> depend on parse-time filesystem state, which bitbake rejects as
-> non-deterministic metadata ("the basehash value changed … on reparse"). The
-> gate is now the `IOT_WIFI_SEED` variable (part of the signature), so the file's
-> presence no longer perturbs the hash; set the var in `local.conf` / kas.
+> **How the "just drop the file" trigger works (and why it's not `os.path.exists`).**
+> The recipe gates `SRC_URI` on the **`IOT_WIFI_SEED`** variable, not on the file's
+> presence — an `os.path.exists(... wifi_credentials.lua)` inside `SRC_URI` makes
+> `do_fetch`'s basehash depend on parse-time filesystem state, which bitbake
+> rejects as non-deterministic metadata ("the basehash value changed … on
+> reparse"). To keep the drop-the-file UX, the **build wrapper `yocto/entrypoint.sh`
+> detects the file once (before bitbake parses) and writes `IOT_WIFI_SEED = "1"`
+> into `local.conf`** — a fixed var for the whole build, so the recipe metadata
+> stays reproducible. **If you build WITHOUT `entrypoint.sh`** (raw bitbake / kas /
+> a different CI), set `IOT_WIFI_SEED = "1"` yourself in `local.conf` — dropping
+> the file alone won't seed it there.
 
 This keeps real WiFi credentials **out of source control** — the committed
 `wifi.lua` always carries only the placeholder.

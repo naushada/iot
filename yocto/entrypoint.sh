@@ -97,6 +97,23 @@ INHERIT += "rm_work"
 # below at run time (RAM-aware) — see the "resource guards" block.
 YOCONF
 
+# ── WiFi credential seed auto-enable ───────────────────────────────
+# If the integrator dropped meta-iot/recipes-iot/lwm2m/files/wifi_credentials.lua,
+# turn on the build-time seed (bakes the SSID/PSK into the wifi.networks schema
+# default — apps/docs/tdd-wifi-credentials-seed.md). The presence check lives
+# HERE, in the build wrapper, NOT in the recipe: iot_git.bb must gate SRC_URI on
+# the IOT_WIFI_SEED *variable*, because an os.path.exists() in SRC_URI makes
+# do_fetch's basehash non-deterministic (bitbake reparse error). Detecting the
+# file once here and writing a fixed local.conf var keeps "just drop the file"
+# working AND the recipe metadata reproducible.
+WIFI_SEED_FILE=/home/builduser/yocto/meta-iot/recipes-iot/lwm2m/files/wifi_credentials.lua
+if [ -f "$WIFI_SEED_FILE" ]; then
+    echo "→ wifi_credentials.lua present → IOT_WIFI_SEED=1 (seeding wifi.networks default)"
+    echo 'IOT_WIFI_SEED = "1"' >> conf/local.conf
+else
+    echo "→ no wifi_credentials.lua → IOT_WIFI_SEED stays 0 (placeholder default)"
+fi
+
 # ── Build-host resource guards (avoid OOM-killed compiles) ─────────
 # Cross-gcc and nodejs-native compiles peak around ~2 GB per job, and the
 # default podman VM has no swap, so two heavy recipes building at once OOM-kill
