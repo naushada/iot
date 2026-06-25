@@ -38,6 +38,7 @@
 #include <chrono>
 #include <cstdint>
 #include <csignal>
+#include <ctime>      // std::time — VPN routing-table freshness
 #include <fstream>
 #include <map>
 #include <set>
@@ -334,44 +335,15 @@ std::map<std::string, VpnClientNet> poll_vpn_client_ips(std::uint16_t mgmt_port)
     }
     stream.close();
 
-    // Scan only within the ROUTING TABLE (skip CLIENT LIST, whose lines lead
-    // with the real address, not the virtual IP).
-    const std::string suffix = "@cloud.local";
-    std::size_t rt = resp.find("ROUTING TABLE");
-    if (rt == std::string::npos) return out;
-    std::size_t end = resp.find("GLOBAL STATS", rt);
-    if (end == std::string::npos) end = resp.size();
-    for (std::size_t pos = rt; (pos = resp.find("rpi", pos)) != std::string::npos
-                               && pos < end; ) {
-        std::size_t at = resp.find(suffix, pos);
-        if (at == std::string::npos || at >= end) break;
-        std::string serial = resp.substr(pos + 3, at - (pos + 3));
-        // Virtual IP = the first comma-field of this client's line.
-        std::size_t ls = resp.rfind('\n', pos);
-        std::size_t vstart = (ls == std::string::npos) ? 0 : ls + 1;
-        std::size_t comma = resp.find(',', vstart);
-        std::string vip = (comma != std::string::npos && comma < pos)
-                              ? resp.substr(vstart, comma - vstart) : std::string();
-        // Real (public/ISP) address = the field AFTER the CN: `…,CN,real-addr,…`.
-        // It is ip:port; keep just the ip.
-        std::string wan;
-        {
-            std::size_t c1 = resp.find(',', at + suffix.size());  // comma after CN
-            if (c1 != std::string::npos && c1 < end) {
-                std::size_t c2 = resp.find(',', c1 + 1);
-                std::string ra = (c2 != std::string::npos && c2 < end)
-                                     ? resp.substr(c1 + 1, c2 - (c1 + 1))
-                                     : std::string();
-                wan = ra.substr(0, ra.find(':'));   // strip :port
-                if (wan.find_first_of(",\n\r ") != std::string::npos) wan.clear();
-            }
-        }
-        pos = at + suffix.size();
-        if (!serial.empty() && !vip.empty() &&
-            serial.find_first_of(",\n\r ") == std::string::npos &&
-            vip.find_first_of(",\n\r ") == std::string::npos) {
-            out[serial] = VpnClientNet{vip, wan};
-        }
+    // Delegate the ROUTING TABLE parse to the pure, unit-tested helper, which
+    // also DROPS stale routes (Last Ref older than 30s = ~3x the keepalive
+    // ping): a hard-powered-off device's route lingers in OpenVPN's table until
+    // the keepalive reaps it (~120s), but its Last Ref freezes immediately, so
+    // this makes the cloud's per-device "VPN up" view (dev_tun_ip → Launch UI +
+    // DNAT) track reality in ~30s instead of minutes.
+    for (const auto& [serial, r] :
+         server::openvpn::parse_status_routing_table(resp, std::time(nullptr), 30)) {
+        out[serial] = VpnClientNet{r.vip, r.wan_ip};
     }
     return out;
 }

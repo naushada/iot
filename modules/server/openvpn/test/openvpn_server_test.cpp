@@ -2,14 +2,44 @@
 
 #include <gtest/gtest.h>
 
+#include <ctime>
+#include <string>
+
 #include "openvpn_server.hpp"
 
 using server::openvpn::OpenVpnServer;
 using server::openvpn::OpenVpnServerConfig;
 using server::openvpn::build_server_config;
 using server::openvpn::cidr_to_net_mask;
+using server::openvpn::parse_status_routing_table;
 
 namespace {
+
+// asctime("%a %b %d %H:%M:%S %Y") → epoch, via the same mktime() the parser
+// uses, so the freshness tests are timezone-independent (both interpret the
+// timestamp in the host's local zone).
+std::time_t epoch_of(const char* ts) {
+    std::tm tm{};
+    ::strptime(ts, "%a %b %d %H:%M:%S %Y", &tm);
+    tm.tm_isdst = -1;
+    return ::mktime(&tm);
+}
+
+// Wrap routing-table rows in a realistic v1 `status` dump (incl. a CLIENT LIST
+// section that must NOT be parsed, and a GLOBAL STATS terminator).
+std::string mk_status(const std::string& routing_rows) {
+    return
+        "OpenVPN CLIENT LIST\n"
+        "Updated,Wed Jun 25 02:30:10 2026\n"
+        "Common Name,Real Address,Bytes Received,Bytes Sent,Connected Since\n"
+        "rpiNOPE@cloud.local,9.9.9.9:1111,1,2,Wed Jun 25 02:00:00 2026\n"
+        "ROUTING TABLE\n"
+        "Virtual Address,Common Name,Real Address,Last Ref\n"
+        + routing_rows +
+        "GLOBAL STATS\n"
+        "Max bcast/mcast queue length,0\n"
+        "END\n";
+}
 
 TEST(CidrToNetMask, slash24) {
     std::string net, mask;
@@ -132,6 +162,55 @@ TEST(Reconfigure, reportsChangeWhenProtoFlips) {
     EXPECT_TRUE(srv.reconfigure(flipped));
     // Idempotent: re-applying the now-current config is a no-op.
     EXPECT_FALSE(srv.reconfigure(flipped));
+}
+
+// ───────────────── parse_status_routing_table ──────────────────────
+
+TEST(RoutingTable, parsesFreshRoutesAndIgnoresClientList) {
+    const char* T = "Wed Jun 25 02:30:00 2026";
+    std::string rows =
+        std::string("10.9.0.3,rpi6556e041@cloud.local,103.248.74.149:54321,") + T + "\n"
+        "10.9.0.5,rpiABCD@cloud.local,8.8.8.8:5000," + T + "\n";
+    auto m = parse_status_routing_table(mk_status(rows), epoch_of(T) + 5, 30);
+    ASSERT_EQ(2u, m.size());
+    EXPECT_EQ("10.9.0.3", m["6556e041"].vip);
+    EXPECT_EQ("103.248.74.149", m["6556e041"].wan_ip);   // :port stripped
+    EXPECT_EQ("10.9.0.5", m["ABCD"].vip);
+    EXPECT_EQ(0u, m.count("NOPE"));                       // CLIENT LIST not parsed
+}
+
+TEST(RoutingTable, dropsStaleRouteKeepsFresh) {
+    const char* FRESH = "Wed Jun 25 02:30:00 2026";
+    const char* STALE = "Wed Jun 25 02:25:00 2026";      // 5 min earlier
+    std::string rows =
+        std::string("10.9.0.3,rpiFRESH@cloud.local,1.1.1.1:1,") + FRESH + "\n"
+        "10.9.0.9,rpiSTALE@cloud.local,2.2.2.2:2," + STALE + "\n";
+    // now = 5s after FRESH → FRESH age 5s (kept), STALE age 305s (dropped, >30s).
+    auto m = parse_status_routing_table(mk_status(rows), epoch_of(FRESH) + 5, 30);
+    ASSERT_EQ(1u, m.size());
+    EXPECT_EQ(1u, m.count("FRESH"));
+    EXPECT_EQ(0u, m.count("STALE"));
+}
+
+TEST(RoutingTable, keepsUnparseableLastRef_failSafe) {
+    // A Last Ref the parser can't read must NEVER hide a connected device.
+    std::string rows = "10.9.0.3,rpiX@cloud.local,1.1.1.1:1,not-a-date\n";
+    auto m = parse_status_routing_table(mk_status(rows), epoch_of("Wed Jun 25 02:30:00 2026"), 30);
+    ASSERT_EQ(1u, m.size());
+    EXPECT_EQ("10.9.0.3", m["X"].vip);
+}
+
+TEST(RoutingTable, noFilterWhenMaxAgeNonPositive) {
+    const char* STALE = "Wed Jun 25 02:25:00 2026";
+    std::string rows = std::string("10.9.0.3,rpiOLD@cloud.local,1.1.1.1:1,") + STALE + "\n";
+    // max_age <= 0 disables the freshness filter — even an ancient route stays.
+    auto m = parse_status_routing_table(mk_status(rows), epoch_of(STALE) + 999999, 0);
+    EXPECT_EQ(1u, m.size());
+}
+
+TEST(RoutingTable, emptyWhenNoRoutingSection) {
+    EXPECT_TRUE(parse_status_routing_table("no routing table here\nEND\n", 0, 30).empty());
+    EXPECT_TRUE(parse_status_routing_table("", 0, 30).empty());
 }
 
 }  // namespace

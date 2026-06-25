@@ -12,6 +12,8 @@
 /// its main loop.
 
 #include <chrono>
+#include <ctime>         // std::time_t (parse_status_routing_table)
+#include <map>
 #include <string>
 #include <sys/types.h>   // pid_t
 
@@ -46,6 +48,32 @@ std::string build_server_config(const OpenVpnServerConfig& c);
 /// on malformed input.
 bool cidr_to_net_mask(const std::string& cidr,
                       std::string& net, std::string& mask);
+
+/// One live tunnel as seen in the OpenVPN `status` ROUTING TABLE.
+struct VpnRoute {
+    std::string vip;       ///< virtual (tunnel) IP, e.g. 10.9.0.3
+    std::string wan_ip;    ///< real/public (ISP) IP, :port stripped
+};
+
+/// Parse the ROUTING TABLE of an OpenVPN v1 `status` dump into
+/// sanitized-serial → {vip, wan_ip}. Pure + unit-testable (no socket).
+///
+/// **Freshness filter (the "Launch UI while VPN down" fix).** A route whose
+/// `Last Ref` is older than `max_age_secs` relative to `now` is DROPPED:
+/// OpenVPN refreshes Last Ref on every packet (keepalive ping ~10s), so a live
+/// client is always seconds-fresh, while a hard-powered-off device's route
+/// freezes and ages out — long before OpenVPN's keepalive reaps it (2× the
+/// restart value). Dropping stale routes makes the cloud's per-device "VPN up"
+/// view (dev_tun_ip → Launch UI + DNAT) track reality in ~`max_age_secs`
+/// instead of minutes. `max_age_secs <= 0` disables the filter.
+///
+/// **Fail-safe:** a Last Ref that can't be parsed KEEPS the entry — a format
+/// surprise can never hide a genuinely-connected device (worst case reverts to
+/// the pre-filter behavior). The CLIENT LIST section is ignored (its rows lead
+/// with the real address, not the vip).
+std::map<std::string, VpnRoute>
+parse_status_routing_table(const std::string& status,
+                           std::time_t now, int max_age_secs);
 
 class OpenVpnServer {
 public:
