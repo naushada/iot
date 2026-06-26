@@ -920,13 +920,23 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                                             std::sscanf(v.c_str(), "%ld.%ld.%ld", &a, &b, &c);
                                             return a * 1000000L + b * 1000L + c;
                                         };
+                                        // Defer only a strict semver DOWNGRADE (the
+                                        // 1.2.0→1.3.0 opkg wedge) or the EXACT same build
+                                        // already installed (full version incl. +gitsha
+                                        // matches — avoids a re-push loop). A same-semver
+                                        // REBUILD (1.3.3 vs 1.3.3+abc123 → different build)
+                                        // must still push: only the +gitsha changes per
+                                        // build, and the device-side guard already permits
+                                        // the re-install. installed unknown → defer (fail
+                                        // closed; the cloud Reads /3/0/3 then retries).
                                         if (!ver.empty() &&
                                             (installed.empty() ||
-                                             semv(ver) <= semv(installed))) {
+                                             ver == installed ||
+                                             semv(ver) < semv(installed))) {
                                             ACE_DEBUG((LM_INFO,
                                                 ACE_TEXT("%D lwm2m:thread:%t %M %N:%l deferring OTA to "
-                                                         "%C: ver=%C not strictly newer than "
-                                                         "installed=%C\n"),
+                                                         "%C: ver=%C is a downgrade of / identical "
+                                                         "build to installed=%C\n"),
                                                 reg.endpoint.c_str(), ver.c_str(),
                                                 installed.empty() ? "?(unread)" : installed.c_str()));
                                             break;
