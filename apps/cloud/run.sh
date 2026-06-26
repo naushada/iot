@@ -10,7 +10,9 @@
 # the iot-etc config volume so schema/config changes always take effect.
 #   PULL=0          use a local ./run.sh build instead of pulling
 #   PLATFORM=...    override the auto-detected arch (e.g. linux/amd64)
-#   RESET_CONFIG=0  keep manual /etc/iot edits across restarts
+#   RESET_CONFIG=0  keep manual /etc/iot edits across restarts (schemas)
+#   RESET_PKI=1     wipe the VPN PKI/CA (rare) — forces a fresh CA + re-provision
+#                   of EVERY device; default 0 preserves per-device provisioning
 #
 # Usage:
 #   ./run.sh                    # start all services on http://localhost
@@ -73,6 +75,10 @@ PROXY_END="${PROXY_END:-10050}"
 # Reset the iot-etc config volume on start so the latest schema/config
 # from the image is always loaded (set to 0 to preserve manual edits).
 RESET_CONFIG="${RESET_CONFIG:-1}"
+# RESET_PKI=1 (rare, opt-in) wipes the VPN PKI volume (CA + server certs). That
+# regenerates the CA, invalidating EVERY device's VPN cert → all devices must
+# re-provision. Default 0: per-device PKI/provisioning PERSISTS across upgrades.
+RESET_PKI="${RESET_PKI:-0}"
 # Compose project name → deterministic volume names (cloud_iot-etc, …).
 PROJECT="${COMPOSE_PROJECT_NAME:-cloud}"
 # Detect host arch so we pull the matching image from the multi-arch
@@ -202,12 +208,20 @@ case "${1:-start}" in
         # data). Dropping it forces a repopulate from the current image.
         # Persisted data (/var/lib/iot) and VPN PKI (/etc/iot/vpn,
         # /run/secrets) live in separate volumes and are untouched.
+        if [ "$RESET_CONFIG" = "1" ] || [ "$RESET_PKI" = "1" ]; then
+            $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" down --remove-orphans 2>/dev/null || true
+        fi
         if [ "$RESET_CONFIG" = "1" ]; then
             log_info "Refreshing config volume ${PROJECT}_iot-etc (set RESET_CONFIG=0 to keep)"
-            $COMPOSE -f "$SCRIPT_DIR/docker-compose.yml" down --remove-orphans 2>/dev/null || true
             $CR volume rm "${PROJECT}_iot-etc" 2>/dev/null || true
-            # iot-vpn holds the image-provided server PKI (ca/server certs);
-            # repopulate it from the (possibly rebuilt) image too.
+        fi
+        # The VPN PKI (iot-vpn: CA + server certs) is per-device TRUST state —
+        # wiping it regenerates the CA and invalidates every device's client cert,
+        # breaking all tunnels + forcing re-provisioning. So it is PRESERVED across
+        # upgrades by default (the runtime CA is also mirrored in ds/iot-lib). Only
+        # an explicit RESET_PKI=1 wipes it.
+        if [ "$RESET_PKI" = "1" ]; then
+            log_info "RESET_PKI=1: wiping VPN PKI ${PROJECT}_iot-vpn — every device must re-provision"
             $CR volume rm "${PROJECT}_iot-vpn" 2>/dev/null || true
         fi
 
