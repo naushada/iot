@@ -31,7 +31,6 @@ fi
 # system.conf), empty until that bank has been RAUC-installed. HW-validate the
 # RAUC_* field names against the deployed rauc version.
 publish_banks() {
-    booted="$1"
     iotver="$($DSCLI get iot.version 2>/dev/null | sed 's/^iot\.version=//' | tr -d "\"'")"
     # eval the shell-format status into RAUC_* vars (single-quoted values → safe).
     eval "$(rauc status --output-format=shell 2>/dev/null)" || true
@@ -41,12 +40,17 @@ publish_banks() {
     fi
     json="["; first=1
     for i in $RAUC_SLOTS; do
-        eval "name=\${RAUC_SLOT_NAME_$i:-}"
+        # This RAUC's shell output has NO RAUC_SLOT_NAME_$i — the slot name is the
+        # i-th word of RAUC_SYSTEM_SLOTS (RAUC_SLOTS indices align with it), and the
+        # active bank is the slot whose RAUC_SLOT_STATE_$i is "booted" (not a name
+        # match against a booted-slot var, which this RAUC version doesn't emit).
+        name="$(echo "$RAUC_SYSTEM_SLOTS" | cut -d' ' -f"$i")"
         eval "bn=\${RAUC_SLOT_BOOTNAME_$i:-}"
         eval "bs=\${RAUC_SLOT_BOOT_STATUS_$i:-unknown}"
-        eval "ver=\${RAUC_SLOT_BUNDLE_VERSION_$i:-}"
-        [ -n "$name" ] || continue
-        if [ "$name" = "$booted" ]; then isb=true; [ -n "$iotver" ] && ver="$iotver"; else isb=false; fi
+        eval "st=\${RAUC_SLOT_STATE_$i:-}"
+        eval "ver=\${RAUC_SLOT_BUNDLE_VERSION_$i:-}"   # absent in plain shell output → ""
+        [ -n "$bn" ] || continue
+        if [ "$st" = "booted" ]; then isb=true; [ -n "$iotver" ] && ver="$iotver"; else isb=false; fi
         [ -n "$bs" ] || bs="unknown"
         [ "$first" = 1 ] || json="$json,"; first=0
         json="$json{\"bootname\":\"$bn\",\"slot\":\"$name\",\"version\":\"$ver\",\"state\":\"$bs\",\"booted\":$isb}"
@@ -59,11 +63,12 @@ publish_banks() {
     $DSCLI set iot.boot.banks "\"$esc\"" >/dev/null 2>&1 || true
 }
 
-# Which rootfs bank booted (e.g. "rootfs.0"/"A"). Publish for the UI.
+# Which bank booted (bootname "A"/"B"). Publish for the UI. This RAUC emits
+# RAUC_SYSTEM_BOOTED_BOOTNAME (older versions used RAUC_SYSTEM_BOOTED_SLOT).
 BANK="$(rauc status --output-format=shell 2>/dev/null \
-        | sed -n 's/^RAUC_SYSTEM_BOOTED_SLOT=\(.*\)/\1/p' | tr -d "\"'")"
+        | sed -n 's/^RAUC_SYSTEM_BOOTED_BOOTNAME=//p' | tr -d "\"'")"
 [ -n "$BANK" ] && set_ds iot.boot.bank "\"$BANK\""
-publish_banks "$BANK"
+publish_banks
 
 # Healthy = ds answers AND the core daemons are active. (Deliberately NOT gating
 # on LwM2M registration — a transient cloud outage must not trigger a rollback
@@ -83,7 +88,7 @@ while [ "$i" -lt 90 ]; do          # up to ~90 s for the stack to come up
         set_ds iot.boot.confirmed true
         set_ds iot.update.result 1     # success
         set_ds iot.update.state  0     # idle
-        publish_banks "$BANK"          # re-emit so this bank now reads state=good
+        publish_banks          # re-emit so this bank now reads state=good
         log "boot ${BANK:-?} confirmed good (marked good)"
         exit 0
     fi
