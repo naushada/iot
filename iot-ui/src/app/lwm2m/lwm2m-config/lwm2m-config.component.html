@@ -108,8 +108,7 @@
       <div style="margin-top:24px;border-top:1px solid #ccc;padding-top:16px;">
         <clr-checkbox-container>
           <clr-checkbox-wrapper>
-            <input type="checkbox" clrCheckbox [disabled]="!devMode"
-                   formControlName="bs_override" />
+            <input type="checkbox" clrCheckbox formControlName="bs_override" />
             <label>Use custom Bootstrap PSK (third-party vendor)</label>
           </clr-checkbox-wrapper>
           <clr-control-helper>
@@ -121,21 +120,21 @@
         <div class="form-grid" *ngIf="overrideOn" style="margin-top:12px;">
           <clr-input-container>
             <label>BS PSK Identity</label>
-            <input clrInput formControlName="bs_identity" [readonly]="!devMode"
+            <input clrInput formControlName="bs_identity" [readonly]="!isAdmin"
                    placeholder="vendor bootstrap identity" />
             <clr-control-helper>Used verbatim as the DTLS PSK identity</clr-control-helper>
             <clr-control-helper *dsDebug><app-ds-hint key="iot.bs.psk.identity"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>BS PSK Key (hex)</label>
-            <input clrInput type="password" formControlName="bs_key" [readonly]="!devMode"
+            <input clrInput type="password" formControlName="bs_key" [readonly]="!isAdmin"
                    autocomplete="new-password" placeholder="hex, e.g. 64 chars — leave blank to keep current" />
             <clr-control-helper>Write-only. Blank on save keeps the stored key.</clr-control-helper>
           </clr-input-container>
         </div>
 
         <button type="button" class="btn btn-outline" style="margin-top:12px;"
-                [disabled]="savingOverride || !devMode" (click)="saveBsOverride()">
+                [disabled]="savingOverride || !isAdmin" (click)="saveBsOverride()">
           {{ savingOverride ? 'Saving…' : 'Save custom BS PSK' }}
         </button>
         <p *ngIf="overrideOn" class="hint" style="margin-top:8px;">
