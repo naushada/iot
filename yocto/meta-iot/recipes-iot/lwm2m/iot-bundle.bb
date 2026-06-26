@@ -26,6 +26,17 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # so one task dependency guarantees the whole feed is written before we bundle.
 do_deploy[depends] += "iot:do_package_write_ipk"
 
+# Runtime shared-lib deps the iot-* binaries link but an OLDER on-device image may
+# not already carry. Incremental .ipk OTA installs only what's in the bundle, so a
+# NEW or version-bumped lib dep makes `opkg install` fail on a stale device with
+# "nothing provides <lib> >= <ver>" — observed 1.3.0→1.3.2: iot-lwm2m needs
+# libsqlite3-0>=3.45.3 (the SQLite DurableSampleBuffer) and iot-mqtt needs
+# libmosquitto1>=2.0.22, neither on the 1.3.0 image. Bundle them so the OTA is
+# self-contained. Bare package basenames; the newest matching .ipk is included.
+# Build-deps that drag these in so their .ipk is written to the feed before bundling.
+IOT_BUNDLE_EXTRA_PKGS ?= "libsqlite3-0 libmosquitto1"
+do_deploy[depends] += "sqlite3:do_package_write_ipk mosquitto:do_package_write_ipk"
+
 do_deploy() {
     feed="${DEPLOY_DIR_IPK}"
     stage="${WORKDIR}/bundle"
@@ -48,6 +59,20 @@ do_deploy() {
     if [ -z "$(ls -A "${stage}" 2>/dev/null)" ]; then
         bbfatal "iot-bundle: no iot-*.ipk found under ${feed} — is the 'iot' recipe built?"
     fi
+
+    # Add the runtime-lib deps (newest each) so a stale device that lacks them can
+    # still satisfy opkg. opkg ignores an already-current/newer lib, so including
+    # them is harmless when the device is already up to date.
+    for pkg in ${IOT_BUNDLE_EXTRA_PKGS}; do
+        dep="$(find "${feed}" -name "${pkg}_*.ipk" -type f -printf '%T@ %p\n' \
+                 | sort -rn | awk 'NR==1{print $2}')"
+        if [ -n "${dep}" ]; then
+            cp -f "${dep}" "${stage}/"
+            bbnote "iot-bundle: included dep $(basename "${dep}")"
+        else
+            bbwarn "iot-bundle: dep ${pkg} not found in ${feed} — stale devices may fail opkg"
+        fi
+    done
 
     name="iot-bundle-${PV}-${MACHINE}.tar.gz"
     # Archive root holds the flat .ipk files (extracted straight into the spool

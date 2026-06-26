@@ -69,6 +69,14 @@ case "$NAME" in
 esac
 
 mkdir -p "$SPOOL"
+# Restore the tmpfiles ownership/mode (group iot, g+w) — a prior root `mkdir -p`
+# (here or in iot-swupdate, when the spool was momentarily absent) can recreate it
+# 0755 root:root under the root umask, which then locks out the unprivileged,
+# group-iot lwm2m client that must write stage.req to launch the NEXT cloud OTA
+# (otherwise `write(stage.req) errno=13 EACCES` and the campaign hangs). Root-only,
+# which this stager is; harmless if already correct.
+chgrp iot "$SPOOL" 2>/dev/null || true
+chmod 2775 "$SPOOL" 2>/dev/null || true
 DL="$SPOOL/$NAME"
 
 # Surface what's being applied + reset the progress gauge for the UIs. The
