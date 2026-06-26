@@ -1889,6 +1889,13 @@ int main(std::int32_t argc, char *argv[]) {
                                     "(iot.bs.uri + BS PSK via device-ui commissioning)\n")));
                 logged_wait = true;
             }
+            // Pet the systemd watchdog while we wait — the reactor that normally
+            // pings it (run_reactor_event_loop) hasn't started yet, so without
+            // this an un(der)-provisioned device (or one that briefly reads empty
+            // creds during a ds-load race after a restart) is SIGABRT'd every
+            // WatchdogSec (#406) → a 60s crash-loop that defeats this loop's
+            // "stay alive until commissioned" intent.
+            systemd_watchdog_ping();
             ACE_OS::sleep(ACE_Time_Value(5, 0));
         }
         UDPAdapter::Scheme_t bsScheme;
