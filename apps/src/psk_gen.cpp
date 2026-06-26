@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <openssl/evp.h>
+#include <openssl/kdf.h>
 
 namespace iot {
 
@@ -72,6 +73,50 @@ std::string sha256_hex(const std::string& input) {
     }
     EVP_MD_CTX_free(ctx);
     return hex_encode(digest, dlen);
+}
+
+std::string hkdf_sha256(const std::string& ikm,
+                        const std::string& salt,
+                        const std::string& info,
+                        std::size_t        out_len) {
+    // RFC 5869 §2.2: an empty salt is substituted with HashLen zero bytes.
+    // Doing this explicitly (rather than relying on OpenSSL's no-salt default)
+    // keeps the result identical to the host-side Python generator, which does
+    // the same substitution.
+    static const unsigned char zeros[32] = {0};
+    const unsigned char* salt_ptr =
+        salt.empty() ? zeros
+                     : reinterpret_cast<const unsigned char*>(salt.data());
+    const int salt_len = salt.empty() ? static_cast<int>(sizeof zeros)
+                                       : static_cast<int>(salt.size());
+
+    EVP_PKEY_CTX* pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr);
+    if (!pctx) throw std::runtime_error("hkdf_sha256: ctx alloc failed");
+
+    std::vector<unsigned char> out(out_len);
+    std::size_t outlen = out_len;
+    const bool ok =
+        EVP_PKEY_derive_init(pctx) == 1 &&
+        EVP_PKEY_CTX_set_hkdf_md(pctx, EVP_sha256()) == 1 &&
+        EVP_PKEY_CTX_set1_hkdf_salt(pctx, salt_ptr, salt_len) == 1 &&
+        EVP_PKEY_CTX_set1_hkdf_key(
+            pctx, reinterpret_cast<const unsigned char*>(ikm.data()),
+            static_cast<int>(ikm.size())) == 1 &&
+        EVP_PKEY_CTX_add1_hkdf_info(
+            pctx, reinterpret_cast<const unsigned char*>(info.data()),
+            static_cast<int>(info.size())) == 1 &&
+        EVP_PKEY_derive(pctx, out.data(), &outlen) == 1 &&
+        outlen == out_len;
+    EVP_PKEY_CTX_free(pctx);
+    if (!ok) throw std::runtime_error("hkdf_sha256: derive failed");
+    return hex_encode(out.data(), out_len);
+}
+
+std::string derive_bs_psk_hex(const std::string& master_hex,
+                              const std::string& serial) {
+    const std::string ikm = hex_decode(master_hex);
+    if (ikm.empty()) return {};   // empty or malformed master ⇒ tier disabled
+    return hkdf_sha256(ikm, /*salt=*/"", "iot-bs-psk:v1:" + serial, 32);
 }
 
 } // namespace iot
