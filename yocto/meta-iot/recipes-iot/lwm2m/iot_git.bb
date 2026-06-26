@@ -499,6 +499,11 @@ FILES:${PN}-lwm2m = "\
     ${systemd_system_unitdir}/iot-swupdate.service \
     ${systemd_system_unitdir}/iot-ota-confirm.service \
 "
+# NOTE: do NOT add an explicit RDEPENDS on libsqlite3-0 (the SQLite
+# DurableSampleBuffer). That is a debian-renamed shlib package name — valid as an
+# installed .ipk but NOT build-time resolvable ("Nothing RPROVIDES libsqlite3-0").
+# The shlib auto-dependency already adds it from the linked .so; the OTA bundle
+# ships the .ipk (iot-bundle.bb IOT_BUNDLE_EXTRA_PKGS), so it resolves at install.
 RDEPENDS:${PN}-lwm2m = "\
     ace-tao \
     lua \
@@ -506,7 +511,6 @@ RDEPENDS:${PN}-lwm2m = "\
     readline \
     openssl \
     tinydtls-staticdev \
-    libsqlite3-0 \
     ${@bb.utils.contains('PACKAGECONFIG', 'mongo', \
         'mongo-cxx-driver-bsoncxx mongo-cxx-driver mongo-c-driver-bson mongo-c-driver', \
         '', d)} \
@@ -665,7 +669,7 @@ FILES:${PN}-mqtt = "\
     ${bindir}/iot-mqttd \
     ${systemd_system_unitdir}/iot-mqttd.service \
 "
-RDEPENDS:${PN}-mqtt = "ace-tao libmosquitto1"
+RDEPENDS:${PN}-mqtt = "ace-tao"
 RRECOMMENDS:${PN}-mqtt = "\
     ${PN}-ds-server \
     ${PN}-config \
