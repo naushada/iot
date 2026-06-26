@@ -20,6 +20,11 @@ set -u
 # (/run is wiped on reboot, so the copy never lingers.)
 if [ "${IOT_SWUPDATE_REEXEC:-}" != "1" ]; then
     mkdir -p /run/iot/update 2>/dev/null || true
+    # Never leave the spool 0755 root:root (root umask on a fresh mkdir): that locks
+    # out the unprivileged group-iot lwm2m client from writing stage.req for the
+    # NEXT cloud OTA (errno=13). Restore the tmpfiles mode/group. See iot-ota-stage.
+    chgrp iot /run/iot/update 2>/dev/null || true
+    chmod 2775 /run/iot/update 2>/dev/null || true
     _self="/run/iot/update/.self.$$"
     if cp "$0" "$_self" 2>/dev/null; then
         IOT_SWUPDATE_REEXEC=1 exec sh "$_self" "$@"
