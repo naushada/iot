@@ -57,6 +57,15 @@ install path — OTA is just one producer.
 - `/run` is tmpfs on the systemd image, so the spool is **wiped on reboot**
   (requirement 1). No stale `.ipk` survives a boot → no re-trigger loop after a
   reboot-required update.
+- **But within a single boot, a failed/interrupted campaign can leave stale
+  `.ipk`s in the spool** — and `iot-swupdate` globs `$SPOOL/*.ipk`, so mixing two
+  package sets makes `opkg install` die on `cannot install both iot-X-1.3.1 and
+  iot-X-1.1.0 — conflicting requests`. Field-observed: a v1.1.0 set left behind
+  when the watchdog crash-loop killed that OTA mid-flight poisoned the next v1.3.1
+  install (`result=9`, device stuck on the old version). So **`iot-ota-stage`
+  purges any pre-existing `.ipk`/`.raucb`/bundle (+ stale `update.meta`) right
+  after sha-verify**, keeping only the current campaign's download — each OTA
+  installs exactly its own packages.
 - Created at boot by tmpfiles.d (the recipe already ships
   `/usr/lib/tmpfiles.d/iot.conf`): add
   `d /run/iot/update 0755 root root -`.
