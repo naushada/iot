@@ -448,5 +448,25 @@ return {
       type    = "string",
       default = "",
     },
+
+    -- ── v2 LwM2M Send telemetry (TDD §3b #1; OFF by default) ──────────
+    -- When .send.enable is true the registered DM client samples numeric
+    -- vehicle.* signals (Object 33000) and pushes them as SenML packs over the
+    -- direct DTLS link (LwM2M Send, POST /dp), buffered for offline backfill by
+    -- the DurableSampleBuffer when .db.path names a file (empty → in-RAM).
+    ["iot.telemetry.send.enable"] = {
+        access = "Admin", type = "boolean", default = false, write_acl = {"uid:0"} },
+    ["iot.telemetry.db.path"] = {
+        access = "Admin", type = "string",  default = "" },
+    ["iot.telemetry.basepath"] = {
+        access = "Admin", type = "string",  default = "/33000/0/" },
+    ["iot.telemetry.capacity"] = {
+        access = "Admin", type = "integer", default = 1000, min = 1, max = 1000000 },
+    ["iot.telemetry.maxbatch"] = {
+        access = "Admin", type = "integer", default = 8,    min = 1, max = 64 },
+    ["iot.telemetry.sample.secs"] = {
+        access = "Admin", type = "integer", default = 5,    min = 1, max = 3600 },
+    ["iot.telemetry.ttl.secs"] = {
+        access = "Admin", type = "integer", default = 0,    min = 0, max = 2592000 },
   },
 }

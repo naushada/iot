@@ -58,6 +58,8 @@
 #include "lwm2m_registration_client.hpp"
 #include "lwm2m_registration_server.hpp"
 #include "lwm2m_send_server.hpp"
+#include "lwm2m_send_uploader.hpp"            // v2 Send telemetry (TDD §3b #1)
+#include "lwm2m_durable_sample_buffer.hpp"    // make_sample_buffer / DurableSampleBuffer
 
 #include "ds_config.hpp"
 #include "rpi_serial.hpp"
@@ -154,6 +156,38 @@ namespace {
 /// wrapping after ~64K outgoing messages is well within spec.
 std::atomic<std::uint16_t> g_next_msgid{0x1000};
 inline std::uint16_t next_msgid() { return ++g_next_msgid; }
+
+namespace {
+// ── v2 Send telemetry (TDD §3b #1) — numeric Object-33000 vehicle signals,
+// mapped ds key ↔ resource id (under base "/33000/0/"). link (/10) + dtc (/8)
+// are non-numeric, so they are not part of a SenML telemetry batch.
+struct VehSig { const char* key; const char* rid; };
+constexpr VehSig kVehSigs[] = {
+    {"vehicle.speed", "0"}, {"vehicle.rpm", "1"},   {"vehicle.coolant", "2"},
+    {"vehicle.throttle", "3"}, {"vehicle.load", "4"}, {"vehicle.fuel", "5"},
+    {"vehicle.iat", "6"},   {"vehicle.maf", "7"},
+};
+// Read the numeric vehicle.* signals from ds into a timestamped Sample.
+// Returns false when none are present/numeric (nothing to offer this tick).
+bool build_vehicle_sample(data_store::Client* cli, double now_unix,
+                          ::lwm2m::telemetry::Sample& out) {
+    if (!cli) return false;
+    std::vector<std::string> keys;
+    for (const auto& s : kVehSigs) keys.emplace_back(s.key);
+    std::vector<data_store::Client::GetResult> got;
+    if (!cli->get(keys, got).ok || got.size() != keys.size()) return false;
+    out = ::lwm2m::telemetry::Sample{};
+    out.timeUnix = now_unix;
+    for (std::size_t i = 0; i < got.size(); ++i) {
+        if (!got[i].has_value) continue;
+        auto s = data_store::to_string(got[i].value);
+        if (!s || s->empty()) continue;
+        try { out.values.emplace_back(kVehSigs[i].rid, std::stod(*s)); }
+        catch (...) { /* non-numeric → skip this signal */ }
+    }
+    return !out.values.empty();
+}
+} // namespace
 
 /// Convenience tx wrapper — UDPAdapter::tx takes non-const lvalue refs
 /// for historical reasons, so callers need locals.
@@ -1498,6 +1532,70 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     auto rebind = std::make_shared<ClientPlumbing::Rebind>();
     plumb.rebind = rebind;
 
+    // ── v2 Send telemetry uploader (TDD §3b #1). OFF unless
+    // iot.telemetry.send.enable — otherwise `sendst->up` stays null and the tick
+    // block below is a no-op (zero change to the registration path). When on, it
+    // buffers numeric vehicle.* signals and pushes them as SenML packs over the
+    // registered DM session (direct DTLS), with offline backfill via the
+    // DurableSampleBuffer when iot.telemetry.db.path names a file.
+    struct SendState {
+        std::shared_ptr<::lwm2m::send::Uploader> up;
+        std::chrono::steady_clock::time_point    inflight_since{};
+        std::chrono::steady_clock::time_point    last_sample{};
+        int sample_secs   = 5;
+        int ack_timeout_s = 6;     // < the 30s update margin → no keepalive risk
+    };
+    auto sendst = std::make_shared<SendState>();
+    {
+        auto* cli = ds.client();
+        std::vector<data_store::Client::GetResult> g;
+        bool enable = false;
+        std::string dbpath, basepath = "/33000/0/";
+        int cap = 1000, maxbatch = 8, ttl = 0;
+        if (cli && cli->get({std::string("iot.telemetry.send.enable"),
+                             std::string("iot.telemetry.db.path"),
+                             std::string("iot.telemetry.basepath"),
+                             std::string("iot.telemetry.capacity"),
+                             std::string("iot.telemetry.maxbatch"),
+                             std::string("iot.telemetry.sample.secs"),
+                             std::string("iot.telemetry.ttl.secs")}, g).ok
+            && g.size() == 7) {
+            if (auto b = data_store::to_bool(g[0].value))   enable   = *b;
+            if (auto s = data_store::to_string(g[1].value)) dbpath   = *s;
+            if (auto s = data_store::to_string(g[2].value); s && !s->empty()) basepath = *s;
+            if (auto i = data_store::to_int32(g[3].value))  cap      = *i;
+            if (auto i = data_store::to_int32(g[4].value))  maxbatch = *i;
+            if (auto i = data_store::to_int32(g[5].value))  sendst->sample_secs = *i > 0 ? *i : 1;
+            if (auto i = data_store::to_int32(g[6].value))  ttl      = *i;
+        }
+        if (enable) {
+            sendst->up = std::make_shared<::lwm2m::send::Uploader>(
+                ::lwm2m::telemetry::make_sample_buffer(
+                    dbpath, static_cast<std::size_t>(cap < 1 ? 1 : cap),
+                    static_cast<std::int64_t>(ttl)),
+                basepath, static_cast<std::size_t>(maxbatch < 1 ? 1 : maxbatch));
+            // Route the 2.04 Send ack (matched by msg-id) on every client adapter.
+            std::weak_ptr<SendState> wsend = sendst;
+            for (auto& [type, ctx] : app->udpAdapter()->services()) {
+                (void)type;
+                ctx->coapAdapter()->sendAckHandler(
+                    [wsend](const CoAPAdapter::CoAPMessage& m) {
+                        auto st = wsend.lock();
+                        if (!st || !st->up || !st->up->in_flight()) return;
+                        if (m.coapheader.msgid != st->up->in_flight_msgid()) return;
+                        if ((m.coapheader.code >> 5) == 2)
+                            st->up->on_ack(m.coapheader.msgid);
+                        // non-2.xx → leave it; the tick's timeout requeues+retries
+                    });
+            }
+            ACE_DEBUG((LM_INFO,
+                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l telemetry Send enabled "
+                         "(base=%C buf=%C cap=%d batch=%d every=%ds)\n"),
+                basepath.c_str(), dbpath.empty() ? "ram" : dbpath.c_str(),
+                cap, maxbatch, sendst->sample_secs));
+        }
+    }
+
     // 1 Hz ticker: drives Update emission + Observe pmax + (TODO) initial
     // Register once bootstrap completes.
     std::weak_ptr<::lwm2m::RegistrationClient> wreg = plumb.reg;
@@ -1545,7 +1643,7 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     app->udpAdapter()->on_tick_client([wreg, wdm, wapp, rebind, wbs,
                                        reboot_after, bootPhase, bootDeadline,
                                        bootRetryAfter, bootBackoff, bsHost, bsPort,
-                                       dtls, &ds, lastConn]() {
+                                       dtls, &ds, lastConn, sendst]() {
         // Liveness first: petting the watchdog here ties it to the reactor
         // actually dispatching this 1 Hz tick. If the reactor stalls (the
         // alive-but-wedged failure this guards against), the pings stop and
@@ -1730,14 +1828,51 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
             reg->clear_pending_reregister();
         }
 
-        // L9 stub 2 — Update POST when the lifetime margin elapses.
-        if (reg->should_send_update(now)) {
+        // L9 stub 2 — Update POST when the lifetime margin elapses. Defer it one
+        // tick while a telemetry Send is in flight so the registration Update and
+        // the Send never have overlapping 2.04 acks (the receive path can't tell
+        // them apart). The Send acks within ack_timeout_s (6s) ≪ the 30s update
+        // margin, so the keepalive is never starved.
+        if (reg->should_send_update(now) &&
+            !(sendst->up && sendst->up->in_flight())) {
             auto payload = reg->build_update_request(
                 next_msgid(),
                 std::string{static_cast<char>(0x02)},
                 /*withAdvertisedSet*/ false);
             tx_via(*a, payload, svc);
             reg->note_update_sent(now);
+        }
+
+        // ── v2 Send telemetry (TDD §3b #1). Only while cleanly Registered —
+        // never mid-Update/Register/Deregister — so a Send's 2.04 can't be
+        // mistaken for a registration ack. No-op unless enabled (sendst->up set).
+        if (sendst->up &&
+            reg->state() == ::lwm2m::RegistrationState::Registered) {
+            auto& up = *sendst->up;
+            // 1. sample numeric vehicle.* into the buffer at the cadence.
+            if (now - sendst->last_sample >=
+                std::chrono::seconds(sendst->sample_secs)) {
+                sendst->last_sample = now;
+                const double tnow = std::chrono::duration<double>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                ::lwm2m::telemetry::Sample s;
+                if (build_vehicle_sample(ds.client(), tnow, s)) up.offer(s);
+            }
+            // 2. time out an unacked Send → requeue (retried on the next poll).
+            if (up.in_flight() &&
+                now - sendst->inflight_since >=
+                    std::chrono::seconds(sendst->ack_timeout_s)) {
+                up.on_timeout();
+            }
+            // 3. transmit the next batch (one CON /dp at a time) when idle.
+            if (!up.in_flight() && up.pending() > 0) {
+                auto wire = up.poll(next_msgid(),
+                                    std::string{static_cast<char>(0x30)});
+                if (!wire.empty()) {
+                    tx_via(*a, wire, svc);
+                    sendst->inflight_since = now;
+                }
+            }
         }
 
         // Task K — DM rejected us (registration FSM in Failed after a
