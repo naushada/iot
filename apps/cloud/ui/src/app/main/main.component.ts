@@ -5,6 +5,7 @@ import { SessionService } from '../../common/session.service';
 import { ThemeService } from '../../common/theme.service';
 import { DebugService } from '../../common/debug.service';
 import { DataStoreService } from '../../common/datastore.service';
+import { NavOrderService } from '../../common/nav-order.service';
 
 @Component({
   selector: 'app-main',
@@ -14,7 +15,9 @@ import { DataStoreService } from '../../common/datastore.service';
 export class MainComponent implements OnInit {
   selectedMenu = 'dashboard';
   selectedSubNav = '';
-  menus = [
+  // Canonical order (the reset target). The displayed `menus` is reordered by
+  // the per-browser saved order in ngOnInit and on drag.
+  private readonly DEFAULT_MENUS = [
     { id: 'dashboard', label: 'Dashboard', svg: 'assets/icons/dashboard.svg' },
     { id: 'endpoints', label: 'Endpoints', svg: 'assets/icons/endpoints.svg' },
     { id: 'map',       label: 'Map',       svg: 'assets/icons/map.svg' },
@@ -27,6 +30,8 @@ export class MainComponent implements OnInit {
     { id: 'users',     label: 'Users',     svg: 'assets/icons/users.svg' },
     { id: 'software',  label: 'Software',  svg: 'assets/icons/software.svg' },
   ];
+  menus = [...this.DEFAULT_MENUS];
+  dragIndex = -1;   // index of the item being dragged (-1 = none)
 
   version = '';   // running release (iot.version), shown in the sidebar footer
 
@@ -35,9 +40,12 @@ export class MainComponent implements OnInit {
   constructor(private http: HttpsvcService, private session: SessionService,
               private router: Router, public theme: ThemeService,
               public debug: DebugService,
-              private ds: DataStoreService) { this.theme.init(); this.debug.init(); }
+              private ds: DataStoreService,
+              private navOrder: NavOrderService) { this.theme.init(); this.debug.init(); }
 
   ngOnInit(): void {
+    // Apply the per-browser saved sidebar order (new pages append).
+    this.menus = this.navOrder.apply([...this.DEFAULT_MENUS]);
     // Authenticated shell: warm the shared data-store cache once so every
     // config page paints instantly, and start watching for live changes.
     this.ds.prefetchAll();
@@ -51,6 +59,25 @@ export class MainComponent implements OnInit {
   }
 
   onMenuSelect(id: string): void { this.selectedMenu = id; this.selectedSubNav = ''; }
+
+  // ── Drag-to-reorder the sidebar (HTML5 DnD; persisted per browser) ──
+  onDragStart(i: number): void { this.dragIndex = i; }
+  onDragOver(e: DragEvent, i: number): void {
+    e.preventDefault();                       // allow the drop
+    if (this.dragIndex < 0 || this.dragIndex === i) return;
+    const [moved] = this.menus.splice(this.dragIndex, 1);
+    this.menus.splice(i, 0, moved);           // live reorder as you hover
+    this.dragIndex = i;
+  }
+  onDragEnd(): void {
+    if (this.dragIndex < 0) return;
+    this.dragIndex = -1;
+    this.navOrder.save(this.menus.map((m) => m.id));
+  }
+  resetNav(): void {
+    this.navOrder.reset();
+    this.menus = [...this.DEFAULT_MENUS];
+  }
 
   /// Endpoints → "show on map": focus the Fleet Map on the clicked endpoint.
   mapFocus = '';

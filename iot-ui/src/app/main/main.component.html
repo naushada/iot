@@ -12,6 +12,10 @@
          [class.active]="selectedMenu === m.id && !selectedSubNav"
          [class.expanded]="expandedMenu === m.id"
          [class.has-children]="m.children.length"
+         [class.dragging]="dragId === m.id"
+         draggable="true" (dragstart)="onDragStart(m.id)"
+         (dragover)="onDragOver($event, m.id)" (dragend)="onDragEnd()"
+         title="Drag to reorder"
          (click)="m.children.length ? toggleMenu(m.id) : onMenuSelect(m.id)">
         <img [src]="m.svg" class="nav-icon" alt="" />
         <span>{{ m.label }}</span>
@@ -32,6 +36,11 @@
         </a>
       </div>
     </ng-container>
+
+    <a class="nav-item nav-reset" (click)="resetNav()" title="Reset menu order to default">
+      <span class="nav-icon nav-reset-glyph">↺</span>
+      <span>Reset order</span>
+    </a>
 
     <div class="sidebar-spacer"></div>
 

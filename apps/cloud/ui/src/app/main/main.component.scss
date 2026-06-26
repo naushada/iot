@@ -9,6 +9,9 @@
 .nav-item:hover .nav-icon { opacity:0.8; }
 .nav-item.active { color:#2e7d32; border-left-color:#2e7d32; background:rgba(46,125,50,0.08); }
 .nav-item.active .nav-icon { opacity:1; filter:invert(32%) sepia(85%) saturate(540%) hue-rotate(82deg) brightness(40%) contrast(90%); }
+.nav-item.dragging { opacity:0.45; background:rgba(46,125,50,0.06); }
+.nav-reset { font-size:11px; color:#9a9a9a; padding-top:6px; padding-bottom:6px; }
+.nav-reset-glyph { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; font-size:15px; opacity:0.6; }
 .sidebar-spacer { flex:1; }
 .nav-logout { border-top:1px solid #e0e0e0; margin-top:4px; color:#888; }
 .nav-logout:hover { color:#c62828; background:rgba(198,40,40,0.05); }
