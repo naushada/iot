@@ -191,12 +191,19 @@ base64( nonce(12) || AES-256-GCM(KEK, master)_ciphertext || tag(16) )
   `nullopt` → the master is treated as absent → HKDF tier disabled (the
   commissioned per-device tier still serves). Never derive against a bad master.
 
-> **Status (P2, this PR):** `base64_encode/decode`, `wrap_bs_master`,
-> `unwrap_bs_master_hex` shipped + tested (fixed-vector + round-trip + tamper +
-> wrong-key + fail-closed). The `resolve_bs_psk` / `should_mint_dm` decision
-> helpers (§4.3) shipped + tested. `cloud.bs.master.key` schema + `gen_bs_master.py`
-> shipped. **Not yet wired:** the `main.cpp` BS-server resolver/mint call sites,
-> the `bs-master-wrap` CLI, the `IOT_BS_SEED` recipe bake, and KEK delivery — P2b.
+> **Status (P2a, done):** `base64_encode/decode`, `wrap_bs_master`,
+> `unwrap_bs_master_hex` + the `resolve_bs_psk` / `should_mint_dm` decision
+> helpers + `cloud.bs.master.key` schema + `gen_bs_master.py`, all tested.
+>
+> **Status (P2b, done):** wired into the BS server — `main.cpp` PSK resolver now
+> calls `resolve_bs_psk` / `resolve_dm_psk`, and the provisioning resolver
+> HKDF-derives BS+DM creds for un-stored serials (stateless, **no mint/store** —
+> chosen over the documented mint to avoid the write-back race; DM is derived via
+> `derive_dm_psk_hex`, `info="iot-dm-psk:v1:"`). KEK loaded once via
+> `load_bs_master_kek_hex` (`IOT_BS_MASTER_KEK` / `IOT_BS_MASTER_KEK_FILE` /
+> systemd `$CREDENTIALS_DIRECTORY/bs_kek`). `bs-master-wrap` CLI + `bs_master.lua.sample`
+> shipped; KEK delivery documented in `iot-lwm2m-server.service`. Verified: full
+> `lwm2m` + `bs-master-wrap` build + 41-test gtest suite green in podman.
 
 ---
 

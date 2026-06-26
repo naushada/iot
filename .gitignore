@@ -84,6 +84,11 @@ iot-cloud.tar.gz
 # Commit wifi_credentials.lua.sample instead. See apps/docs/tdd-wifi-credentials-seed.md
 yocto/meta-iot/recipes-iot/lwm2m/files/wifi_credentials.lua
 
+# Zero-touch BS HKDF master seed (AES-256-GCM-wrapped blob) — optional cloud
+# image bake. Commit bs_master.lua.sample instead. The raw master + KEK are
+# never committed. See apps/docs/tdd-bs-hkdf-zerotouch.md
+yocto/meta-iot/recipes-iot/lwm2m/files/bs_master.lua
+
 # Python bytecode cache (e.g. from the gen_wifi_default.py tests)
 __pycache__/
 *.pyc

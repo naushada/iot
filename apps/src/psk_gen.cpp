@@ -119,6 +119,13 @@ std::string derive_bs_psk_hex(const std::string& master_hex,
     return hkdf_sha256(ikm, /*salt=*/"", "iot-bs-psk:v1:" + serial, 32);
 }
 
+std::string derive_dm_psk_hex(const std::string& master_hex,
+                              const std::string& serial) {
+    const std::string ikm = hex_decode(master_hex);
+    if (ikm.empty()) return {};
+    return hkdf_sha256(ikm, /*salt=*/"", "iot-dm-psk:v1:" + serial, 32);
+}
+
 namespace {
 
 const char kB64Alpha[] =

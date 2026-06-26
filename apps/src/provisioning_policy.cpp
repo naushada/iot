@@ -87,4 +87,52 @@ bool should_mint_dm(const std::string& credentials_json,
     return true;                // no row → mint
 }
 
+namespace {
+const char kDmPrefix[] = "rpi";
+const char kDmSuffix[] = "@cloud.local";
+} // namespace
+
+std::string format_dm_identity(const std::string& serial) {
+    return std::string(kDmPrefix) + serial + kDmSuffix;
+}
+
+std::string serial_from_dm_identity(const std::string& identity) {
+    const std::size_t plen = sizeof(kDmPrefix) - 1;
+    const std::size_t slen = sizeof(kDmSuffix) - 1;
+    if (identity.size() <= plen + slen) return {};
+    if (identity.compare(0, plen, kDmPrefix) != 0) return {};
+    if (identity.compare(identity.size() - slen, slen, kDmSuffix) != 0)
+        return {};
+    return identity.substr(plen, identity.size() - plen - slen);
+}
+
+std::string resolve_dm_psk(const std::string& credentials_json,
+                           const std::string& presented,
+                           const std::string& master_hex) {
+    if (presented.empty()) return {};
+
+    // 1) Commissioned tier: a row whose dm.psk.id == presented.
+    const auto arr =
+        nlohmann::json::parse(credentials_json, /*cb*/nullptr,
+                              /*allow_exceptions*/false);
+    if (arr.is_array()) {
+        for (const auto& e : arr) {
+            if (!e.is_object()) continue;
+            if (e.value("dm.psk.id", std::string()) == presented) {
+                const std::string key = e.value("dm.psk.key", std::string());
+                if (!key.empty()) return key;
+            }
+        }
+    }
+
+    // 2) Zero-touch tier: derive from the serial embedded in the DM identity.
+    if (!master_hex.empty()) {
+        const std::string serial = serial_from_dm_identity(presented);
+        if (!serial.empty()) return derive_dm_psk_hex(master_hex, serial);
+    }
+
+    // 3) No match.
+    return {};
+}
+
 } // namespace iot

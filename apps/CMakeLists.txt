@@ -261,6 +261,13 @@ if(BUILD_APPS_TESTS)
     add_subdirectory(test)
 endif()
 
+# bs-master-wrap — zero-touch HKDF master KMS-wrap operator tool. Lives under
+# tools/ (not src/) so the GLOB above doesn't pull its main() into lwm2m. Links
+# only psk_gen.cpp + OpenSSL.
+add_executable(bs-master-wrap tools/bs_master_wrap.cpp src/psk_gen.cpp)
+target_link_libraries(bs-master-wrap crypto)
+install(TARGETS bs-master-wrap RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
 include(GNUInstallDirs)
 
 # Drop the CONFIGURATIONS Release filter so `make install` works in
