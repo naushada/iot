@@ -200,6 +200,11 @@ IMAGE_INSTALL:append = " rauc"
 WKS_FILE = "iot-ab.wks.in"
 # The bundle needs the rootfs as an ext4 alongside the flashable wic.bz2.
 IMAGE_FSTYPES:append = " ext4"
+# Bring-up aid: also put the kernel console on HDMI (tty1) so the boot — and any
+# rootfs-mount hang/panic — is visible on a monitor without a serial adapter
+# (ENABLE_UART only routes it to the GPIO UART; the framebuffer shows just the
+# raspberry logos). Both consoles get printk; remove once A/B boot is validated.
+CMDLINE:append = " console=tty1"
 ABCONF
         fi
         ;;
