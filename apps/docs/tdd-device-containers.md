@@ -359,3 +359,75 @@ ds-cli set container.stop.request "$(date +%s)"
 rm -rf /var/lib/iot-containers/blobs /var/lib/iot-containers/layers \
        /var/lib/iot-containers/manifests   # drop cached images
 ```
+
+---
+
+## 13. Phase 2 — multiple containers (dynamic named)
+
+v1 runs **one** container (`kContainerId="c0"`, singular `container.*` keys). Phase 2
+lets an operator run **any number** of independently-named containers, each with its
+own bridge IP, shown one-per-row in a device-ui grid.
+
+### 13.1 Why a JSON document, not `container.<name>.*` keys
+
+The ds schema is **static** — keys are registered up-front in `container.lua`; there
+is no mechanism to register `container.web.state`, `container.db.state`, … at
+runtime. So multiplicity lives in **values, not key names** — exactly the pattern the
+cloud already uses for `cloud.endpoint.credentials` (a JSON array of per-endpoint
+records). Two new key groups (schema added):
+
+**Status (daemon → UI), volatile:**
+- `container.instances` — JSON array, one object per container:
+  `{name, image, imageId, size, state, ip, gateway, pid, exitCode, mem, cpus, net, started, error}`.
+  Republished on every state change; the UI grid renders it directly.
+
+**Command envelope (UI → daemon):** set the fields, then bump `container.cmd.request`:
+- `container.cmd.name`  — target container (the row's name; the create key for a new one)
+- `container.cmd.action` — `pull | run | stop | remove`
+- `container.cmd.image | .entrypoint | .cmd | .mem | .cpus | .net | .subnet` — run params
+
+One envelope + one monotonic token = the same baseline-at-startup, no-fire-on-boot
+semantics as the v1 `*.request` keys, and only one command is in flight at a time
+(a registry pull is the long pole; serialising is fine for an edge gateway).
+
+### 13.2 Daemon
+
+Refactor the per-container state out of `Containerd`'s members into a
+`ContainerInstance` struct — its own `state`, request flags, `pull`/`run` threads,
+`merged` rootfs path, crun id, bridge IP — and hold
+`std::map<std::string, std::unique_ptr<ContainerInstance>> m_containers` keyed by
+name. `on_command_event` parses the envelope, finds/creates the named instance, and
+dispatches `pull/run/stop/remove` to it. `publish_instances()` serialises the map to
+`container.instances`.
+
+- **crun id / paths** per name: `id = "c-"+sanitize(name)`, overlay/bundle under
+  `/run/iot-containers/<id>/`, image store stays shared in `/var/lib/iot-containers`.
+- **IP allocation**: a small allocator hands out `.2, .3, .4…` in the bridge /24,
+  tracking in-use IPs across running instances; freed on stop/remove. (v1's bridge
+  code hardcodes `.2` — generalise to "next free".)
+- **remove**: stop if running, then drop the instance from the map + republish.
+
+### 13.3 UI
+
+Replace the single-container key-value card with a `clr-datagrid`:
+
+| Name | Image | State | IP | Mem | CPU | Net | Actions |
+|------|-------|-------|----|-----|-----|-----|---------|
+
+Rows = parsed `container.instances`. **IP column** shows `ip` (bridge mode). An *Add
+container* form (name, image, net, mem, cpu) writes the envelope with `action=pull`
+then `run`; per-row **Run / Stop / Remove** buttons write the envelope for that
+`name`. Long-polls `container.instances` (+ the in-flight `container.pull.progress`).
+
+### 13.4 Migration / compatibility
+
+The legacy singular `container.*` keys stay registered and mirror the
+most-recently-touched instance during rollout, so an old UI keeps working until the
+grid ships. Once the grid lands they can be retired.
+
+### 13.5 Phasing
+
+1. **Schema + design** (this) — `container.instances` + `container.cmd.*` registered.
+2. **Daemon** — `ContainerInstance` map, envelope dispatch, IP allocator, `publish_instances()`.
+3. **UI** — datagrid + Add form + per-row actions.
+4. **Tests** — `container_net` IP-allocator unit test; daemon envelope-dispatch test.

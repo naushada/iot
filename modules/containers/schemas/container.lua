@@ -46,6 +46,33 @@ return {
     ["container.run.request"]   = { access = "Admin",  type = "string", default = "" },
     ["container.stop.request"]  = { access = "Admin",  type = "string", default = "" },
 
+    -- ── Phase 2: multi-container (dynamic named) ──────────────────────────
+    -- The ds schema is static (no per-name keys), so multiple containers are
+    -- carried as ONE JSON document the daemon publishes and the UI grid renders,
+    -- plus a single command envelope routed by name (mirrors the cloud's
+    -- cloud.endpoint.credentials JSON-array pattern). The legacy singular keys
+    -- above remain as a view of the most-recently-touched container during the
+    -- daemon migration.
+    --
+    --   container.instances  - JSON array; one object per container, e.g.
+    --       [{"name":"web","image":"docker.io/library/nginx:latest",
+    --         "state":"running","ip":"10.88.0.2","gateway":"10.88.0.1",
+    --         "pid":1234,"exitCode":null,"mem":"256M","cpus":"0.5",
+    --         "net":"bridge","error":""}]
+    --   container.cmd.*      - command envelope; set the fields then bump
+    --                          container.cmd.request to execute one action.
+    ["container.instances"]     = { access = "Viewer", type = "string", default = "[]" },
+    ["container.cmd.request"]   = { access = "Admin",  type = "string", default = "" },
+    ["container.cmd.name"]      = { access = "Admin",  type = "string", default = "" },
+    ["container.cmd.action"]    = { access = "Admin",  type = "string", default = "" },  -- pull|run|stop|remove
+    ["container.cmd.image"]     = { access = "Admin",  type = "string", default = "" },
+    ["container.cmd.entrypoint"]= { access = "Admin",  type = "string", default = "" },
+    ["container.cmd.cmd"]       = { access = "Admin",  type = "string", default = "" },
+    ["container.cmd.mem"]       = { access = "Admin",  type = "string", default = "" },
+    ["container.cmd.cpus"]      = { access = "Admin",  type = "string", default = "" },
+    ["container.cmd.net"]       = { access = "Admin",  type = "string", default = "host" },
+    ["container.cmd.subnet"]    = { access = "Admin",  type = "string", default = "10.88.0.0/24" },
+
     ["container.state"]         = { access = "Viewer", type = "string", default = "idle" },
     ["container.pull.progress"] = { access = "Viewer", type = "string", default = "0" },
     ["container.pull.detail"]   = { access = "Viewer", type = "string", default = "" },
