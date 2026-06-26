@@ -93,6 +93,15 @@ SSTATE_HARDLINK = "0"
 # reruns fast, so this costs little. The image recipe is auto-excluded.
 INHERIT += "rm_work"
 
+# Keep only the CURRENT image locally: when a new image is built, delete the
+# previous build's image of the same name from tmp/deploy/images/<machine>
+# (old .wic/.wic.bz2/.ext4/.manifest) instead of accumulating every build's
+# artifacts on the builder. The <image>-<machine>.<type> symlinks still resolve
+# to the latest. (Versioned deploy artifacts — the iot-bundle .tar.gz / .raucb —
+# are not images and aren't covered here; iot-bundle already picks the newest
+# .ipk per package, so the bundle never ships two versions of a package.)
+RM_OLD_IMAGE = "1"
+
 # BB_NUMBER_THREADS / PARALLEL_MAKE + memory-pressure regulation are appended
 # below at run time (RAM-aware) — see the "resource guards" block.
 YOCONF
