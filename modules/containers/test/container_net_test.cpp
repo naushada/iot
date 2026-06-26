@@ -37,6 +37,11 @@ TEST(NftRuleset, ScopedTableWithMasquerade) {
     // Own scoped table — must NOT touch net-router's iot_router table.
     EXPECT_NE(rs.find("flush table inet iot_containers"), std::string::npos);
     EXPECT_NE(rs.find("table inet iot_containers {"), std::string::npos);
+    // `add table` MUST precede `flush table` so the first container run (no table
+    // yet) doesn't die on "flush table … No such file or directory".
+    EXPECT_NE(rs.find("add table inet iot_containers"), std::string::npos);
+    EXPECT_LT(rs.find("add table inet iot_containers"),
+              rs.find("flush table inet iot_containers"));
     EXPECT_EQ(rs.find("iot_router"), std::string::npos);
     // Masquerade for the subnet leaving any non-bridge interface.
     EXPECT_NE(rs.find("ip saddr 10.88.0.0/24 oifname != \"iot-cni0\" masquerade"),
