@@ -249,6 +249,23 @@ the serial* (BS `sha256`, DM `rpi<serial>@cloud.local`), never stored. A
 `identity=/secret=` CLI override still exists but only for the dev/interop
 test harness — production passes nothing.
 
+**Zero-touch HKDF tier (added 2026-06-26, `apps/docs/tdd-bs-hkdf-zerotouch.md`).**
+The resolver above is the **commissioned** tier (a `cloud.endpoint.credentials`
+row per device). When no row matches AND a master is configured, the server
+**HKDF-derives** the PSK instead — `resolve_bs_psk` / `resolve_dm_psk`
+(`apps/src/provisioning_policy.cpp`):
+- **BS**: device presents its **raw serial** (override path) → `HKDF(master, "iot-bs-psk:v1:"+serial)`.
+- **DM**: presents `rpi<serial>@cloud.local` → `HKDF(master, "iot-dm-psk:v1:"+serial)`.
+
+The master lives in `cloud.bs.master.key` AES-256-GCM-**wrapped**; a KEK
+(`IOT_BS_MASTER_KEK` / `IOT_BS_MASTER_KEK_FILE` / systemd `$CREDENTIALS_DIRECTORY/bs_kek`,
+**never** in ds) unwraps it once at startup into memory. No KEK / bad blob →
+fail closed to the commissioned tier (the HKDF tier is off by default). The
+provisioning resolver likewise derives the BS+DM accounts for an un-stored
+serial — fully stateless, nothing minted or stored. Devices are flash-time
+personalised with `iot-bs-personalize`; the wrap tool is `bs-master-wrap`.
+Tiers **coexist**: stored row wins, else derive.
+
 The device binary already handles `/bs` (bootstrap session) and `/rd`
 (registration) dispatch over CoAP/UDP/DTLS. It is built from the same
 `apps/CMakeLists.txt` as the device, with `-DIOT_ENABLE_MONGO=OFF` to
@@ -415,6 +432,9 @@ cloud.bs.uri             → BS CoAPs endpoint (default: coaps://0.0.0.0:5684)
 cloud.bs.security.mode   → "PSK" | "None"
 cloud.bs.psk.id          → BS PSK identity (RID 3)
 cloud.bs.psk.key         → BS PSK secret (RID 5, opaque)
+cloud.bs.master.key      → zero-touch HKDF master, AES-256-GCM-wrapped (opaque,
+                           write-only gid:cloud-svc; "" = HKDF tier off). KEK is
+                           out-of-band, never in ds. See tdd-bs-hkdf-zerotouch.md.
 ```
 
 ### Device Management (cloud.dm.*)
