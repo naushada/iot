@@ -25,10 +25,13 @@ set -eu
 SOCK="${IOT_DS_SOCK:-/run/iot/data_store.sock}"
 STATE="${IOT_DS_STATE:-/var/lib/iot}"
 FLAG="$STATE/.seeded"
+BS_SEED="$STATE/bs-seed.json"
 DSCLI="ds-cli --socket=$SOCK"
 
-# Already seeded → nothing to do (idempotent, preserves operator changes).
-[ -f "$FLAG" ] && exit 0
+# Nothing to do only when BOTH the one-time seed has run AND there is no pending
+# zero-touch BS personalisation file. (The BS block below is independent of the
+# engineer-account flag so a unit personalised after first boot still applies.)
+[ -f "$FLAG" ] && [ ! -f "$BS_SEED" ] && exit 0
 
 # After=iot-ds orders start, not readiness — wait for the socket to appear.
 i=0
@@ -40,6 +43,43 @@ if [ ! -S "$SOCK" ]; then
     echo "iot-ds-seed: ds socket $SOCK not ready after ${i}s; will retry next boot" >&2
     exit 0   # don't fail the boot; no flag written, so it retries
 fi
+
+# ── Zero-touch BS personalisation (apps/docs/tdd-bs-hkdf-zerotouch.md) ────────
+# A per-unit bs-seed.json dropped onto the data partition at flash time by the
+# host tool iot-bs-personalize: {"serial":"<raw>","key":"<64-hex derived PSK>"}.
+# Apply it ONCE (when iot.bs.psk.key is still empty), then shred the file. This
+# is what lets a freshly-flashed device reach the BS with no device-ui step.
+if [ -f "$BS_SEED" ]; then
+    # Only personalise if not already done (idempotent). dev-mode is on at first
+    # boot, so root's ds-cli may read/write the gid:engineer PSK keys.
+    CUR_KEY=$($DSCLI get iot.bs.psk.key 2>/dev/null || true)
+    if [ -z "$CUR_KEY" ]; then
+        # Parse without jq (busybox): single-line {"serial":"..","key":".."}.
+        SER=$(sed -n 's/.*"serial"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$BS_SEED")
+        KEY=$(sed -n 's/.*"key"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$BS_SEED")
+        if [ -n "$SER" ] && [ -n "$KEY" ]; then
+            if $DSCLI set iot.serial "$SER" \
+               && $DSCLI set iot.bs.psk.identity "$SER" \
+               && $DSCLI set iot.bs.psk.key "$KEY" \
+               && $DSCLI set iot.bs.psk.override true; then
+                # Best-effort shred (busybox has no shred): zero, then remove.
+                # The key also lives in the ds persist file, so this is only
+                # belt-and-suspenders against the seed lingering on the FS.
+                dd if=/dev/zero of="$BS_SEED" bs=1 \
+                   count="$(wc -c < "$BS_SEED")" conv=notrunc 2>/dev/null || true
+                rm -f "$BS_SEED"
+                echo "iot-ds-seed: personalised zero-touch BS PSK for serial $SER"
+            else
+                echo "iot-ds-seed: BS personalise set failed; retry next boot" >&2
+            fi
+        else
+            echo "iot-ds-seed: bs-seed.json malformed (need serial+key); ignoring" >&2
+        fi
+    fi
+fi
+
+# The one-time engineer-account seed runs only on the very first boot.
+[ -f "$FLAG" ] && exit 0
 
 # Default read-only "engineer" device-ui account, seeded alongside the built-in
 # admin (admin/admin). access=Viewer (view-only; cannot change config, run the

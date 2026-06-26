@@ -370,7 +370,12 @@ malformed-master / odd-hex rejection (mirror `test_gen_wifi_default.py`).
      `IOT_BS_MASTER_KEK` / systemd cred); the `bs-master-wrap` CLI; the
      `IOT_BS_SEED` recipe bake of a wrapped master into the cloud image. Guarded
      by empty-master = no-op, so it stays inert until a master is seeded.
-3. **P3 — device personalisation:** `iot-bs-personalize` + `iot-ds-seed`
-   extension + `iot.bs.psk.override` wiring (Option I, flash-time).
+3. ✅ **P3 — device personalisation (done):** `iot-bs-personalize` host tool
+   emits a per-unit `bs-seed.json` (`{serial, key=HKDF(master,serial)}`);
+   `iot-ds-seed` applies it on first boot (sets `iot.serial` /
+   `iot.bs.psk.identity` / `iot.bs.psk.key` / `iot.bs.psk.override=true`) and
+   shreds the file — independent of the engineer-account `.seeded` flag so a
+   re-personalised unit re-applies. Tests: 7/7 (`test_iot_bs_personalize.py`),
+   `iot-ds-seed` `sh -n` clean, sed-parse round-trip verified.
 4. **P4 — DEPLOY.md** "Zero-touch bootstrap (HKDF)" section + master-rotation
    runbook; integration validation on real BS+DM+device hardware.
