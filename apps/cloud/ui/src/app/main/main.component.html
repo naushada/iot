@@ -4,8 +4,15 @@
       <img src="assets/iot-logo.svg" width="36" height="36" alt="IoT" />
       <span class="brand-text">IoT Cloud</span>
     </div>
-    <a class="nav-item" *ngFor="let m of menus" [class.active]="selectedMenu===m.id" (click)="onMenuSelect(m.id)">
+    <a class="nav-item" *ngFor="let m of menus; let i = index"
+       [class.active]="selectedMenu===m.id" [class.dragging]="dragIndex===i"
+       draggable="true" (dragstart)="onDragStart(i)"
+       (dragover)="onDragOver($event, i)" (dragend)="onDragEnd()"
+       (click)="onMenuSelect(m.id)" title="Drag to reorder">
       <img [src]="m.svg" class="nav-icon" alt="" /><span>{{m.label}}</span>
+    </a>
+    <a class="nav-item nav-reset" (click)="resetNav()" title="Reset menu order to default">
+      <span class="nav-icon nav-reset-glyph">↺</span><span>Reset order</span>
     </a>
     <div class="sidebar-spacer"></div>
     <a class="nav-item" (click)="theme.toggle()" title="Toggle theme">

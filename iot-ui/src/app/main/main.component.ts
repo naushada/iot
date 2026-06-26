@@ -6,6 +6,7 @@ import { PubSubService } from '../../common/pubsubsvc.service';
 import { ThemeService } from '../../common/theme.service';
 import { DebugService } from '../../common/debug.service';
 import { DataStoreService } from '../../common/datastore.service';
+import { NavOrderService } from '../../common/nav-order.service';
 import { StatusSnapshot, fmtDuration } from '../../common/app-globals';
 
 @Component({
@@ -24,7 +25,9 @@ export class MainComponent {
   status: StatusSnapshot | null = null;
 
   // Sidebar nav items with collapsible children
-  menus = [
+  // Canonical sidebar order (the reset target). The displayed `menus` is
+  // reordered by the per-browser saved order in ngOnInit and on drag.
+  private readonly DEFAULT_MENUS = [
     { id: 'dashboard', label: 'Dashboard', svg: 'assets/icons/dashboard.svg', children: [] as {id:string,label:string}[] },
     { id: 'vpn',       label: 'VPN',       svg: 'assets/icons/vpn.svg',
       children: [{id:'config',label:'Configuration'},{id:'status',label:'Status'}] },
@@ -49,6 +52,8 @@ export class MainComponent {
     { id: 'advanced',  label: 'Advanced',  svg: 'assets/icons/advanced.svg',
       children: [{id:'reboot',label:'Reboot'},{id:'factory',label:'Factory Reset'},{id:'transfer',label:'Transfer'}] },
   ];
+  menus = [...this.DEFAULT_MENUS];
+  dragId = '';   // id of the menu being dragged ('' = none)
 
   expandedMenu: string | null = null;  // which menu is expanded in sidebar
   version = '';                         // running release (iot.version)
@@ -73,13 +78,16 @@ export class MainComponent {
     private pubsub: PubSubService,
     public theme: ThemeService,
     public debug: DebugService,
-    private ds: DataStoreService
+    private ds: DataStoreService,
+    private navOrder: NavOrderService
   ) {
     this.theme.init();
     this.debug.init();
   }
 
   ngOnInit(): void {
+    // Apply the per-browser saved sidebar order (new pages append).
+    this.menus = this.navOrder.apply([...this.DEFAULT_MENUS]);
     // Authenticated shell: warm the shared data-store cache once so every
     // config page paints instantly, and start watching for live changes.
     this.ds.prefetchAll();
@@ -120,6 +128,28 @@ export class MainComponent {
     this.selectedMenu = menuId;
     this.selectedSubNav = '';
     this.pubsub.publish('menu', menuId);
+  }
+
+  // ── Drag-to-reorder the sidebar (HTML5 DnD; persisted per browser). Keyed by
+  //    id (not index) so it works against the filtered `navMenus` view. ──
+  onDragStart(id: string): void { this.dragId = id; }
+  onDragOver(e: DragEvent, overId: string): void {
+    e.preventDefault();                        // allow the drop
+    if (!this.dragId || this.dragId === overId) return;
+    const from = this.menus.findIndex(m => m.id === this.dragId);
+    const to   = this.menus.findIndex(m => m.id === overId);
+    if (from < 0 || to < 0) return;
+    const [moved] = this.menus.splice(from, 1);
+    this.menus.splice(to, 0, moved);           // live reorder; navMenus reflects it
+  }
+  onDragEnd(): void {
+    if (!this.dragId) return;
+    this.dragId = '';
+    this.navOrder.save(this.menus.map(m => m.id));
+  }
+  resetNav(): void {
+    this.navOrder.reset();
+    this.menus = [...this.DEFAULT_MENUS];
   }
 
   onSubNavSelect(item: string): void {
