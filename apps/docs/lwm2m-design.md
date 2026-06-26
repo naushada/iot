@@ -236,7 +236,7 @@ Two cooperating mechanisms make that happen:
    | `NotStarted` | no BS configured | → `Skipped` (plain-DM fallback) |
    | `NotStarted` | `now ≥ bootRetryAfter` **and** DTLS up | send `POST /bs` → `InProgress`, set 15 s `bootDeadline` |
    | `NotStarted` | `now ≥ bootRetryAfter` **and** DTLS not up | re-kick `connect(bsHost,bsPort)` (covers a peer dropped after max retransmits); `bootRetryAfter = now + bootBackoff`; then grow `bootBackoff` |
-   | `InProgress` | `now ≥ bootDeadline` (15 s, `/bs` didn't complete) | `bootRetryAfter = now + bootBackoff`; grow `bootBackoff`; → `NotStarted` (re-send `/bs` after the backoff window) |
+   | `InProgress` | `now ≥ bootDeadline` (15 s, `/bs` didn't complete) | `dtls->reset_and_connect(bsHost,bsPort)` (force a fresh BS handshake); `bootRetryAfter = now + bootBackoff`; grow `bootBackoff`; → `NotStarted` |
 
    `bootDeadline` bounds a single `/bs` attempt (15 s); `bootRetryAfter` +
    `bootBackoff` space out the *retries*. The loop is unbounded by design — a
@@ -244,6 +244,20 @@ Two cooperating mechanisms make that happen:
    falls back to a direct DM register**; only an explicitly BS-less config takes
    the `Skipped` path. On success the FSM leaves `NotStarted/InProgress` for
    `Done`, so the backoff state is simply abandoned (no reset needed).
+
+   **Bootstrap timeout forces a fresh DTLS handshake (stale-session recovery).**
+   A `/bs` timeout must reset the BS DTLS session, not just re-POST. After the
+   session dies (cloud `lwm2m-bs` restart, NAT drop, or a stale session inherited
+   across a watchdog restart) tinydtls still reports the peer
+   `DTLS_STATE_CONNECTED` and `clientState` stays `"connected"`, so a plain
+   re-`POST /bs` only triggers a renegotiation that **emits nothing** — the client
+   loops forever, `dtlsWriteCb` never fires, and (because the 1 Hz tick keeps
+   running) the watchdog never catches it. Field-observed: a device stuck
+   "bootstrapping" for 10 h that a manual restart fixed in ~1 s. The timeout
+   branch therefore calls `DTLSAdapter::reset_and_connect()`, which resets the
+   peer **unconditionally** (even `CONNECTED`, which plain `connect()` leaves
+   untouched for the BS→DM handoff) → a real ClientHello. The device now
+   self-recovers without a restart.
 
    The device-ui sees this via `iot.conn.state` (`bootstrapping` while looping;
    see `compute_conn_state`).
@@ -336,6 +350,17 @@ dependency; a no-op when `$NOTIFY_SOCKET` is unset). If the reactor stalls the
 pings stop and systemd `SIGABRT`s + restarts the unit. **The unit's
 `WatchdogSec=` and the binary that sends `WATCHDOG=1` must ship together** — an
 older binary under a watchdog unit would be killed every 60 s.
+
+**Pre-reactor blocking paths must pet the watchdog too.** The reactor pings the
+watchdog, but the **`awaiting provisioning` startup loop runs before the reactor
+starts** (`for(;;)` polling `iot.bs.uri` + BS PSK, sleeping 5 s, by design so an
+un-commissioned device stays alive until provisioned). Without a ping there it is
+**not** a wedge yet still gets `SIGABRT`'d every 60 s — field-observed as a
+crash-loop after a ds-load race (the client read empty creds before `ds-server`
+finished loading `data_store.lua` post-restart). So that loop calls
+`systemd_watchdog_ping()` each iteration. Rule of thumb: **any blocking startup
+wait longer than `WatchdogSec` that runs before `run_reactor_event_loop()` must
+ping the watchdog itself.**
 
 #### 5.3.3 Two liveness timers — registration lifetime vs transport keepalive
 
