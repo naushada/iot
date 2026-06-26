@@ -23,10 +23,13 @@ struct NetPlan {
     std::string container_ip;  ///< the container's address (.2)
 };
 
-/// Plan the single-container bridge network from `subnet_cidr` (a /24, e.g.
-/// "10.88.0.0/24") + `bridge`. gateway is host .1, the container gets .2.
-/// ok=false on a malformed or non-/24 CIDR (v1 supports a single /24).
-NetPlan plan_bridge_net(const std::string& subnet_cidr, const std::string& bridge);
+/// Plan a bridge network from `subnet_cidr` (a /24, e.g. "10.88.0.0/24") +
+/// `bridge`. gateway is host .1; the container gets the `.host_octet` address
+/// (default .2). Multi-container assigns a distinct octet (.2/.3/.4…) per
+/// running container on the shared bridge. ok=false on a malformed or non-/24
+/// CIDR, or an out-of-range octet (must be 2..254).
+NetPlan plan_bridge_net(const std::string& subnet_cidr, const std::string& bridge,
+                        int host_octet = 2);
 
 /// The nftables ruleset (an `nft -f` script) for container egress: a SCOPED
 /// `inet iot_containers` table (separate from net-router's `iot_router`, so the

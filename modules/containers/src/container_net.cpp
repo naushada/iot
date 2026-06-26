@@ -25,8 +25,10 @@ bool parse_ipv4(const std::string& s, int oct[4]) {
 
 } // namespace
 
-NetPlan plan_bridge_net(const std::string& subnet_cidr, const std::string& bridge) {
+NetPlan plan_bridge_net(const std::string& subnet_cidr, const std::string& bridge,
+                        int host_octet) {
     NetPlan p;
+    if (host_octet < 2 || host_octet > 254) return p;   // .1 is the gateway
     const auto slash = subnet_cidr.find('/');
     if (slash == std::string::npos) return p;
     const std::string net = subnet_cidr.substr(0, slash);
@@ -43,7 +45,7 @@ NetPlan plan_bridge_net(const std::string& subnet_cidr, const std::string& bridg
     p.cidr         = subnet_cidr;
     p.prefix       = prefix;
     p.gateway      = base + "1";
-    p.container_ip = base + "2";
+    p.container_ip = base + std::to_string(host_octet);
     return p;
 }
 
