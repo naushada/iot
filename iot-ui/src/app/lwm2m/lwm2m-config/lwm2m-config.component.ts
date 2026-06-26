@@ -184,10 +184,12 @@ export class Lwm2mConfigComponent implements OnInit, OnDestroy {
    * enabled) the operator-supplied identity. The hex key is written only when a
    * new value was typed, so re-saving without re-entering it leaves the stored
    * secret intact (write-only). The client must be restarted to pick the new
-   * credentials up. Requires commissioning mode.
+   * credentials up. Admin-only (entering a third-party vendor's BS credentials is
+   * a normal commissioning action — it does not require dev mode, which only
+   * gates revealing/regenerating the device's OWN derived PSK).
    */
   saveBsOverride(): void {
-    if (!this.devMode || !this.isAdmin) return;
+    if (!this.isAdmin) return;
     const on = this.overrideOn;
     const identity = (this.serverForm.get('bs_identity')?.value || '').trim();
     const key = (this.serverForm.get('bs_key')?.value || '').trim();
