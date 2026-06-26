@@ -284,6 +284,21 @@ fi
 # packagegroup-iot): the feed is enough there.
 case " $* " in *" iot-image "*) set -- "$@" iot-bundle ;; esac
 
+# Interactive shell (./build.sh shell): all the layer + local.conf + bitbake-env
+# setup above has run, so drop the operator into a ready-to-use bitbake shell
+# instead of building. Handy for `bitbake -c cleansstate base-files`,
+# `bitbake-layers show-layers`, `bitbake -e <recipe>`, grepping the other layers.
+if [ "${IOT_SHELL:-}" = "1" ]; then
+    echo ""
+    echo "→ bitbake env ready ($MACHINE). e.g.:"
+    echo "    bitbake -c cleansstate base-files   # clear a recipe's stale sstate"
+    echo "    bitbake-layers show-layers          # list configured layers + paths"
+    echo "    bitbake -e base-files | grep fstab  # where a value comes from"
+    echo "  Exit with Ctrl-D / 'exit'."
+    echo ""
+    exec bash
+fi
+
 echo ""
 echo "→ Starting bitbake for $MACHINE: $@ ..."
 echo ""
