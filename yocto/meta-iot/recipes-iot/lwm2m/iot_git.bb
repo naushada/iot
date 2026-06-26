@@ -506,7 +506,7 @@ RDEPENDS:${PN}-lwm2m = "\
     readline \
     openssl \
     tinydtls-staticdev \
-    sqlite3 \
+    libsqlite3-0 \
     ${@bb.utils.contains('PACKAGECONFIG', 'mongo', \
         'mongo-cxx-driver-bsoncxx mongo-cxx-driver mongo-c-driver-bson mongo-c-driver', \
         '', d)} \
@@ -665,7 +665,7 @@ FILES:${PN}-mqtt = "\
     ${bindir}/iot-mqttd \
     ${systemd_system_unitdir}/iot-mqttd.service \
 "
-RDEPENDS:${PN}-mqtt = "ace-tao mosquitto"
+RDEPENDS:${PN}-mqtt = "ace-tao libmosquitto1"
 RRECOMMENDS:${PN}-mqtt = "\
     ${PN}-ds-server \
     ${PN}-config \
