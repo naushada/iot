@@ -59,3 +59,37 @@ IMAGE_ROOTFS_EXTRA_SPACE = "524288"
 # On a Linux host whose build fs supports FIEMAP, append "wic.bmap" below to
 # re-enable fast/verified bmaptool writes.
 IMAGE_FSTYPES = "wic.bz2"
+
+# ── Pre-flight: fstab sanity (reject a self-bricking image at BUILD time) ──
+# A baked /etc/fstab that references a block device the target won't have makes
+# systemd's local-fs.target time out (~90 s) and drop to EMERGENCY mode on first
+# boot — a silent brick (and on A/B BOTH banks brick before rollback can help).
+# Seen in the field from a stale base-files sstate that injected /dev/sda4 +
+# /dev/mmcblk0p5/6. Fail the build on the classic offenders so a bad fstab never
+# ships as an update / flash:
+#   * /dev/sd*               — these images boot from mmc, never a SATA/USB disk
+#   * /dev/mmcblk0p<N>, N>4  — no wks layout here has more than 4 partitions
+fstab_sanity_check () {
+    fstab="${IMAGE_ROOTFS}/etc/fstab"
+    [ -f "$fstab" ] || return 0
+    bad=0
+    while read -r src mnt rest; do
+        case "$src" in
+            ''|'#'*) continue ;;
+            /dev/sd*)
+                bberror "fstab precheck: $src -> ${mnt:-?} — no SATA/USB disk on an mmc image"
+                bad=1 ;;
+            /dev/mmcblk0p*)
+                if [ "${src#/dev/mmcblk0p}" -gt 4 ] 2>/dev/null; then
+                    bberror "fstab precheck: $src -> ${mnt:-?} — no such partition"
+                    bad=1
+                fi ;;
+        esac
+    done < "$fstab"
+    if [ "$bad" = 1 ]; then
+        bbwarn "Offending /etc/fstab:
+$(cat "$fstab")"
+        bbfatal "fstab precheck FAILED — this image would hang at boot / drop to emergency mode. Usually a stale base-files sstate or a bad bbappend: run 'bitbake -c cleansstate base-files iot-image' then rebuild."
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND:append = " fstab_sanity_check;"
