@@ -125,6 +125,56 @@ first `./build.sh` ever takes hours.
 | Build artifacts corrupted, mysterious errors | `cleanall` |
 | Start over from scratch (hours!) | `podman volume rm iot-yocto-sstate iot-yocto-downloads` |
 
+### Interactive build shell — `./build.sh shell`
+
+For ad-hoc bitbake work — clear a stale cache, trace where a baked value comes
+from, inspect layers — drop straight into the build container with the bitbake
+env already set up (no `TARGET=` round-trips):
+
+```sh
+./build.sh shell                            # default machine (raspberrypi3-64)
+IOT_AB=1 ./build.sh shell raspberrypi3-64   # with the RAUC A/B layers added
+```
+
+It mounts the **same** `sstate` + `downloads` volumes as a real build, so a clean
+or build you run here affects later `./build.sh` runs. Exit with `Ctrl-D` (the
+container is `--rm`, auto-removed). Useful commands from the prompt:
+
+| Command | What it does |
+|---------|--------------|
+| `bitbake <recipe>` · `bitbake iot-image` | build a recipe / the image |
+| `bitbake -c cleansstate <recipe>` | wipe a recipe's sstate (re-fetch→patch→configure→build) — fixes a **stale baked output** (e.g. a wrong `/etc/fstab` from `base-files`) |
+| `bitbake -c cleanall <recipe>` | cleansstate **+** delete the fetched source under WORKDIR |
+| `bitbake -c <task> <recipe>` | run one task: `fetch unpack patch configure compile install package deploy rootfs image` |
+| `bitbake -c listtasks <recipe>` | list a recipe's tasks |
+| `bitbake -e <recipe>` | dump the fully-expanded vars (where a value comes from); pipe to `grep`, e.g. `bitbake -e base-files` → grep `^FILESEXTRAPATHS` / `^SRC_URI` |
+| `bitbake -s` | list every recipe + version |
+| `bitbake -g <recipe>` | emit `task-depends.dot` dependency graphs |
+| `bitbake-layers show-layers` | list configured layers + their on-disk paths |
+| `bitbake-layers show-recipes <recipe>` | which layer(s) provide a recipe |
+| `bitbake-layers show-appends` | all active `.bbappend`s — find who overrides a recipe |
+| `bitbake-layers show-overlayed` | recipes shadowed by a higher-priority layer |
+| `oe-pkgdata-util find-path '<glob>'` | which package ships a file (e.g. `'*/fstab'`) |
+| `oe-pkgdata-util list-pkg-files <pkg>` | files in a built package |
+| `devtool` · `recipetool` | scaffold/modify recipes (advanced) |
+
+Grep **all** configured layers (not just meta-iot) for a string — handy when a
+value isn't in the repo:
+```sh
+grep -rln "sda4" $(bitbake-layers show-layers | awk '$2 ~ /^\//{print $2}')
+```
+
+**Example — find a wrong value baked into the image, then fix it:**
+```sh
+./build.sh shell
+  bitbake-layers show-appends | grep base-files     # who modifies base-files?
+  oe-pkgdata-util find-path '*/fstab'                # which package ships /etc/fstab
+  bitbake -e base-files | grep -E 'FILESEXTRAPATHS|SRC_URI'   # its fstab source
+  bitbake -c cleansstate base-files                 # if it was stale sstate
+  exit
+IOT_AB=1 ./build.sh                                  # rebuild clean
+```
+
 ### Shareable cache image (skip the distro compile on a fresh machine)
 
 To get that incremental behaviour on a *different* machine / CI without
