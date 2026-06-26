@@ -266,12 +266,19 @@ std::optional<MintedCert> CertAuthority::mint_client(const std::string& cn) {
     // CA database (index.txt) and can be revoked later. `-notext` keeps the
     // output a clean PEM (no human-readable header). ensure_crl() first so the
     // database + openssl.cnf exist.
+    //
+    // `-rand_serial`: pick a large random serial instead of reading/incrementing
+    // the `serial` file. The file-based counter desyncs from index.txt whenever
+    // the PKI is wiped/restored unevenly (index.txt restored but serial reset to
+    // "01") — every subsequent mint then dies with "Serial number 01 has already
+    // been issued, check the database/serial_file for corruption". A random
+    // serial removes that coupling entirely (and is RFC 5280 best practice).
     bool ok =
         ensure_crl() &&
         run_openssl("genrsa -out '" + key + "' 2048") &&
         run_openssl("req -new -key '" + key + "' -out '" + csr +
                     "' -subj '/O=IoT Cloud/CN=" + safe + "'") &&
-        run_openssl("ca -batch -notext -config '" + m_p.ca_cnf + "' -days " +
+        run_openssl("ca -batch -notext -rand_serial -config '" + m_p.ca_cnf + "' -days " +
                     std::to_string(m_p.days) + " -in '" + csr + "' -out '" + crt + "'");
 
     MintedCert out;
