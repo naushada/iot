@@ -98,6 +98,7 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
           <clr-dg-column>Progress</clr-dg-column>
           <clr-dg-column>Result</clr-dg-column>
           <clr-dg-column>Version</clr-dg-column>
+          <clr-dg-column>Actions</clr-dg-column>
 
           <clr-dg-row *clrDgItems="let s of status">
             <clr-dg-cell><code>{{ s.serial }}</code></clr-dg-cell>
@@ -116,6 +117,15 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
                 [state]="s.result===1 ? 'connected' : (s.result>=5 ? 'exited' : 'idle')"></app-status-badge>
             </clr-dg-cell>
             <clr-dg-cell>{{ s.version || '—' }}</clr-dg-cell>
+            <clr-dg-cell>
+              <!-- Abort a stuck/in-flight campaign (result still pending). Stops
+                   the cloud re-pushing Object 5 and marks the row cancelled; an
+                   install already running on the device can't be interrupted. -->
+              <button class="btn btn-sm btn-danger-outline" *ngIf="s.result===0"
+                      [disabled]="aborting===s.serial" (click)="abort(s)">
+                {{ aborting===s.serial ? 'Aborting…' : 'Abort' }}
+              </button>
+            </clr-dg-cell>
           </clr-dg-row>
 
           <clr-dg-footer>{{ status.length }} job{{ status.length===1?'':'s' }}</clr-dg-footer>
@@ -152,6 +162,7 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   selected: Ep[] = [];
   selectedUrl = '';
   pushing = false;
+  aborting = '';            // serial of the row whose abort is in flight
   // Firmware upload (browse / drag-drop into the feed)
   dragOver = false;
   uploading = false;
@@ -224,6 +235,8 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     if (r === 5) return 'integrity error';
     if (r === 8) return 'uri error';
     if (r === 9) return 'install error';
+    if (r === 10) return 'skipped';
+    if (r === 11) return 'cancelled';
     return 'error ' + r;
   }
   // Cloud-side progress is PHASE-based (the device's byte-accurate % shows on the
@@ -254,6 +267,22 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
         else { this.toast.error(r.err || 'Update failed'); }
       },
       error: () => { this.pushing = false; this.toast.error('Update failed'); }
+    });
+  }
+
+  abort(s: UpdStatus): void {
+    this.aborting = s.serial;
+    this.http.dbSet([{ key: 'cloud.update.abort', value: s.serial }]).subscribe({
+      next: (r) => {
+        this.aborting = '';
+        if (r.ok) {
+          this.toast.success('Update aborted for ' + s.serial);
+          // Optimistic: mark the row cancelled now (iot-cloudd drops the pending
+          // job + sets result 11; observe() then confirms).
+          s.state = 0; s.result = 11;
+        } else { this.toast.error(r.err || 'Abort failed'); }
+      },
+      error: () => { this.aborting = ''; this.toast.error('Abort failed'); }
     });
   }
 
