@@ -165,7 +165,10 @@ lets the outer loop respawn openvpn once WAN + deps are healthy.
 
 This same enable gate is how a **cloud-pushed VPN certificate** takes
 effect on the RPi/systemd image, which ships **no cert sidecar**
-watching `/etc/iot/vpn`:
+watching `/etc/iot/vpn`. (The cloud is the sole PKI authority and mints the
+client **key + cert** centrally — the device generates no key/CSR; see the PKI
+model + security considerations in `apps/cloud/CLAUDE.md` → "VPN PKI &
+per-device certificates".)
 
 1. The cloud pushes the cert family over LwM2M custom **Object 2048**
    (instances 0/1/2 = ca/cert/key) and EXECUTEs RID 3 (Apply).
