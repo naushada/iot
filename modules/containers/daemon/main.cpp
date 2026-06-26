@@ -1,10 +1,11 @@
-/// iot-containerd — single-container runtime shim (crun-backed) entry.
+/// iot-containerd — multi-container runtime shim (crun-backed) entry.
 ///
-/// Reactor-driven (ACE): connects to the data-store, publishes container.*
-/// status, and watches the container.{pull,run,stop}.request command keys the
-/// device-ui bumps. Phase 1 is the control-plane skeleton — it acknowledges
-/// commands but the registry pull, overlay mount and crun lifecycle land in
-/// later phases. See apps/docs/tdd-device-containers.md.
+/// Reactor-driven (ACE): connects to the data-store, publishes the
+/// container.instances JSON array, and watches the container.cmd.request command
+/// envelope the device-ui bumps (action=pull|run|stop|remove, routed by name).
+/// Pulls images from an OCI/Docker registry, overlay-mounts the layers, and
+/// drives crun create/start/stop per named container. See
+/// apps/docs/tdd-device-containers.md §13.
 
 #include <cstdlib>
 #include <iostream>
@@ -16,7 +17,7 @@ namespace {
 
 void usage() {
     std::cout <<
-        "iot-containerd — single-container runtime shim (crun-backed)\n"
+        "iot-containerd — multi-container runtime shim (crun-backed)\n"
         "\n"
         "Usage: iot-containerd [--ds-sock=PATH] [--root=DIR] [--run=DIR] [--help]\n"
         "\n"

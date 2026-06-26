@@ -104,10 +104,10 @@ void write_proc(const char* path, const char* val) {
 } // namespace
 
 BridgeNet bridge_up(long container_pid, const std::string& subnet_cidr,
-                    const std::string& id) {
+                    const std::string& id, int host_octet) {
     BridgeNet res;
-    const NetPlan plan = plan_bridge_net(subnet_cidr, kBridgeName);
-    if (!plan.ok) { res.error = "invalid bridge subnet: " + subnet_cidr; return res; }
+    const NetPlan plan = plan_bridge_net(subnet_cidr, kBridgeName, host_octet);
+    if (!plan.ok) { res.error = "invalid bridge subnet/octet: " + subnet_cidr; return res; }
 
     const std::string& ip = ip_tool();
     const std::string host_veth = "vh-" + id;   // host end (≤15 chars)

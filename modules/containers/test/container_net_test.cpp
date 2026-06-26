@@ -20,6 +20,22 @@ TEST(NetPlan, OtherSubnet) {
     EXPECT_EQ(p.container_ip, "192.168.50.2");
 }
 
+TEST(NetPlan, HostOctetAssignsDistinctIPs) {
+    // Multi-container: each running container gets a distinct .N on the bridge.
+    EXPECT_EQ(plan_bridge_net("10.88.0.0/24", "br0").container_ip,      "10.88.0.2");  // default
+    EXPECT_EQ(plan_bridge_net("10.88.0.0/24", "br0", 2).container_ip,   "10.88.0.2");
+    EXPECT_EQ(plan_bridge_net("10.88.0.0/24", "br0", 3).container_ip,   "10.88.0.3");
+    EXPECT_EQ(plan_bridge_net("10.88.0.0/24", "br0", 254).container_ip, "10.88.0.254");
+    EXPECT_EQ(plan_bridge_net("10.88.0.0/24", "br0", 7).gateway,        "10.88.0.1");  // gw fixed
+}
+
+TEST(NetPlan, RejectsOutOfRangeOctet) {
+    EXPECT_FALSE(plan_bridge_net("10.88.0.0/24", "br0", 1).ok);    // .1 is the gateway
+    EXPECT_FALSE(plan_bridge_net("10.88.0.0/24", "br0", 0).ok);
+    EXPECT_FALSE(plan_bridge_net("10.88.0.0/24", "br0", 255).ok);  // broadcast / out of range
+    EXPECT_FALSE(plan_bridge_net("10.88.0.0/24", "br0", 999).ok);
+}
+
 TEST(NetPlan, RejectsNonSlash24) {
     EXPECT_FALSE(plan_bridge_net("10.0.0.0/8", "br0").ok);
     EXPECT_FALSE(plan_bridge_net("10.88.0.0/16", "br0").ok);

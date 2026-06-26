@@ -23,10 +23,12 @@ struct BridgeNet {
 ///   3. install the scoped `inet iot_containers` masquerade nft table,
 ///   4. create a veth pair, attach the host end to the bridge, move the peer
 ///      into the container netns as eth0 with the container IP + default route.
-/// `subnet_cidr` is a /24 (default 10.88.0.0/24). Must run as root. On failure
-/// the partial setup is best-effort torn down and `.error` is set.
+/// `subnet_cidr` is a /24 (default 10.88.0.0/24). `host_octet` is the container's
+/// address within it (.2/.3/.4… — a distinct value per running container on the
+/// shared bridge). Must run as root. On failure the partial setup is best-effort
+/// torn down and `.error` is set.
 BridgeNet bridge_up(long container_pid, const std::string& subnet_cidr,
-                    const std::string& id);
+                    const std::string& id, int host_octet = 2);
 
 /// Tear down container `id`'s veth (its peer auto-removes when the container
 /// netns dies). Idempotent; the bridge + nft table persist for reuse.
