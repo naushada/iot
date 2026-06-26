@@ -66,12 +66,21 @@ bool CertAuthority::run_openssl(const std::string& args) const {
     // safe charset by sanitize_cn() before it ever reaches here, then wrapped
     // in single quotes by the caller — so there is no metacharacter that can
     // escape the quoted -subj argument.
-    std::string cmd = m_openssl + " " + args + " >/dev/null 2>&1";
+    // Capture stderr (openssl's own diagnostic — TXT_DB / serial / policy errors
+    // from `openssl ca`, etc.) instead of swallowing it to /dev/null, so a mint
+    // failure is actually diagnosable in the cloud log. cloudd runs the CA on a
+    // single thread, so a fixed temp path in the CA dir can't race.
+    const std::string errf = dirname_of(m_p.ca_key) + "/.openssl.err";
+    std::string cmd = m_openssl + " " + args + " >/dev/null 2>'" + errf + "'";
     int rc = std::system(cmd.c_str());
     if (rc != 0) {
+        std::string err;
+        slurp(errf, err);
+        if (err.size() > 400) err = err.substr(err.size() - 400);   // bound the line
         ACE_ERROR((LM_ERROR,
-                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l openssl failed rc=%d: %C\n"),
-                   rc, args.c_str()));
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l openssl failed rc=%d: %C\n"
+                            "  openssl stderr: %C\n"),
+                   rc, args.c_str(), err.c_str()));
         return false;
     }
     return true;
