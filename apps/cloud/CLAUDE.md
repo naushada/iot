@@ -654,6 +654,24 @@ device: /etc/iot/vpn/{ca.crt, client.crt, client.key}  ──►  openvpn-client
   (`rpi<serial>@cloud.local`, serial-derived) and re-mints — `unique_subject =
   no` permits it; a stale CA DB (`index.txt`/`serial`) is the failure mode to
   watch (the `openssl ca` step), now surfaced in the log (PR #434).
+- **CA/cert expiry — no rotation today (known gap).** The CA cert, server cert,
+  and every client cert are issued with `days = 3650` (**10 years**), and there is
+  **no renewal/rotation or near-expiry detection**: `ensure()` early-returns
+  whenever `ca.key` exists, so it reuses the CA forever and never regenerates. At
+  expiry the whole VPN trust chain breaks (all certs untrusted → openvpn TLS
+  handshakes fail → every tunnel down). **Saving grace:** the LwM2M control plane
+  is **DTLS-PSK, not cert-based** (per-endpoint PSKs from
+  `cloud.endpoint.credentials`), so it **survives CA expiry** — new certs are
+  still deliverable **in-band** (no physical access). Recovery today is **manual**:
+  remove `/etc/iot/vpn/ca/{ca.key,ca.crt}` + `index.txt`/`serial` so `ensure()`
+  rebuilds a fresh CA + server cert, then **re-provision every device** to re-mint
+  client certs; the per-tick Object-2048 push then redelivers the new CA cert +
+  client cert over the surviving PSK channel and tunnels recover. **Future
+  hardening:** detect near-expiry and auto-rotate with **overlapping validity**
+  (push the new CA cert to devices *before* cutover so trust isn't lost
+  mid-rotation), plus shorter-lived client certs on a periodic re-mint. The
+  PSK-based (cert-independent) control plane is what makes remote rotation
+  possible at all — a deliberate property.
 
 ### Services (services.cloud.*)
 ```
