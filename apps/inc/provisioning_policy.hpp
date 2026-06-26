@@ -52,6 +52,33 @@ bool is_coap_client_error(std::uint8_t coap_code);
 /// registration rejection (4.0x). Cooldown/backoff is the caller's job.
 bool should_rebootstrap(bool dm_dtls_failed, bool dm_registration_rejected);
 
+// ── Zero-touch BS PSK resolver (HKDF tier) — tdd-bs-hkdf-zerotouch.md ─────────
+
+/// Cloud BS-server decision for which PSK to present for an incoming DTLS
+/// handshake. `credentials_json` is `cloud.endpoint.credentials` (array of
+/// {serial, identity, bs.psk.key, dm.psk.id, dm.psk.key}); `presented` is the
+/// PSK identity the peer sent; `master_hex` is the unwrapped HKDF master ("" if
+/// the zero-touch tier is unconfigured). Resolution order:
+///   1. a commissioned row whose sha256(serial)[:32] == presented → its
+///      bs.psk.key (existing device-ui-provisioned tier, unchanged);
+///   2. else, if a master is configured, HKDF-derive from the presented raw
+///      serial (zero-touch tier — the device presents its serial verbatim);
+///   3. else "" (no match → the handshake fails).
+/// Step 2 is intentionally permissive about `presented`: possession of the
+/// derived key IS the authentication, so a wrong guess just yields a key the
+/// peer cannot match (failed handshake), never an information leak.
+std::string resolve_bs_psk(const std::string& credentials_json,
+                           const std::string& presented,
+                           const std::string& master_hex);
+
+/// Mint-once gate for zero-touch DM provisioning. True when no row in
+/// `credentials_json` already covers `serial` (the BS should mint+persist DM
+/// creds during /bs); false when a row exists (reuse — a /bs retry after packet
+/// loss must NOT re-mint, or the device that stored the first key can no longer
+/// authenticate). Empty serial → false.
+bool should_mint_dm(const std::string& credentials_json,
+                    const std::string& serial);
+
 } // namespace iot
 
 #endif /* __iot_provisioning_policy_hpp__ */

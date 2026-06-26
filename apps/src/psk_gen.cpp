@@ -119,4 +119,152 @@ std::string derive_bs_psk_hex(const std::string& master_hex,
     return hkdf_sha256(ikm, /*salt=*/"", "iot-bs-psk:v1:" + serial, 32);
 }
 
+namespace {
+
+const char kB64Alpha[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+int b64_val(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+} // namespace
+
+std::string base64_encode(const std::string& bin) {
+    std::string out;
+    out.reserve((bin.size() + 2) / 3 * 4);
+    std::size_t i = 0;
+    const auto* p = reinterpret_cast<const unsigned char*>(bin.data());
+    for (; i + 3 <= bin.size(); i += 3) {
+        const unsigned n = (p[i] << 16) | (p[i + 1] << 8) | p[i + 2];
+        out.push_back(kB64Alpha[(n >> 18) & 0x3F]);
+        out.push_back(kB64Alpha[(n >> 12) & 0x3F]);
+        out.push_back(kB64Alpha[(n >> 6) & 0x3F]);
+        out.push_back(kB64Alpha[n & 0x3F]);
+    }
+    if (i + 1 == bin.size()) {
+        const unsigned n = p[i] << 16;
+        out.push_back(kB64Alpha[(n >> 18) & 0x3F]);
+        out.push_back(kB64Alpha[(n >> 12) & 0x3F]);
+        out.append("==");
+    } else if (i + 2 == bin.size()) {
+        const unsigned n = (p[i] << 16) | (p[i + 1] << 8);
+        out.push_back(kB64Alpha[(n >> 18) & 0x3F]);
+        out.push_back(kB64Alpha[(n >> 12) & 0x3F]);
+        out.push_back(kB64Alpha[(n >> 6) & 0x3F]);
+        out.push_back('=');
+    }
+    return out;
+}
+
+std::string base64_decode(const std::string& b64) {
+    if (b64.size() % 4 != 0) return {};
+    std::string out;
+    out.reserve(b64.size() / 4 * 3);
+    for (std::size_t i = 0; i < b64.size(); i += 4) {
+        const char c0 = b64[i], c1 = b64[i + 1], c2 = b64[i + 2], c3 = b64[i + 3];
+        const int v0 = b64_val(c0), v1 = b64_val(c1);
+        if (v0 < 0 || v1 < 0) return {};
+        out.push_back(static_cast<char>((v0 << 2) | (v1 >> 4)));
+        if (c2 == '=') {
+            if (c3 != '=' || i + 4 != b64.size()) return {};
+            break;
+        }
+        const int v2 = b64_val(c2);
+        if (v2 < 0) return {};
+        out.push_back(static_cast<char>(((v1 & 0xF) << 4) | (v2 >> 2)));
+        if (c3 == '=') {
+            if (i + 4 != b64.size()) return {};
+            break;
+        }
+        const int v3 = b64_val(c3);
+        if (v3 < 0) return {};
+        out.push_back(static_cast<char>(((v2 & 0x3) << 6) | v3));
+    }
+    return out;
+}
+
+std::string wrap_bs_master(const std::string& kek_hex,
+                           const std::string& master_hex,
+                           const std::string& nonce_hex) {
+    const std::string kek   = hex_decode(kek_hex);
+    const std::string ptext = hex_decode(master_hex);
+    const std::string nonce = hex_decode(nonce_hex);
+    if (kek.size() != 32 || nonce.size() != 12 || ptext.empty()) return {};
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) throw std::runtime_error("wrap_bs_master: ctx alloc failed");
+    std::string ct(ptext.size(), '\0');
+    unsigned char tag[16];
+    int len = 0;
+    int aad_len = 0;
+    const bool ok =
+        EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
+        EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, nullptr) == 1 &&
+        EVP_EncryptInit_ex(ctx, nullptr, nullptr,
+            reinterpret_cast<const unsigned char*>(kek.data()),
+            reinterpret_cast<const unsigned char*>(nonce.data())) == 1 &&
+        EVP_EncryptUpdate(ctx, nullptr, &aad_len,
+            reinterpret_cast<const unsigned char*>(kBsMasterAad),
+            static_cast<int>(std::char_traits<char>::length(kBsMasterAad))) == 1 &&
+        EVP_EncryptUpdate(ctx,
+            reinterpret_cast<unsigned char*>(&ct[0]), &len,
+            reinterpret_cast<const unsigned char*>(ptext.data()),
+            static_cast<int>(ptext.size())) == 1 &&
+        EVP_EncryptFinal_ex(ctx,
+            reinterpret_cast<unsigned char*>(&ct[0]) + len, &len) == 1 &&
+        EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag) == 1;
+    EVP_CIPHER_CTX_free(ctx);
+    if (!ok) throw std::runtime_error("wrap_bs_master: encrypt failed");
+
+    std::string blob = nonce + ct +
+        std::string(reinterpret_cast<char*>(tag), sizeof tag);
+    return base64_encode(blob);
+}
+
+std::optional<std::string> unwrap_bs_master_hex(const std::string& kek_hex,
+                                                const std::string& wrapped_b64) {
+    const std::string kek = hex_decode(kek_hex);
+    if (kek.size() != 32) return std::nullopt;
+    const std::string blob = base64_decode(wrapped_b64);
+    if (blob.size() < 12 + 16 + 1) return std::nullopt;   // nonce+tag+≥1B ct
+
+    const std::string nonce = blob.substr(0, 12);
+    const std::string tag   = blob.substr(blob.size() - 16);
+    const std::string ct    = blob.substr(12, blob.size() - 12 - 16);
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) throw std::runtime_error("unwrap_bs_master_hex: ctx alloc failed");
+    std::string ptext(ct.size(), '\0');
+    int len = 0, aad_len = 0;
+    bool ok =
+        EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
+        EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, nullptr) == 1 &&
+        EVP_DecryptInit_ex(ctx, nullptr, nullptr,
+            reinterpret_cast<const unsigned char*>(kek.data()),
+            reinterpret_cast<const unsigned char*>(nonce.data())) == 1 &&
+        EVP_DecryptUpdate(ctx, nullptr, &aad_len,
+            reinterpret_cast<const unsigned char*>(kBsMasterAad),
+            static_cast<int>(std::char_traits<char>::length(kBsMasterAad))) == 1 &&
+        EVP_DecryptUpdate(ctx,
+            reinterpret_cast<unsigned char*>(&ptext[0]), &len,
+            reinterpret_cast<const unsigned char*>(ct.data()),
+            static_cast<int>(ct.size())) == 1 &&
+        EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16,
+            const_cast<char*>(tag.data())) == 1;
+    // Final verifies the tag: >0 ⇒ authentic, ≤0 ⇒ tamper/wrong key.
+    if (ok)
+        ok = EVP_DecryptFinal_ex(
+                 ctx, reinterpret_cast<unsigned char*>(&ptext[0]) + len, &len) == 1;
+    EVP_CIPHER_CTX_free(ctx);
+    if (!ok) return std::nullopt;
+    return hex_encode(reinterpret_cast<const unsigned char*>(ptext.data()),
+                      ptext.size());
+}
+
 } // namespace iot

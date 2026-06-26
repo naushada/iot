@@ -104,8 +104,13 @@ serial *X* an attacker must produce `HKDF(MASTER, X)`, which requires the master
 | 🟠 extra reconnect hop | none — DM creds are minted in the same `/bs` cycle (§4.3), device proceeds straight to DM. |
 
 Residual risks (documented, accepted, or mitigated):
-- **Master compromise = fleet compromise.** Mitigation: master lives **cloud-only**,
-  ideally KMS/HSM-wrapped; never in a device image. Versioned (`v1`) for rotation.
+- **Master compromise = fleet compromise.** Mitigation: master lives **cloud-only**
+  and **never in the clear** — stored AES-256-GCM-wrapped (`cloud.bs.master.key`)
+  under a KEK delivered out-of-band (systemd `LoadCredential` / `IOT_BS_MASTER_KEK`),
+  unwrapped into process memory only (§3.3). Extracting the cloud's data-store
+  without the KEK yields ciphertext. Versioned (`v1` in both the HKDF `info` and the
+  envelope AAD) for rotation. Upgrades to a managed KMS by swapping only the KEK
+  source.
 - **At-rest key on device** (`iot.bs.psk.key` plaintext in `/var/lib/iot`): same
   posture as the shipped per-device key, but now one-per-unit, so extraction
   leaks one unit. Acceptable for the device-ui-commissioning threat model already
@@ -156,6 +161,43 @@ iot.bs.psk.key (stored) = lowercase_hex(OKM)   # 64 hex chars, opaque type
   `test_gen_bs_psk.py` with RFC 5869 test vectors **and** a cross-check vector
   shared with the C++ unit test so drift is caught.
 
+> **Status (P1, done):** `iot::hkdf_sha256` + `iot::derive_bs_psk_hex` shipped;
+> `gen_bs_psk.py` + `test_gen_bs_psk.py` shipped. Cross-check vector
+> `master=0001…1e1f, serial=100000003d1f9c2e → 223a82da…600d4fe5` asserted on
+> both sides. Verified: Python 13/13, C++ in the `lwm2m_test` gtest suite.
+
+### 3.3 Master at rest — AES-256-GCM envelope (decided: KMS-wrapped)
+
+The master is **never stored in the clear**. `cloud.bs.master.key` holds:
+
+```
+base64( nonce(12) || AES-256-GCM(KEK, master)_ciphertext || tag(16) )
+   AAD = "iot-bs-master:v1"     # binds the blob to purpose+version
+```
+
+- **KEK** (32-byte AES-256 key) is delivered to `iot-lwm2m-server` **out-of-band**
+  — systemd `LoadCredential=bs_kek:/etc/iot/bs-master.kek` (root-only 0400) or env
+  `IOT_BS_MASTER_KEK` — and is **never** written to the data-store. The server
+  unwraps once at startup and holds the master in process memory only.
+- No external service: this is envelope encryption local to the cloud box (fits the
+  Vultr self-hosted deployment). To upgrade to a managed KMS later, swap only the
+  KEK source (or replace the GCM open with a KMS `Decrypt`) — the wire/at-rest
+  format and the resolver are unchanged.
+- **Single implementation:** wrap+unwrap are C++/OpenSSL only (`iot::wrap_bs_master`
+  / `iot::unwrap_bs_master_hex`), because Python here has no AES-GCM. The host
+  `bs-master-wrap` CLI (P2b) reuses the same code, so there is no cross-language
+  envelope to keep in sync — only the HKDF tool stays pure-stdlib.
+- **Fail-closed:** a bad/missing KEK, wrong KEK, or a tampered blob yields
+  `nullopt` → the master is treated as absent → HKDF tier disabled (the
+  commissioned per-device tier still serves). Never derive against a bad master.
+
+> **Status (P2, this PR):** `base64_encode/decode`, `wrap_bs_master`,
+> `unwrap_bs_master_hex` shipped + tested (fixed-vector + round-trip + tamper +
+> wrong-key + fail-closed). The `resolve_bs_psk` / `should_mint_dm` decision
+> helpers (§4.3) shipped + tested. `cloud.bs.master.key` schema + `gen_bs_master.py`
+> shipped. **Not yet wired:** the `main.cpp` BS-server resolver/mint call sites,
+> the `bs-master-wrap` CLI, the `IOT_BS_SEED` recipe bake, and KEK delivery — P2b.
+
 ---
 
 ## 4. Component changes (mapped to current code)
@@ -166,9 +208,9 @@ iot.bs.psk.key (stored) = lowercase_hex(OKM)   # 64 hex chars, opaque type
 `cloud.endpoint.credentials` at ~:262):
 
 ```lua
-["cloud.bs.master.key"] = {           -- NEW: HKDF master, cloud-only
-    access    = "Admin",
-    type      = "opaque",
+["cloud.bs.master.key"] = {           -- HKDF master, cloud-only, AES-256-GCM-
+    access    = "Admin",              -- wrapped (§3.3). Stores the base64 envelope,
+    type      = "opaque",             -- NOT the raw master.
     default   = "",                   -- empty ⇒ HKDF tier disabled (see §4.3)
     write_acl = {"gid:cloud-svc"},
     read_acl  = {"gid:cloud-svc"},    -- write-only to ds-cli, like the PSK keys
@@ -293,28 +335,35 @@ malformed-master / odd-hex rejection (mirror `test_gen_wifi_default.py`).
 
 ---
 
-## 6. Open decisions (resolve before coding)
+## 6. Decisions
 
-| Decision | Options | Recommendation |
-| --- | --- | --- |
-| Device-side inject mechanism | I flash-time file+seed / II LAN auto-commission / III secure element | **I** — fully headless, no extra hardware, matches the existing one-shot `iot-ds-seed` pattern. |
-| "Plausible raw serial" check in the resolver | length/charset heuristic vs. an explicit prefix vs. accept-anything-and-let-HKDF-gate | length+hex/charset sanity only; HKDF-key possession is the real gate, so keep it permissive. |
-| Master rotation policy | `info` version tag (`v1→v2`) + dual-accept window vs. flag day | version tag + **dual-derive** (accept `v1` and `v2` during a migration window); document in DEPLOY.md. |
-| Mint DM at BS time vs. keep device-ui paste for DM | mint-on-/bs (full zero-touch) vs. retain manual DM | **mint-on-/bs**, gated by the same `cloud.dev.mode` / master-present condition, with mint-once idempotency. |
-| Master at rest in cloud | plaintext ds opaque (current pattern) vs. KMS/HSM-wrapped | ship as ds opaque to match today; **flag KMS as the production hardening follow-up** (this is the whole fleet's trust root). |
+| Decision | Resolution |
+| --- | --- |
+| **Device-side inject mechanism** | ✅ **Decided: Option I — flash-time file + `iot-ds-seed`** (fully headless, no extra hardware, matches the existing one-shot seed). P3. |
+| **Master at rest in cloud** | ✅ **Decided: AES-256-GCM envelope + KEK via systemd credential** (§3.3) — no external service, fits Vultr; upgrades to a managed KMS by swapping the KEK source. Implemented in P2. |
+| "Plausible raw serial" check in the resolver | ✅ Permissive — step 2 derives for any non-empty `presented` once a master is set (`resolve_bs_psk`). HKDF-key possession is the real gate; a wrong guess just fails the handshake. |
+| Mint DM at BS time vs. keep device-ui paste for DM | ✅ **mint-on-`/bs`** with mint-once idempotency (`should_mint_dm`), gated by `cloud.dev.mode` / master-present. Wiring in P2b. |
+| Master rotation policy | `info`+AAD version tag (`v1→v2`) + **dual-derive** accept window; document in DEPLOY.md (P4). |
 
 ---
 
 ## 7. Phasing
 
-1. **P1 — crypto + parity:** `hkdf_sha256` + `derive_bs_psk_hex` (C++) and
-   `gen_bs_psk.py` + tests with the shared cross-check vector. No behaviour
-   change yet. *(Lowest risk, unblocks everything, fully unit-testable in podman.)*
-2. **P2 — cloud derive-or-lookup:** `cloud.bs.master.key` schema + seed
-   (`gen_bs_master.py`, `IOT_BS_SEED`) + resolver step 2 + mint-on-`/bs` with
-   idempotency. Guarded by empty-master = no-op, so it's inert until a master is
-   seeded.
+1. ✅ **P1 — crypto + parity (done):** `hkdf_sha256` + `derive_bs_psk_hex` (C++)
+   and `gen_bs_psk.py` + tests with the shared cross-check vector. No behaviour
+   change. Verified in podman (`lwm2m_test`) + Python.
+2. **P2 — cloud derive-or-lookup.** Split:
+   - ✅ **P2a (this PR) — testable foundation, inert:** envelope crypto
+     (`base64_*`, `wrap_bs_master`, `unwrap_bs_master_hex`), the resolver
+     decision helpers (`resolve_bs_psk`, `should_mint_dm`), `cloud.bs.master.key`
+     schema, and `gen_bs_master.py`. All unit-tested; nothing calls them yet.
+   - ⬜ **P2b — wiring + deployment:** call `resolve_bs_psk` in the BS PSK
+     resolver and `should_mint_dm` + mint at `/bs` in the provisioning resolver
+     (`apps/src/main.cpp`); the `BsMasterProvider` startup unwrap (KEK from
+     `IOT_BS_MASTER_KEK` / systemd cred); the `bs-master-wrap` CLI; the
+     `IOT_BS_SEED` recipe bake of a wrapped master into the cloud image. Guarded
+     by empty-master = no-op, so it stays inert until a master is seeded.
 3. **P3 — device personalisation:** `iot-bs-personalize` + `iot-ds-seed`
-   extension + `iot.bs.psk.override` wiring.
+   extension + `iot.bs.psk.override` wiring (Option I, flash-time).
 4. **P4 — DEPLOY.md** "Zero-touch bootstrap (HKDF)" section + master-rotation
    runbook; integration validation on real BS+DM+device hardware.

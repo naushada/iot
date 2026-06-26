@@ -11,6 +11,7 @@
 /// See apps/docs/tdd-psk-provisioning.md.
 
 #include <cstddef>
+#include <optional>
 #include <string>
 
 namespace iot {
@@ -58,6 +59,40 @@ std::string hkdf_sha256(const std::string& ikm,
 /// empty or not valid hex — the caller treats that as "HKDF tier disabled".
 std::string derive_bs_psk_hex(const std::string& master_hex,
                               const std::string& serial);
+
+/// Standard base64 (RFC 4648, '+/' alphabet, '=' padding).
+std::string base64_encode(const std::string& bin);
+/// Decode standard base64. Returns "" on any invalid character or length.
+std::string base64_decode(const std::string& b64);
+
+// ── BS master key at rest: AES-256-GCM envelope (KMS-wrapped) ────────────────
+//
+// The HKDF master is never stored in the clear. It lives in the data-store
+// (`cloud.bs.master.key`) as `base64( nonce(12) || ciphertext || tag(16) )`,
+// AES-256-GCM under a Key-Encryption-Key (KEK) that is delivered to the cloud
+// BS process out-of-band (systemd LoadCredential / env), never via the
+// data-store. The process unwraps once at startup and holds the master in
+// memory only. AAD binds the blob to its purpose. See
+// apps/docs/tdd-bs-hkdf-zerotouch.md.
+
+/// AAD tag tying a wrapped blob to its purpose+version (rotate with the key).
+constexpr const char* kBsMasterAad = "iot-bs-master:v1";
+
+/// Wrap a hex master under a hex KEK with the given 12-byte (24-hex) nonce,
+/// returning the base64 envelope. Production callers (the bs-master-wrap tool)
+/// pass a fresh random nonce; tests pin it for a deterministic vector. Returns
+/// "" if the KEK is not 32 bytes, the nonce not 12 bytes, or the master not
+/// valid hex.
+std::string wrap_bs_master(const std::string& kek_hex,
+                           const std::string& master_hex,
+                           const std::string& nonce_hex);
+
+/// Unwrap a base64 envelope under a hex KEK, returning the master as hex.
+/// Returns std::nullopt on any failure — empty inputs, bad base64, wrong KEK,
+/// or a failed GCM tag (tamper) — which the caller treats as "HKDF tier
+/// unavailable / disabled" (fail closed; never derive against a bad master).
+std::optional<std::string> unwrap_bs_master_hex(const std::string& kek_hex,
+                                                const std::string& wrapped_b64);
 
 } // namespace iot
 

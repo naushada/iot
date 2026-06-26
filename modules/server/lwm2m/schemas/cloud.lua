@@ -266,6 +266,23 @@ return {
         write_acl = {"gid:cloud-svc"},
         read_acl  = {"gid:cloud-svc"},
     },
+    -- Zero-touch bootstrap (HKDF tier) — apps/docs/tdd-bs-hkdf-zerotouch.md.
+    -- The HKDF master that lets the BS server re-derive any device's BS PSK
+    -- from its serial, so no per-device row has to be pre-created here. Stored
+    -- AES-256-GCM-wrapped (KMS envelope): base64(nonce || ct || tag) under a
+    -- KEK delivered to iot-lwm2m-server out-of-band (systemd LoadCredential /
+    -- env IOT_BS_MASTER_KEK) — never via the data-store. The server unwraps
+    -- once at startup and holds the master in memory only. Empty default ⇒
+    -- HKDF tier disabled (commissioned per-device tier still works). The build
+    -- bakes a wrapped master here from a gitignored bs_master.lua (cloud image
+    -- only). Write-only to ds-cli, like the per-device PSK keys.
+    ["cloud.bs.master.key"] = {
+        access    = "Admin",
+        type      = "opaque",
+        default   = "",
+        write_acl = {"gid:cloud-svc"},
+        read_acl  = {"gid:cloud-svc"},
+    },
     -- Provision carrier: the engineer pastes the device-generated BS PSK
     -- here, then sets cloud.provision.request = serial (the trigger).
     -- iot-cloudd reads this, mints the DM PSK, upserts the credential
