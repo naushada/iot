@@ -317,41 +317,97 @@ no per-device cloud row exists; each device is flashed with its own derived key.
 Full design + threat model: [`apps/docs/tdd-bs-hkdf-zerotouch.md`](apps/docs/tdd-bs-hkdf-zerotouch.md).
 
 It is **off by default** — with no master/KEK configured the cloud serves only
-the manual `cloud.endpoint.credentials` tier (nothing changes). Turn it on once:
+the manual `cloud.endpoint.credentials` tier (nothing changes). Turn it on once.
 
-**One-time cloud setup.** Mint a master + a KEK, wrap the master, give the cloud
-the wrapped blob (data-store) and the KEK (runtime env — never the data-store):
+#### Master key flow (read this first)
+
+There are **two distinct secrets** — don't conflate or reuse them:
+
+- **`master`** — the HKDF root. **One per fleet, generated once** (not per-device,
+  not per-flash). Every device's key is `HKDF(master, serial)`. Needed in **raw**
+  form by whoever flashes devices, and in **wrapped** form by the cloud.
+- **`KEK`** — a *separate* key that only encrypts the master **at rest** in the
+  cloud. Delivered to the cloud server at **runtime**; never stored in the
+  data-store.
+
+The master's home is your **ops vault + flashing host — NOT the cloud.** The
+cloud only ever holds the *wrapped* form, and unwraps it into memory at startup:
+
+```
+        generate ONCE on a trusted host (ops vault)
+                 │
+       ┌─────────┴───────────┐
+   master.hex (raw)      bs-master.kek (raw KEK)
+       │                      │
+       │  ┌── kept 0400 in the vault                 delivered to the cloud
+       │  └── + on the flashing host                 at RUNTIME only
+       │                                             (IOT_BS_MASTER_KEK /
+       ├── flashing host: iot-bs-personalize          systemd cred) — never
+       │   derives HKDF(master,serial)                in the data-store
+       │   → bs-seed.json on the SD card                     │
+       │                                                     │
+       └── bs-master-wrap(KEK, master) ─► wrapped blob       │
+                                            │                │
+                              cloud.bs.master.key (ds)       │
+                                            └──── unwrapped with the KEK
+                                                  into cloud server MEMORY
+                                                  at startup (raw never on disk)
+```
+
+**The invariant that makes it work:** the cloud (unwrapped, in RAM) and the
+flashing host (raw `master.hex`) must use the **same** master, so the device key
+the flasher injects matches what the cloud re-derives at the DTLS handshake. Two
+different masters — or rotating only one side — → devices fail to authenticate.
+
+**Hygiene** — `master.hex` is the fleet crown jewel: `0400`, never in git, never
+in an image, never on a device. The cloud needs only the **wrapped** blob + the
+KEK at runtime; it never needs raw `master.hex` on disk. If you generate the
+master on the cloud host for convenience, wrap it, copy the raw out to your
+vault, then delete the raw copy there. Lose it → re-key the fleet; leak it →
+rotate (below).
+
+#### Turn it on (one-time cloud setup)
 
 ```sh
-# On a trusted host (manufacturing). Keep KEK + master OFF the device/image/git.
-KEK=$(head -c32 /dev/urandom | xxd -p -c64)        # 32-byte Key-Encryption-Key
-BLOB=$(bs-master-wrap "$KEK" --gen-master)         # mints + prints the master to stderr
-#   -> SAVE the printed master in your manufacturing vault (gen_bs_psk needs it)
+# 1. On a trusted host, mint the two secrets ONCE. Keep both off git/images/devices.
+head -c32 /dev/urandom | xxd -p -c64 > master.hex     ; chmod 0400 master.hex
+head -c32 /dev/urandom | xxd -p -c64 > bs-master.kek  ; chmod 0400 bs-master.kek
 
-# Cloud: store the wrapped blob (ciphertext — inert without the KEK).
+# 2. Wrap the master under the KEK (bs-master-wrap ships in the cloud image;
+#    both args accept @file). The blob is ciphertext — inert without the KEK.
+BLOB=$(bs-master-wrap @bs-master.kek @master.hex)
+
+# 3. Cloud: store the wrapped blob in the data-store.
 ds-cli --socket=/run/iot/data_store.sock set cloud.bs.master.key "$BLOB"
 
-# Cloud: deliver the KEK to the BS+DM server OUT-OF-BAND.
-#   Docker/compose:  add to the lwm2m-server service:  environment:
-#                      - IOT_BS_MASTER_KEK=<the KEK hex>
-#   systemd:         echo -n "$KEK" > /etc/iot/bs-master.kek && chmod 0400 …
-#                    then uncomment LoadCredential= in iot-lwm2m-server.service
-systemctl restart iot-lwm2m-server   # (or recreate the cloud container)
+# 4. Cloud: deliver the KEK to the BS+DM server OUT-OF-BAND (never the data-store).
+#    Docker/compose:  lwm2m-server service → environment: [ IOT_BS_MASTER_KEK=<kek hex> ]
+#    systemd:         install bs-master.kek as /etc/iot/bs-master.kek (0400 root),
+#                     then uncomment LoadCredential= in iot-lwm2m-server.service
+systemctl restart iot-lwm2m-server   # or recreate the cloud container
 ```
 
-**Per device, at flash time.** Derive the unit's key from the master + serial
-and drop the one-shot seed onto its data partition — the first boot applies and
-shreds it:
+#### Per device, at flash time
+
+The flasher derives `HKDF(master, serial)` and drops the one-shot seed onto the
+SD card's FAT **boot** partition (so it works from macOS/Windows, which can't
+mount the ext4 `data` partition). `flash-sd.sh --personalize` does it all:
 
 ```sh
-# RPi serial: cat /proc/cpuinfo | grep -i serial  (or read it off the board)
-iot-bs-personalize @master.hex 100000003d1f9c2e -o /mnt/data/bs-seed.json
-#   -> /mnt/data == the device's /var/lib/iot on the mounted SD data partition
+# RPi serial: read it off the board, or `cat /proc/cpuinfo | grep -i Serial`.
+./yocto/flash-sd.sh --personalize --master @master.hex --serial 100000003d1f9c2e
 ```
 
-Boot the device with no other step: `iot-ds-seed` sets `iot.bs.psk.*` +
-`iot.bs.psk.override=true` and the device registers. Verify as in §4 (the
-`iot.bs.psk.identity` will be the **raw serial**, not a `cloud.bs.psk.id`).
+On first boot `iot-ds-seed` applies the seed (`iot.serial`, `iot.bs.psk.*`,
+`iot.bs.psk.override=true`) and shreds it; the device registers with no further
+step. Verify as in §4 — `iot.bs.psk.identity` will be the **raw serial** (not a
+`cloud.bs.psk.id`).
+
+> The serial is a SoC property, readable only once the board powers on — it
+> can't be known from the SD card alone. Read it off the board, or do a throwaway
+> first boot to capture it, then personalise. (Deriving on the device instead
+> would require the master on-device — the rejected fleet-class-secret; see the
+> TDD §3 / `tdd-bs-default-bootstrap.md`.)
 
 **Rotation / revocation.**
 - *Rotate the master* (e.g. leak): bump the `v1` tag to `v2` in both
