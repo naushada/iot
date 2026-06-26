@@ -157,6 +157,20 @@ if [ -n "$SHA" ]; then
     log "sha256 verified"
 fi
 
+# Clean any stale artifacts a previous (interrupted) campaign left in the spool.
+# iot-swupdate globs $SPOOL/*.ipk, so a leftover package set POISONS this install:
+# a stale 1.1.0 set left beside the freshly-staged 1.3.1 set made `opkg install`
+# die on "cannot install both iot-X-1.3.1 and iot-X-1.1.0" conflicts (observed in
+# the field — the install failed with result 9 and the device stayed on the old
+# version). Purge every prior .ipk/.raucb/bundle here, keeping only this
+# campaign's just-verified $DL.
+for _stale in "$SPOOL"/*.ipk "$SPOOL"/*.raucb "$SPOOL"/*.tar "$SPOOL"/*.tar.gz "$SPOOL"/*.tgz; do
+    [ -e "$_stale" ] || continue
+    [ "$_stale" = "$DL" ] && continue
+    rm -f "$_stale"
+done
+rm -f "$SPOOL/update.meta"
+
 # A bundle expands into the spool so iot-swupdate's `opkg install *.ipk` glob
 # applies every package atomically. Compression is detected by CONTENT (gzip -t)
 # rather than the extension, so a plain .tar (e.g. a .tar.gz auto-decompressed by
