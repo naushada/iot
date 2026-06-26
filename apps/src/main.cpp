@@ -1677,13 +1677,20 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                 // else: within the backoff window; retry on a later tick.
             } else if (*bootPhase == BootPhase::InProgress &&
                        now >= *bootDeadline) {
-                // /bs didn't complete in time. Loop back and retry the whole
-                // bootstrap on a growing backoff instead of giving up — never
-                // wedge at "bootstrapping".
+                // /bs didn't complete in time. The BS DTLS session may be DEAD
+                // (cloud bs restart, NAT drop, or a stale session left after a
+                // watchdog restart) while clientState still reads "connected" —
+                // re-POSTing /bs over it transmits NOTHING and loops forever, and
+                // because the reactor keeps ticking the watchdog never catches it
+                // (observed: a device stuck "bootstrapping" 10h that a manual
+                // restart fixed in ~1s). Force a fresh BS handshake so the retry
+                // actually reaches the cloud instead of POSTing into the void.
+                if (dtls) dtls->reset_and_connect(bsHost, bsPort);
                 *bootRetryAfter = now + std::chrono::seconds(*bootBackoff);
                 ACE_ERROR((LM_WARNING,
                            ACE_TEXT("%D lwm2m:thread:%t %M %N:%l bootstrap did not "
-                                    "complete in time — retrying in %d s\n"),
+                                    "complete in time — reset BS DTLS, retrying "
+                                    "in %d s\n"),
                            *bootBackoff));
                 *bootBackoff = (*bootBackoff * 2 > 30) ? 30 : (*bootBackoff * 2);
                 *bootPhase = BootPhase::NotStarted;

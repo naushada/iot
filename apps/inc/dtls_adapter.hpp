@@ -170,6 +170,11 @@ class DTLSAdapter {
         /// own requests use this fixed peer session.
         std::int32_t tx_peer(std::string& in);
         void connect(const std::string& ip, const std::uint16_t& port);
+        /// Like connect(), but force-tears-down even a *CONNECTED* peer first so
+        /// a known-suspect session (e.g. a bootstrap that never completed over a
+        /// stale "connected" peer) gets a fresh ClientHello instead of a doomed
+        /// renegotiation. Use when the session must be assumed dead.
+        void reset_and_connect(const std::string& ip, const std::uint16_t& port);
 
         /**
          * @brief 
