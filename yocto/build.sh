@@ -58,6 +58,11 @@
 #                                 # sstate+downloads into $CACHE_IMAGE and push
 #   IOT_USE_CACHE=1 ./build.sh    # pull $CACHE_IMAGE and build — only the
 #                                 # meta-iot recipes recompile (minutes, not hours)
+#
+# Interactive build-container shell (ad-hoc bitbake / bitbake-layers, e.g. to
+# clear a stale cache or trace where a value comes from):
+#   ./build.sh shell              # default machine; then: bitbake -c cleansstate base-files
+#   IOT_AB=1 ./build.sh shell raspberrypi3-64   # with the A/B layers added
 
 set -euo pipefail
 
@@ -275,6 +280,28 @@ EOF
     echo ""
 }
 
+# Interactive shell in the build container with the full bitbake env ready
+# (entrypoint does the layer + local.conf setup, then `exec bash` on IOT_SHELL=1).
+# For ad-hoc bitbake / bitbake-layers — e.g. `bitbake -c cleansstate base-files`,
+# `bitbake-layers show-layers`, grepping the other layers. Same volumes (sstate +
+# downloads) as a build, so changes here affect real builds.
+shell_into() {
+    local machine="$1"
+    local container="iot-shell-${machine//./-}"
+    $CR rm -f "$container" >/dev/null 2>&1 || true
+    log_section "Build-container shell ($machine)"
+    $CR run --rm -it --name "$container" \
+        -e "MACHINE=$machine" \
+        -e "IOT_AB=${IOT_AB:-}" \
+        -e "IOT_BRANCH=${IOT_BRANCH:-}" \
+        -e "IOT_HASH_LOCAL=1" \
+        -e "IOT_SHELL=1" \
+        -v "$SCRIPT_DIR/meta-iot:/home/builduser/yocto/meta-iot:ro" \
+        -v "${DOWNLOADS_VOLUME}:/home/builduser/yocto/build/downloads:U" \
+        -v "${SSTATE_VOLUME}:/home/builduser/yocto/build/sstate-cache:U" \
+        "$IMAGE_NAME"
+}
+
 # ── Main ──────────────────────────────────────────────────────────────
 main() {
     CR=$(detect_runtime)
@@ -283,6 +310,13 @@ main() {
     # Subcommand: publish the cache image (no machine build).
     if [ "${1:-}" = "publish" ]; then
         publish
+        return
+    fi
+
+    # Subcommand: interactive bitbake shell (no build).
+    if [ "${1:-}" = "shell" ]; then
+        prepare_image
+        shell_into "${2:-$DEFAULT_MACHINE}"
         return
     fi
 
