@@ -220,32 +220,42 @@ void Containerd::handle_command() {
         return;
     }
 
-    if (action != "pull" && action != "run") {
-        ACE_ERROR((LM_ERROR, ACE_TEXT("%D [ctr] unknown action %C\n"), action.c_str()));
+    // pull carries the container's config in the envelope and creates it if new.
+    // run/stop reuse the instance's stored config — the envelope is shared
+    // mutable state, so we must NOT re-read its param fields for a bare per-row
+    // Run (they may hold another container's values).
+    if (action == "pull") {
+        const std::string image = get_str("container.cmd.image");
+        const std::string net   = get_str("container.cmd.net");
+        const std::string sub   = get_str("container.cmd.subnet");
+        const std::string mem   = get_str("container.cmd.mem");
+        const std::string cpus  = get_str("container.cmd.cpus");
+        const std::string ep    = get_str("container.cmd.entrypoint");
+        const std::string cm    = get_str("container.cmd.cmd");
+        ContainerInstance* inst;
+        {
+            std::lock_guard<std::mutex> lk(m_mtx);
+            inst = ensure_locked(name);
+            if (!image.empty()) inst->image_ref = image;
+            if (!net.empty())   inst->net_mode  = net;
+            inst->net_subnet = sub.empty() ? std::string(kDefaultSubnet) : sub;
+            inst->mem = mem; inst->cpus = cpus; inst->entrypoint = ep; inst->cmd = cm;
+            publish_instances_locked();
+        }
+        do_pull(inst);
         return;
     }
 
-    // pull/run carry the container's config in the envelope.
-    const std::string image = get_str("container.cmd.image");
-    const std::string net   = get_str("container.cmd.net");
-    const std::string sub   = get_str("container.cmd.subnet");
-    const std::string mem   = get_str("container.cmd.mem");
-    const std::string cpus  = get_str("container.cmd.cpus");
-    const std::string ep    = get_str("container.cmd.entrypoint");
-    const std::string cm    = get_str("container.cmd.cmd");
-
-    ContainerInstance* inst;
-    {
-        std::lock_guard<std::mutex> lk(m_mtx);
-        inst = ensure_locked(name);
-        if (!image.empty()) inst->image_ref = image;
-        if (!net.empty())   inst->net_mode  = net;
-        inst->net_subnet = sub.empty() ? std::string(kDefaultSubnet) : sub;
-        inst->mem = mem; inst->cpus = cpus; inst->entrypoint = ep; inst->cmd = cm;
-        publish_instances_locked();
+    if (action == "run") {
+        ContainerInstance* inst;
+        { std::lock_guard<std::mutex> lk(m_mtx); inst = find_locked(name); }
+        if (inst) do_run(inst);
+        else ACE_ERROR((LM_ERROR, ACE_TEXT("%D [ctr] run: no such container %C "
+                                           "(pull it first)\n"), name.c_str()));
+        return;
     }
-    if (action == "pull") do_pull(inst);
-    else                  do_run(inst);
+
+    ACE_ERROR((LM_ERROR, ACE_TEXT("%D [ctr] unknown action %C\n"), action.c_str()));
 }
 
 // ── pull (serialised; one worker) ──────────────────────────────────────────
