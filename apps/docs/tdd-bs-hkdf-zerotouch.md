@@ -377,5 +377,8 @@ malformed-master / odd-hex rejection (mirror `test_gen_wifi_default.py`).
    shreds the file — independent of the engineer-account `.seeded` flag so a
    re-personalised unit re-applies. Tests: 7/7 (`test_iot_bs_personalize.py`),
    `iot-ds-seed` `sh -n` clean, sed-parse round-trip verified.
-4. **P4 — DEPLOY.md** "Zero-touch bootstrap (HKDF)" section + master-rotation
-   runbook; integration validation on real BS+DM+device hardware.
+4. ✅ **P4 — DEPLOY.md (done):** "Zero-touch bootstrap (HKDF)" §4b — one-time
+   cloud setup (`bs-master-wrap` → `cloud.bs.master.key` + KEK delivery),
+   per-device flash (`iot-bs-personalize`), and the rotation/revocation runbook.
+   ⬜ **Remaining: integration validation on real BS+DM+device hardware** —
+   deferred like `tdd-psk-provisioning.md`'s N-wire/P (no integration env here).
