@@ -312,6 +312,28 @@ void DTLSAdapter::connect(const std::string& ip, const std::uint16_t& port) {
     }
 }
 
+void DTLSAdapter::reset_and_connect(const std::string& ip, const std::uint16_t& port) {
+    session(ip, port);
+    m_peerSession = m_session;
+    isClient(true);
+    // Unlike connect(), reset the peer UNCONDITIONALLY — even DTLS_STATE_CONNECTED.
+    // The caller knows the session is dead (e.g. a bootstrap POST /bs that never
+    // got a reply: tinydtls still reports the peer "connected", so dtls_connect()
+    // would only renegotiate — emitting nothing — and the client loops forever
+    // POSTing into the void). A clean reset forces a fresh ClientHello.
+    dtls_peer_t* existing = dtls_get_peer(dtls_ctx(), &m_session);
+    if (existing) {
+        dtls_debug("DTLSAdapter::reset_and_connect force-resetting peer\n");
+        dtls_reset_peer(dtls_ctx(), existing);
+    }
+    clientState("");                       // drop the stale app-level state too
+    auto ret = dtls_connect(dtls_ctx(), &m_session);
+    if (ret > 0)
+        dtls_debug("DTLSAdapter::reset_and_connect new channel for Client Hello\n");
+    else if (ret < 0)
+        dtls_debug("DTLSAdapter::reset_and_connect error establishing channel\n");
+}
+
 std::int32_t DTLSAdapter::rx(std::int32_t fd) {
     std::int32_t ret = -1;
     std::vector<std::uint8_t> buf(DTLS_MAX_BUF);
