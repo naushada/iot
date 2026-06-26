@@ -540,6 +540,15 @@ int main(int argc, char** argv) {
                             "cloud.update.request failed: %C\n"),
                    ws_update.err.c_str()));
     }
+    // OTA abort: cloud-ui writes cloud.update.abort = <serial> to cancel a stuck
+    // campaign (drop its lwm2m-dm push job + mark its status row cancelled).
+    auto ws_abort = ds.watch("cloud.update.abort", 1000);
+    if (!ws_abort.ok) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch "
+                            "cloud.update.abort failed: %C\n"),
+                   ws_abort.err.c_str()));
+    }
 
     // Seed initial VPN config in ds (subnet already seeded above from ds).
     ds.set("cloud.vpn.port.next",
@@ -1235,6 +1244,45 @@ int main(int argc, char** argv) {
                                      "failed: %C\n"), e.what()));
                     }
                     ds.set("cloud.update.request", data_store::Value{std::string()});
+                }
+            } else if (ev.key == "cloud.update.abort") {
+                // Cancel a stuck OTA campaign for one endpoint: drop its job from
+                // cloud.update.pending (lwm2m-dm stops re-pushing Object 5) and
+                // mark its status row cancelled (result 11). An in-flight opkg on
+                // the device can't be interrupted — this stops the cloud
+                // re-driving it and clears the stuck UI row.
+                std::string serial;
+                if (auto s = data_store::to_string(ev.value)) serial = *s;
+                if (!serial.empty()) {
+                    try {
+                        auto pend = nlohmann::json::parse(
+                            ds_str(ds, "cloud.update.pending", "[]"));
+                        nlohmann::json np = nlohmann::json::array();
+                        if (pend.is_array()) for (const auto& p : pend)
+                            if (p.value("endpoint", std::string()) != serial)
+                                np.push_back(p);
+                        ds.set("cloud.update.pending", data_store::Value{np.dump()});
+
+                        auto st = nlohmann::json::parse(
+                            ds_str(ds, "cloud.update.status", "[]"));
+                        bool ch = false;
+                        if (st.is_array()) for (auto& row : st)
+                            if (row.value("serial", std::string()) == serial &&
+                                row.value("result", 0) == 0) {   // only in-flight
+                                row["state"] = 0; row["result"] = 11;  // cancelled
+                                ch = true;
+                            }
+                        if (ch) ds.set("cloud.update.status",
+                                       data_store::Value{st.dump()});
+                        ACE_DEBUG((LM_INFO,
+                            ACE_TEXT("%D cloudd:thread:%t %M %N:%l OTA abort: %C\n"),
+                            serial.c_str()));
+                    } catch (const std::exception& e) {
+                        ACE_ERROR((LM_ERROR,
+                            ACE_TEXT("%D cloudd:thread:%t %M %N:%l OTA abort parse "
+                                     "failed: %C\n"), e.what()));
+                    }
+                    ds.set("cloud.update.abort", data_store::Value{std::string()});
                 }
             }
             // Sync after every event so the UI sees changes quickly, then

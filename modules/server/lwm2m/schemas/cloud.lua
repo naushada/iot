@@ -207,6 +207,15 @@ return {
         type    = "string",
         default = "",
     },
+    -- Cancel a stuck OTA campaign: cloud-ui writes the endpoint serial here;
+    -- iot-cloudd drops that endpoint's cloud.update.pending job (stops the
+    -- lwm2m-dm Object-5 re-push) and marks its cloud.update.status row cancelled
+    -- (result 11), then clears this key.
+    ["cloud.update.abort"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
     -- Validated per-endpoint update jobs: written by iot-cloudd, consumed
     -- by the lwm2m-dm push tick. cloud-svc-only (mirrors the credentials
     -- two-writer-avoidance pattern). JSON array of
