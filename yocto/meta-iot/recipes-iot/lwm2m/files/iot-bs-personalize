@@ -9,9 +9,12 @@ seed file that the device's first-boot iot-ds-seed applies, then shreds.
     psk = HKDF(master, serial)        # = gen_bs_psk.derive_bs_psk_hex
     seed = {"serial": "<raw serial>", "key": "<64-hex psk>"}
 
-Drop the seed at `/var/lib/iot/bs-seed.json` on the device's DATA partition
-(NOT the shared rootfs) before first boot. The cloud re-derives the same key
-from the serial, so no per-device cloud row is needed.
+Drop the seed onto the card before first boot — `iot-ds-seed` applies it then
+shreds it. Either the ext4 `data` partition (`/var/lib/iot/bs-seed.json`,
+Linux flashers) or the FAT `boot` partition (`/bs-seed.json` → mounts at
+`/boot`; what `flash-sd.sh --personalize` uses, so macOS/Windows can write it
+without ext4 support). The cloud re-derives the same key from the serial, so no
+per-device cloud row is needed.
 
 The `<master>` is the HKDF root — the SAME secret you wrapped into the cloud
 with bs-master-wrap. Keep it in your manufacturing vault; it never ships on the

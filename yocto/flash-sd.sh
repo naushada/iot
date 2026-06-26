@@ -25,6 +25,19 @@
 #   MACHINE=qemuarm64 ./flash-sd.sh /dev/sdX     # pick another machine's image
 #   IMAGE=/path/to/custom.wic.bz2 ./flash-sd.sh /dev/sdX
 #
+# Zero-touch personalisation (apps/docs/tdd-bs-hkdf-zerotouch.md): after writing
+# the image, drop a per-unit BS PSK seed onto the FAT `boot` partition (which
+# macOS/Windows can mount — the ext4 `data` partition they cannot). On first
+# boot iot-ds-seed applies it and the device registers with no manual step.
+#
+#   ./flash-sd.sh --personalize --master @master.hex --serial 100000003d1f9c2e
+#   ./flash-sd.sh --personalize --seed /path/to/bs-seed.json   # pre-built seed
+#
+#   --master is 64-hex or @/path (the SAME master you wrapped into the cloud
+#   with bs-master-wrap). --serial is the device's raw serial (RPi: the
+#   /proc/cpuinfo Serial). The master never lands on the card — only the
+#   derived key does.
+#
 # Safety: refuses internal/system disks (override with --force), refuses a card
 # too small for the image's on-card layout (the A/B image is ~2.4GB — needs a
 # ≥4GB card), shows the image + target, and requires you to type "yes".
@@ -125,6 +138,7 @@ detect_sd() {
 
 # ── Argument parsing ──────────────────────────────────────────────────
 ASSUME_YES=0; DO_LIST=0; FORCE=0; SKIP_FORMAT=0
+PERSONALIZE=0; BS_MASTER=""; BS_SERIAL=""; SEED_FILE=""
 POSARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -132,6 +146,10 @@ while [ $# -gt 0 ]; do
         -l|--list)             DO_LIST=1 ;;
         --force)               FORCE=1 ;;
         --no-format|--skip-format) SKIP_FORMAT=1 ;;
+        --personalize)         PERSONALIZE=1 ;;
+        --master)              BS_MASTER="${2:-}"; [ $# -ge 2 ] && shift ;;
+        --serial)              BS_SERIAL="${2:-}"; [ $# -ge 2 ] && shift ;;
+        --seed)                SEED_FILE="${2:-}"; [ $# -ge 2 ] && shift ;;
         -h|--help)             usage; exit 0 ;;
         -*)                    log_error "unknown option: $1"; usage; exit 1 ;;
         *)                     POSARGS+=("$1") ;;
@@ -143,6 +161,26 @@ set -- ${POSARGS[@]+"${POSARGS[@]}"}
 if [ "$DO_LIST" -eq 1 ]; then
     list_disks
     exit 0
+fi
+
+# ── Validate personalisation inputs up front (before the destructive flash) ──
+PERSONALIZE_TOOL="$SCRIPT_DIR/meta-iot/recipes-iot/lwm2m/files/iot-bs-personalize"
+if [ "$PERSONALIZE" -eq 1 ]; then
+    if [ -n "$SEED_FILE" ]; then
+        [ -f "$SEED_FILE" ] || { log_error "--seed: no such file: $SEED_FILE"; exit 1; }
+        SEED_TEXT="$(cat "$SEED_FILE")"
+    else
+        [ -n "$BS_MASTER" ] && [ -n "$BS_SERIAL" ] || {
+            log_error "--personalize needs --master <hex|@file> + --serial <serial>, or --seed <file>."
+            exit 1; }
+        [ -x "$PERSONALIZE_TOOL" ] || command -v python3 >/dev/null 2>&1 || {
+            log_error "iot-bs-personalize needs python3 (not found)."; exit 1; }
+        [ -f "$PERSONALIZE_TOOL" ] || { log_error "tool missing: $PERSONALIZE_TOOL"; exit 1; }
+        # Derive the seed NOW so a bad master/serial fails before we wipe the card.
+        if ! SEED_TEXT="$(python3 "$PERSONALIZE_TOOL" "$BS_MASTER" "$BS_SERIAL")"; then
+            log_error "iot-bs-personalize failed (bad master or serial?)."; exit 1
+        fi
+    fi
 fi
 
 # ── Resolve the image ─────────────────────────────────────────────────
@@ -279,7 +317,8 @@ echo "           ($IMG_SIZE compressed)"
 echo "  Machine: $MACHINE"
 echo "  Target : $DEV  ${DEV_SIZE:+($DEV_SIZE${DEV_NAME:+, $DEV_NAME})}"
 [ -n "${REQ_MB:-}" ] && echo "  Layout : ~${REQ_MB}MB on-card (whole-disk wic image)"
-echo "  Steps  : unmount → $([ "$SKIP_FORMAT" -eq 1 ] && echo '(skip format)' || echo 'wipe partition table') → write image → sync/eject"
+echo "  Steps  : unmount → $([ "$SKIP_FORMAT" -eq 1 ] && echo '(skip format)' || echo 'wipe partition table') → write image →$([ "$PERSONALIZE" -eq 1 ] && echo ' personalise (boot partition) →') sync/eject"
+[ "$PERSONALIZE" -eq 1 ] && echo "  Seed   : zero-touch BS PSK → boot partition${BS_SERIAL:+ (serial $BS_SERIAL)}"
 echo ""
 echo -e "${RED}  ⚠  ALL DATA ON $DEV WILL BE DESTROYED.${NC}"
 
@@ -348,12 +387,56 @@ else
     kill "$progress_ticker" 2>/dev/null || true
 fi
 
+# ── 3.5 Personalise (zero-touch BS PSK → FAT boot partition) ──────────
+# The wic image just laid down a fresh partition table; mount the FAT `boot`
+# partition (p1 — the only one macOS/Windows can mount) and drop bs-seed.json.
+# iot-ds-seed reads /boot/bs-seed.json on first boot, applies it, and shreds it.
+if [ "$PERSONALIZE" -eq 1 ]; then
+    log_section "Personalising (BS PSK seed → boot partition)"
+    sync
+    BOOT_MNT=""
+    if [ "$OS" = "Darwin" ]; then
+        # Re-read the new table and mount p1 (diskNs1). It often auto-mounts.
+        diskutil mountDisk "$DEV" >/dev/null 2>&1 || true
+        diskutil mount "${DEV}s1" >/dev/null 2>&1 || true
+        BOOT_MNT="$(diskutil info "${DEV}s1" 2>/dev/null \
+                    | awk -F: '/Mount Point/{sub(/^[ \t]+/,"",$2); print $2; exit}')"
+        WRITE=(tee)                              # /Volumes/boot is user-writable
+        UNMOUNT_BOOT=(diskutil unmount "${DEV}s1")
+    else
+        sudo partprobe "$DEV" 2>/dev/null || true
+        # The FAT partition by label, robust across sdb1 vs mmcblk0p1.
+        BOOTPART="$(lsblk -rno NAME,LABEL "$DEV" 2>/dev/null | awk '$2=="boot"{print "/dev/"$1; exit}')"
+        [ -n "$BOOTPART" ] || BOOTPART="$(lsblk -rno NAME "$DEV" 2>/dev/null | sed -n '2p' | sed 's|^|/dev/|')"
+        BOOT_MNT="$(mktemp -d)"
+        sudo mount "$BOOTPART" "$BOOT_MNT" 2>/dev/null || BOOT_MNT=""
+        WRITE=(sudo tee)
+        UNMOUNT_BOOT=(sudo umount "$BOOTPART")
+    fi
+    if [ -z "$BOOT_MNT" ] || [ ! -d "$BOOT_MNT" ]; then
+        log_error "Could not mount the boot partition to write the seed."
+        log_error "Image is flashed; personalise manually: copy a bs-seed.json"
+        log_error "(from iot-bs-personalize) onto the card's boot partition."
+    else
+        printf '%s\n' "$SEED_TEXT" | "${WRITE[@]}" "$BOOT_MNT/bs-seed.json" >/dev/null
+        sync
+        "${UNMOUNT_BOOT[@]}" >/dev/null 2>&1 || true
+        [ "$OS" = "Darwin" ] || rmdir "$BOOT_MNT" 2>/dev/null || true
+        log_info "Seeded bs-seed.json onto the boot partition${BS_SERIAL:+ (serial $BS_SERIAL)}."
+    fi
+fi
+
 # ── 4. Flush + eject ──────────────────────────────────────────────────
 log_section "Flushing"
 sync
 "${EJECT[@]}" 2>/dev/null || true
 
 log_info "Done. $DEV is flashed and safe to remove."
+if [ "$PERSONALIZE" -eq 1 ]; then
+    echo ""
+    echo "  Zero-touch: the device applies bs-seed.json on first boot. Ensure the"
+    echo "  cloud has the matching master+KEK (cloud.bs.master.key + IOT_BS_MASTER_KEK)."
+fi
 echo ""
 echo "  Boot the Pi, then ssh in (sshd is baked in; debug-tweaks → empty root pw):"
 echo "    ssh root@<pi-ip>"
