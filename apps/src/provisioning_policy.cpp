@@ -1,5 +1,9 @@
 #include "provisioning_policy.hpp"
 
+#include <nlohmann/json.hpp>
+
+#include "psk_gen.hpp"
+
 namespace iot {
 
 EndpointResolution resolve_endpoint(
@@ -38,6 +42,49 @@ bool is_coap_client_error(std::uint8_t coap_code) {
 
 bool should_rebootstrap(bool dm_dtls_failed, bool dm_registration_rejected) {
     return dm_dtls_failed || dm_registration_rejected;
+}
+
+std::string resolve_bs_psk(const std::string& credentials_json,
+                           const std::string& presented,
+                           const std::string& master_hex) {
+    if (presented.empty()) return {};
+
+    // 1) Commissioned tier: a row whose sha256(serial)[:32] == presented.
+    const auto arr =
+        nlohmann::json::parse(credentials_json, /*cb*/nullptr,
+                              /*allow_exceptions*/false);
+    if (arr.is_array()) {
+        for (const auto& e : arr) {
+            if (!e.is_object()) continue;
+            const std::string serial = e.value("serial", std::string());
+            const std::string key    = e.value("bs.psk.key", std::string());
+            if (!serial.empty() && !key.empty() &&
+                sha256_hex(serial).substr(0, 32) == presented)
+                return key;
+        }
+    }
+
+    // 2) Zero-touch tier: derive from the presented raw serial (verbatim).
+    if (!master_hex.empty())
+        return derive_bs_psk_hex(master_hex, presented);
+
+    // 3) No match — handshake fails.
+    return {};
+}
+
+bool should_mint_dm(const std::string& credentials_json,
+                    const std::string& serial) {
+    if (serial.empty()) return false;
+    const auto arr =
+        nlohmann::json::parse(credentials_json, /*cb*/nullptr,
+                              /*allow_exceptions*/false);
+    if (arr.is_array()) {
+        for (const auto& e : arr) {
+            if (e.is_object() && e.value("serial", std::string()) == serial)
+                return false;   // already provisioned → reuse, don't re-mint
+        }
+    }
+    return true;                // no row → mint
 }
 
 } // namespace iot

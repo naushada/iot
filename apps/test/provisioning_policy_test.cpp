@@ -80,3 +80,59 @@ TEST(Rebootstrap, TriggersOnRegistrationReject) {
 TEST(Rebootstrap, NoTriggerWhenHealthy) {
     EXPECT_FALSE(iot::should_rebootstrap(false, false));
 }
+
+// ── Zero-touch BS PSK resolver — tdd-bs-hkdf-zerotouch.md ─────────────────────
+
+namespace {
+// Shared with apps/test/psk_gen_test.cpp / test_gen_bs_psk.py.
+const char* kMaster = "000102030405060708090a0b0c0d0e0f"
+                      "101112131415161718191a1b1c1d1e1f";
+const char* kSerial = "100000003d1f9c2e";
+const char* kDerivedPsk = "223a82da7acb983c1372ec5e72c77d00"
+                          "8fc40281e737bb4aea689f53600d4fe5";
+// sha256("100000003d1f9c2e")[:32] — the commissioned-tier wire identity.
+const char* kSha256Id = "c5dd8a100c796a384fdaec5334b0da71";
+} // namespace
+
+TEST(ResolveBsPsk, CommissionedRowWinsOverDerivation) {
+    // A row keyed by sha256(serial)[:32] returns its stored key even when a
+    // master is set — the device-ui-provisioned tier is unchanged.
+    const std::string creds =
+        R"([{"serial":"100000003d1f9c2e","bs.psk.key":"feedface"}])";
+    EXPECT_EQ("feedface", iot::resolve_bs_psk(creds, kSha256Id, kMaster));
+}
+
+TEST(ResolveBsPsk, DerivesFromRawSerialWhenNoRow) {
+    // Zero-touch: no row, master set, peer presented its raw serial verbatim.
+    EXPECT_EQ(kDerivedPsk, iot::resolve_bs_psk("[]", kSerial, kMaster));
+}
+
+TEST(ResolveBsPsk, NoMasterAndNoRowYieldsEmpty) {
+    EXPECT_EQ("", iot::resolve_bs_psk("[]", kSerial, ""));
+}
+
+TEST(ResolveBsPsk, EmptyPresentedYieldsEmpty) {
+    EXPECT_EQ("", iot::resolve_bs_psk("[]", "", kMaster));
+}
+
+TEST(ResolveBsPsk, MalformedCredentialsFallsThroughToDerive) {
+    // Garbage credentials must not crash; with a master we still derive.
+    EXPECT_EQ(kDerivedPsk, iot::resolve_bs_psk("not json", kSerial, kMaster));
+    EXPECT_EQ("", iot::resolve_bs_psk("not json", kSerial, ""));
+}
+
+TEST(ShouldMintDm, MintsWhenNoRow) {
+    EXPECT_TRUE(iot::should_mint_dm("[]", kSerial));
+    EXPECT_TRUE(iot::should_mint_dm(
+        R"([{"serial":"other"}])", kSerial));
+}
+
+TEST(ShouldMintDm, ReusesWhenRowExists) {
+    EXPECT_FALSE(iot::should_mint_dm(
+        R"([{"serial":"100000003d1f9c2e","dm.psk.key":"x"}])", kSerial));
+}
+
+TEST(ShouldMintDm, EmptySerialOrBadJsonNeverMints) {
+    EXPECT_FALSE(iot::should_mint_dm("[]", ""));
+    EXPECT_TRUE(iot::should_mint_dm("not json", kSerial));  // no row → mint
+}
