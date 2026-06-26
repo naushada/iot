@@ -49,8 +49,13 @@ NetPlan plan_bridge_net(const std::string& subnet_cidr, const std::string& bridg
 
 std::string nft_container_ruleset(const std::string& cidr, const std::string& bridge) {
     std::ostringstream ss;
-    // Flush our scoped table first so re-apply is idempotent — mirrors
-    // net-router's `flush table inet iot_router`. We never touch other tables.
+    // `add table` BEFORE `flush table`: on the very first container run the table
+    // doesn't exist yet, and `flush table` on a missing table errors out
+    // ("No such file or directory") — which aborts bridge setup and fails the run.
+    // `add table` is idempotent (no-op if present), so this makes re-apply safe
+    // whether or not the table already exists. Mirrors device_dnat.cpp. We only
+    // ever touch our own scoped table, never net-router's iot_router.
+    ss << "add table inet iot_containers\n";
     ss << "flush table inet iot_containers\n";
     ss << "table inet iot_containers {\n";
     ss << "    chain postrouting {\n";
