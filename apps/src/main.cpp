@@ -78,6 +78,34 @@ std::unordered_map<std::string, UDPAdapter::Role_t> roleMap = {
     {"client", UDPAdapter::Role_t::CLIENT}
 };
 
+// Zero-touch bootstrap (apps/docs/tdd-bs-hkdf-zerotouch.md): the Key-Encryption
+// -Key that unwraps cloud.bs.master.key. Delivered OUT-OF-BAND, never via the
+// data-store: a systemd credential ($CREDENTIALS_DIRECTORY/bs_kek, the
+// LoadCredential path), an explicit file (IOT_BS_MASTER_KEK_FILE), or the hex
+// value inline (IOT_BS_MASTER_KEK). Returns the KEK as hex, or "" when none is
+// configured → the HKDF tier stays disabled (the commissioned per-device tier
+// still serves). Read once at server wiring and captured by the resolvers.
+static std::string load_bs_master_kek_hex() {
+    auto read_first_line = [](const std::string& path) -> std::string {
+        std::ifstream f(path);
+        std::string line;
+        if (f.is_open()) std::getline(f, line);
+        // trim trailing CR/space/newline
+        while (!line.empty() &&
+               (line.back() == '\n' || line.back() == '\r' ||
+                line.back() == ' '  || line.back() == '\t'))
+            line.pop_back();
+        return line;
+    };
+    if (const char* inl = std::getenv("IOT_BS_MASTER_KEK"); inl && *inl)
+        return std::string(inl);
+    if (const char* fp = std::getenv("IOT_BS_MASTER_KEK_FILE"); fp && *fp)
+        return read_first_line(fp);
+    if (const char* cd = std::getenv("CREDENTIALS_DIRECTORY"); cd && *cd)
+        return read_first_line(std::string(cd) + "/bs_kek");
+    return std::string();
+}
+
 void parseCommandLineArgument(std::int32_t argc, char *argv[], std::unordered_map<std::string, std::string>& out) {
 
     if(argc > 1) {
@@ -250,8 +278,9 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     // The /rd registration location is assigned by the DM at Register and
     // used by the client for periodic Update — it is not minted here.
     if (lwm2mInstance == "bs") {
+        const std::string bsKekHex = load_bs_master_kek_hex();
         bsServer->provisioning_resolver(
-            [&ds](const std::string& ep)
+            [&ds, bsKekHex](const std::string& ep)
                 -> std::optional<::lwm2m::bootstrap::AccountProvisioning> {
             auto* cli = ds.client();
             if (!cli) return std::nullopt;
@@ -261,7 +290,8 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                                 std::string("cloud.dm.uri"),
                                 std::string("cloud.dm.lifetime"),
                                 std::string("cloud.dm.binding"),
-                                std::string("cloud.bs.uri")}, got);
+                                std::string("cloud.bs.uri"),
+                                std::string("cloud.bs.master.key")}, got);
             if (!rs.ok || got.size() < 5) return std::nullopt;
 
             auto str_at = [&](std::size_t i) -> std::string {
@@ -300,30 +330,59 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                            ep.c_str()));
                 return std::nullopt;
             }
-            if (credsJson.empty()) return std::nullopt;
+            // Unwrap the HKDF master (zero-touch tier) if a KEK is configured.
+            // str_at(5) is the AES-256-GCM-wrapped cloud.bs.master.key blob; a
+            // missing KEK or a bad/tampered blob → "" → tier disabled, fail
+            // closed to the commissioned per-device lookup below.
+            const std::string masterHex =
+                bsKekHex.empty()
+                    ? std::string()
+                    : iot::unwrap_bs_master_hex(bsKekHex, str_at(5)).value_or("");
 
             std::string dmId, dmKey, bsKey;
-            try {
-                auto arr = nlohmann::json::parse(credsJson);
-                if (!arr.is_array()) return std::nullopt;
-                for (auto& e : arr) {
-                    if (!e.is_object()) continue;
-                    const std::string serial   = e.value("serial",   std::string());
-                    const std::string identity = e.value("identity", std::string());
-                    if (serial == ep || identity == ep) {
-                        dmId  = e.value("dm.psk.id",  std::string());
-                        dmKey = e.value("dm.psk.key", std::string());
-                        bsKey = e.value("bs.psk.key", std::string());
-                        break;
+            bool zeroTouch = false;
+            if (!credsJson.empty()) {
+                try {
+                    auto arr = nlohmann::json::parse(credsJson);
+                    if (arr.is_array()) {
+                        for (auto& e : arr) {
+                            if (!e.is_object()) continue;
+                            const std::string serial   = e.value("serial",   std::string());
+                            const std::string identity = e.value("identity", std::string());
+                            if (serial == ep || identity == ep) {
+                                dmId  = e.value("dm.psk.id",  std::string());
+                                dmKey = e.value("dm.psk.key", std::string());
+                                bsKey = e.value("bs.psk.key", std::string());
+                                break;
+                            }
+                        }
                     }
+                } catch (const std::exception& ex) {
+                    // Don't fail outright — a master can still serve zero-touch.
+                    ACE_ERROR((LM_ERROR,
+                               ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: "
+                                        "cloud.endpoint.credentials parse: %C\n"),
+                               ep.c_str(), ex.what()));
                 }
-            } catch (const std::exception& ex) {
-                ACE_ERROR((LM_ERROR,
-                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: "
-                                    "cloud.endpoint.credentials parse: %C\n"),
-                           ep.c_str(), ex.what()));
-                return std::nullopt;
             }
+
+            // Zero-touch (HKDF) tier: no stored row, but a master is available →
+            // derive per-device BS+DM creds statelessly (nothing minted/stored).
+            // The device presents its RAW serial as the BS PSK identity (the
+            // override path), so the BS account handed back uses the raw serial
+            // verbatim — NOT sha256(ep) as in the commissioned tier.
+            if ((dmId.empty() || dmKey.empty()) && !masterHex.empty()) {
+                bsKey     = iot::derive_bs_psk_hex(masterHex, ep);
+                dmId      = iot::format_dm_identity(ep);
+                dmKey     = iot::derive_dm_psk_hex(masterHex, ep);
+                zeroTouch = true;
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: "
+                                    "zero-touch HKDF-derived BS+DM creds (no "
+                                    "stored row)\n"),
+                           ep.c_str()));
+            }
+
             if (dmId.empty() || dmKey.empty()) {
                 ACE_ERROR((LM_WARNING,
                            ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: no "
@@ -347,7 +406,10 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                 bs.serverUri         = bsUri;
                 bs.isBootstrapServer = true;
                 bs.securityMode      = 0;       // PSK
-                bs.identity          = iot::sha256_hex(ep).substr(0, 32);
+                // Commissioned tier: derived identity sha256(ep)[:32].
+                // Zero-touch tier: the device presents its RAW serial verbatim.
+                bs.identity          = zeroTouch ? ep
+                                                 : iot::sha256_hex(ep).substr(0, 32);
                 bs.secretKey         = bsKey;   // hex (omitted by encoder if empty)
                 bs.shortServerId     = 0;       // ignored for a BS account
                 a.security.push_back(std::move(bs));
@@ -2157,35 +2219,31 @@ int main(std::int32_t argc, char *argv[]) {
         if (!dtls || UDPAdapter::Role_t::SERVER != role || !ds.client()) return;
         const bool is_bs = argValueMap["lwm2m-instance"] == "bs";
         auto* cli = ds.client();
-        dtls->set_psk_resolver([cli, is_bs](const std::string& presented) -> std::string {
+        // KEK for the zero-touch HKDF tier — read once, captured by value. Empty
+        // ⇒ tier disabled (commissioned per-device lookup still serves).
+        const std::string bsKekHex = load_bs_master_kek_hex();
+        dtls->set_psk_resolver([cli, is_bs, bsKekHex](const std::string& presented) -> std::string {
             std::vector<data_store::Client::GetResult> got;
-            auto rs = cli->get({std::string("cloud.endpoint.credentials")}, got);
-            if (!rs.ok || got.empty() || !got[0].has_value) return std::string();
-            auto s = data_store::to_string(got[0].value);
-            if (!s || s->empty()) return std::string();
-            try {
-                auto arr = nlohmann::json::parse(*s);
-                if (!arr.is_array()) return std::string();
-                for (auto& e : arr) {
-                    if (!e.is_object()) continue;
-                    if (is_bs) {
-                        const std::string serial = e.value("serial", std::string());
-                        // 128-bit identity (first 32 hex chars), matching the
-                        // device's iot::sha256_hex(endpoint).substr(0,32).
-                        if (!serial.empty() &&
-                            iot::sha256_hex(serial).substr(0, 32) == presented)
-                            return e.value("bs.psk.key", std::string());
-                    } else if (e.value("dm.psk.id", std::string()) == presented) {
-                        return e.value("dm.psk.key", std::string());
-                    }
-                }
-            } catch (const std::exception& ex) {
-                ACE_ERROR((LM_ERROR,
-                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l PSK resolver: "
-                                    "cloud.endpoint.credentials parse: %C\n"),
-                           ex.what()));
-            }
-            return std::string();
+            auto rs = cli->get({std::string("cloud.endpoint.credentials"),
+                                std::string("cloud.bs.master.key")}, got);
+            if (!rs.ok || got.empty()) return std::string();
+            const std::string credsJson =
+                got[0].has_value ? data_store::to_string(got[0].value).value_or("")
+                                 : std::string();
+            // Unwrap the HKDF master if a KEK is configured (bad/tampered → "").
+            const std::string wrapped =
+                (got.size() > 1 && got[1].has_value)
+                    ? data_store::to_string(got[1].value).value_or("")
+                    : std::string();
+            const std::string masterHex =
+                bsKekHex.empty()
+                    ? std::string()
+                    : iot::unwrap_bs_master_hex(bsKekHex, wrapped).value_or("");
+            // BS tier: commissioned sha256(serial)[:32] lookup → else derive from
+            // the presented raw serial. DM tier: dm.psk.id lookup → else derive
+            // from the serial embedded in the presented identity.
+            return is_bs ? iot::resolve_bs_psk(credsJson, presented, masterHex)
+                         : iot::resolve_dm_psk(credsJson, presented, masterHex);
         });
     };
 

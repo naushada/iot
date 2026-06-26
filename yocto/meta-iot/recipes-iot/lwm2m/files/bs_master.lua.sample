@@ -1,0 +1,30 @@
+-- bs_master.lua — OPTIONAL zero-touch Bootstrap HKDF master seed (cloud only).
+--
+-- Zero-touch / plug-and-play bootstrap: the cloud holds one HKDF master and
+-- re-derives every device's per-unit BS PSK from its serial, so no per-device
+-- row has to be pre-created. See apps/docs/tdd-bs-hkdf-zerotouch.md.
+--
+-- This file carries the master ONLY as an AES-256-GCM-wrapped blob (ciphertext)
+-- — never the raw master, never the KEK. Produce the blob with:
+--
+--     bs-master-wrap <kek_hex> --gen-master       # mints + prints a master, or
+--     bs-master-wrap <kek_hex> <master_hex>        # wraps an existing master
+--
+-- Then either:
+--   (a) RECOMMENDED — set it on the running cloud directly (no rebuild):
+--         ds-cli set cloud.bs.master.key "<blob>"
+--   (b) bake it into the cloud image default: copy this file to `bs_master.lua`
+--       (same dir, gitignored) with the blob below, and run
+--         gen_bs_master.py bs_master.lua /etc/iot/ds-schemas/cloud.lua
+--       during the cloud image build.
+--
+-- The wrapping KEK is delivered to the cloud lwm2m-server at RUNTIME and is
+-- NEVER stored here or in the data-store:
+--   - Docker/compose:  environment: IOT_BS_MASTER_KEK=<kek_hex>
+--   - systemd:         LoadCredential=bs_kek:/etc/iot/bs-master.kek  (0400 root)
+--
+-- Security: the blob is inert without the KEK. The raw master is also needed by
+-- the device flashing tool (gen_bs_psk.py) — keep it in your manufacturing
+-- vault, out of git and out of the image.
+
+return { wrapped = "<base64( nonce || ciphertext || tag ) from bs-master-wrap>" }

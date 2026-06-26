@@ -191,12 +191,19 @@ base64( nonce(12) || AES-256-GCM(KEK, master)_ciphertext || tag(16) )
   `nullopt` → the master is treated as absent → HKDF tier disabled (the
   commissioned per-device tier still serves). Never derive against a bad master.
 
-> **Status (P2, this PR):** `base64_encode/decode`, `wrap_bs_master`,
-> `unwrap_bs_master_hex` shipped + tested (fixed-vector + round-trip + tamper +
-> wrong-key + fail-closed). The `resolve_bs_psk` / `should_mint_dm` decision
-> helpers (§4.3) shipped + tested. `cloud.bs.master.key` schema + `gen_bs_master.py`
-> shipped. **Not yet wired:** the `main.cpp` BS-server resolver/mint call sites,
-> the `bs-master-wrap` CLI, the `IOT_BS_SEED` recipe bake, and KEK delivery — P2b.
+> **Status (P2a, done):** `base64_encode/decode`, `wrap_bs_master`,
+> `unwrap_bs_master_hex` + the `resolve_bs_psk` / `should_mint_dm` decision
+> helpers + `cloud.bs.master.key` schema + `gen_bs_master.py`, all tested.
+>
+> **Status (P2b, done):** wired into the BS server — `main.cpp` PSK resolver now
+> calls `resolve_bs_psk` / `resolve_dm_psk`, and the provisioning resolver
+> HKDF-derives BS+DM creds for un-stored serials (stateless, **no mint/store** —
+> chosen over the documented mint to avoid the write-back race; DM is derived via
+> `derive_dm_psk_hex`, `info="iot-dm-psk:v1:"`). KEK loaded once via
+> `load_bs_master_kek_hex` (`IOT_BS_MASTER_KEK` / `IOT_BS_MASTER_KEK_FILE` /
+> systemd `$CREDENTIALS_DIRECTORY/bs_kek`). `bs-master-wrap` CLI + `bs_master.lua.sample`
+> shipped; KEK delivery documented in `iot-lwm2m-server.service`. Verified: full
+> `lwm2m` + `bs-master-wrap` build + 41-test gtest suite green in podman.
 
 ---
 
@@ -363,7 +370,15 @@ malformed-master / odd-hex rejection (mirror `test_gen_wifi_default.py`).
      `IOT_BS_MASTER_KEK` / systemd cred); the `bs-master-wrap` CLI; the
      `IOT_BS_SEED` recipe bake of a wrapped master into the cloud image. Guarded
      by empty-master = no-op, so it stays inert until a master is seeded.
-3. **P3 — device personalisation:** `iot-bs-personalize` + `iot-ds-seed`
-   extension + `iot.bs.psk.override` wiring (Option I, flash-time).
-4. **P4 — DEPLOY.md** "Zero-touch bootstrap (HKDF)" section + master-rotation
-   runbook; integration validation on real BS+DM+device hardware.
+3. ✅ **P3 — device personalisation (done):** `iot-bs-personalize` host tool
+   emits a per-unit `bs-seed.json` (`{serial, key=HKDF(master,serial)}`);
+   `iot-ds-seed` applies it on first boot (sets `iot.serial` /
+   `iot.bs.psk.identity` / `iot.bs.psk.key` / `iot.bs.psk.override=true`) and
+   shreds the file — independent of the engineer-account `.seeded` flag so a
+   re-personalised unit re-applies. Tests: 7/7 (`test_iot_bs_personalize.py`),
+   `iot-ds-seed` `sh -n` clean, sed-parse round-trip verified.
+4. ✅ **P4 — DEPLOY.md (done):** "Zero-touch bootstrap (HKDF)" §4b — one-time
+   cloud setup (`bs-master-wrap` → `cloud.bs.master.key` + KEK delivery),
+   per-device flash (`iot-bs-personalize`), and the rotation/revocation runbook.
+   ⬜ **Remaining: integration validation on real BS+DM+device hardware** —
+   deferred like `tdd-psk-provisioning.md`'s N-wire/P (no integration env here).

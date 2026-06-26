@@ -12,6 +12,13 @@ StartLimitIntervalSec=60s
 [Service]
 Type=simple
 EnvironmentFile=/etc/iot/lwm2m-server.env
+# Zero-touch bootstrap (apps/docs/tdd-bs-hkdf-zerotouch.md): deliver the KEK that
+# unwraps cloud.bs.master.key out-of-band, never via the data-store. Uncomment
+# ONE once a master is provisioned (leaving them off keeps the HKDF tier
+# disabled; the commissioned per-device tier still works):
+#   LoadCredential=bs_kek:/etc/iot/bs-master.kek   # 0400 root; sets $CREDENTIALS_DIRECTORY
+#   Environment=IOT_BS_MASTER_KEK_FILE=/etc/iot/bs-master.kek
+# (The Docker/compose cloud deploy passes IOT_BS_MASTER_KEK in the container env.)
 ExecStart=/usr/local/bin/lwm2m $LWM2M_ARGS
 
 DynamicUser=yes

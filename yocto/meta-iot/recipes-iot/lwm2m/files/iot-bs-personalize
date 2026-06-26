@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""iot-bs-personalize — flash-time per-unit Bootstrap PSK injector (host tool).
+
+Zero-touch / plug-and-play bootstrap (apps/docs/tdd-bs-hkdf-zerotouch.md).
+Symmetric PSK means each device must hold its OWN secret before first contact;
+this tool derives that secret on the manufacturing host and emits a one-shot
+seed file that the device's first-boot iot-ds-seed applies, then shreds.
+
+    psk = HKDF(master, serial)        # = gen_bs_psk.derive_bs_psk_hex
+    seed = {"serial": "<raw serial>", "key": "<64-hex psk>"}
+
+Drop the seed at `/var/lib/iot/bs-seed.json` on the device's DATA partition
+(NOT the shared rootfs) before first boot. The cloud re-derives the same key
+from the serial, so no per-device cloud row is needed.
+
+The `<master>` is the HKDF root — the SAME secret you wrapped into the cloud
+with bs-master-wrap. Keep it in your manufacturing vault; it never ships on the
+device (only the per-unit derived key does).
+
+Usage:
+    iot-bs-personalize <master> <serial> [-o OUT]
+
+`<master>` is 64-hex, or `@/path` to read it from a file. `-o OUT` writes the
+seed JSON to OUT (default: stdout). Example, writing straight onto a mounted
+data partition:
+
+    iot-bs-personalize @master.hex 100000003d1f9c2e -o /mnt/data/bs-seed.json
+"""
+
+import json
+import sys
+
+import gen_bs_psk as g
+
+
+def _read_master(arg):
+    if arg.startswith("@"):
+        with open(arg[1:], encoding="utf-8") as fh:
+            return fh.readline().strip()
+    return arg
+
+
+def build_seed(master_hex, serial):
+    """Return the seed dict the device first-boot expects. Raises ValueError on
+    a bad master/serial (via derive_bs_psk_hex)."""
+    serial = serial.strip()
+    key = g.derive_bs_psk_hex(master_hex, serial)   # validates master + serial
+    return {"serial": serial, "key": key}
+
+
+def main(argv):
+    args = [a for a in argv[1:] if a != "-o"]
+    out_path = None
+    if "-o" in argv[1:]:
+        i = argv.index("-o")
+        if i + 1 >= len(argv):
+            sys.stderr.write("iot-bs-personalize: -o needs a path\n")
+            return 2
+        out_path = argv[i + 1]
+        args = [a for a in argv[1:] if a not in ("-o", out_path)]
+    if len(args) != 2:
+        sys.stderr.write("usage: iot-bs-personalize <master|@file> <serial> "
+                         "[-o OUT]\n")
+        return 2
+    try:
+        seed = build_seed(_read_master(args[0]), args[1])
+    except (ValueError, OSError) as exc:
+        sys.stderr.write("iot-bs-personalize: %s\n" % exc)
+        return 2
+    # Compact, single-line JSON — the device parses it with sed (no jq).
+    text = json.dumps(seed, separators=(",", ":")) + "\n"
+    if out_path:
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        sys.stderr.write("iot-bs-personalize: wrote seed for %s -> %s\n"
+                         % (seed["serial"], out_path))
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "provisioning_policy.hpp"
+#include "psk_gen.hpp"
 
 using iot::resolve_endpoint;
 
@@ -135,4 +136,51 @@ TEST(ShouldMintDm, ReusesWhenRowExists) {
 TEST(ShouldMintDm, EmptySerialOrBadJsonNeverMints) {
     EXPECT_FALSE(iot::should_mint_dm("[]", ""));
     EXPECT_TRUE(iot::should_mint_dm("not json", kSerial));  // no row → mint
+}
+
+// ── DM identity + zero-touch DM resolver ─────────────────────────────────────
+
+namespace {
+// derive_dm_psk_hex(kMaster, kSerial), computed independently.
+const char* kDerivedDm = "f9123ef9d4cc65bca1586fe27faff3e7"
+                         "0adde77d266b30fc3645f49466f5113a";
+} // namespace
+
+TEST(DmIdentity, FormatAndParseRoundTrip) {
+    EXPECT_EQ("rpi100000003d1f9c2e@cloud.local",
+              iot::format_dm_identity(kSerial));
+    EXPECT_EQ(kSerial,
+              iot::serial_from_dm_identity(iot::format_dm_identity(kSerial)));
+}
+
+TEST(DmIdentity, ParseRejectsNonMatching) {
+    EXPECT_EQ("", iot::serial_from_dm_identity("rpi@cloud.local"));     // no serial
+    EXPECT_EQ("", iot::serial_from_dm_identity("100000003d1f9c2e"));    // raw serial
+    EXPECT_EQ("", iot::serial_from_dm_identity("rpiX@example.com"));    // wrong suffix
+    EXPECT_EQ("", iot::serial_from_dm_identity(""));
+}
+
+TEST(DeriveDmPsk, DiffersFromBsAndIsDeterministic) {
+    EXPECT_EQ(kDerivedDm, iot::derive_dm_psk_hex(kMaster, kSerial));
+    EXPECT_NE(iot::derive_bs_psk_hex(kMaster, kSerial),
+              iot::derive_dm_psk_hex(kMaster, kSerial));   // domain-separated
+    EXPECT_EQ("", iot::derive_dm_psk_hex("", kSerial));    // no master
+}
+
+TEST(ResolveDmPsk, CommissionedRowWinsOverDerivation) {
+    const std::string creds =
+        R"([{"dm.psk.id":"rpi100000003d1f9c2e@cloud.local","dm.psk.key":"cafe"}])";
+    EXPECT_EQ("cafe", iot::resolve_dm_psk(
+        creds, "rpi100000003d1f9c2e@cloud.local", kMaster));
+}
+
+TEST(ResolveDmPsk, DerivesWhenNoRow) {
+    EXPECT_EQ(kDerivedDm, iot::resolve_dm_psk(
+        "[]", iot::format_dm_identity(kSerial), kMaster));
+}
+
+TEST(ResolveDmPsk, NoMasterOrUnparseableYieldsEmpty) {
+    EXPECT_EQ("", iot::resolve_dm_psk("[]", iot::format_dm_identity(kSerial), ""));
+    EXPECT_EQ("", iot::resolve_dm_psk("[]", "not-a-dm-id", kMaster));
+    EXPECT_EQ("", iot::resolve_dm_psk("[]", "", kMaster));
 }

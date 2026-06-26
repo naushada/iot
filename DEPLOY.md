@@ -308,6 +308,65 @@ journalctl -u iot-lwm2m-client -f
 > default `coaps://0.0.0.0:5683`, or the device bootstraps but can't find
 > the DM server afterwards. See [`apps/cloud/INSTALL.md`](apps/cloud/INSTALL.md) §6.
 
+### 4b. Zero-touch bootstrap (HKDF) — flash → boot → registered, no per-device step
+
+§4 above is the **manual** path: you set the BS PSK per device and commission a
+matching cloud row. The zero-touch path removes both. The cloud holds **one
+HKDF master** and re-derives every device's BS (and DM) PSK from its serial, so
+no per-device cloud row exists; each device is flashed with its own derived key.
+Full design + threat model: [`apps/docs/tdd-bs-hkdf-zerotouch.md`](apps/docs/tdd-bs-hkdf-zerotouch.md).
+
+It is **off by default** — with no master/KEK configured the cloud serves only
+the manual `cloud.endpoint.credentials` tier (nothing changes). Turn it on once:
+
+**One-time cloud setup.** Mint a master + a KEK, wrap the master, give the cloud
+the wrapped blob (data-store) and the KEK (runtime env — never the data-store):
+
+```sh
+# On a trusted host (manufacturing). Keep KEK + master OFF the device/image/git.
+KEK=$(head -c32 /dev/urandom | xxd -p -c64)        # 32-byte Key-Encryption-Key
+BLOB=$(bs-master-wrap "$KEK" --gen-master)         # mints + prints the master to stderr
+#   -> SAVE the printed master in your manufacturing vault (gen_bs_psk needs it)
+
+# Cloud: store the wrapped blob (ciphertext — inert without the KEK).
+ds-cli --socket=/run/iot/data_store.sock set cloud.bs.master.key "$BLOB"
+
+# Cloud: deliver the KEK to the BS+DM server OUT-OF-BAND.
+#   Docker/compose:  add to the lwm2m-server service:  environment:
+#                      - IOT_BS_MASTER_KEK=<the KEK hex>
+#   systemd:         echo -n "$KEK" > /etc/iot/bs-master.kek && chmod 0400 …
+#                    then uncomment LoadCredential= in iot-lwm2m-server.service
+systemctl restart iot-lwm2m-server   # (or recreate the cloud container)
+```
+
+**Per device, at flash time.** Derive the unit's key from the master + serial
+and drop the one-shot seed onto its data partition — the first boot applies and
+shreds it:
+
+```sh
+# RPi serial: cat /proc/cpuinfo | grep -i serial  (or read it off the board)
+iot-bs-personalize @master.hex 100000003d1f9c2e -o /mnt/data/bs-seed.json
+#   -> /mnt/data == the device's /var/lib/iot on the mounted SD data partition
+```
+
+Boot the device with no other step: `iot-ds-seed` sets `iot.bs.psk.*` +
+`iot.bs.psk.override=true` and the device registers. Verify as in §4 (the
+`iot.bs.psk.identity` will be the **raw serial**, not a `cloud.bs.psk.id`).
+
+**Rotation / revocation.**
+- *Rotate the master* (e.g. leak): bump the `v1` tag to `v2` in both
+  `derive_bs_psk_hex`/`derive_dm_psk_hex` (`info`) and re-mint+re-wrap, or run a
+  dual-derive window; re-personalise units and re-`set cloud.bs.master.key`.
+- *Rotate only the KEK:* `bs-master-wrap` the **same** master under a new KEK,
+  re-`set cloud.bs.master.key`, swap the runtime KEK. Devices unaffected.
+- *Revoke one device:* the derived tier has no per-device revocation; move that
+  unit to the manual tier (add a `cloud.endpoint.credentials` row — lookup wins)
+  or rotate the master. (Per-device revocation is a documented limitation.)
+
+> Manual and zero-touch **coexist**: the resolver tries the stored
+> `cloud.endpoint.credentials` row first, then derives. Already-commissioned
+> devices keep working after you enable the master.
+
 ### 5. Push app updates over ssh (the `.ipk` feed)
 
 After the device is up, ship new daemon builds without reflashing —

@@ -71,13 +71,32 @@ std::string resolve_bs_psk(const std::string& credentials_json,
                            const std::string& presented,
                            const std::string& master_hex);
 
-/// Mint-once gate for zero-touch DM provisioning. True when no row in
-/// `credentials_json` already covers `serial` (the BS should mint+persist DM
-/// creds during /bs); false when a row exists (reuse — a /bs retry after packet
-/// loss must NOT re-mint, or the device that stored the first key can no longer
-/// authenticate). Empty serial → false.
+/// Mint-once gate for a stored-DM variant: true when no row in
+/// `credentials_json` already covers `serial`. Unused by the shipped zero-touch
+/// path (which DERIVES DM creds statelessly — see `resolve_dm_psk`), kept for a
+/// future mint-and-store DM variant. Empty serial → false.
 bool should_mint_dm(const std::string& credentials_json,
                     const std::string& serial);
+
+/// The cloud's canonical DM identity for a device serial: `rpi<serial>@cloud.local`.
+/// MUST match `server::lwm2m::format_identity` (cloud_credentials.cpp) — the two
+/// live in separate binaries but key the same credential namespace.
+std::string format_dm_identity(const std::string& serial);
+
+/// Inverse of format_dm_identity: recover the serial from a DM identity, or ""
+/// if `identity` is not in the `rpi<serial>@cloud.local` form. Used by the DM
+/// PSK resolver to re-derive the per-device DM key from the presented identity.
+std::string serial_from_dm_identity(const std::string& identity);
+
+/// DM counterpart of resolve_bs_psk. `presented` is the DM PSK identity the peer
+/// sent (`rpi<serial>@cloud.local`). Resolution order:
+///   1. a commissioned row whose dm.psk.id == presented → its dm.psk.key; else
+///   2. if a master is configured and a serial parses out of `presented`,
+///      HKDF-derive the DM key (zero-touch, stateless); else
+///   3. "".
+std::string resolve_dm_psk(const std::string& credentials_json,
+                           const std::string& presented,
+                           const std::string& master_hex);
 
 } // namespace iot
 

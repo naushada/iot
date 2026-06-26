@@ -60,6 +60,17 @@ std::string hkdf_sha256(const std::string& ikm,
 std::string derive_bs_psk_hex(const std::string& master_hex,
                               const std::string& serial);
 
+/// Derive a device's per-unit Device-Management PSK from the same cloud master
+/// + serial, with a DM-specific `info` tag so the DM key is independent of the
+/// BS key:
+///   psk = HKDF-SHA256(hex_decode(master_hex), "", "iot-dm-psk:v1:"+serial, 32)
+/// Lets the zero-touch path stay fully stateless — the BS pushes derived DM
+/// creds during /bs and the DM server re-derives the same key from the
+/// presented identity, so nothing is minted or stored. Returns "" on an empty
+/// or invalid master.
+std::string derive_dm_psk_hex(const std::string& master_hex,
+                              const std::string& serial);
+
 /// Standard base64 (RFC 4648, '+/' alphabet, '=' padding).
 std::string base64_encode(const std::string& bin);
 /// Decode standard base64. Returns "" on any invalid character or length.
