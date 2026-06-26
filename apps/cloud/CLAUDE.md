@@ -594,6 +594,67 @@ cloud.vpn.server.crt     → Server cert path
 cloud.vpn.server.key     → Server key path
 ```
 
+### VPN PKI & per-device certificates (centralized minting)
+
+**The cloud is the sole PKI authority — it mints _everything_, including each
+device's client private key.** There is no device-side key generation or CSR.
+`CertAuthority` (`modules/server/openvpn/`) runs entirely on iot-cloudd:
+
+- **Runtime CA** — `ensure()` generates (or restores from ds) the CA key + cert
+  at `/etc/iot/vpn/ca/{ca.key,ca.crt}`. The **CA private key never leaves the
+  cloud**. The CA DB (`index.txt`, `serial`, CRL) is scaffolded by `ensure_crl()`
+  on every startup (`unique_subject = no`, so re-minting the same CN is allowed).
+- **Server cert** — minted once for the openvpn server (`server.crt/key`).
+- **Per-device client cert+key** — on `cloud.provision.request`,
+  `mint_client(cn)` runs **`openssl genrsa` (client key) → `req` (CSR) →
+  `ca` (CA-sign)** in a temp dir and returns a `MintedCert{client_crt,
+  client_key, ca_crt}`. `cn` = `rpi<serial>@cloud.local`.
+
+**Delivery (cloud → device):** the minted material lands in
+`cloud.endpoint.credentials` (`vpn.client.cert`, `vpn.client.key`) + the CA in
+`cloud.vpn.ca.crt.pem`; the DM server then **pushes the cert family over LwM2M
+custom Object 2048** (instances 0/1/2 = ca/cert/key) and EXECUTEs RID 3 (Apply).
+On the device, `install_cert` (`apps/src/lwm2m_object_stubs.cpp`) materialises
+`/etc/iot/vpn/{ca.crt,client.crt,client.key}` (dir `2750 engineer:iot`; the **key
+`0640` group `iot`** so the openvpn-client DynamicUser via
+`SupplementaryGroups=iot` can read it; the certs `0644`), then a
+`services.openvpn.client.enable` `false→true` gate-flip respawns openvpn-client
+to load them. See `modules/openvpn/client/docs/design.md` §"cert-arrival respawn".
+
+```
+cloud:  genrsa+req+ca (CertAuthority)  ──►  cloud.endpoint.credentials
+                                            {vpn.client.cert, vpn.client.key}
+                                            cloud.vpn.ca.crt.pem
+            │  LwM2M Object 2048 PUT(ca/cert/key) + EXECUTE Apply
+            │  (over the device's DTLS-PSK DM session)
+            ▼
+device: /etc/iot/vpn/{ca.crt, client.crt, client.key}  ──►  openvpn-client
+```
+
+#### Security considerations
+
+- **Client private key is generated on the cloud and transits the wire.** Unlike
+  a device-generated-key + cloud-signs-CSR model (where the key never leaves the
+  device), here the key is created on iot-cloudd, **stored in ds**
+  (`cloud.endpoint.credentials` — write-only: `gid:cloud-svc`, no `ds-cli` read,
+  same ACL as the PSKs), **pushed over LwM2M Object 2048 on the DTLS-PSK DM
+  session**, and stored on the device at `/etc/iot/vpn/client.key` (`0640`, group
+  `iot`). It is protected in transit by DTLS and at rest by ds ACLs + filesystem
+  perms, but it **does exist in three places** (cloud ds, the wire, device disk).
+  Trade-off accepted
+  for simplicity (no openssl/keygen on the RPi). **Future hardening:**
+  device-generated key + cloud-signs-CSR so the private key never leaves the
+  device — would also remove the key from ds and the control plane.
+- **CA private key is cloud-only** (`/etc/iot/vpn/ca/ca.key`, restored from ds);
+  it is never delivered to any device. A device only ever gets the CA **cert**.
+- **Revocation** — `revoke()` (`openssl ca -revoke` → CRL → `cloud.vpn.crl.pem`)
+  runs on deprovision/transfer; openvpn enforces `crl-verify`. See
+  `apps/docs/tdd-device-transfer.md`.
+- **Re-provisioning a reflashed device** reuses the same CN
+  (`rpi<serial>@cloud.local`, serial-derived) and re-mints — `unique_subject =
+  no` permits it; a stale CA DB (`index.txt`/`serial`) is the failure mode to
+  watch (the `openssl ca` step), now surfaced in the log (PR #434).
+
 ### Services (services.cloud.*)
 ```
 services.ds.state                           → ds-server state (default "stopped")
