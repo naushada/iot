@@ -59,6 +59,11 @@ remain — all needing a real device in the loop.
 
 **Done — v2 LwM2M Send, PURE pipeline (all unit-validated in the podman
 dev-build, PR-26; see "validation" note below):**
+
+> **Wire format** — the `POST /dp` SenML-CBOR payload (CoAP framing, CBOR integer
+> labels, `bn`/`bt`/`t` timestamp model, worked example) is specified in
+> `apps/docs/lwm2m-object-handling.md` §6.
+
 - ✅ PR-25 (#361) — SenML `bt`/`t` time fields in the codec — per-sample
   timestamps for batched telemetry (RFC 8428 §4.5.2 / §6).
 - ✅ PR-28 (#364) — `telemetry::build_pack`/`parse_pack` — samples ⇄ SenML

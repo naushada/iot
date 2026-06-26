@@ -4208,7 +4208,9 @@ dtls_handle_message(dtls_context_t *ctx,
       break;
 
     case DTLS_CT_APPLICATION_DATA:
-      dtls_info("** application data:\n");
+      /* iot: dropped the per-record `dtls_info("** application data:\n")` — it
+         logged at INFO for EVERY app-data record (empty, contentless spam in the
+         device log). DTLSAdapter already logs "rx N bytes from port". */
       if (!peer) {
         dtls_warn("no peer available, send an alert\n");
         // TODO: should we send a alert here?

@@ -345,7 +345,77 @@ derives it from the OpenVPN management `status` real-address (see
 
 ---
 
-## 6. File map
+## 6. Server-Send payload — `POST /dp` (SenML CBOR)
+
+`Send` (LwM2M 1.1 §6.4.6 / §8.2.5) is the **device→server push** complement to
+the server-Read poll in §5: instead of the cloud Reading each resource, the client
+**POSTs a batch of timestamped readings to `/dp`**. The live Fleet Map uses the
+poll (§5, no Send needed); Send carries the **device-pushed / 60-day-history**
+telemetry stream. The codec + framing + server decode are complete and
+unit-tested; the on-device session-I/O glue is the remaining HW step (see
+`apps/docs/tdd-vehicle-telemetry.md`).
+
+### CoAP frame
+| Field | Value |
+|-------|-------|
+| Method | `POST`, Confirmable (CON) |
+| Uri-Path | `dp` |
+| Content-Format | **112** = `application/senml+cbor` (`CF_SENML_CBOR`); SenML JSON `110` also decodes server-side |
+| Payload | one SenML **pack** (below) |
+| Response | `2.04 Changed` on accept · `4.15` wrong Content-Format · `4.00` malformed SenML · *no reply* if not `POST /dp` |
+
+Builder: `send::build_send_request` (`apps/inc/lwm2m_send.hpp`). Receiver:
+`SendServer::handle` (`apps/inc/lwm2m_send_server.hpp`) → decoded samples + ACK bytes.
+
+### Pack = CBOR array of records
+The payload is a **CBOR array** (major type 4) of **maps** (major type 5); each
+map is one SenML record. Per RFC 8428 §4.5 the **first record carries the base
+fields** (`bn`, `bt`) that apply to the whole pack; later records inherit them and
+add only their own name/time/value. **CBOR integer labels** (RFC 8428 §6 —
+`apps/src/lwm2m_codec_senml.cpp`):
+
+| Field | Label | CBOR type | Meaning |
+|-------|------:|-----------|---------|
+| `bn` Base Name | **−2** | text | path prefix for all records, e.g. `"/33000/0/"` — **first record only** |
+| `bt` Base Time | **−3** | int/float | Unix seconds; a record's effective time = `bt + t` — **first record only** |
+| `n` Name | **0** | text | resource id appended to `bn` → `n="0"` ⇒ `/33000/0/0` |
+| `t` Time | **6** | int/float | this record's offset from `bt` (0 on the first) |
+| `v` Value | **2** | int/float | numeric reading |
+| `vs` String Value | **3** | text | string reading |
+| `vb` Bool Value | **4** | bool | boolean reading |
+| `vd` Data Value | **8** | bytes | opaque reading |
+
+Exactly **one** value field per record; unknown labels are skipped on decode
+(RFC 8428 §4.1 forward-compat).
+
+### Timestamp model (`bt` + per-record `t`)
+One base time on the first record plus a small per-record offset preserves each
+reading's **real capture time** across a batch — samples buffered offline upload
+with their original timestamps, not arrival time. `telemetry::build_pack` /
+`parse_pack` (`apps/inc/lwm2m_telemetry_pack.hpp`) convert `Sample`s ⇄ records:
+`bn` = base path, `bt` = first sample's time, each record's `t` = its offset.
+Consecutive records sharing an effective time **coalesce into one `Sample`** on
+decode (that is how `build_pack` emits a multi-signal reading).
+
+### Worked example
+A vehicle batch — speed (`/33000/0/0`) and rpm (`/33000/0/1`) at `t=1718000000`
+and again `+2 s` — shown as SenML **JSON** for readability (the wire is the CBOR
+equivalent using the integer labels above):
+
+```json
+[
+  {"bn":"/33000/0/", "bt":1718000000, "n":"0", "t":0, "v":62},
+  {"n":"1", "t":0, "v":2150},
+  {"n":"0", "t":2, "v":58},
+  {"n":"1", "t":2, "v":2100}
+]
+```
+Decodes to `/33000/0/0=62, /33000/0/1=2150` @ 1718000000 and `=58, =2100`
+@ 1718000002 — two `Sample`s, four records, one base name + one base time.
+
+---
+
+## 7. File map
 
 | Concern | File |
 |---------|------|
@@ -358,5 +428,8 @@ derives it from the OpenVPN management `status` real-address (see
 | Online/offline publish (lwm2m-dm) + merge (iot-cloudd) | `apps/src/main.cpp` (`wire_server`), `apps/cloud/server/src/main.cpp` (`reconcile_registrations`); key `cloud.lwm2m.registrations` |
 | Server-read version (`/3/0/3`) + LAN IP (`/4/0/4`) | `apps/src/main.cpp` (DM poll loop, `dmResponseHandler`, `publish_regs`); device serves `/4/0/4` via `install_connmon` `ipReader` → `net.iface.active.ip` |
 | Registration client (`/rd`, Update) | `apps/src/lwm2m_registration_client.cpp` |
+| Send (`POST /dp`) frame + server decode (§6) | `apps/inc/lwm2m_send.hpp`, `apps/inc/lwm2m_send_server.hpp`, `apps/src/lwm2m_send_server.cpp` |
+| SenML JSON/CBOR codec + telemetry pack (§6) | `apps/inc/lwm2m_codec_senml.hpp`, `apps/src/lwm2m_codec_senml.cpp`, `apps/inc/lwm2m_telemetry_pack.hpp` |
+| Client Send upload loop (buffer → offer → emit) | `apps/inc/lwm2m_send_uploader.hpp`, `apps/inc/lwm2m_sample_buffer.hpp`, `apps/inc/lwm2m_durable_sample_buffer.hpp` |
 | PSK provisioning (mint DM PSK) | `apps/cloud/server/src/main.cpp`, `apps/src/psk_gen.cpp` |
 | Bootstrap/DM provisioning source | data-store: `cloud.endpoint.credentials`, `cloud.bs.uri`, `cloud.dm.uri/lifetime/binding` (no static lua) |
