@@ -1985,6 +1985,18 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                            ACE_TEXT("%D lwm2m:thread:%t %M %N:%l DM rejected "
                                     "registration — re-bootstrapping for fresh "
                                     "DM credentials\n")));
+                // A prior successful bootstrap pinned the DM identity + pointed
+                // the data plane at the DM. Re-point to the BS and force a fresh
+                // BS DTLS handshake; reset_and_connect() restores the BS identity
+                // so the /bs handshake offers BS creds, not the DM identity+key
+                // the BS resolver can't match (else the device wedges in
+                // bootstrapping after a cloud restart).
+                for (auto& [type, ctx] : a->udpAdapter()->services()) {
+                    if (type != ::UDPAdapter::ServiceType_t::LwM2MClient) continue;
+                    ctx->peerHost(bsHost);
+                    ctx->peerPort(bsPort);
+                }
+                if (dtls) dtls->reset_and_connect(bsHost, bsPort);
                 auto payload = bs->build_bs_request(
                     next_msgid(), std::string{static_cast<char>(0x30)});
                 tx_via(*a, payload, svc);

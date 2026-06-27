@@ -334,6 +334,11 @@ void DTLSAdapter::hard_reset() {
 }
 
 void DTLSAdapter::reset_and_connect(const std::string& ip, const std::uint16_t& port) {
+    // reset_and_connect is only ever used to (re)establish the BS bootstrap
+    // session. If a prior successful bootstrap pinned the DM identity, restore
+    // the BS identity so this fresh handshake presents BS creds, not the DM
+    // identity+key the BS server cannot resolve.
+    reset_to_bootstrap_identity();
     session(ip, port);
     m_peerSession = m_session;
     isClient(true);

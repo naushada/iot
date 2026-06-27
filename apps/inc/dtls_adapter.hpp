@@ -198,6 +198,12 @@ class DTLSAdapter {
             // credential after a re-bootstrap ("identity already registered" →
             // dtls: cannot send ClientHello → never registers → cloud shows the
             // device offline even with the VPN up). insert_or_assign replaces it.
+            // Remember the FIRST credential as the bootstrap (BS) identity. On
+            // the client the BS credential is installed at startup, before the
+            // bootstrap-delivered DM credential is ever added, so the first add
+            // pins the BS identity. reset_to_bootstrap_identity() restores it
+            // when the client falls back to bootstrap (see below).
+            if (m_bootstrapIdentity.empty()) m_bootstrapIdentity = identity;
             auto res = device_credentials.insert_or_assign(identity, secret);
             if(!res.second) {
                 ACE_DEBUG((LM_DEBUG,
@@ -388,6 +394,24 @@ class DTLSAdapter {
             m_activeIdentity = id;
         }
 
+        /// Restore the pinned identity to the bootstrap (BS) identity. After a
+        /// successful bootstrap the client pins the DM identity (active_identity)
+        /// for the DM session; when it later falls back to bootstrap (DM auth /
+        /// registration failed, or the BS DTLS is re-kicked) it MUST present the
+        /// BS identity again — otherwise it offers the DM identity+key to the BS
+        /// server, which has no DM key under the BS resolver, and the handshake
+        /// fails ("PSK for unknown identity"). Seen after a cloud restart forces
+        /// a re-bootstrap. No-op until a BS credential has been installed.
+        void reset_to_bootstrap_identity() {
+            if (!m_bootstrapIdentity.empty() &&
+                m_activeIdentity != m_bootstrapIdentity) {
+                m_activeIdentity = m_bootstrapIdentity;
+                ACE_DEBUG((LM_DEBUG,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l reset PSK identity "
+                                    "to bootstrap for re-bootstrap handshake\n")));
+            }
+        }
+
         auto& clients() {
             return(m_clients);
         }
@@ -406,6 +430,7 @@ class DTLSAdapter {
         bool m_isClient;
         std::string m_clientState;
         std::string m_activeIdentity;
+        std::string m_bootstrapIdentity;   ///< BS identity (first credential added)
         std::vector<ClientDetails> m_clients;
 };
 
