@@ -1,6 +1,7 @@
 #include "oci_layer.hpp"
 
 #include <sstream>
+#include <unordered_set>
 
 namespace containers {
 
@@ -115,7 +116,18 @@ std::string safe_rel_path(const std::string& name) {
 std::string overlay_lowerdir(const std::vector<std::string>& layer_dirs_base_to_top) {
     std::string out;
     // overlayfs wants the highest-priority (topmost) layer first.
+    //
+    // Dedupe repeated paths. An OCI image can list the same layer digest more
+    // than once (e.g. the shared empty layer, or genuinely identical layers);
+    // each maps to the SAME extracted dir, so a naive join yields
+    // `lowerdir=/x/fs:/x/fs`. Linux 6.6's rewritten overlay mount parser
+    // REJECTS a duplicate lowerdir with "overlayfs: conflicting lowerdir path"
+    // (older kernels silently tolerated it — why this only bit on HW). Identical
+    // digest == identical content, so keeping the topmost occurrence preserves
+    // the merged view.
+    std::unordered_set<std::string> seen;
     for (auto it = layer_dirs_base_to_top.rbegin(); it != layer_dirs_base_to_top.rend(); ++it) {
+        if (!seen.insert(*it).second) continue;   // already emitted this path
         if (!out.empty()) out += ':';
         out += *it;
     }
