@@ -60,7 +60,10 @@ bool should_rebootstrap(bool dm_dtls_failed, bool dm_registration_rejected);
 /// PSK identity the peer sent; `master_hex` is the unwrapped HKDF master ("" if
 /// the zero-touch tier is unconfigured). Resolution order:
 ///   1. a commissioned row whose sha256(serial)[:32] == presented → its
-///      bs.psk.key (existing device-ui-provisioned tier, unchanged);
+///      bs.psk.key (the canonical device-ui-provisioned tier); else a row whose
+///      formatted identity / dm.psk.id == presented → its bs.psk.key (fallback
+///      for a device that presents its DM-style identity at the BS handshake,
+///      i.e. iot.bs.psk.override=true — both forms return the same bs.psk.key);
 ///   2. else, if a master is configured, HKDF-derive from the presented raw
 ///      serial (zero-touch tier — the device presents its serial verbatim);
 ///   3. else "" (no match → the handshake fails).
