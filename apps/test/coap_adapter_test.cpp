@@ -97,6 +97,52 @@ TEST(CoAPAdapterTestSuite, CoAPSerialisation)
     
 }
 
+// ── CoAP ping / RST handling (NAT keepalive) ────────────────────────────────
+
+TEST(CoAPAdapterTestSuite, BuildResetIsFourByteRstEchoingMsgId) {
+    CoAPAdapter a;
+    CoAPAdapter::CoAPMessage m{};
+    m.coapheader.msgid = 0xBEEF;
+    auto rst = a.buildReset(m);
+    ASSERT_EQ(4u, rst.size());
+    EXPECT_EQ(0x70, static_cast<std::uint8_t>(rst[0]));   // ver1, type RST(3), TKL0
+    EXPECT_EQ(0x00, static_cast<std::uint8_t>(rst[1]));   // code 0.00
+    EXPECT_EQ(0xBE, static_cast<std::uint8_t>(rst[2]));   // msgid high
+    EXPECT_EQ(0xEF, static_cast<std::uint8_t>(rst[3]));   // msgid low
+}
+
+TEST(CoAPAdapterTestSuite, EmptyConPingAnsweredWithReset) {
+    CoAPAdapter a;
+    CoAPAdapter::CoAPMessage m{};
+    m.coapheader.type  = 0;        // Confirmable
+    m.coapheader.code  = 0;        // 0.00 (empty) → a CoAP ping
+    m.coapheader.msgid = 0x1234;
+    std::vector<std::string> out;
+    EXPECT_TRUE(a.handleEmptyMessage(m, out));            // consumed
+    ASSERT_EQ(1u, out.size());
+    EXPECT_EQ(0x70, static_cast<std::uint8_t>(out[0][0]));  // answered with RST
+}
+
+TEST(CoAPAdapterTestSuite, ResetIsConsumedAndDroppedNotEchoed) {
+    CoAPAdapter a;
+    CoAPAdapter::CoAPMessage m{};
+    m.coapheader.type = 3;         // Reset
+    m.coapheader.code = 0;
+    std::vector<std::string> out;
+    EXPECT_TRUE(a.handleEmptyMessage(m, out));            // consumed
+    EXPECT_TRUE(out.empty());                             // no echo back
+}
+
+TEST(CoAPAdapterTestSuite, NonEmptyRequestIsNotConsumed) {
+    CoAPAdapter a;
+    CoAPAdapter::CoAPMessage m{};
+    m.coapheader.type = 0;         // Confirmable
+    m.coapheader.code = 0x02;      // POST — a real request, must dispatch normally
+    std::vector<std::string> out;
+    EXPECT_FALSE(a.handleEmptyMessage(m, out));
+    EXPECT_TRUE(out.empty());
+}
+
 CoAPAdapterTest::CoAPAdapterTest(const std::string& jsonFileName) {
     fileName = jsonFileName;
 }

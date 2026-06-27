@@ -409,6 +409,21 @@ can strand the FSM, while `check_ack_timeout` stops a lost one from stranding it
 *permanently*. Both are wanted; neither replaces the other. The split-keepalive
 is a follow-up to the lost-ack recovery, not a prerequisite.
 
+**Implemented (transport keepalive).** Timer 2 ships as `ClientConfig.keepaliveSeconds`
+(default 20 s; 0 disables). The 1 Hz client tick sends an empty CoAP `CON`
+(`RegistrationClient::build_keepalive_ping`) on the DM session once that many
+seconds elapse with no other client→DM traffic — the timer is reset by every
+Update **and** every telemetry Send, so it is genuinely idle-suppressed and a
+busy device emits no extra pings. The DM answers with a `RST`
+(`CoAPAdapter::handleEmptyMessage` → `buildReset`); both ends treat empty CoAP
+messages (ping/RST) outside the request dispatcher, so a ping never triggers the
+`buildResponse` echo. This was added after a field failure: with the 90 s
+lifetime → 60 s Update cadence, devices on a NAT/CGNAT link whose UDP idle
+timeout was ~30 s lost their port mapping between Updates — the source port
+rebound (visible cloud-side as DTLS records from a new `ip:port` for the same
+WAN IP → "unknown peer" alerts and `expired registration`). 20 s holds a ~30 s
+NAT; lower `keepaliveSeconds` for more aggressive links.
+
 ### 5.4 Registration Server
 
 ```

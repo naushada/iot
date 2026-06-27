@@ -18,6 +18,13 @@ RegistrationClient::RegistrationClient(ClientConfig cfg,
       m_endpoint(m_cfg.endpoint),
       m_store(store) {}
 
+std::string RegistrationClient::build_keepalive_ping(std::uint16_t messageId) {
+    // RFC 7252 §4.3: an empty Confirmable (no token, code 0.00) is a CoAP ping.
+    std::ostringstream ss;
+    emit_header(ss, messageId, /*token*/"", /*code 0.00*/0x00, TYPE_CON);
+    return ss.str();
+}
+
 void RegistrationClient::set_endpoint(std::string ep) {
     {
         std::lock_guard<std::mutex> g(m_endpoint_mtx);

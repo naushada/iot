@@ -62,11 +62,29 @@ struct ClientConfig {
     /// server's lifetime expires.
     std::uint32_t  ackTimeoutSeconds{6};
     std::uint32_t  maxAckRetransmits{3};
+    /// NAT keepalive cadence. The registration Update doubles as the keepalive,
+    /// but it only fires at `lifetime − updateMarginSeconds` (e.g. 60 s with a
+    /// 90 s lifetime) — longer than a typical NAT/CGNAT UDP idle timeout (~30 s),
+    /// so the mapping dies between Updates and the source port rebinds, breaking
+    /// the DTLS session. A small CoAP ping (empty CON) every keepaliveSeconds
+    /// holds the mapping without perturbing the registration lifetime. 0
+    /// disables it. Keep it below the link's NAT timeout (20 s is safe for a
+    /// ~30 s timeout; lower for aggressive CGNAT/cellular).
+    std::uint32_t  keepaliveSeconds{20};
 };
 
 class RegistrationClient {
 public:
     RegistrationClient(ClientConfig cfg, const ObjectStore& store);
+
+    /// CoAP ping — an empty Confirmable (RFC 7252 §4.3): ver=1, type=CON,
+    /// TKL=0, code=0.00, the given message-id; 4 bytes. The DM answers RST.
+    /// Sent on the DTLS socket between Updates as a NAT keepalive. Static (no
+    /// FSM state): the reply is correlated by nothing and simply dropped.
+    static std::string build_keepalive_ping(std::uint16_t messageId);
+
+    /// Configured NAT keepalive cadence in seconds (0 = disabled).
+    std::uint32_t keepalive_seconds() const { return m_cfg.keepaliveSeconds; }
 
     /// Build POST /rd request bytes per REQ-REG-001 / 007. Caller supplies
     /// a fresh message ID and 0..8 token bytes; we echo them in the
