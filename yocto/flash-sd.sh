@@ -38,6 +38,15 @@
 #   /proc/cpuinfo Serial). The master never lands on the card — only the
 #   derived key does.
 #
+# WiFi seed: CI images can't bake wifi_credentials.lua (gitignored), so they
+# ship the "changeme" placeholder. Drop the AP creds onto the boot partition and
+# first-boot iot-ds-seed sets wifi.networks + restarts the client:
+#
+#   ./flash-sd.sh --wifi-ssid cordoba_2G --wifi-psk 'Pin@232326'
+#
+#   Composes with --personalize. The PSK is plaintext on the FAT boot partition
+#   (same posture as the build-time WiFi seed).
+#
 # Safety: refuses internal/system disks (override with --force), refuses a card
 # too small for the image's on-card layout (the A/B image is ~2.4GB — needs a
 # ≥4GB card), shows the image + target, and requires you to type "yes".
@@ -139,6 +148,7 @@ detect_sd() {
 # ── Argument parsing ──────────────────────────────────────────────────
 ASSUME_YES=0; DO_LIST=0; FORCE=0; SKIP_FORMAT=0
 PERSONALIZE=0; BS_MASTER=""; BS_SERIAL=""; SEED_FILE=""
+WIFI_SEED=0; WIFI_SSID=""; WIFI_PSK=""; WIFI_SEED_TEXT=""
 POSARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -150,6 +160,8 @@ while [ $# -gt 0 ]; do
         --master)              BS_MASTER="${2:-}"; [ $# -ge 2 ] && shift ;;
         --serial)              BS_SERIAL="${2:-}"; [ $# -ge 2 ] && shift ;;
         --seed)                SEED_FILE="${2:-}"; [ $# -ge 2 ] && shift ;;
+        --wifi-ssid)           WIFI_SSID="${2:-}"; WIFI_SEED=1; [ $# -ge 2 ] && shift ;;
+        --wifi-psk)            WIFI_PSK="${2:-}";  [ $# -ge 2 ] && shift ;;
         -h|--help)             usage; exit 0 ;;
         -*)                    log_error "unknown option: $1"; usage; exit 1 ;;
         *)                     POSARGS+=("$1") ;;
@@ -182,6 +194,19 @@ if [ "$PERSONALIZE" -eq 1 ]; then
         fi
     fi
 fi
+
+# ── Validate + build the WiFi seed (wifi.networks JSON array) ────────────────
+if [ "$WIFI_SEED" -eq 1 ]; then
+    [ -n "$WIFI_SSID" ] && [ -n "$WIFI_PSK" ] || {
+        log_error "--wifi-ssid needs --wifi-psk (WPA-PSK)."; exit 1; }
+    # JSON-escape \ and " in the SSID/PSK so odd characters can't break the value.
+    json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+    WIFI_SEED_TEXT='[{"ssid":"'"$(json_escape "$WIFI_SSID")"'","key_mgmt":"WPA-PSK","psk":"'"$(json_escape "$WIFI_PSK")"'","priority":10}]'
+fi
+
+# Any boot-partition seed requested?
+BOOT_SEED=0
+{ [ "$PERSONALIZE" -eq 1 ] || [ "$WIFI_SEED" -eq 1 ]; } && BOOT_SEED=1
 
 # ── Resolve the image ─────────────────────────────────────────────────
 if [ -n "${IMAGE:-}" ]; then
@@ -317,8 +342,9 @@ echo "           ($IMG_SIZE compressed)"
 echo "  Machine: $MACHINE"
 echo "  Target : $DEV  ${DEV_SIZE:+($DEV_SIZE${DEV_NAME:+, $DEV_NAME})}"
 [ -n "${REQ_MB:-}" ] && echo "  Layout : ~${REQ_MB}MB on-card (whole-disk wic image)"
-echo "  Steps  : unmount → $([ "$SKIP_FORMAT" -eq 1 ] && echo '(skip format)' || echo 'wipe partition table') → write image →$([ "$PERSONALIZE" -eq 1 ] && echo ' personalise (boot partition) →') sync/eject"
+echo "  Steps  : unmount → $([ "$SKIP_FORMAT" -eq 1 ] && echo '(skip format)' || echo 'wipe partition table') → write image →$([ "$BOOT_SEED" -eq 1 ] && echo ' seed (boot partition) →') sync/eject"
 [ "$PERSONALIZE" -eq 1 ] && echo "  Seed   : zero-touch BS PSK → boot partition${BS_SERIAL:+ (serial $BS_SERIAL)}"
+[ "$WIFI_SEED" -eq 1 ]   && echo "  WiFi   : SSID '$WIFI_SSID' → boot partition (wifi-seed.json)"
 echo ""
 echo -e "${RED}  ⚠  ALL DATA ON $DEV WILL BE DESTROYED.${NC}"
 
@@ -387,12 +413,12 @@ else
     kill "$progress_ticker" 2>/dev/null || true
 fi
 
-# ── 3.5 Personalise (zero-touch BS PSK → FAT boot partition) ──────────
+# ── 3.5 Seed the FAT boot partition (BS PSK + WiFi) ───────────────────
 # The wic image just laid down a fresh partition table; mount the FAT `boot`
-# partition (p1 — the only one macOS/Windows can mount) and drop bs-seed.json.
-# iot-ds-seed reads /boot/bs-seed.json on first boot, applies it, and shreds it.
-if [ "$PERSONALIZE" -eq 1 ]; then
-    log_section "Personalising (BS PSK seed → boot partition)"
+# partition (p1 — the only one macOS/Windows can mount) and drop the seed
+# file(s). iot-ds-seed reads them from /boot on first boot and applies them.
+if [ "$BOOT_SEED" -eq 1 ]; then
+    log_section "Seeding boot partition$([ "$PERSONALIZE" -eq 1 ] && echo ' (BS PSK)')$([ "$WIFI_SEED" -eq 1 ] && echo ' (WiFi)')"
     sync
     BOOT_MNT=""
     if [ "$OS" = "Darwin" ]; then
@@ -414,15 +440,21 @@ if [ "$PERSONALIZE" -eq 1 ]; then
         UNMOUNT_BOOT=(sudo umount "$BOOTPART")
     fi
     if [ -z "$BOOT_MNT" ] || [ ! -d "$BOOT_MNT" ]; then
-        log_error "Could not mount the boot partition to write the seed."
-        log_error "Image is flashed; personalise manually: copy a bs-seed.json"
-        log_error "(from iot-bs-personalize) onto the card's boot partition."
+        log_error "Could not mount the boot partition to write the seed(s)."
+        log_error "Image is flashed; seed manually by copying the JSON file(s)"
+        log_error "(bs-seed.json / wifi-seed.json) onto the card's boot partition."
     else
-        printf '%s\n' "$SEED_TEXT" | "${WRITE[@]}" "$BOOT_MNT/bs-seed.json" >/dev/null
+        if [ "$PERSONALIZE" -eq 1 ]; then
+            printf '%s\n' "$SEED_TEXT" | "${WRITE[@]}" "$BOOT_MNT/bs-seed.json" >/dev/null
+            log_info "Seeded bs-seed.json onto the boot partition${BS_SERIAL:+ (serial $BS_SERIAL)}."
+        fi
+        if [ "$WIFI_SEED" -eq 1 ]; then
+            printf '%s\n' "$WIFI_SEED_TEXT" | "${WRITE[@]}" "$BOOT_MNT/wifi-seed.json" >/dev/null
+            log_info "Seeded wifi-seed.json onto the boot partition (SSID '$WIFI_SSID')."
+        fi
         sync
         "${UNMOUNT_BOOT[@]}" >/dev/null 2>&1 || true
         [ "$OS" = "Darwin" ] || rmdir "$BOOT_MNT" 2>/dev/null || true
-        log_info "Seeded bs-seed.json onto the boot partition${BS_SERIAL:+ (serial $BS_SERIAL)}."
     fi
 fi
 
@@ -436,6 +468,11 @@ if [ "$PERSONALIZE" -eq 1 ]; then
     echo ""
     echo "  Zero-touch: the device applies bs-seed.json on first boot. Ensure the"
     echo "  cloud has the matching master+KEK (cloud.bs.master.key + IOT_BS_MASTER_KEK)."
+fi
+if [ "$WIFI_SEED" -eq 1 ]; then
+    echo ""
+    echo "  WiFi: first boot sets wifi.networks (SSID '$WIFI_SSID') + restarts the"
+    echo "  client. It applies only while wifi.networks is still the placeholder."
 fi
 echo ""
 echo "  Boot the Pi, then ssh in (sshd is baked in; debug-tweaks → empty root pw):"
