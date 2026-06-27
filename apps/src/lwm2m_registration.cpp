@@ -1,5 +1,7 @@
 #include "lwm2m_registration.hpp"
 
+#include <algorithm>
+
 namespace lwm2m {
 
 namespace {
@@ -10,36 +12,33 @@ std::string default_id(std::uint64_t counter) {
 
 std::string ClientRegistry::add(ServerRegistration in,
                                 std::chrono::steady_clock::time_point now) {
-    // Re-registration of a known endpoint (device rebooted / came back online
-    // and re-registered while the prior registration still lingers): reuse its
-    // existing location and replace the record in place, rather than minting a
-    // new /rd/{id} and leaving a stale duplicate behind until it expires.
-    // Keeps the location stable per endpoint and prevents duplicate registry
-    // entries — which otherwise surface as duplicate cloud.lwm2m.registrations
-    // rows whose lexicographic location order makes a STALE row win the
-    // last-writer reconcile (e.g. the device's recorded ISP IP stops tracking).
-    if (!in.endpoint.empty()) {
-        for (auto& [loc, reg] : m_byLocation) {
-            if (reg.endpoint == in.endpoint) {
-                in.location     = loc;
-                in.registeredAt = now;
-                in.expiresAt    = now + std::chrono::seconds(in.lifetime);
-                reg = std::move(in);
-                return loc;
-            }
-        }
-    }
-
-    auto gen = m_idGen ? m_idGen : default_id;
+    // Reuse a stable /rd/{location} per endpoint. A device that re-registers —
+    // reboot, even after its prior registration EXPIRED or was deregistered —
+    // lands on the SAME location instead of minting a new one and orphaning the
+    // old. The endpoint→location index outlives the registration record (it is
+    // not cleared on expire()/remove()), so the mapping survives a long offline
+    // gap; load_from() rebuilds it across a server restart. Only a genuinely new
+    // endpoint mints a fresh id. This kills the location churn that otherwise
+    // leaves duplicate cloud.lwm2m.registrations rows where a STALE row can win
+    // the last-writer reconcile (e.g. the device's recorded ISP IP stops
+    // tracking).
     std::string loc;
-    do {
-        loc = "/rd/" + gen(++m_locCounter);
-    } while (m_byLocation.find(loc) != m_byLocation.end());
+    if (!in.endpoint.empty()) {
+        auto it = m_locByEndpoint.find(in.endpoint);
+        if (it != m_locByEndpoint.end()) loc = it->second;
+    }
+    if (loc.empty()) {
+        auto gen = m_idGen ? m_idGen : default_id;
+        do {
+            loc = "/rd/" + gen(++m_locCounter);
+        } while (m_byLocation.find(loc) != m_byLocation.end());
+        if (!in.endpoint.empty()) m_locByEndpoint[in.endpoint] = loc;
+    }
 
     in.location     = loc;
     in.registeredAt = now;
     in.expiresAt    = now + std::chrono::seconds(in.lifetime);
-    m_byLocation[loc] = std::move(in);
+    m_byLocation[loc] = std::move(in);   // replace-or-insert (refreshes peer)
     return loc;
 }
 
@@ -100,10 +99,29 @@ std::vector<std::string> ClientRegistry::expire(
 
 void ClientRegistry::load_from(std::vector<ServerRegistration> persisted) {
     m_byLocation.clear();
+    m_locByEndpoint.clear();
+    std::uint64_t maxCounter = 0;
     for (auto& reg : persisted) {
-        std::string loc = reg.location;     // preserve persisted IDs
+        const std::string loc = reg.location;   // preserve persisted IDs
+        // Rebuild the endpoint→location index so a re-register after a server
+        // restart reuses the persisted location, not a fresh one.
+        if (!reg.endpoint.empty()) m_locByEndpoint[reg.endpoint] = loc;
+        // Advance the mint counter past any numeric "/rd/<n>" so a later mint
+        // for a NEW endpoint never reissues a remembered location whose record
+        // is currently absent (device offline at restore time).
+        if (loc.compare(0, 4, "/rd/") == 0) {
+            const std::string id = loc.substr(4);
+            if (!id.empty() &&
+                id.find_first_not_of("0123456789") == std::string::npos) {
+                try {
+                    maxCounter = std::max(maxCounter,
+                                          static_cast<std::uint64_t>(std::stoull(id)));
+                } catch (...) {}
+            }
+        }
         m_byLocation[loc] = std::move(reg);
     }
+    m_locCounter = std::max(m_locCounter, maxCounter);
 }
 
 } // namespace lwm2m

@@ -198,3 +198,48 @@ TEST(Registry, D3_load_from_preserves_locations) {
     EXPECT_NE(nullptr, reg.find("/rd/def"));
     EXPECT_EQ("urn:a", reg.find("/rd/abc")->endpoint);
 }
+
+/* ── Stable /rd/{location} per endpoint across reboot/expiry/restart ───────── */
+
+TEST(Registry, reregister_after_expiry_reuses_same_location) {
+    ClientRegistry reg;
+    auto t0 = std::chrono::steady_clock::now();
+    auto first = reg.add(make_reg("urn:dev:1", /*lt*/ 100), t0);
+
+    // Device offline long enough that the registration expires and is reaped.
+    auto reaped = reg.expire(t0 + std::chrono::seconds(101));
+    ASSERT_EQ(1u, reaped.size());
+    EXPECT_EQ(0u, reg.size());
+
+    // It reboots and re-registers — same location, not a churned new one.
+    auto again = reg.add(make_reg("urn:dev:1", 100), t0 + std::chrono::seconds(300));
+    EXPECT_EQ(first, again);
+    EXPECT_EQ(1u, reg.size());
+}
+
+TEST(Registry, reregister_after_deregister_reuses_same_location) {
+    ClientRegistry reg;
+    auto first = reg.add(make_reg("urn:dev:1"));
+    ASSERT_TRUE(reg.remove(first));
+    EXPECT_EQ(0u, reg.size());
+
+    auto again = reg.add(make_reg("urn:dev:1"));
+    EXPECT_EQ(first, again);                  // deregister doesn't forget the loc
+    EXPECT_EQ(1u, reg.size());
+}
+
+TEST(Registry, load_from_rehydrates_endpoint_location_and_advances_counter) {
+    // Server restart: rehydrate from Mongo, then the device re-registers.
+    ClientRegistry reg;
+    ServerRegistration persisted = make_reg("urn:dev:7");
+    persisted.location = "/rd/42";            // counter-based id minted before restart
+    reg.load_from({persisted});
+
+    // Re-register of the rehydrated endpoint reuses its persisted location.
+    EXPECT_EQ("/rd/42", reg.add(make_reg("urn:dev:7")));
+
+    // A brand-new endpoint mints ABOVE the loaded max — never reissues /rd/42.
+    auto fresh = reg.add(make_reg("urn:dev:new"));
+    EXPECT_NE("/rd/42", fresh);
+    EXPECT_EQ(2u, reg.size());
+}

@@ -51,16 +51,19 @@ class ClientRegistry {
 public:
     ClientRegistry() = default;
 
-    /// Insert a registration. If a registration for the **same endpoint**
-    /// already exists (e.g. the device rebooted / came back online and
-    /// re-registered before its prior lifetime expired), its existing
-    /// `location` is **reused** and the record replaced in place — so
-    /// `/rd/{location}` stays stable per endpoint and the registry never
-    /// accumulates duplicate entries for one device. Otherwise a fresh
-    /// identifier is generated. Either way `location` is populated on the
-    /// stored record; callers read the returned value to build the
-    /// Location-Path response. The current clock + `lifetime` define
-    /// `expiresAt`. Returns the (reused or generated) location.
+    /// Insert a registration, reusing a **stable `/rd/{location}` per endpoint**.
+    /// A device that re-registers (reboot) lands on the SAME location it had
+    /// before — even if its prior registration had already expired or been
+    /// deregistered — instead of minting a fresh one and orphaning the old. The
+    /// reuse is backed by an endpoint→location index that OUTLIVES the
+    /// registration record (it is not erased on expire/remove), so the mapping
+    /// survives a long offline gap; `load_from()` rebuilds it so it also
+    /// survives a server restart. Only a genuinely new endpoint mints a fresh
+    /// identifier. This prevents location churn and the duplicate
+    /// `cloud.lwm2m.registrations` rows where a stale row could win the
+    /// last-writer reconcile. `location` is populated on the stored record;
+    /// callers read the returned value to build the Location-Path response. The
+    /// current clock + `lifetime` define `expiresAt`. Returns the location.
     std::string add(ServerRegistration in,
                     std::chrono::steady_clock::time_point now =
                         std::chrono::steady_clock::now());
@@ -108,6 +111,10 @@ public:
 
 private:
     std::map<std::string, ServerRegistration> m_byLocation;
+    /// endpoint → its stable /rd/{location}. Persists across expire()/remove()
+    /// so a re-register after the record is gone reuses the same location.
+    /// Rebuilt by load_from(). Bounded by fleet size.
+    std::map<std::string, std::string>        m_locByEndpoint;
     std::uint64_t                             m_locCounter{0};
     IdGen                                     m_idGen{nullptr};
 };

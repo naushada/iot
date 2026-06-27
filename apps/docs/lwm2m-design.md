@@ -449,6 +449,18 @@ LISTEN
 Today, the server replies 2.04 to `/rd` without recording the registration
 or generating a `Location-Path`. The new `ClientRegistry` owns this state.
 
+**Stable `/rd/{location}` per endpoint.** `ALLOCATE_LOCATION` mints a fresh id
+only for a genuinely new endpoint. A re-Register from a known `ep` (a device
+reboot) **reuses the location it had before** — even if the prior registration
+had already `expires_at`-lapsed or been deregistered. `ClientRegistry` keeps an
+`endpoint → location` index that outlives the registration record (not cleared
+on expire/remove) and is rebuilt by `load_from()`, so the mapping survives a
+long offline gap and a server restart alike. Without this, a reboot that
+outlasts the (now short, 90 s) lifetime would mint a new location every time,
+churning `/rd/{loc}` and leaving duplicate `cloud.lwm2m.registrations` rows
+where a stale row can win the last-writer reconcile (the recorded ISP IP stops
+tracking the live device).
+
 ### 5.5 Information Reporting
 
 ```
