@@ -10,3 +10,11 @@ tmpfs                /var/volatile        tmpfs      defaults              0  0
 #/dev/mmcblk0p1       /media/card          auto       defaults,sync,noauto  0  0
 
 /dev/mmcblk0p1  /boot   vfat    defaults         0       0
+
+# Persistent data partition (A/B layout: p4, label "data") → /var/lib/iot (ds
+# store, certs, /etc/iot overrides). Mounted by LABEL so it follows the data
+# partition across an A/B bank swap and any p-number change — this is what makes
+# A/B OTA preserve ds state instead of losing it with the swapped-out rootfs.
+# `nofail` so a single-rootfs image (no such partition) still boots; iot-ds's
+# StateDirectory=iot then fixes /var/lib/iot ownership/mode on the mounted fs.
+LABEL=data  /var/lib/iot  ext4  defaults,nofail  0  2
