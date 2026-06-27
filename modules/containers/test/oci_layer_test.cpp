@@ -132,3 +132,13 @@ TEST(Overlay, TopLayerFirst) {
 TEST(Overlay, SingleLayer) {
     EXPECT_EQ(overlay_lowerdir({"/l/only"}), "/l/only");
 }
+TEST(Overlay, DedupesRepeatedLayerPaths) {
+    // An image can list the same layer digest twice → same extracted dir.
+    // Linux 6.6 overlay rejects a duplicate lowerdir ("conflicting lowerdir
+    // path"), so we keep the topmost occurrence only.
+    std::vector<std::string> dirs = {"/l/base", "/l/dup", "/l/mid", "/l/dup"};
+    EXPECT_EQ(overlay_lowerdir(dirs), "/l/dup:/l/mid:/l/base");
+}
+TEST(Overlay, AllIdenticalCollapseToOne) {
+    EXPECT_EQ(overlay_lowerdir({"/l/x", "/l/x", "/l/x"}), "/l/x");
+}
