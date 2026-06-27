@@ -103,6 +103,30 @@ TEST(ResolveBsPsk, CommissionedRowWinsOverDerivation) {
     EXPECT_EQ("feedface", iot::resolve_bs_psk(creds, kSha256Id, kMaster));
 }
 
+TEST(ResolveBsPsk, FallsBackToFormattedIdentity) {
+    // A device with iot.bs.psk.override=true presents its DM-style identity at
+    // the BS handshake. With no sha256 match, fall back to the formatted
+    // identity / dm.psk.id and return the same bs.psk.key. No master needed.
+    const std::string creds =
+        R"([{"serial":"100000003d1f9c2e",)"
+        R"("identity":"rpi100000003d1f9c2e@cloud.local",)"
+        R"("dm.psk.id":"rpi100000003d1f9c2e@cloud.local",)"
+        R"("bs.psk.key":"feedface"}])";
+    EXPECT_EQ("feedface",
+              iot::resolve_bs_psk(creds, "rpi100000003d1f9c2e@cloud.local", ""));
+    // The canonical sha256 path still resolves the same row.
+    EXPECT_EQ("feedface", iot::resolve_bs_psk(creds, kSha256Id, ""));
+}
+
+TEST(ResolveBsPsk, FormattedIdentityNoMatchYieldsEmpty) {
+    // A formatted identity for an unprovisioned serial, no master → no key.
+    const std::string creds =
+        R"([{"serial":"100000003d1f9c2e",)"
+        R"("identity":"rpi100000003d1f9c2e@cloud.local",)"
+        R"("bs.psk.key":"feedface"}])";
+    EXPECT_EQ("", iot::resolve_bs_psk(creds, "rpiDEADBEEF@cloud.local", ""));
+}
+
 TEST(ResolveBsPsk, DerivesFromRawSerialWhenNoRow) {
     // Zero-touch: no row, master set, peer presented its raw serial verbatim.
     EXPECT_EQ(kDerivedPsk, iot::resolve_bs_psk("[]", kSerial, kMaster));

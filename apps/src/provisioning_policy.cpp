@@ -49,7 +49,15 @@ std::string resolve_bs_psk(const std::string& credentials_json,
                            const std::string& master_hex) {
     if (presented.empty()) return {};
 
-    // 1) Commissioned tier: a row whose sha256(serial)[:32] == presented.
+    // 1) Commissioned tier: a row whose sha256(serial)[:32] == presented (the
+    //    canonical BS identity the device derives by default), OR — fallback —
+    //    a row whose formatted identity / dm.psk.id == presented. The fallback
+    //    covers devices that present their DM-style identity at the BS handshake
+    //    (iot.bs.psk.override=true with iot.bs.psk.identity=rpi<serial>@cloud.
+    //    local). Either form returns the same bs.psk.key, so a device whose
+    //    iot.bs.psk.key matches the commissioned row authenticates regardless of
+    //    which identity convention it sends. sha256 is tried first so the
+    //    canonical path is unchanged.
     const auto arr =
         nlohmann::json::parse(credentials_json, /*cb*/nullptr,
                               /*allow_exceptions*/false);
@@ -60,6 +68,14 @@ std::string resolve_bs_psk(const std::string& credentials_json,
             const std::string key    = e.value("bs.psk.key", std::string());
             if (!serial.empty() && !key.empty() &&
                 sha256_hex(serial).substr(0, 32) == presented)
+                return key;
+        }
+        for (const auto& e : arr) {
+            if (!e.is_object()) continue;
+            const std::string key = e.value("bs.psk.key", std::string());
+            if (key.empty()) continue;
+            if (e.value("identity", std::string())  == presented ||
+                e.value("dm.psk.id", std::string()) == presented)
                 return key;
         }
     }
