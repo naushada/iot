@@ -149,6 +149,11 @@ COPY --from=builder /tmp/bds/ds-cli /usr/local/bin/
 COPY --from=builder /tmp/bcloud/iot-cloudd /usr/local/bin/
 COPY --from=builder /tmp/bhttp/iot-httpd /usr/local/bin/
 COPY --from=builder /tmp/blwm2m/lwm2m /usr/local/bin/
+# bs-master-wrap: zero-touch HKDF master KMS-wrap operator tool (apps/docs/
+# tdd-bs-hkdf-zerotouch.md). Copied straight from the build dir — it is not
+# install()ed (would fail the Yocto device do_package QA), so the cloud picks it
+# up here.
+COPY --from=builder /tmp/blwm2m/bs-master-wrap /usr/local/bin/
 
 # Static assets — both cloud UI (webui/) and device UI (webui/) served
 # by iot-httpd depending on www-dir.

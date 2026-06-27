@@ -264,9 +264,15 @@ endif()
 # bs-master-wrap — zero-touch HKDF master KMS-wrap operator tool. Lives under
 # tools/ (not src/) so the GLOB above doesn't pull its main() into lwm2m. Links
 # only psk_gen.cpp + OpenSSL.
+#
+# Deliberately NOT install()ed: it is a cloud/manufacturing-side tool, not a
+# device binary. The Yocto device recipe runs `make install`, and an installed
+# /usr/bin/bs-master-wrap that the recipe's FILES doesn't ship fails the
+# do_package QA "installed-vs-shipped" check. The cloud image instead copies the
+# built binary straight out of the build dir (apps/cloud/Dockerfile). The target
+# still builds everywhere; it just isn't installed by `make install`.
 add_executable(bs-master-wrap tools/bs_master_wrap.cpp src/psk_gen.cpp)
 target_link_libraries(bs-master-wrap crypto)
-install(TARGETS bs-master-wrap RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 include(GNUInstallDirs)
 
