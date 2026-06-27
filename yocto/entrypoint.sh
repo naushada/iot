@@ -270,6 +270,21 @@ if [ -n "${IOT_FRESH:-}" ]; then
     bitbake -c cleanall iot
 fi
 
+# ── 4c. Bust a stale base-files / image sstate (opt-in: IOT_CLEAN=1) ─
+# The fstab self-brick: a cached do_rootfs (or base-files) sstate can ship the
+# OLD self-bricking /etc/fstab (/dev/sda4, mmcblk0p5/6) even when the base-files
+# bbappend is clean — base-files is the same version (3.0.14-r0), so the image
+# task hash doesn't always flip on a content-only change, do_rootfs restores
+# stale, and the fstab precheck (baked into that sstate) never re-runs. Result:
+# the image boots to emergency mode on /dev/sda4. IOT_CLEAN=1 cleansstates BOTH
+# base-files and iot-image so the rootfs is rebuilt from the clean base-files.
+# Use when a flashed image hangs at boot on /dev/sda4. See iot-image.bb
+# fstab_sanity_check (now also wired to IMAGE_POSTPROCESS_COMMAND).
+if [ -n "${IOT_CLEAN:-}" ]; then
+    echo "→ IOT_CLEAN set: cleansstate base-files + iot-image (bust stale fstab) ..."
+    bitbake -c cleansstate base-files iot-image
+fi
+
 # ── 5. Run bitbake ─────────────────────────────────────────────────
 # For an A/B build also produce the signed .raucb (it DEPENDS on iot-image, so
 # this builds the rootfs too). Only when the default image target is in play —
@@ -294,6 +309,10 @@ if [ "${IOT_SHELL:-}" = "1" ]; then
     echo "    bitbake -c cleansstate base-files   # clear a recipe's stale sstate"
     echo "    bitbake-layers show-layers          # list configured layers + paths"
     echo "    bitbake -e base-files | grep fstab  # where a value comes from"
+    echo "  NOTE: images built here do NOT auto-copy to the host (and this shell"
+    echo "  is --rm). After 'bitbake iot-image', from a 2nd host terminal run:"
+    echo "    ./build.sh copy $MACHINE            # pull deploy/ out before you exit"
+    echo "  Or skip the shell: 'IOT_CLEAN=1 ./build.sh $MACHINE' rebuilds + copies."
     echo "  Exit with Ctrl-D / 'exit'."
     echo ""
     exec bash

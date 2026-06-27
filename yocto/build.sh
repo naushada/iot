@@ -59,10 +59,20 @@
 #   IOT_USE_CACHE=1 ./build.sh    # pull $CACHE_IMAGE and build — only the
 #                                 # meta-iot recipes recompile (minutes, not hours)
 #
+# Bust a stale base-files / image sstate that ships the self-bricking /etc/fstab
+# (/dev/sda4, mmcblk0p5/6 → boot hangs / emergency mode). cleansstates base-files
+# AND iot-image so the rootfs rebuilds from the clean base-files, then copies the
+# image out as usual. Reach for this when a freshly-flashed card hangs on
+# /dev/sda4 despite a clean base-files bbappend:
+#   IOT_CLEAN=1 ./build.sh        # (combine with IOT_AB=1 for the A/B image)
+#
 # Interactive build-container shell (ad-hoc bitbake / bitbake-layers, e.g. to
 # clear a stale cache or trace where a value comes from):
 #   ./build.sh shell              # default machine; then: bitbake -c cleansstate base-files
 #   IOT_AB=1 ./build.sh shell raspberrypi3-64   # with the A/B layers added
+# A manual bitbake inside `shell` does NOT auto-copy (and the shell is --rm), so
+# pull the fresh image out to the host from a second terminal:
+#   ./build.sh copy [machine]     # podman cp deploy/ → yocto/build/<machine>/
 
 set -euo pipefail
 
@@ -206,6 +216,7 @@ build_machine() {
     $CR run --name "$container" \
         -e "MACHINE=$machine" \
         -e "IOT_FRESH=${IOT_FRESH:-}" \
+        -e "IOT_CLEAN=${IOT_CLEAN:-}" \
         -e "IOT_AB=${IOT_AB:-}" \
         -e "IOT_BRANCH=${IOT_BRANCH:-}" \
         -e "IOT_HASH_LOCAL=1" \
@@ -280,6 +291,33 @@ EOF
     echo ""
 }
 
+# ── Copy artifacts out of a running shell container ───────────────────
+# `./build.sh shell` runs --rm with NO auto-copy, so a manual `bitbake` there
+# (e.g. `bitbake -c cleansstate base-files iot-image && bitbake iot-image` to
+# bust a stale fstab) leaves the fresh image stranded in the container — and the
+# container is --rm, so it's lost on exit. `./build.sh copy` pulls deploy/ out to
+# the host (same copy a normal build does), to be run from a SECOND terminal
+# while the shell is still open. (For an orchestrated clean rebuild that copies
+# automatically, prefer `IOT_CLEAN=1 ./build.sh` instead — no shell needed.)
+copy_from_shell() {
+    local machine="$1"
+    local container="iot-shell-${machine//./-}"
+    local out="$OUT_DIR/$machine"
+    if ! $CR inspect "$container" >/dev/null 2>&1; then
+        log_error "No running shell container '$container'."
+        log_info  "Start one with:  ./build.sh shell $machine   (then bitbake inside it)"
+        log_info  "or just run an auto-copying clean rebuild:  IOT_CLEAN=1 ./build.sh $machine"
+        exit 1
+    fi
+    mkdir -p "$out"
+    log_section "Copying artifacts from $container → $out"
+    $CR cp "$container:/home/builduser/yocto/build/tmp/deploy/." "$out/"
+    local img
+    img=$(ls -t "$out"/images/*/iot-image-*.rootfs-*.wic.bz2 2>/dev/null | head -1 || true)
+    log_info "Done: $out/"
+    [ -n "$img" ] && log_info "Newest image: $img"
+}
+
 # Interactive shell in the build container with the full bitbake env ready
 # (entrypoint does the layer + local.conf setup, then `exec bash` on IOT_SHELL=1).
 # For ad-hoc bitbake / bitbake-layers — e.g. `bitbake -c cleansstate base-files`,
@@ -317,6 +355,14 @@ main() {
     if [ "${1:-}" = "shell" ]; then
         prepare_image
         shell_into "${2:-$DEFAULT_MACHINE}"
+        return
+    fi
+
+    # Subcommand: copy artifacts from a running shell container to the host
+    # (no build) — for when a manual bitbake inside `./build.sh shell` produced
+    # an image that never auto-copied out.
+    if [ "${1:-}" = "copy" ]; then
+        copy_from_shell "${2:-$DEFAULT_MACHINE}"
         return
     fi
 
