@@ -186,18 +186,31 @@ orchestrated `build.sh` path auto-copies them out of the build container.
 A baked `/etc/fstab` that references a partition the target lacks makes systemd's
 `local-fs.target` time out (~90 s) and drop to **emergency mode** on first boot —
 `(1 of 2) A start job is running for /dev/sda4`. On A/B this bricks **both** banks
-before rollback can help. The offender is a **stale `do_rootfs` / `base-files`
-sstate**: even with a clean `base-files` bbappend (it ships a known-good fstab),
-`base-files` stays version `3.0.14-r0`, so the image task hash doesn't always flip
-on a content-only change → `do_rootfs` restores stale, and the fstab precheck
-(baked into that sstate) never re-runs. The build "succeeds" and ships the brick.
+before rollback can help.
 
-**Guard:** `iot-image.bb`'s `fstab_sanity_check` runs at BOTH
-`ROOTFS_POSTPROCESS_COMMAND` and `IMAGE_POSTPROCESS_COMMAND` (PR #462) — so a
-stale-rootfs image fails LOUDLY at `do_image` instead of shipping. It `bbfatal`s
-on `/dev/sd*` and `/dev/mmcblk0p<N>` for N>4.
+**TRUE root cause (HW-confirmed by extracting the wic's fstab): `wic`'s
+`--fstab-update`.** wic appends fstab entries for any partition lacking
+`--no-fstab-update`, using **`/dev/sdaN`** device names — which don't exist on an
+mmc-booted RPi. The A/B wks's boot partition (and, via a stale `do_image_wic`, the
+data partition) got `/dev/sda1 /boot` and `/dev/sda4 /var/lib/iot` appended *after*
+the clean base-files fstab. This is injected at `do_image_wic`, **after** do_rootfs
+and after the `iot-image.bb` fstab precheck (which only sees the *rootfs* fstab) —
+so it ships silently. The base-files ipk is clean the whole time; `cleansstate
+base-files` does NOT fix it. (A genuinely stale `do_rootfs` carrying an OLD
+base-files fstab is a *different*, rarer path — that one `cleansstate` does fix.)
 
-**Fix — bust the stale sstate and rebuild from clean:**
+**Fix (PR — `iot-ab.wks.in`):** `--no-fstab-update` on **every** partition, so
+base-files is the sole fstab authority and wic never writes `/dev/sda*`. Changing
+the wks also invalidates the stale `do_image_wic`.
+
+**Guard:** `iot-image.bb`'s `fstab_sanity_check` runs at `ROOTFS_POSTPROCESS_COMMAND`
+and `IMAGE_POSTPROCESS_COMMAND` (#462) — but note it scans the **rootfs** fstab, so
+it catches a stale base-files but NOT a wic `--fstab-update` injection; the wks
+`--no-fstab-update` is what closes that hole. To verify a built `.wic.bz2`, mount
+rootA and read its fstab: `file img.wic` for the p2 start sector, then
+`mount -o loop,ro,offset=<sector*512> img.wic /mnt && cat /mnt/etc/fstab`.
+
+**Fix a genuinely stale rootfs sstate (the other path) — rebuild from clean:**
 ```sh
 IOT_CLEAN=1 ./build.sh              # cleansstate base-files + iot-image, then build+copy
 # (equivalent manual form, inside `./build.sh shell`:)
