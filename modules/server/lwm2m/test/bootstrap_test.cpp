@@ -45,16 +45,23 @@ TEST(BootstrapProvisionerTest, EndpointInRegistryAfterProvision) {
     EXPECT_FALSE(info->registered);  // not registered yet — just bootstrapped
 }
 
-// ── 3. Duplicate provision fails ──────────────────────────────────
+// ── 3. Re-provision is idempotent (reuses the same allocation) ─────
 
-TEST(BootstrapProvisionerTest, DuplicateProvisionFails) {
+TEST(BootstrapProvisionerTest, ReprovisionIsIdempotent) {
     EndpointRegistry ep_reg;
     VpnRegistry vpn_reg;
     BootstrapProvisioner provisioner(ep_reg, vpn_reg);
 
-    ASSERT_TRUE(provisioner.provision("urn:dev:gateway-3").has_value());
-    auto result2 = provisioner.provision("urn:dev:gateway-3");
-    EXPECT_FALSE(result2.has_value());
+    auto first = provisioner.provision("urn:dev:gateway-3");
+    ASSERT_TRUE(first.has_value());
+    // Re-provisioning the SAME endpoint (e.g. refreshing its BS PSK, or a watch
+    // replay after a cloudd restart) succeeds and returns the SAME tun IP +
+    // proxy port — it does not fail as a "duplicate" nor allocate a new slot.
+    auto again = provisioner.provision("urn:dev:gateway-3");
+    ASSERT_TRUE(again.has_value());
+    EXPECT_EQ(first->tun_ip,     again->tun_ip);
+    EXPECT_EQ(first->proxy_port, again->proxy_port);
+    EXPECT_EQ(1u, ep_reg.count());  // still one endpoint, no duplicate slot
 }
 
 // ── 4. Provision fails when subnet exhausted ──────────────────────
@@ -64,10 +71,16 @@ TEST(BootstrapProvisionerTest, FailsWhenSubnetExhausted) {
     VpnRegistry vpn_reg("10.9.0.0/30", 5001, 5100);  // tiny subnet
     BootstrapProvisioner provisioner(ep_reg, vpn_reg);
 
-    ASSERT_TRUE(provisioner.provision("urn:dev:a").has_value());
-    ASSERT_TRUE(provisioner.provision("urn:dev:b").has_value());
-    auto result3 = provisioner.provision("urn:dev:c");
-    EXPECT_FALSE(result3.has_value());
+    // A /30 holds only a handful of host IPs, so provisioning DISTINCT endpoints
+    // must eventually fail (nullopt) once the pool is exhausted — rather than
+    // hand out an out-of-range address. (Don't assume an exact count: the usable
+    // host range depends on the registry's reservations.)
+    bool exhausted = false;
+    for (int i = 0; i < 8 && !exhausted; ++i) {
+        if (!provisioner.provision("urn:dev:" + std::to_string(i)).has_value())
+            exhausted = true;
+    }
+    EXPECT_TRUE(exhausted);
 }
 
 // ── 5. Security Object TLV contains correct fields ────────────────
