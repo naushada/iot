@@ -69,6 +69,14 @@ IMAGE_FSTYPES = "wic.bz2"
 # ships as an update / flash:
 #   * /dev/sd*               — these images boot from mmc, never a SATA/USB disk
 #   * /dev/mmcblk0p<N>, N>4  — no wks layout here has more than 4 partitions
+#
+# Wired to BOTH ROOTFS_POSTPROCESS_COMMAND (do_rootfs) and IMAGE_POSTPROCESS_COMMAND
+# (do_image). The do_rootfs hook is baked into the do_rootfs sstate, so a STALE
+# do_rootfs restored from cache (the exact failure we hit: clean base-files ipk
+# but a cached rootfs carrying the old fstab) SKIPS it and ships the bad fstab.
+# The do_image hook runs when the image is assembled — which happens even when
+# do_rootfs was sstate-restored — so it re-validates the materialised rootfs and
+# turns that silent ship into a loud build failure.
 fstab_sanity_check () {
     fstab="${IMAGE_ROOTFS}/etc/fstab"
     [ -f "$fstab" ] || return 0
@@ -93,3 +101,6 @@ $(cat "$fstab")"
     fi
 }
 ROOTFS_POSTPROCESS_COMMAND:append = " fstab_sanity_check;"
+# Also check at image-assembly time so a stale (sstate-restored) do_rootfs that
+# skipped the ROOTFS_POSTPROCESS hook can't silently ship a self-bricking fstab.
+IMAGE_POSTPROCESS_COMMAND:append = " fstab_sanity_check;"
