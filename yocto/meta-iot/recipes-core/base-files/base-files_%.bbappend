@@ -10,7 +10,8 @@
 # Prepending our fstab makes it win over any stale/external one AND changes the
 # recipe signature, so the bad base-files sstate is invalidated (no cleansstate
 # needed). Based on the running A/B device (192.168.1.50): stock mounts + /boot
-# from mmcblk0p1. It additionally mounts the data partition (LABEL=data, nofail)
-# at /var/lib/iot so an A/B OTA bank swap preserves ds state — the wks data
-# partition carries `--no-fstab-update` so this entry is the sole authority.
+# from mmcblk0p1, and the data partition (p4) deliberately NOT mounted at
+# /var/lib/iot — that collides with iot-ds's DynamicUser+StateDirectory=iot and
+# crash-loops the whole stack (exit 238/STATE_DIRECTORY, HW-confirmed). The wks
+# data partition keeps `--no-fstab-update` so wic doesn't add a mount either.
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
