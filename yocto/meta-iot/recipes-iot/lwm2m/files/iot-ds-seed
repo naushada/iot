@@ -39,6 +39,17 @@ bs_seed_path() {
     return 1
 }
 
+# WiFi credentials seed (flash-time). CI images can't bake wifi_credentials.lua
+# (gitignored, absent from a clean checkout) so they ship the "changeme"
+# placeholder; flash-sd.sh --wifi-ssid/--wifi-psk drops wifi-seed.json (the
+# wifi.networks JSON array) onto the FAT /boot partition. Same search order.
+wifi_seed_path() {
+    for c in "$STATE/wifi-seed.json" /boot/wifi-seed.json /boot/firmware/wifi-seed.json; do
+        [ -f "$c" ] && { echo "$c"; return 0; }
+    done
+    return 1
+}
+
 # Nothing to do only when BOTH the one-time seed has run AND there is no pending
 # zero-touch BS personalisation file. (The BS block below is independent of the
 # engineer-account flag so a unit personalised after first boot still applies.)
@@ -93,6 +104,33 @@ if [ -n "$BS_SEED" ]; then
         # partition) — remove it so the derived key doesn't sit on the card.
         rm -f "$BS_SEED" 2>/dev/null || true
     fi
+fi
+
+# ── WiFi credentials seed (flash-time, for CI / un-baked images) ─────────────
+# wifi-seed.json is the wifi.networks JSON array, dropped on the FAT /boot
+# partition by flash-sd.sh --wifi-ssid/--wifi-psk. Apply it only while
+# wifi.networks is still the "changeme" placeholder (or unreadable) so it never
+# clobbers an operator-set value. NOT shredded — WiFi creds are accepted
+# plaintext (like the build-time seed), and keeping it on /boot means a
+# factory-reset (which wipes /var/lib/iot incl. this .seeded flag) re-applies it
+# so the device keeps its only network path.
+WIFI_SEED="$(wifi_seed_path || true)"
+if [ -n "$WIFI_SEED" ]; then
+    CUR_NETS=$($DSCLI get wifi.networks 2>/dev/null || true)
+    case "$CUR_NETS" in
+        *changeme*|"")
+            NETS="$(cat "$WIFI_SEED")"
+            if [ -n "$NETS" ] && $DSCLI set wifi.networks "$NETS"; then
+                echo "iot-ds-seed: seeded wifi.networks from $WIFI_SEED"
+                # wifi.networks has no hot-apply and start order vs iot-wifi-client
+                # isn't guaranteed → bounce it so it re-reads and associates.
+                systemctl try-restart iot-wifi-client 2>/dev/null || true
+            else
+                echo "iot-ds-seed: wifi seed set failed; will retry next boot" >&2
+            fi
+            ;;
+        *) : ;;   # operator already configured WiFi — leave it untouched
+    esac
 fi
 
 # The one-time engineer-account seed runs only on the very first boot.
