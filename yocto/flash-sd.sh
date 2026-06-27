@@ -22,6 +22,10 @@
 #   ./flash-sd.sh --yes /dev/sdX         # skip the confirmation prompt
 #   ./flash-sd.sh --no-format /dev/sdX   # skip the wipe, just dd the image
 #
+#   # Seed WiFi creds onto the boot partition (so a CI image joins your AP on
+#   # first boot — see "WiFi seed" below). Both flags required together:
+#   ./flash-sd.sh --wifi-ssid <SSID> --wifi-psk <WPA-PSK>
+#
 #   MACHINE=qemuarm64 ./flash-sd.sh /dev/sdX     # pick another machine's image
 #   IMAGE=/path/to/custom.wic.bz2 ./flash-sd.sh /dev/sdX
 #

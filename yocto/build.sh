@@ -268,8 +268,15 @@ print_summary() {
         cat <<EOF
 
   ── Flash the SD card (Raspberry Pi 3B) ──────────────────────────────
-    # Find the SD device first: lsblk (Linux, /dev/sdX) or
-    # diskutil list (macOS, /dev/diskN). Write the whole disk, not a partition.
+    # Easiest: flash-sd.sh auto-detects the card, wipes it, writes the newest
+    # image, and (optionally) seeds WiFi creds so a CI image joins your AP on
+    # first boot. Both --wifi flags are required together:
+    ./yocto/flash-sd.sh --wifi-ssid <SSID> --wifi-psk <WPA-PSK>
+    ./yocto/flash-sd.sh --list           # just list candidate SD cards
+    # (see ./yocto/flash-sd.sh --help for --personalize / zero-touch BS seed)
+
+    # Or flash manually with dd. Find the device first: lsblk (Linux, /dev/sdX)
+    # or diskutil list (macOS, /dev/diskN). Write the whole disk, not a partition.
     bzcat "$rpi_img" | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
     # macOS: target the raw node /dev/rdiskN instead of /dev/diskN — much faster.
 
