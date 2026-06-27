@@ -15,9 +15,11 @@
 # fw_env, with headroom (the per-bank kernel/dtb live in each rootfs /boot,
 # loaded by u-boot from the active bank).
 #
-# The data partition gets an automatic /etc/fstab entry from wic (non-root
-# mountpoints are added unless --no-fstab-update), so /var/lib/iot mounts the
-# `data` label at boot — an image/bank swap never touches ds state or certs.
+# The data partition's /etc/fstab entry is owned by the base-files bbappend
+# (meta-iot/recipes-core/base-files, LABEL=data -> /var/lib/iot, nofail), NOT by
+# wic — `--no-fstab-update` below keeps wic from adding a second, by-PARTUUID
+# entry. base-files owning it makes the mount deterministic and survives a
+# bank swap (state + certs untouched on an image/OTA swap).
 
 # Bank size (1024M) must exceed the standalone rootfs ext4 RAUC carries in the
 # .raucb — that image is inflated by IMAGE_ROOTFS_EXTRA_SPACE (512M of on-target
@@ -27,6 +29,6 @@
 part /boot --source bootimg-partition --fstype=vfat --label boot --active --align 4096 --size 100M
 part /     --source rootfs --fstype=ext4 --label rootA --align 4096 --size 1024M
 part /     --source rootfs --fstype=ext4 --label rootB --align 4096 --size 1024M
-part /var/lib/iot --fstype=ext4 --label data --align 4096 --size 256M
+part /var/lib/iot --fstype=ext4 --label data --align 4096 --size 256M --no-fstab-update
 
 bootloader --ptable msdos

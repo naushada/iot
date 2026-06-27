@@ -9,8 +9,8 @@
 #
 # Prepending our fstab makes it win over any stale/external one AND changes the
 # recipe signature, so the bad base-files sstate is invalidated (no cleansstate
-# needed). This fstab matches the running A/B device (192.168.1.50): stock
-# mounts + /boot from mmcblk0p1. NB the data partition (p4) is intentionally not
-# mounted here — same as the live device; see the bbappend note in git for the
-# A/B state-persistence follow-up (LABEL=data -> /var/lib/iot).
+# needed). Based on the running A/B device (192.168.1.50): stock mounts + /boot
+# from mmcblk0p1. It additionally mounts the data partition (LABEL=data, nofail)
+# at /var/lib/iot so an A/B OTA bank swap preserves ds state — the wks data
+# partition carries `--no-fstab-update` so this entry is the sole authority.
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"

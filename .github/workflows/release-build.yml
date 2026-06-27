@@ -24,12 +24,22 @@ on:
         description: Target MACHINE
         default: raspberrypi3-64
         required: false
+      ab:
+        description: "RAUC A/B image (u-boot + 4-partition wic). Off = single-rootfs."
+        type: boolean
+        default: false
+        required: false
 
 env:
   MACHINE: ${{ github.event.inputs.machine || 'raspberrypi3-64' }}
   # The branch this run is on (the release branch). The iot recipe fetches its
   # source from here, so the artifacts carry release code, not main.
   IOT_BRANCH: ${{ github.ref_name }}
+  # A/B (RAUC) toggle. '1' → build.sh adds the RAUC layers + entrypoint writes the
+  # u-boot/4-partition local.conf (WKS_FILE=iot-ab.wks.in); empty → single-rootfs.
+  # Only the manual (workflow_dispatch) form can request A/B — release-branch
+  # pushes leave the input undefined, so they stay single-rootfs.
+  IOT_AB: ${{ github.event.inputs.ab == 'true' && '1' || '' }}
 
 jobs:
   full-image:
