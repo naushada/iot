@@ -307,9 +307,30 @@ void DTLSAdapter::connect(const std::string& ip, const std::uint16_t& port) {
         /// Establishes new Channel
         dtls_debug("DTLSAdapter::connect Establises new channel for Client Hello\n");
     } else {
-        /// Error in establishes channel
-        dtls_debug("DTLSAdapter::connect Error in establishes Channel\n");
+        /// Error establishing the channel. The targeted reset above missed a
+        /// stuck peer whose session key drifted, so the peer table is full and
+        /// dtls_connect() returned "cannot add peer" (a forever wedge — observed
+        /// on HW: a device looping "cannot add peer" until a manual restart).
+        /// Recreate the context (empty peer table) and retry once.
+        dtls_debug("DTLSAdapter::connect dtls_connect error (%d) — hard-resetting context\n", ret);
+        hard_reset();
+        if (dtls_connect(dtls_ctx(), &m_session) > 0)
+            dtls_debug("DTLSAdapter::connect fresh context: new channel for Client Hello\n");
     }
+}
+
+void DTLSAdapter::hard_reset() {
+    // In-process equivalent of restarting iot-lwm2m-client: free the context
+    // (drops ALL peers, busting a stuck/drifted one that targeted resets miss)
+    // and rebuild it exactly as the ctor does. The fd, credentials and handler
+    // table (cb, keyed off `this`) persist, so the next dtls_connect() opens a
+    // clean handshake. Safe here because we only reach this on a connect error
+    // (BS/DM DTLS already not up), so no healthy session is being torn down.
+    if (m_dtls_ctx) dtls_free_context(m_dtls_ctx);
+    m_dtls_ctx = dtls_new_context(this);
+    dtls_set_handler(m_dtls_ctx, &cb);
+    clientState("");
+    dtls_debug("DTLSAdapter::hard_reset recreated dtls context (peer table cleared)\n");
 }
 
 void DTLSAdapter::reset_and_connect(const std::string& ip, const std::uint16_t& port) {
@@ -328,10 +349,16 @@ void DTLSAdapter::reset_and_connect(const std::string& ip, const std::uint16_t& 
     }
     clientState("");                       // drop the stale app-level state too
     auto ret = dtls_connect(dtls_ctx(), &m_session);
-    if (ret > 0)
+    if (ret > 0) {
         dtls_debug("DTLSAdapter::reset_and_connect new channel for Client Hello\n");
-    else if (ret < 0)
-        dtls_debug("DTLSAdapter::reset_and_connect error establishing channel\n");
+    } else if (ret < 0) {
+        // Same wedge guard as connect(): a drifted stuck peer the targeted reset
+        // didn't match leaves the table full ("cannot add peer"). Rebuild clean.
+        dtls_debug("DTLSAdapter::reset_and_connect error (%d) — hard-resetting context\n", ret);
+        hard_reset();
+        if (dtls_connect(dtls_ctx(), &m_session) > 0)
+            dtls_debug("DTLSAdapter::reset_and_connect fresh context: new channel\n");
+    }
 }
 
 std::int32_t DTLSAdapter::rx(std::int32_t fd) {

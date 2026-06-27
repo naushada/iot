@@ -175,6 +175,14 @@ class DTLSAdapter {
         /// stale "connected" peer) gets a fresh ClientHello instead of a doomed
         /// renegotiation. Use when the session must be assumed dead.
         void reset_and_connect(const std::string& ip, const std::uint16_t& port);
+        /// Nuke and recreate the whole tinydtls context (empty peer table), the
+        /// in-process equivalent of restarting iot-lwm2m-client. connect()/
+        /// reset_and_connect() reset the peer matched by dtls_get_peer(&m_session),
+        /// but a stuck peer whose session key has drifted (different size/ifindex/
+        /// sockaddr rep) is NOT matched — it lingers, fills the DTLS_PEER_MAX slot,
+        /// and dtls_connect() then loops forever on "cannot add peer". A fresh
+        /// context is the only sure recovery; used as the fallback on connect error.
+        void hard_reset();
 
         /**
          * @brief 
