@@ -238,7 +238,12 @@ deployed compose. Each server authenticates a handshake against the
 **live from `cloud.endpoint.credentials`** by a ds-backed PSK resolver
 (`DTLSAdapter::set_psk_resolver`, wired in `apps/src/main.cpp`):
 
-- **BS** matches `sha256(serial)[:32] == presented-identity` → `bs.psk.key`
+- **BS** matches `sha256(serial)[:32] == presented-identity` → `bs.psk.key`;
+  if that misses, falls back to matching the row's `identity` / `dm.psk.id`
+  (the formatted `rpi<serial>@cloud.local`) → the same `bs.psk.key`. The
+  fallback covers devices that present their DM-style identity at the BS
+  handshake (`iot.bs.psk.override=true`); without it, a cloud reboot's
+  re-bootstrap would wedge such a device offline (see `troubleshoot.md`).
 - **DM** matches `dm.psk.id == presented-identity` → `dm.psk.key`
 
 The resolver runs on the handshake/reactor thread (not the ds listener

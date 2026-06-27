@@ -66,6 +66,39 @@ Notes:
 printf '%s' 'urn:dev:device-1' | sha256sum | cut -c1-32   # = the id_len:32 in the device log
 ```
 
+### Device sends its formatted identity at BS (`rpi<serial>@cloud.local`)
+
+Symptom (cloud `lwm2m-bs`):
+```
+PSK resolver: no key for BS identity 'rpi000000006556e041@cloud.local' — not in cloud.endpoint.credentials (HKDF tier off)
+dtls: PSK for unknown identity requested
+```
+i.e. the presented identity is the **DM-style** `rpi<serial>@cloud.local`, not
+the canonical `sha256(serial)[:32]`. That happens when the device has
+`iot.bs.psk.override=true` with `iot.bs.psk.identity=rpi<serial>@cloud.local`.
+
+**Why it often appears after a cloud reboot:** the DM registry is in-memory, so
+a reboot drops every registration. Registered devices then fall back to
+**re-bootstrap**, which exposes this latent identity mismatch — devices that
+were happily registered go offline and loop in `bootstrapping`.
+
+The BS resolver now **accepts both** forms: it tries `sha256(serial)[:32]`
+first, then falls back to matching a `cloud.endpoint.credentials` row's
+`identity` / `dm.psk.id`, returning the same `bs.psk.key`. So on an up-to-date
+cloud image this resolves itself. If you see it, the `lwm2m-bs` container is
+running an **older image** — rebuild + redeploy it.
+
+**Immediate field recovery (no cloud rebuild)** — drop the override on the
+device so it presents the canonical identity (the device's `iot.bs.psk.key`
+must equal the cloud row's `bs.psk.key`):
+```bash
+# on the device:
+ds-cli get iot.bs.psk.key                 # confirm == cloud row's bs.psk.key
+ds-cli set iot.bs.psk.override false
+systemctl restart iot-lwm2m-client
+# device now presents sha256(serial)[:32] → cloud matches → registers
+```
+
 ---
 
 ## Cloud advertises an unreachable DM (bootstrap OK, register fails)
