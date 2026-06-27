@@ -2262,8 +2262,24 @@ int main(std::int32_t argc, char *argv[]) {
             // BS tier: commissioned sha256(serial)[:32] lookup → else derive from
             // the presented raw serial. DM tier: dm.psk.id lookup → else derive
             // from the serial embedded in the presented identity.
-            return is_bs ? iot::resolve_bs_psk(credsJson, presented, masterHex)
-                         : iot::resolve_dm_psk(credsJson, presented, masterHex);
+            const std::string key =
+                is_bs ? iot::resolve_bs_psk(credsJson, presented, masterHex)
+                      : iot::resolve_dm_psk(credsJson, presented, masterHex);
+            // Log the MISS with the presented identity — tinydtls only says
+            // "PSK for unknown identity requested" without it, which makes a
+            // provisioning gap (no matching cloud.endpoint.credentials row, and
+            // no HKDF master to derive) impossible to debug from the cloud log.
+            if (key.empty()) {
+                ACE_ERROR((LM_WARNING,
+                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l PSK resolver: no "
+                                    "key for %C identity '%C' — not in "
+                                    "cloud.endpoint.credentials%C\n"),
+                           is_bs ? "BS" : "DM", presented.c_str(),
+                           masterHex.empty()
+                               ? " (HKDF tier off)"
+                               : " and HKDF derive declined"));
+            }
+            return key;
         });
     };
 

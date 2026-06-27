@@ -10,12 +10,28 @@ BootstrapProvisioner::BootstrapProvisioner(EndpointRegistry& ep_reg,
 std::optional<BootstrapResult> BootstrapProvisioner::provision(
     const std::string& ep) {
 
-    // Reject duplicate endpoints
-    if (m_ep_reg.lookup_by_ep(ep)) return std::nullopt;
+    const std::string server_uri = "coaps://cloud:5684";
 
-    // Allocate tunnel IP + proxy port
+    // Idempotent: an endpoint that already exists (re-provisioned to refresh its
+    // BS PSK, or a watch replay after a cloudd restart / rehydrate) REUSES its
+    // existing tunnel IP + proxy port instead of failing as a "duplicate". The
+    // credential upsert is the meaningful work of a re-provision; failing here
+    // logged a misleading "provision failed (dup or exhausted)" even though the
+    // credential stored fine — and re-provisioning is exactly how an operator
+    // restores a device's BS PSK after the cloud lost/rotated it.
+    if (const EndpointInfo* existing = m_ep_reg.lookup_by_ep(ep)) {
+        BootstrapResult result;
+        result.endpoint            = ep;
+        result.tun_ip              = existing->tun_ip;
+        result.proxy_port          = existing->proxy_port;
+        result.security_object_tlv = build_security_tlv(server_uri);
+        result.server_object_tlv   = build_server_tlv(86400);
+        return result;
+    }
+
+    // New endpoint: allocate tunnel IP + proxy port.
     auto alloc = m_vpn_reg.allocate(ep);
-    if (!alloc.has_value()) return std::nullopt;
+    if (!alloc.has_value()) return std::nullopt;   // ports exhausted
 
     // Register in the endpoint registry
     EndpointInfo info;
@@ -27,9 +43,6 @@ std::optional<BootstrapResult> BootstrapProvisioner::provision(
         m_vpn_reg.release(ep);
         return std::nullopt;
     }
-
-    // Build the bootstrap response payloads
-    std::string server_uri = "coaps://cloud:5684";
 
     BootstrapResult result;
     result.endpoint           = ep;
