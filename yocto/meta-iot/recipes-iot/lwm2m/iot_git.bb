@@ -105,7 +105,7 @@ SRCREV = "${AUTOREV}"
 # PV can't read the fetched VERSION at parse time (source isn't unpacked yet),
 # so it's set here manually. The +git${SRCPV} suffix gives opkg per-commit
 # upgrade ordering (AUTOINC+sha) for the _git recipe.
-PV = "1.3.5+git${SRCPV}"
+PV = "1.3.6+git${SRCPV}"
 
 S = "${WORKDIR}/git"
 B = "${WORKDIR}/build"
