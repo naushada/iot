@@ -270,8 +270,9 @@ print_summary() {
   ── Flash the SD card (Raspberry Pi 3B) ──────────────────────────────
     # Easiest: flash-sd.sh auto-detects the card, wipes it, writes the newest
     # image, and (optionally) seeds WiFi creds so a CI image joins your AP on
-    # first boot. Both --wifi flags are required together:
-    ./yocto/flash-sd.sh --wifi-ssid <SSID> --wifi-psk <WPA-PSK>
+    # first boot. The SD device is auto-detected, or pass it explicitly
+    # (e.g. /dev/disk4) — needed if 0 or several removable disks are present:
+    ./yocto/flash-sd.sh --wifi-ssid <SSID> --wifi-psk <WPA-PSK> [/dev/sdX|/dev/diskN]
     ./yocto/flash-sd.sh --list           # just list candidate SD cards
     # (see ./yocto/flash-sd.sh --help for --personalize / zero-touch BS seed)
 
