@@ -15,11 +15,12 @@
 # fw_env, with headroom (the per-bank kernel/dtb live in each rootfs /boot,
 # loaded by u-boot from the active bank).
 #
-# The data partition's /etc/fstab entry is owned by the base-files bbappend
-# (meta-iot/recipes-core/base-files, LABEL=data -> /var/lib/iot, nofail), NOT by
-# wic — `--no-fstab-update` below keeps wic from adding a second, by-PARTUUID
-# entry. base-files owning it makes the mount deterministic and survives a
-# bank swap (state + certs untouched on an image/OTA swap).
+# The data partition (p4) is created but deliberately NOT auto-mounted:
+# `--no-fstab-update` keeps wic from adding an fstab entry, and the base-files
+# fstab does not mount it either. Mounting it at /var/lib/iot breaks iot-ds
+# (DynamicUser + StateDirectory=iot → exit 238/STATE_DIRECTORY, HW-confirmed),
+# so ds state lives on the rootfs for now. A/B state-persistence (mount
+# LABEL=data at /var/lib/private) is deferred until validated on HW.
 
 # Bank size (1024M) must exceed the standalone rootfs ext4 RAUC carries in the
 # .raucb — that image is inflated by IMAGE_ROOTFS_EXTRA_SPACE (512M of on-target
