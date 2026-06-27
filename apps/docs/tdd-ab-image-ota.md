@@ -230,8 +230,45 @@ the OLD host image and the boot hang persists. Pull it out from a 2nd terminal:
 ./yocto/flash-sd.sh --wifi-ssid <SSID> --wifi-psk <PSK>   # newest image via the stable symlink
 ```
 `flash-sd.sh` follows `iot-image-<machine>.rootfs.wic.bz2` (→ newest build) and
-seeds WiFi onto the FAT boot partition. **Confirm the resolved image is the one
-you just built** (check its timestamp) — a stale symlink or an un-copied build is
-the usual cause of "I flashed the latest but still see `/dev/sda4`". On the
-booted device: `grep sda /etc/fstab` (expect none) and `systemctl is-active
-iot-ds` (expect `active`).
+seeds WiFi onto the FAT boot partition (the SD device is auto-detected, or pass
+`/dev/sdX`/`/dev/diskN`). **Confirm the resolved image is the one you just built**
+(check its timestamp) — a stale symlink or an un-copied build is the usual cause
+of "I flashed the latest but still see `/dev/sda4`". On the booted device:
+`grep sda /etc/fstab` (expect none) and `systemctl is-active iot-ds` (expect
+`active`).
+
+### Update the userspace WITHOUT reflashing (OTA via the cloud UI)
+For an iot-app-only change (no kernel/base/unit change), don't rebuild the whole
+image or reflash — build just the iot userspace and push it over LwM2M from the
+cloud-ui **Software Update** page. Deep design: `tdd-yocto-swupdate.md`.
+
+**1. Build only the iot bundle** (recompiles just the `iot` recipe; deps restore
+from sstate, so minutes not hours):
+```sh
+TARGET=iot-bundle ./build.sh raspberrypi3-64
+# → yocto/build/raspberrypi3-64/images/raspberrypi3-64/
+#     iot-bundle-<PV>-<machine>.tar.gz          (every iot-*.ipk, tarred flat)
+#     iot-bundle-<PV>-<machine>.tar.gz.manifest.json   (paste-ready catalogue row)
+#     iot-bundle-<PV>-<machine>.tar.gz.sha256
+# (TARGET=iot → just the .ipk feed for an `opkg install` over ssh instead.)
+```
+
+**2. Put it in the cloud firmware feed.** Copy the tarball into the cloud's
+`iot-firmware` volume (served at `/firmware/<name>`), then add its manifest row to
+the `cloud.firmware.manifest` ds array — easiest via the Software Update page's
+"add firmware" form; or paste the `.manifest.json` contents manually:
+```sh
+scp .../iot-bundle-*.tar.gz* <cloud>:/firmware/
+# manifest row: { "pkg":"iot-bundle", "version":"<PV>", "arch":"<machine>",
+#                 "ipk_url":"/firmware/<name>", "sha256":"<sha>" }
+```
+
+**3. Push from the UI.** cloud-ui → **Software Update**: pick the package, tick the
+target device(s) in the grid, **Push** (Admin only). The cloud WRITEs LwM2M Object
+5 `/5/0/1` + EXECUTEs `/5/0/2`; the device downloads + sha256-verifies, then
+`opkg install`s the bundle. Progress streams live (`cloud.update.status`).
+
+Gotchas (HW-hit): `cloud.firmware.base.url` must point
+at the **https** feed (the device can't reach a dead `http:80`); the manifest
+`sha256` must have no embedded newline; and the device's update stager runs as
+root (an engineer-role user can't `systemd-run` it).
