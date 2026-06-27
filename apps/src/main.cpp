@@ -1712,10 +1712,14 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     // runs at 1 Hz; we only re-publish on a transition so the device-ui
     // long-poll fires on real changes, not every second.
     auto lastConn = std::make_shared<std::string>();
+    // NAT keepalive — last time we emitted a CoAP ping (or an Update, which
+    // also holds the mapping). Epoch ⇒ first Registered tick pings immediately.
+    auto lastKeepalive =
+        std::make_shared<std::chrono::steady_clock::time_point>();
     app->udpAdapter()->on_tick_client([wreg, wdm, wapp, rebind, wbs,
                                        reboot_after, bootPhase, bootDeadline,
                                        bootRetryAfter, bootBackoff, bsHost, bsPort,
-                                       dtls, &ds, lastConn, sendst]() {
+                                       dtls, &ds, lastConn, lastKeepalive, sendst]() {
         // Liveness first: petting the watchdog here ties it to the reactor
         // actually dispatching this 1 Hz tick. If the reactor stalls (the
         // alive-but-wedged failure this guards against), the pings stop and
@@ -1913,6 +1917,21 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                 /*withAdvertisedSet*/ false);
             tx_via(*a, payload, svc);
             reg->note_update_sent(now);
+            *lastKeepalive = now;     // the Update itself holds the NAT mapping
+        }
+
+        // NAT keepalive (apps/docs/keepalive note): a small CoAP ping (empty
+        // CON) holds the UDP mapping when the Update cadence (lifetime − margin)
+        // exceeds the link's NAT idle timeout. Only while cleanly Registered;
+        // the Update above resets the timer so a ping never trails it.
+        if (reg->keepalive_seconds() > 0 &&
+            reg->state() == ::lwm2m::RegistrationState::Registered &&
+            now - *lastKeepalive >=
+                std::chrono::seconds(reg->keepalive_seconds())) {
+            tx_via(*a,
+                   ::lwm2m::RegistrationClient::build_keepalive_ping(next_msgid()),
+                   svc);
+            *lastKeepalive = now;
         }
 
         // ── v2 Send telemetry (TDD §3b #1). Only while cleanly Registered —
@@ -1943,6 +1962,7 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                 if (!wire.empty()) {
                     tx_via(*a, wire, svc);
                     sendst->inflight_since = now;
+                    *lastKeepalive = now;   // a Send also holds the NAT mapping
                 }
             }
         }

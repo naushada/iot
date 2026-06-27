@@ -469,3 +469,13 @@ TEST(RegistrationClient, deregister_send_is_stamped_against_instant_timeout) {
     EXPECT_EQ(AR::ReRegister, cli.check_ack_timeout(t + std::chrono::seconds(7)));
     EXPECT_EQ(RegistrationState::Unregistered, cli.state());
 }
+
+// NAT keepalive — the CoAP ping is an empty Confirmable (RFC 7252 §4.3).
+TEST(RegistrationClient, build_keepalive_ping_is_empty_con) {
+    auto ping = RegistrationClient::build_keepalive_ping(0xABCD);
+    ASSERT_EQ(4u, ping.size());
+    EXPECT_EQ(0x40, static_cast<std::uint8_t>(ping[0]));  // ver1, type CON, TKL0
+    EXPECT_EQ(0x00, static_cast<std::uint8_t>(ping[1]));  // code 0.00 (empty)
+    EXPECT_EQ(0xAB, static_cast<std::uint8_t>(ping[2]));  // message-id high
+    EXPECT_EQ(0xCD, static_cast<std::uint8_t>(ping[3]));  // message-id low
+}

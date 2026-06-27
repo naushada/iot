@@ -80,11 +80,20 @@ class CoAPAdapter {
          * @return std::string 
          */
         std::string buildResponse(const CoAPMessage& message);
+        /// Build a 4-byte CoAP Reset (RST) echoing `message`'s message-id. The
+        /// RFC 7252 §4.3 answer to an empty Confirmable (a CoAP ping / NAT
+        /// keepalive); also the safe reply to anything we can't process.
+        std::string buildReset(const CoAPMessage& message);
+        /// True (and consumes the message) when `m` is an empty CoAP message
+        /// (code 0.00): a Confirmable empty → RST appended to `out` (ping reply);
+        /// a Reset / empty Non-confirmable → dropped. Keeps empties out of the
+        /// request dispatcher. Caller returns immediately when this returns true.
+        bool handleEmptyMessage(const CoAPMessage& m, std::vector<std::string>& out);
         /**
-         * @brief 
-         * 
-         * @param message 
-         * @return std::string 
+         * @brief
+         *
+         * @param message
+         * @return std::string
          */
         std::string buildRegistrationAck(const CoAPMessage& message);
         /**

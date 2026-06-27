@@ -1044,6 +1044,29 @@ std::vector<std::string> CoAPAdapter::handleLwM2MObjects(const CoAPAdapter::CoAP
     return(out);
 }
 
+std::string CoAPAdapter::buildReset(const CoAPMessage& message) {
+    // ver=1, type=RST(3), TKL=0, code=0.00; echo the message-id (big-endian).
+    std::string s;
+    s.push_back(static_cast<char>((1u << 6) | (3u << 4)));            // 0x70
+    s.push_back(static_cast<char>(0x00));                            // code 0.00
+    s.push_back(static_cast<char>((message.coapheader.msgid >> 8) & 0xFF));
+    s.push_back(static_cast<char>(message.coapheader.msgid & 0xFF));
+    return s;
+}
+
+// Empty CoAP message (code 0.00) that is NOT an Acknowledgement: a Confirmable
+// empty is a ping (NAT keepalive + liveness, RFC 7252 §4.3) → answer RST; a
+// Reset or empty Non-confirmable is dropped. Returns true when it consumed the
+// message (caller should return immediately) so empties never reach the request
+// dispatcher, which would reflexively buildResponse() and echo a bogus frame.
+bool CoAPAdapter::handleEmptyMessage(const CoAPMessage& m, std::vector<std::string>& out) {
+    if (m.coapheader.code != 0) return false;
+    if (!RequestType[m.coapheader.type].compare("Confirmable"))
+        out.push_back(buildReset(m));     // ping → RST
+    // else Reset / empty Non-confirmable → drop quietly.
+    return true;
+}
+
 std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in, std::vector<std::string>& out) {
     cumulativeOptionNumber = 0;
     CoAPMessage coapmessage;
@@ -1089,6 +1112,11 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, const std::string& in
         if (isAmIClient && m_sendAckCb) m_sendAckCb(coapmessage);
         return 0;
     }
+
+    // CoAP ping / RST / empty (code 0.00): server answers a ping with RST, both
+    // sides drop a RST. Keeps NAT-keepalive pings out of the request dispatcher.
+    if (handleEmptyMessage(coapmessage, out))
+        return static_cast<std::int32_t>(out.size());
 
     // L4 hot path: Bootstrap dispatch (no DTLS session variant).
     if (!isAmIClient && m_bsServer) {
@@ -1327,6 +1355,11 @@ std::int32_t CoAPAdapter::processRequest(bool isAmIClient, session_t* session, s
         if (isAmIClient && m_sendAckCb) m_sendAckCb(coapmessage);
         return 0;
     }
+
+    // CoAP ping / RST / empty (code 0.00): server answers a ping with RST, both
+    // sides drop a RST. Keeps NAT-keepalive pings out of the request dispatcher.
+    if (handleEmptyMessage(coapmessage, out))
+        return static_cast<std::int32_t>(out.size());
 
     // L4 hot path: if a Bootstrap Server is attached, give it first
     // refusal on /bs CoAP messages.
