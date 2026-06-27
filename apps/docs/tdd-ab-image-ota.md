@@ -172,3 +172,53 @@ good/running status — and an operator can switch the active bank from there.
 | Rollback | ❌ | ✅ (bootloader + health check) |
 | Upload | raw body ≤ 8 MiB | streaming to disk |
 | Scope | userspace daemons | kernel + rootfs |
+
+## 10. Build & flash workflow (+ the `/dev/sda4` self-brick recovery)
+
+### Build the A/B image
+```sh
+IOT_AB=1 ./build.sh                 # u-boot + 4-partition wic + signed .raucb
+```
+Artifacts land on the host at `yocto/build/<machine>/images/<machine>/`. The
+orchestrated `build.sh` path auto-copies them out of the build container.
+
+### The `/dev/sda4` (and `mmcblk0p5/6`) self-brick
+A baked `/etc/fstab` that references a partition the target lacks makes systemd's
+`local-fs.target` time out (~90 s) and drop to **emergency mode** on first boot —
+`(1 of 2) A start job is running for /dev/sda4`. On A/B this bricks **both** banks
+before rollback can help. The offender is a **stale `do_rootfs` / `base-files`
+sstate**: even with a clean `base-files` bbappend (it ships a known-good fstab),
+`base-files` stays version `3.0.14-r0`, so the image task hash doesn't always flip
+on a content-only change → `do_rootfs` restores stale, and the fstab precheck
+(baked into that sstate) never re-runs. The build "succeeds" and ships the brick.
+
+**Guard:** `iot-image.bb`'s `fstab_sanity_check` runs at BOTH
+`ROOTFS_POSTPROCESS_COMMAND` and `IMAGE_POSTPROCESS_COMMAND` (PR #462) — so a
+stale-rootfs image fails LOUDLY at `do_image` instead of shipping. It `bbfatal`s
+on `/dev/sd*` and `/dev/mmcblk0p<N>` for N>4.
+
+**Fix — bust the stale sstate and rebuild from clean:**
+```sh
+IOT_CLEAN=1 ./build.sh              # cleansstate base-files + iot-image, then build+copy
+# (equivalent manual form, inside `./build.sh shell`:)
+#   bitbake -c cleansstate base-files iot-image && bitbake iot-image
+```
+
+### Getting a `shell`-built image onto the host
+`./build.sh shell` runs `--rm` and does **not** auto-copy. A manual `bitbake`
+there strands the image in the container (lost on exit) — reflashing then grabs
+the OLD host image and the boot hang persists. Pull it out from a 2nd terminal:
+```sh
+./build.sh copy [machine]          # podman/docker cp deploy/ → yocto/build/<machine>/
+```
+
+### Flash
+```sh
+./yocto/flash-sd.sh --wifi-ssid <SSID> --wifi-psk <PSK>   # newest image via the stable symlink
+```
+`flash-sd.sh` follows `iot-image-<machine>.rootfs.wic.bz2` (→ newest build) and
+seeds WiFi onto the FAT boot partition. **Confirm the resolved image is the one
+you just built** (check its timestamp) — a stale symlink or an un-copied build is
+the usual cause of "I flashed the latest but still see `/dev/sda4`". On the
+booted device: `grep sda /etc/fstab` (expect none) and `systemctl is-active
+iot-ds` (expect `active`).
