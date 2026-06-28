@@ -15,10 +15,17 @@ instance).
 | P1b | Tenant-aware BS/DM PSK resolvers (default == legacy) | #485 | ✅ merged |
 | P2a | BS `provisioning_resolver` (device→tenant onboarding); e2e 200/200 | #486 | ✅ merged |
 | P1c | Console read-isolation: session `tenant` + scoped `/api/v1/cloud/*` | #487 | ✅ merged |
-| P1d | `iot-cloudd` row-tagging: `cloud.endpoints` rows carry `tenant` | _this_ | 🔵 |
-| — | `db/get cloud.endpoints` tenant scoping (live UI isolation) | — | ⏭️ next |
-| P3 | Per-tenant VPN subnet + nftables isolation | — | ⏭️ |
+| P1d | `iot-cloudd` row-tagging: `cloud.endpoints` rows carry `tenant` | #488 | ✅ merged |
+| P3a | Per-tenant VPN **subnet math + nft isolation rules** (pure, gtest) | _this_ | 🔵 |
+| P3b | Wire P3a: OpenVPN `/16` + per-client CCD static IPs + apply nft | — | ⏭️ needs tun validation |
+| — | `db/get cloud.endpoints` tenant scoping (live UI isolation) | — | ⏭️ |
 | P4/P5 | Platform-operator console; per-tenant CA; quotas | — | ⏭️ |
+
+P3 splits into **P3a** (the pure allocation/rule-generation core — landed here,
+fully unit-tested) and **P3b** (the live OpenVPN client-config-dir + nftables
+*application*, which can only be validated against a real `tun`/OpenVPN
+environment, so it is deferred to HW/integration validation rather than merged
+blind — same discipline as the device-side fixes marked "needs HW validation").
 
 Every slice keeps the **default tenant byte-identical to today**, so existing
 single-tenant deployments and fielded devices are unaffected (verified by gtest
