@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include "psk_gen.hpp"
+#include "tenant_policy.hpp"   // multi-tenant: bs_identity / parse_dm_identity
 
 namespace iot {
 
@@ -66,8 +67,14 @@ std::string resolve_bs_psk(const std::string& credentials_json,
             if (!e.is_object()) continue;
             const std::string serial = e.value("serial", std::string());
             const std::string key    = e.value("bs.psk.key", std::string());
+            // Tenant-aware canonical BS identity. For an untagged row this is
+            // bs_identity("default", serial) == sha256(serial)[:32] — byte-for-
+            // byte the legacy match, so fielded devices are unaffected. A
+            // tenant-tagged row matches only its tenant's identity, so two
+            // tenants sharing a serial never cross-authenticate.
+            const std::string tenant = e.value("tenant", std::string());
             if (!serial.empty() && !key.empty() &&
-                sha256_hex(serial).substr(0, 32) == presented)
+                bs_identity(tenant, serial) == presented)
                 return key;
         }
         for (const auto& e : arr) {
@@ -142,8 +149,11 @@ std::string resolve_dm_psk(const std::string& credentials_json,
     }
 
     // 2) Zero-touch tier: derive from the serial embedded in the DM identity.
+    // parse_dm_identity handles BOTH the legacy "rpi<serial>@cloud.local" and
+    // the tenant "rpi<serial>@<tenant>.cloud.local" forms, so a default-tenant
+    // device derives exactly as before.
     if (!master_hex.empty()) {
-        const std::string serial = serial_from_dm_identity(presented);
+        const std::string serial = parse_dm_identity(presented).serial;
         if (!serial.empty()) return derive_dm_psk_hex(master_hex, serial);
     }
 
