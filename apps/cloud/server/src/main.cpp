@@ -145,6 +145,38 @@ void reconcile_tenants(data_store::Client& ds) {
     }
 }
 
+// Multi-tenant (P3b): apply the inter-tenant nftables isolation table — DROP
+// forwarded traffic between different tenant /24s (same-tenant + tenant<->cloud
+// still flow). Rebuilt from cloud.tenants' subnets and applied with nft -f -
+// (atomic, own table `iot_tenant_isol`), mirroring rebuild_device_dnat. The
+// pure ruleset text is server::openvpn::build_tenant_isolation_rules
+// (unit-tested); this is the privileged apply.
+// NOTE: the nft apply itself needs NET_ADMIN + a real netfilter stack — it is
+// compile-verified here but its live effect must be validated on a tun/OpenVPN
+// host (see apps/docs/tdd-multi-tenant-cloud.md P3b).
+void rebuild_tenant_isolation(data_store::Client& ds) {
+    std::vector<std::string> subnets;
+    try {
+        auto arr = nlohmann::json::parse(ds_str(ds, "cloud.tenants", "[]"));
+        if (arr.is_array()) for (const auto& t : arr) {
+            if (!t.is_object()) continue;
+            const std::string s = t.value("vpn.subnet", std::string());
+            if (!s.empty()) subnets.push_back(s);
+        }
+    } catch (const std::exception& ex) {
+        ACE_ERROR((LM_ERROR, ACE_TEXT("%D cloudd:thread:%t %M %N:%l tenant "
+                  "isolation: cloud.tenants parse: %C\n"), ex.what()));
+        return;
+    }
+    const std::string script =
+        server::openvpn::build_tenant_isolation_rules(subnets);
+    if (server::dnat::apply_ruleset(script)) {
+        ACE_DEBUG((LM_INFO, ACE_TEXT("%D cloudd:thread:%t %M %N:%l tenant "
+                  "isolation nft applied (%u tenant subnet(s))\n"),
+                  static_cast<unsigned>(subnets.size())));
+    }
+}
+
 // Rebuild + apply the per-device "device UI over VPN" DNAT ruleset.
 //
 // The device list is read from the *persisted* cloud.endpoints ds JSON (not
@@ -524,8 +556,10 @@ int main(int argc, char** argv) {
     rehydrate_registry(ds, ep_reg, vpn_reg, provisioner);
 
     // Multi-tenant (P4): assign VPN subnets to any tenants already in
-    // cloud.tenants at startup (operator may have added them while we were down).
+    // cloud.tenants at startup (operator may have added them while we were down),
+    // then (P3b) apply the inter-tenant nft isolation.
     reconcile_tenants(ds);
+    rebuild_tenant_isolation(ds);
 
     ::signal(SIGINT, on_signal);
     ::signal(SIGTERM, on_signal);
@@ -1170,7 +1204,8 @@ int main(int argc, char** argv) {
                 ACE_DEBUG((LM_INFO,
                            ACE_TEXT("%D cloudd:thread:%t %M %N:%l log level changed\n")));
             } else if (ev.key == "cloud.tenants") {
-                reconcile_tenants(ds);   // assign VPN subnet(s) to new tenants
+                reconcile_tenants(ds);        // assign VPN subnet(s) to new tenants
+                rebuild_tenant_isolation(ds); // re-apply inter-tenant nft isolation
             } else if (ev.key == "cloud.lwm2m.registrations") {
                 // lwm2m-dm published a registration change — fold online/
                 // offline into the endpoint registry before the sync below.
