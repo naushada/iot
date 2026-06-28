@@ -94,9 +94,21 @@ log "compose network: $NET"
 # buffer and never completes a handshake). MASTER is just a derivation seed so
 # the loadgen and the provisioned rows agree byte-for-byte.
 MASTER="$(openssl rand -hex 32)"
-log "generating $COUNT device credentials…"
+# TENANT=<slug> exercises the multi-tenant path: devices bootstrap as
+# "<slug>:<serial>", creds are tenant-tagged, and the tenant is registered in
+# cloud.tenants. Empty = the default tenant (legacy single-tenant behaviour).
+TENANT="${TENANT:-}"
+TARG=""
+if [ -n "$TENANT" ]; then
+  TARG="tenant=$TENANT"
+  log "registering tenant '$TENANT' in cloud.tenants…"
+  dscli set cloud.tenants \
+    "[{\"id\":\"$TENANT\",\"name\":\"$TENANT\",\"dm.uri\":\"coaps://iot-lwm2m-dm:5683\",\"status\":\"active\"}]"
+fi
+
+log "generating $COUNT device credentials${TENANT:+ for tenant $TENANT}…"
 CREDS="$($ENGINE run --rm "$BENCH_TAG" \
-          emit-creds=1 master="$MASTER" count="$COUNT" prefix=bench)"
+          emit-creds=1 master="$MASTER" count="$COUNT" prefix=bench $TARG)"
 [ "${CREDS:0:1}" = "[" ] || { echo "emit-creds produced no JSON" >&2; exit 1; }
 
 log "writing cloud.endpoint.credentials + DM URI to data-store…"
@@ -125,7 +137,7 @@ CSV="$SAMPLES_DIR/devices-$STAMP.csv"
 log "running loadgen: count=$COUNT ramp=$RAMP/s soak=${SOAK}s → $NET"
 set +e
 $ENGINE run --rm --network "$NET" -v "$SAMPLES_DIR:/out" "$BENCH_TAG" \
-    master="$MASTER" \
+    master="$MASTER" $TARG \
     bs-host=iot-lwm2m-bs bs-port=5684 \
     count="$COUNT" ramp="$RAMP" soak="$SOAK" \
     lifetime="$LIFETIME" boot-timeout="$BOOT_TIMEOUT" \

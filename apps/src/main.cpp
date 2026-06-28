@@ -291,7 +291,8 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                                 std::string("cloud.dm.lifetime"),
                                 std::string("cloud.dm.binding"),
                                 std::string("cloud.bs.uri"),
-                                std::string("cloud.bs.master.key")}, got);
+                                std::string("cloud.bs.master.key"),
+                                std::string("cloud.tenants")}, got);
             if (!rs.ok || got.size() < 5) return std::nullopt;
 
             auto str_at = [&](std::size_t i) -> std::string {
@@ -322,14 +323,6 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
             if (binding.empty()) binding = "U";
             const std::string bsUri = str_at(4);
 
-            if (dmUri.empty()) {
-                ACE_ERROR((LM_WARNING,
-                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: "
-                                    "cloud.dm.uri unset — cannot provision DM "
-                                    "account\n"),
-                           ep.c_str()));
-                return std::nullopt;
-            }
             // Unwrap the HKDF master (zero-touch tier) if a KEK is configured.
             // str_at(5) is the AES-256-GCM-wrapped cloud.bs.master.key blob; a
             // missing KEK or a bad/tampered blob → "" → tier disabled, fail
@@ -338,58 +331,33 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                 bsKekHex.empty()
                     ? std::string()
                     : iot::unwrap_bs_master_hex(bsKekHex, str_at(5)).value_or("");
+            const std::string tenantsJson = str_at(6);   // cloud.tenants ("[]" ok)
 
-            std::string dmId, dmKey, bsKey;
-            bool zeroTouch = false;
-            if (!credsJson.empty()) {
-                try {
-                    auto arr = nlohmann::json::parse(credsJson);
-                    if (arr.is_array()) {
-                        for (auto& e : arr) {
-                            if (!e.is_object()) continue;
-                            const std::string serial   = e.value("serial",   std::string());
-                            const std::string identity = e.value("identity", std::string());
-                            if (serial == ep || identity == ep) {
-                                dmId  = e.value("dm.psk.id",  std::string());
-                                dmKey = e.value("dm.psk.key", std::string());
-                                bsKey = e.value("bs.psk.key", std::string());
-                                break;
-                            }
-                        }
-                    }
-                } catch (const std::exception& ex) {
-                    // Don't fail outright — a master can still serve zero-touch.
-                    ACE_ERROR((LM_ERROR,
-                               ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: "
-                                        "cloud.endpoint.credentials parse: %C\n"),
-                               ep.c_str(), ex.what()));
-                }
-            }
-
-            // Zero-touch (HKDF) tier: no stored row, but a master is available →
-            // derive per-device BS+DM creds statelessly (nothing minted/stored).
-            // The device presents its RAW serial as the BS PSK identity (the
-            // override path), so the BS account handed back uses the raw serial
-            // verbatim — NOT sha256(ep) as in the commissioned tier.
-            if ((dmId.empty() || dmKey.empty()) && !masterHex.empty()) {
-                bsKey     = iot::derive_bs_psk_hex(masterHex, ep);
-                dmId      = iot::format_dm_identity(ep);
-                dmKey     = iot::derive_dm_psk_hex(masterHex, ep);
-                zeroTouch = true;
-                ACE_DEBUG((LM_INFO,
-                           ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: "
-                                    "zero-touch HKDF-derived BS+DM creds (no "
-                                    "stored row)\n"),
-                           ep.c_str()));
-            }
-
-            if (dmId.empty() || dmKey.empty()) {
+            // Tenant-aware account planning (pure; unit-tested in
+            // provisioning_policy_test.cpp). Splits ep into (tenant, serial),
+            // validates a non-default tenant against cloud.tenants, scopes the
+            // credential lookup to that tenant, derives identities (default ⇒
+            // byte-identical to legacy), and picks the per-tenant or global
+            // dm.uri. ok=false ⇒ reject the /bs.
+            const iot::BsAccountPlan plan = iot::plan_bs_account(
+                ep, credsJson, tenantsJson, dmUri, masterHex);
+            if (!plan.ok) {
                 ACE_ERROR((LM_WARNING,
                            ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: no "
-                                    "provisioned DM credential found\n"),
-                           ep.c_str()));
+                                    "provisionable account (tenant=%C)\n"),
+                           ep.c_str(), plan.tenant.c_str()));
                 return std::nullopt;
             }
+            const std::string& dmId  = plan.dm_identity;
+            const std::string& dmKey = plan.dm_key;
+            const std::string& bsKey = plan.bs_key;
+            const bool         zeroTouch = plan.zero_touch;
+            const std::string& dmUriEff = plan.dm_uri;   // per-tenant or global
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D lwm2m:thread:%t %M %N:%l /bs for %C: "
+                                "tenant=%C serial=%C %C\n"),
+                       ep.c_str(), plan.tenant.c_str(), plan.serial.c_str(),
+                       zeroTouch ? "(zero-touch)" : "(commissioned)"));
 
             ::lwm2m::bootstrap::AccountProvisioning a;
             a.endpoint = ep;
@@ -406,10 +374,10 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                 bs.serverUri         = bsUri;
                 bs.isBootstrapServer = true;
                 bs.securityMode      = 0;       // PSK
-                // Commissioned tier: derived identity sha256(ep)[:32].
-                // Zero-touch tier: the device presents its RAW serial verbatim.
-                bs.identity          = zeroTouch ? ep
-                                                 : iot::sha256_hex(ep).substr(0, 32);
+                // Tenant-qualified canonical BS identity (default tenant ⇒
+                // sha256(serial)[:32], byte-identical to legacy); zero-touch ⇒
+                // the raw serial the device presents. Computed by plan_bs_account.
+                bs.identity          = plan.bs_identity;
                 bs.secretKey         = bsKey;   // hex (omitted by encoder if empty)
                 bs.shortServerId     = 0;       // ignored for a BS account
                 a.security.push_back(std::move(bs));
@@ -423,7 +391,7 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
             // Security /0/1 — the DM-Server account (Is Bootstrap=false).
             ::lwm2m::bootstrap::SecurityInstance dm;
             dm.iid               = 1;
-            dm.serverUri         = dmUri;
+            dm.serverUri         = dmUriEff;
             dm.isBootstrapServer = false;
             dm.securityMode      = 0;           // PSK
             dm.identity          = dmId;        // distinct DM identity

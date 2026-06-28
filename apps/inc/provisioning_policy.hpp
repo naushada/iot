@@ -101,6 +101,38 @@ std::string resolve_dm_psk(const std::string& credentials_json,
                            const std::string& presented,
                            const std::string& master_hex);
 
+/// Multi-tenant BS account plan (apps/docs/tdd-multi-tenant-cloud.md). The pure
+/// core of the BS provisioning_resolver: given the bootstrap endpoint and the ds
+/// state, decide which tenant the device belongs to and what BS/DM account to
+/// hand back. Keeps the tenant logic out of the integration-heavy main.cpp
+/// lambda so it can be unit-tested.
+struct BsAccountPlan {
+    bool        ok{false};        ///< false → reject the /bs (caller returns nullopt)
+    std::string tenant;           ///< resolved tenant ("default" for legacy)
+    std::string serial;           ///< serial (endpoint minus any "tenant:" prefix)
+    std::string bs_identity;      ///< BS DTLS identity to write to Security /0/0
+    std::string bs_key;           ///< BS PSK (hex)
+    std::string dm_identity;      ///< DM identity for Security /0/1
+    std::string dm_key;           ///< DM PSK (hex)
+    std::string dm_uri;           ///< per-tenant dm.uri if set, else the global one
+    bool        zero_touch{false};///< true → HKDF-derived (no stored row)
+};
+
+/// Plan the account for a `POST /bs?ep=<endpoint>`:
+///   - split the endpoint into (tenant, serial) — colon-less ⇒ "default";
+///   - a non-default tenant must exist and be active in `tenants_json`, else
+///     ok=false (reject unknown/suspended tenant);
+///   - look up the commissioned row scoped to that tenant (by serial), else
+///     HKDF-derive when `master_hex` is set;
+///   - identities are tenant-qualified (default ⇒ byte-identical to legacy);
+///   - dm_uri = the tenant's dm.uri if present, else `global_dm_uri`.
+/// ok requires a usable DM identity + key + dm_uri.
+BsAccountPlan plan_bs_account(const std::string& ep,
+                              const std::string& credentials_json,
+                              const std::string& tenants_json,
+                              const std::string& global_dm_uri,
+                              const std::string& master_hex);
+
 } // namespace iot
 
 #endif /* __iot_provisioning_policy_hpp__ */

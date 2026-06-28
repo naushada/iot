@@ -161,4 +161,72 @@ std::string resolve_dm_psk(const std::string& credentials_json,
     return {};
 }
 
+BsAccountPlan plan_bs_account(const std::string& ep,
+                              const std::string& credentials_json,
+                              const std::string& tenants_json,
+                              const std::string& global_dm_uri,
+                              const std::string& master_hex) {
+    BsAccountPlan p;
+    const EndpointId eid = split_endpoint(ep);
+    p.tenant = eid.tenant;
+    p.serial = eid.serial;
+
+    // A non-default tenant must be a known, active tenant. The default tenant is
+    // always allowed (legacy single-tenant deployments have no cloud.tenants).
+    p.dm_uri = global_dm_uri;
+    if (p.tenant != kDefaultTenant) {
+        auto t = find_tenant(tenants_json, p.tenant);
+        if (!t.has_value() || !t->active) return p;          // ok stays false
+        if (!t->dm_uri.empty()) p.dm_uri = t->dm_uri;        // per-tenant override
+    } else {
+        // The default tenant may still carry a registry override.
+        auto t = find_tenant(tenants_json, p.tenant);
+        if (t.has_value() && !t->dm_uri.empty()) p.dm_uri = t->dm_uri;
+    }
+
+    // Commissioned row, scoped to this tenant.
+    auto arr = nlohmann::json::parse(credentials_json, nullptr, false);
+    if (arr.is_array()) {
+        for (const auto& e : arr) {
+            if (!e.is_object()) continue;
+            const std::string rt = e.value("tenant", std::string());
+            const std::string rtenant = rt.empty() ? std::string(kDefaultTenant) : rt;
+            if (rtenant != p.tenant) continue;
+            const std::string rserial = e.value("serial", std::string());
+            // Match by serial within the tenant; for the default tenant also
+            // honour the legacy identity==ep override path.
+            const bool match =
+                (rserial == p.serial) ||
+                (p.tenant == kDefaultTenant &&
+                 e.value("identity", std::string()) == ep);
+            if (!match) continue;
+            p.bs_key      = e.value("bs.psk.key", std::string());
+            p.dm_key      = e.value("dm.psk.key", std::string());
+            p.dm_identity = e.value("dm.psk.id",  std::string());
+            break;
+        }
+    }
+
+    // Zero-touch (HKDF) tier: no stored row but a master is available → derive
+    // statelessly. The device presents its raw serial as the BS identity here
+    // (override path), matching the legacy zero-touch behaviour.
+    if ((p.dm_key.empty() || p.dm_identity.empty()) && !master_hex.empty()) {
+        p.bs_key      = derive_bs_psk_hex(master_hex, p.serial);
+        p.dm_key      = derive_dm_psk_hex(master_hex, p.serial);
+        p.dm_identity = dm_identity(p.tenant, p.serial);
+        p.zero_touch  = true;
+    }
+
+    if (p.dm_identity.empty())
+        p.dm_identity = dm_identity(p.tenant, p.serial);
+
+    // BS DTLS identity written to the device's Security /0/0. Commissioned tier
+    // uses the tenant-qualified canonical identity (default ⇒ sha256(serial)[:32]
+    // byte-for-byte); zero-touch keeps the raw serial the device presents.
+    p.bs_identity = p.zero_touch ? p.serial : bs_identity(p.tenant, p.serial);
+
+    p.ok = !p.dm_identity.empty() && !p.dm_key.empty() && !p.dm_uri.empty();
+    return p;
+}
+
 } // namespace iot
