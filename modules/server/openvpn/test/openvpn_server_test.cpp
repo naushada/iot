@@ -80,6 +80,18 @@ TEST(BuildServerConfig, badSubnetReturnsEmpty) {
     EXPECT_TRUE(build_server_config(c).empty());
 }
 
+TEST(BuildServerConfig, clientConfigDirEmittedOnlyWhenSet) {
+    OpenVpnServerConfig c;
+    c.subnet = "10.9.0.0/16";
+    // Default (no ccd_dir): no client-config-dir line — single-tenant unchanged.
+    EXPECT_EQ(build_server_config(c).find("client-config-dir"),
+              std::string::npos);
+    // Multi-tenant (P3c): the directive appears when configured.
+    c.ccd_dir = "/etc/iot/vpn/ccd";
+    EXPECT_NE(build_server_config(c).find("client-config-dir /etc/iot/vpn/ccd"),
+              std::string::npos);
+}
+
 TEST(BuildServerConfig, tcpProtoGetsServerSuffix) {
     // Operator-facing proto is the base form "tcp"; the server *socket* must
     // LISTEN, so the config must render "proto tcp-server" (not bare "proto tcp",

@@ -38,6 +38,12 @@ struct OpenVpnServerConfig {
                                                 // `crl-verify <path>` (revocation)
     std::uint16_t mgmt_port  = 7506;            // management 127.0.0.1 <port>
     int           verb       = 3;
+    std::string   ccd_dir;                       // empty → no client-config-dir;
+                                                 // else `client-config-dir <dir>`
+                                                 // for per-client static IPs
+                                                 // (multi-tenant P3c): each
+                                                 // device's CCD file pins it into
+                                                 // its tenant /24 via ifconfig-push.
 };
 
 /// Render a server-mode OpenVPN config. Pure. Uses `dh none` (ECDH), so
