@@ -151,3 +151,38 @@ TEST(TenantAtCapacity, CountsDefaultTenantUntagged) {
     EXPECT_TRUE(tenant_at_capacity(tenants, one, "default", "b"));
     EXPECT_FALSE(tenant_at_capacity(tenants, one, "default", "a"));
 }
+
+// ── allocate_ip_in_subnet ───────────────────────────────────────────────────
+
+TEST(AllocateIpInSubnet, FirstHostIsNetworkPlus2) {
+    // .0 network, .1 gateway → first device host is .2
+    EXPECT_EQ(allocate_ip_in_subnet("10.9.16.0/24", {}), "10.9.16.2");
+}
+
+TEST(AllocateIpInSubnet, SkipsUsed) {
+    EXPECT_EQ(allocate_ip_in_subnet("10.9.16.0/24",
+              {"10.9.16.2", "10.9.16.3"}), "10.9.16.4");
+}
+
+TEST(AllocateIpInSubnet, ExhaustionAndBadInput) {
+    // /30 = .0 net, .1 gw, .2 host, .3 bcast → exactly one assignable (.2)
+    EXPECT_EQ(allocate_ip_in_subnet("10.9.16.0/30", {}), "10.9.16.2");
+    EXPECT_EQ(allocate_ip_in_subnet("10.9.16.0/30", {"10.9.16.2"}), "");
+    EXPECT_EQ(allocate_ip_in_subnet("10.9.16.0/31", {}), "");   // no room
+    EXPECT_EQ(allocate_ip_in_subnet("garbage", {}), "");
+}
+
+// ── build_ccd_entry ─────────────────────────────────────────────────────────
+
+TEST(BuildCcdEntry, UsesServerMaskNotTenantMask) {
+    // server pool /16 → netmask 255.255.0.0 even though the IP is in a /24
+    EXPECT_EQ(build_ccd_entry("10.9.16.2", "10.9.0.0/16"),
+              "ifconfig-push 10.9.16.2 255.255.0.0\n");
+    EXPECT_EQ(build_ccd_entry("10.9.0.5", "10.9.0.0/24"),
+              "ifconfig-push 10.9.0.5 255.255.255.0\n");
+}
+
+TEST(BuildCcdEntry, BadInput) {
+    EXPECT_EQ(build_ccd_entry("not-an-ip", "10.9.0.0/16"), "");
+    EXPECT_EQ(build_ccd_entry("10.9.16.2", "garbage"), "");
+}

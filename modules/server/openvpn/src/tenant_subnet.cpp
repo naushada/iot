@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 
 #include <cstdint>
+#include <set>
 #include <sstream>
 #include <utility>
 
@@ -164,6 +165,32 @@ bool tenant_at_capacity(const std::string& tenants_json,
             ++count;
         }
     return count >= max_devices;
+}
+
+std::string allocate_ip_in_subnet(const std::string& subnet_cidr,
+                                  const std::vector<std::string>& used) {
+    auto [base, prefix] = parse_cidr(subnet_cidr);
+    if (prefix < 0 || prefix > 30) return {};   // need room for >=2 hosts
+    const std::uint32_t net   = base & mask_of(prefix);
+    const std::uint32_t bcast = net | ~mask_of(prefix);
+    // .0 = network, .1 = gateway (the cloud end of the tunnel), so the first
+    // assignable device host is network+2; last is broadcast-1.
+    std::set<std::string> taken(used.begin(), used.end());
+    for (std::uint64_t h = net + 2; h + 1 <= bcast; ++h) {
+        const std::string ip = u32_to_ip(static_cast<std::uint32_t>(h));
+        if (!taken.count(ip)) return ip;
+    }
+    return {};   // subnet full
+}
+
+std::string build_ccd_entry(const std::string& ip,
+                            const std::string& server_cidr) {
+    auto [sbase, sprefix] = parse_cidr(server_cidr);
+    (void)sbase;
+    if (sprefix < 0) return {};
+    in_addr a{};
+    if (::inet_pton(AF_INET, ip.c_str(), &a) != 1) return {};   // bad ip
+    return "ifconfig-push " + ip + " " + u32_to_ip(mask_of(sprefix)) + "\n";
 }
 
 }} // namespace server::openvpn

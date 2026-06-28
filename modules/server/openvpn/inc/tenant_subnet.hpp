@@ -56,6 +56,24 @@ bool tenant_at_capacity(const std::string& tenants_json,
                         const std::string& tenant,
                         const std::string& candidate_serial);
 
+// ── P3c: per-client static IPs in the tenant /24 (OpenVPN CCD) ───────────────
+
+/// Allocate the next free host IP from `subnet_cidr` (e.g. a tenant's
+/// "10.9.16.0/24"), skipping the network/gateway/broadcast addresses and any IP
+/// in `used`. Gateway is `network+1`, so the first assignable host is
+/// `network+2`. Returns the dotted IP, or "" when the subnet is full / invalid.
+std::string allocate_ip_in_subnet(const std::string& subnet_cidr,
+                                  const std::vector<std::string>& used);
+
+/// Build an OpenVPN client-config-dir line pinning a client to `ip`:
+///   "ifconfig-push <ip> <netmask>\n"
+/// With `topology subnet`, the netmask is the *server* pool's mask (from
+/// `server_cidr`, e.g. the "/16"), not the tenant /24 — the per-tenant boundary
+/// is enforced by nftables (build_tenant_isolation_rules), not the mask.
+/// Returns "" on invalid input.
+std::string build_ccd_entry(const std::string& ip,
+                            const std::string& server_cidr);
+
 }} // namespace server::openvpn
 
 #endif /* __iot_tenant_subnet_hpp__ */
