@@ -8,6 +8,7 @@
 /// and needs a real tun/OpenVPN environment to validate.
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace server { namespace openvpn {
@@ -33,6 +34,17 @@ std::string allocate_tenant_subnet(const std::string& pool_cidr,
 /// input yields an empty table (nothing to isolate).
 std::string build_tenant_isolation_rules(
     const std::vector<std::string>& tenant_subnets);
+
+/// Reconcile a `cloud.tenants` JSON array: assign a fresh non-overlapping
+/// /`tenant_prefix` block (carved from `pool_cidr`) to every tenant object that
+/// lacks a non-empty "vpn.subnet", avoiding subnets already assigned to other
+/// tenants. Returns {updated_json, changed}. A tenant left unassigned because
+/// the pool is exhausted keeps no subnet (the caller logs it). On a non-array /
+/// parse error returns {input, false}.
+std::pair<std::string, bool> assign_missing_subnets(
+    const std::string& tenants_json,
+    const std::string& pool_cidr,
+    int tenant_prefix = 24);
 
 }} // namespace server::openvpn
 

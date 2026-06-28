@@ -20,6 +20,7 @@
 #include "bootstrap.hpp"
 #include "cloud_credentials.hpp"
 #include "device_dnat.hpp"
+#include "tenant_subnet.hpp"
 
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"
@@ -124,6 +125,24 @@ void sync_endpoints_to_ds(data_store::Client& ds,
         arr.push_back(item);
     }
     ds.set("cloud.endpoints", data_store::Value{arr.dump()});
+}
+
+// Multi-tenant (P4): assign a per-tenant VPN /24 from cloud.vpn.tenant.pool to
+// every cloud.tenants entry that lacks one, and write the registry back. Driven
+// by a cloud.tenants watch + once at startup — the operator creates a tenant by
+// db/set-ing {id,name} into cloud.tenants and iot-cloudd fills in the subnet.
+// Pure carving/non-overlap logic is server::openvpn::assign_missing_subnets
+// (unit-tested). Applying nft inter-tenant isolation is P3b (needs tun).
+void reconcile_tenants(data_store::Client& ds) {
+    const std::string pool = ds_str(ds, "cloud.vpn.tenant.pool", "10.9.16.0/20");
+    const std::string cur  = ds_str(ds, "cloud.tenants", "[]");
+    auto [next, changed] = server::openvpn::assign_missing_subnets(cur, pool);
+    if (changed) {
+        ds.set("cloud.tenants", data_store::Value{next});
+        ACE_DEBUG((LM_INFO, ACE_TEXT("%D cloudd:thread:%t %M %N:%l reconciled "
+                  "cloud.tenants — assigned VPN subnet(s) from pool %C\n"),
+                  pool.c_str()));
+    }
 }
 
 // Rebuild + apply the per-device "device UI over VPN" DNAT ruleset.
@@ -504,6 +523,10 @@ int main(int argc, char** argv) {
     // cloud.endpoints with [] and every restart "loses" provisioning.
     rehydrate_registry(ds, ep_reg, vpn_reg, provisioner);
 
+    // Multi-tenant (P4): assign VPN subnets to any tenants already in
+    // cloud.tenants at startup (operator may have added them while we were down).
+    reconcile_tenants(ds);
+
     ::signal(SIGINT, on_signal);
     ::signal(SIGTERM, on_signal);
 
@@ -547,6 +570,14 @@ int main(int argc, char** argv) {
                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch "
                             "cloud.lwm2m.registrations failed: %C\n"),
                    ws_regs.err.c_str()));
+    }
+    // Multi-tenant (P4): operator adds a tenant to cloud.tenants (db/set);
+    // iot-cloudd assigns its VPN subnet.
+    auto ws_tenants = ds.watch("cloud.tenants", 1000);
+    if (!ws_tenants.ok) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l watch cloud.tenants "
+                            "failed: %C\n"), ws_tenants.err.c_str()));
     }
     // OTA: cloud-ui writes cloud.update.request; validate it into per-endpoint
     // jobs (cloud.update.pending) that the lwm2m-dm push tick consumes.
@@ -1138,6 +1169,8 @@ int main(int argc, char** argv) {
                 g_log.apply_level(ds);
                 ACE_DEBUG((LM_INFO,
                            ACE_TEXT("%D cloudd:thread:%t %M %N:%l log level changed\n")));
+            } else if (ev.key == "cloud.tenants") {
+                reconcile_tenants(ds);   // assign VPN subnet(s) to new tenants
             } else if (ev.key == "cloud.lwm2m.registrations") {
                 // lwm2m-dm published a registration change — fold online/
                 // offline into the endpoint registry before the sync below.

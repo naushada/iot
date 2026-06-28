@@ -65,7 +65,8 @@ if(BUILD_SERVER_OPENVPN_TESTS)
         test/tenant_subnet_test.cpp
         src/tenant_subnet.cpp)
     target_include_directories(tenant-subnet-tests
-        PRIVATE ${OVPN_SERVER_DIR}/inc)
+        PRIVATE ${OVPN_SERVER_DIR}/inc
+                ${OVPN_SERVER_DIR}/../../../apps/3rdparty/json/single_include)
     target_link_libraries(tenant-subnet-tests
         GTest::gtest_main GTest::gtest pthread)
     add_test(NAME tenant-subnet-tests COMMAND tenant-subnet-tests)

@@ -19,7 +19,17 @@ instance).
 | P3a | Per-tenant VPN **subnet math + nft isolation rules** (pure, gtest) | _this_ | 🔵 |
 | P1e | `db/get cloud.endpoints` tenant scoping (**live UI isolation**) | _this_ | 🔵 |
 | P3b | Wire P3a: OpenVPN `/16` + per-client CCD static IPs + apply nft | — | ⏭️ needs tun validation |
-| P4/P5 | Platform-operator console; per-tenant CA; quotas | — | ⏭️ |
+| P4a | Tenant registry: auto VPN-subnet assignment (`cloud.tenants` watch) | _this_ | 🔵 |
+| P4b | Operator console UI (tenant CRUD) + tenant-aware provision *watcher* | — | ⏭️ |
+| P5 | Per-tenant CA; quotas; audit log | — | ⏭️ |
+
+**P4a:** an operator creates a tenant by `db/set`-ing `{id, name}` into
+`cloud.tenants`; `iot-cloudd` watches the key and carves a non-overlapping `/24`
+from `cloud.vpn.tenant.pool` (default `10.9.16.0/20`, clear of the legacy
+default `10.9.0.0/24`) for any tenant lacking one — the same ds-driven reconcile
+pattern as the rest of the cloud. Pure carving/assignment is unit-tested
+(`assign_missing_subnets`); applying the per-tenant nft isolation (P3a's
+`build_tenant_isolation_rules`) is part of P3b (needs tun).
 
 With P1e the **console is tenant-isolated end to end**: `iot-cloudd` tags
 `cloud.endpoints` rows (P1d), and both the cloud-API handler (P1c) and the

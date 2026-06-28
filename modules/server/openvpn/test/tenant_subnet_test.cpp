@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <nlohmann/json.hpp>
+
 #include "tenant_subnet.hpp"
 
 using namespace server::openvpn;
@@ -76,4 +78,42 @@ TEST(IsolationRules, ThreeTenantsSixDirectedDrops) {
     std::size_t n = 0, pos = 0;
     while ((pos = r.find(" drop\n", pos)) != std::string::npos) { ++n; pos += 6; }
     EXPECT_EQ(n, 6U);   // 3 tenants → 3*2 directed pairs
+}
+
+// ── assign_missing_subnets ──────────────────────────────────────────────────
+
+TEST(AssignMissingSubnets, FillsOnlyMissingNonOverlapping) {
+    const std::string in = R"([
+        {"id":"acme"},
+        {"id":"globex","vpn.subnet":"10.9.16.0/24"},
+        {"id":"initech"}
+    ])";
+    auto [out, changed] = assign_missing_subnets(in, "10.9.16.0/20");
+    EXPECT_TRUE(changed);
+    auto j = nlohmann::json::parse(out);
+    // globex keeps its pre-assigned subnet
+    EXPECT_EQ(j[1]["vpn.subnet"], "10.9.16.0/24");
+    // acme + initech get fresh, distinct, non-overlapping /24s (not globex's)
+    const std::string a = j[0]["vpn.subnet"], c = j[2]["vpn.subnet"];
+    EXPECT_FALSE(a.empty());
+    EXPECT_FALSE(c.empty());
+    EXPECT_NE(a, c);
+    EXPECT_FALSE(subnets_overlap(a, "10.9.16.0/24"));
+    EXPECT_FALSE(subnets_overlap(c, "10.9.16.0/24"));
+    EXPECT_FALSE(subnets_overlap(a, c));
+}
+
+TEST(AssignMissingSubnets, Idempotent) {
+    const std::string in = R"([{"id":"acme"}])";
+    auto [out1, ch1] = assign_missing_subnets(in, "10.9.16.0/20");
+    EXPECT_TRUE(ch1);
+    auto [out2, ch2] = assign_missing_subnets(out1, "10.9.16.0/20");
+    EXPECT_FALSE(ch2);                 // nothing left to assign
+    EXPECT_EQ(nlohmann::json::parse(out1), nlohmann::json::parse(out2));
+}
+
+TEST(AssignMissingSubnets, BadInputUnchanged) {
+    auto [out, changed] = assign_missing_subnets("not json", "10.9.16.0/20");
+    EXPECT_FALSE(changed);
+    EXPECT_EQ(out, "not json");
 }
