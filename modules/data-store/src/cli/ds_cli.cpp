@@ -24,6 +24,7 @@
 #include <iostream>
 #include <limits>
 #include <set>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <unistd.h>
@@ -131,7 +132,19 @@ std::string value_to_display(const data_store::Value& v) {
 
 int do_set(data_store::Client& cli, const std::vector<std::string>& a) {
     if (a.size() != 2) { usage(); return 2; }
-    auto rs = cli.set(a[0], parse_cli_value(a[1]));
+    // value "-" → read the whole value from stdin. The kernel caps a single
+    // argv element at MAX_ARG_STRLEN (128 KB), so large JSON values (e.g. a big
+    // cloud.endpoint.credentials array) can't be passed as an argument; stdin
+    // has no such limit. Usage: ds-cli set <key> - < file
+    std::string raw = a[1];
+    if (raw == "-") {
+        std::ostringstream ss;
+        ss << std::cin.rdbuf();
+        raw = ss.str();
+        while (!raw.empty() && (raw.back() == '\n' || raw.back() == '\r'))
+            raw.pop_back();
+    }
+    auto rs = cli.set(a[0], parse_cli_value(raw));
     if (!rs.ok) { std::cerr << "[ds-cli] set: " << rs.err << "\n"; return 2; }
     std::cout << "ok\n";
     return 0;
