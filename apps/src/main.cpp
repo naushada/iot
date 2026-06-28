@@ -1597,7 +1597,17 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         if (dtls) {
             dtls->active_identity(dmIdentity);
             dtls->clientState("");            // drop the BS session state
-            dtls->connect(dmHost, dmPort);    // start the DM handshake now
+            // Force a FRESH DM handshake. A DM peer left CONNECTED from before a
+            // cloud restart (tinydtls has no liveness check, so the device never
+            // noticed the server lost its peer table) makes plain connect()
+            // attempt an ENCRYPTED renegotiation ClientHello. The restarted DM —
+            // peerless — rejects that as "no peer available / only ClientHello
+            // is allowed" and the device wedges at dm-connecting forever (only a
+            // manual iot-lwm2m-client restart recovered it). reset_and_connect()
+            // tears the stale peer down first so a PLAINTEXT ClientHello starts a
+            // clean handshake the restarted DM accepts — auto-recovery after any
+            // cloud bounce/upgrade.
+            dtls->reset_and_connect(dmHost, dmPort);
         }
         // Apply the bootstrap-delivered registration lifetime (Server Object
         // RID 1) — the client uses this, sourced by the BS from
