@@ -2234,20 +2234,28 @@ int main(std::int32_t argc, char *argv[]) {
         }
     }
 
+    // Service type is selected from the launch args: client → LwM2MClient;
+    // server → BS or DM per `lwm2m-instance` (the cloud runs the SAME binary
+    // twice, lwm2m-instance=bs on 5684 and =dm on 5683). Each server instance
+    // then binds ONLY its own `local` port. The old code typed every server as
+    // BootstrapServer and additionally hardcoded init(5683, DeviceMgmtServer),
+    // which double-bound 5683 in the dm instance (benign EADDRINUSE) and left an
+    // unused 5683 listener in the bs instance. Both handlers (bsServer +
+    // regServer) are attached to EVERY context below and processRequest routes
+    // /bs and /rd by URI, so one bound socket per instance serves both.
     UDPAdapter::ServiceType_t service;
     if(UDPAdapter::Role_t::CLIENT == role) {
         service = UDPAdapter::ServiceType_t::LwM2MClient;
+    } else if(argValueMap["lwm2m-instance"] == "dm") {
+        service = UDPAdapter::ServiceType_t::DeviceMgmtServer;
     } else {
         service = UDPAdapter::ServiceType_t::BootsstrapServer;
     }
 
     std::shared_ptr<App> app = std::make_shared<App>(selfHost, selfPort, scheme, service);
     app->udpAdapter()->add_event_handle(scheme, service);
-    
-    if(UDPAdapter::Role_t::SERVER == role) {
-        app->udpAdapter()->init(selfHost, 5683, scheme, UDPAdapter::ServiceType_t::DeviceMgmtServer);
-        app->udpAdapter()->add_event_handle(scheme, UDPAdapter::ServiceType_t::DeviceMgmtServer);
-    } else {
+
+    if(UDPAdapter::Role_t::CLIENT == role) {
         /// @brief role is client
         auto it = std::find_if(app->udpAdapter()->services().begin(), app->udpAdapter()->services().end(),[&](auto& ent) -> bool {
             return(service == ent.second->service());
