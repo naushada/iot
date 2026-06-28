@@ -1,5 +1,6 @@
 #include "auth.hpp"
 #include "handler.hpp"
+#include "tenant_scope.hpp"
 
 #include "data_store/client.hpp"
 #include "data_store/value.hpp"
@@ -104,7 +105,7 @@ void install_handlers(Router& router,
 
     // ─── POST /api/v1/db/get ─────────────────────────────────
     router.add("POST", "/api/v1/db/get",
-        [ds](const HttpParser::Request& req) -> HttpResponse {
+        [ds, auth](const HttpParser::Request& req) -> HttpResponse {
             HttpResponse r;
             if (!ds) {
                 r.status = 500;
@@ -132,6 +133,16 @@ void install_handlers(Router& router,
                 json resp;
                 resp["ok"] = true;
                 resp["data"] = get_result_to_json(got);
+                // Multi-tenant: scope cloud.endpoints to the caller's tenant so
+                // the operator only sees their own devices (the cloud-ui reads
+                // the endpoint list through this generic getter). No-op for the
+                // platform operator ("*") or when auth isn't wired.
+                if (resp["data"].contains("cloud.endpoints") &&
+                    resp["data"]["cloud.endpoints"].is_string()) {
+                    resp["data"]["cloud.endpoints"] = scope_endpoints_json(
+                        resp["data"]["cloud.endpoints"].get<std::string>(),
+                        request_tenant(req.headers, auth));
+                }
                 r.body = resp.dump();
             } catch (const std::exception& e) {
                 r.status = 400;
@@ -210,7 +221,7 @@ void install_handlers(Router& router,
 
     // ─── GET /api/v1/db/get?key=N&timeout=S (long-poll) ──────
     router.add("GET", "/api/v1/db/get",
-        [ds](const HttpParser::Request& req) -> HttpResponse {
+        [ds, auth](const HttpParser::Request& req) -> HttpResponse {
             HttpResponse r;
             if (!ds) {
                 r.status = 500;
@@ -248,6 +259,10 @@ void install_handlers(Router& router,
                 } else {
                     resp["value"] = nullptr;
                 }
+                if (key == "cloud.endpoints" && resp["value"].is_string())
+                    resp["value"] = scope_endpoints_json(
+                        resp["value"].get<std::string>(),
+                        request_tenant(req.headers, auth));
                 r.body = resp.dump();
                 return r;
             }
@@ -313,6 +328,10 @@ void install_handlers(Router& router,
                     resp["value"] = nullptr;
                 }
             }
+            if (key == "cloud.endpoints" && resp["value"].is_string())
+                resp["value"] = scope_endpoints_json(
+                    resp["value"].get<std::string>(),
+                    request_tenant(req.headers, auth));
             r.body = resp.dump();
             return r;
         });

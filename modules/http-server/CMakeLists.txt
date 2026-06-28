@@ -42,6 +42,7 @@ add_library(http_server_lib STATIC
     src/session.cpp
     src/handler.cpp
     src/handler_cloud.cpp
+    src/tenant_scope.cpp
     src/handler_proxy.cpp
     src/handler_shell.cpp
     src/shell.cpp
