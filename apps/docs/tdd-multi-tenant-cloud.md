@@ -18,10 +18,19 @@ instance).
 | P1d | `iot-cloudd` row-tagging: `cloud.endpoints` rows carry `tenant` | #488 | ✅ merged |
 | P3a | Per-tenant VPN **subnet math + nft isolation rules** (pure, gtest) | _this_ | 🔵 |
 | P1e | `db/get cloud.endpoints` tenant scoping (**live UI isolation**) | _this_ | 🔵 |
-| P3b | Wire P3a: OpenVPN `/16` + per-client CCD static IPs + apply nft | — | ⏭️ needs tun validation |
+| P3b | Apply inter-tenant nft isolation table (compile-verified) | _this_ | 🔵 needs tun validation |
+| P3c | OpenVPN `/16` + per-client CCD static IP from tenant `/24` | — | ⏭️ needs tun validation |
 | P4a | Tenant registry: auto VPN-subnet assignment (`cloud.tenants` watch) | _this_ | 🔵 |
 | P4b | Operator console UI (tenant CRUD) + tenant-aware provision *watcher* | — | ⏭️ |
 | P5 | Per-tenant CA; quotas; audit log | — | ⏭️ |
+
+**P3b/P3c split:** P3b applies the inter-tenant **nft drop** table
+(`build_tenant_isolation_rules` over the tenant subnets) via the same
+`apply_ruleset` path as the device DNAT — compile-verified, but the live nft
+effect needs a NET_ADMIN/netfilter host. The rules only *bite* once each
+device's tunnel IP comes from its tenant's `/24`, which is **P3c**: per-client
+OpenVPN client-config-dir static IPs + `VpnRegistry` allocating from the
+tenant subnet. P3c is the larger, tun-validated piece.
 
 **P4a:** an operator creates a tenant by `db/set`-ing `{id, name}` into
 `cloud.tenants`; `iot-cloudd` watches the key and carves a non-overlapping `/24`
