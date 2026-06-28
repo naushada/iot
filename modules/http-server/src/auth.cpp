@@ -88,12 +88,14 @@ std::string SessionStore::make_token() {
 
 std::string SessionStore::create_session(const std::string& username,
                                           const std::string& role,
-                                          const std::string& access) {
+                                          const std::string& access,
+                                          const std::string& tenant) {
     std::string token = make_token();
     Session s;
     s.username   = username;
     s.role       = role;
     s.access     = access;
+    s.tenant     = tenant.empty() ? std::string("default") : tenant;
     s.expires_at = std::chrono::steady_clock::now() + std::chrono::hours(8);
 
     std::lock_guard<std::mutex> lk(m_mutex);
@@ -194,6 +196,19 @@ std::string CredentialStore::load_user_access(data_store::Client& ds,
         }
     }
     return "Admin";  // default: full access
+}
+
+std::string CredentialStore::load_user_tenant(data_store::Client& ds,
+                                              const std::string& username) {
+    std::string key = "auth.users." + username + ".tenant";
+    std::vector<data_store::Client::GetResult> got;
+    auto rs = ds.get({key}, got);
+    if (rs.ok && !got.empty() && got[0].has_value) {
+        if (auto s = data_store::to_string(got[0].value)) {
+            if (!s->empty()) return *s;   // a tenant slug, or "*" (operator)
+        }
+    }
+    return "default";  // unset → the implicit default tenant (legacy)
 }
 
 // ── Access control ─────────────────────────────────────────────────

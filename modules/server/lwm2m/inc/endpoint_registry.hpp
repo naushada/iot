@@ -39,6 +39,9 @@ struct EndpointInfo {
                                       // heartbeat interval; next heartbeat is
                                       // due by last_seen_unix + lifetime
     std::string location;             // assigned /rd/<id> registration path
+    std::string tenant;               // owning tenant (multi-tenant cloud);
+                                      // empty == the implicit "default" tenant.
+                                      // See apps/docs/tdd-multi-tenant-cloud.md.
 
     EndpointInfo() = default;
     EndpointInfo(std::string ep_, std::string tun_ip_,

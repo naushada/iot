@@ -39,6 +39,8 @@ public:
         std::string username;
         std::string role;          // "admin"
         std::string access;        // "Admin" or "Viewer"
+        std::string tenant;        // owning tenant; "*" = platform operator
+                                   // (sees all tenants). Default "default".
         std::chrono::steady_clock::time_point expires_at;
     };
 
@@ -48,7 +50,8 @@ public:
     /// The caller sets the token as a Set-Cookie header.
     std::string create_session(const std::string& username,
                                const std::string& role = "admin",
-                               const std::string& access = "Admin");
+                               const std::string& access = "Admin",
+                               const std::string& tenant = "default");
 
     /// Validate a token. Returns nullptr when expired or invalid.
     const Session* validate(const std::string& token);
@@ -104,6 +107,13 @@ public:
     /// Falls back to "Admin" when unset.
     static std::string load_user_access(data_store::Client& ds,
                                          const std::string& username);
+
+    /// Load the user's owning tenant from the data store.
+    /// Key: auth.users.<username>.tenant — a tenant slug, or "*" for a
+    /// platform operator (sees all tenants). Falls back to "default" when
+    /// unset, so existing single-tenant deployments are unaffected.
+    static std::string load_user_tenant(data_store::Client& ds,
+                                        const std::string& username);
 
     /// Default admin password hash: sha256("admin").
     static constexpr const char* kDefaultHash =

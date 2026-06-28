@@ -339,10 +339,14 @@ void install_handlers(Router& router,
             std::string stored_hash;
             std::string access = "Admin";
             std::string role   = "admin";
+            std::string tenant = "default";   // multi-tenant: owning tenant
             if (id == "admin") {
                 stored_hash = ds ? CredentialStore::load_admin_password_hash(*ds)
                                  : CredentialStore::kDefaultHash;
-                if (ds) access = CredentialStore::load_user_access(*ds, id);
+                if (ds) {
+                    access = CredentialStore::load_user_access(*ds, id);
+                    tenant = CredentialStore::load_user_tenant(*ds, id);
+                }
             } else {
                 role = "user";
                 bool found = false;
@@ -351,6 +355,7 @@ void install_handlers(Router& router,
                         if (u.value("id", "") == id) {
                             stored_hash = u.value("hash", "");
                             access      = u.value("access", "Viewer");
+                            tenant      = u.value("tenant", "default");
                             found = true;
                             break;
                         }
@@ -368,7 +373,7 @@ void install_handlers(Router& router,
                 return r;
             }
             std::string token;
-            if (auth) token = auth->create_session(id, role, access);
+            if (auth) token = auth->create_session(id, role, access, tenant);
             json resp;
             resp["ok"]     = true;
             resp["role"]   = role;

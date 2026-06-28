@@ -153,6 +153,20 @@ if(BUILD_HTTP_SERVER_TESTS)
             http_server_lib
             GTest::gtest_main GTest::gtest)
         add_test(NAME http-handler-tests COMMAND http-handler-tests)
+
+        # Cloud API tests — exercise install_cloud_handlers (tenant read
+        # isolation). Needs the server-side registry/bootstrap/vpn sources the
+        # handler drives (http_server_lib drops handler_cloud.o for iot-httpd as
+        # unreferenced, so those symbols aren't otherwise linked).
+        add_executable(http-cloud-api-tests
+            test/cloud_api_test.cpp
+            ${HTTP_MODULE_DIR}/../server/lwm2m/src/endpoint_registry.cpp
+            ${HTTP_MODULE_DIR}/../server/lwm2m/src/bootstrap.cpp
+            ${HTTP_MODULE_DIR}/../server/openvpn/src/vpn_registry.cpp)
+        target_link_libraries(http-cloud-api-tests
+            http_server_lib
+            GTest::gtest_main GTest::gtest)
+        add_test(NAME http-cloud-api-tests COMMAND http-cloud-api-tests)
     endif()
 endif()
 
