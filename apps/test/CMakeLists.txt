@@ -74,7 +74,8 @@ file(GLOB SOURCES "*.cpp"
                     "../src/lua_config.cpp"
                     "../src/rpi_serial.cpp"
                     "../src/psk_gen.cpp"
-                    "../src/provisioning_policy.cpp")
+                    "../src/provisioning_policy.cpp"
+                    "../src/tenant_policy.cpp")
 
 add_executable(lwm2m_test ${SOURCES})
 
