@@ -9,6 +9,8 @@
 #include <sstream>
 #include <utility>
 
+#include <nlohmann/json.hpp>
+
 namespace server { namespace openvpn {
 
 namespace {
@@ -99,6 +101,35 @@ std::string build_tenant_isolation_rules(
     os << "  }\n";
     os << "}\n";
     return os.str();
+}
+
+std::pair<std::string, bool> assign_missing_subnets(
+    const std::string& tenants_json,
+    const std::string& pool_cidr,
+    int tenant_prefix) {
+    auto arr = nlohmann::json::parse(tenants_json, nullptr, /*exceptions*/false);
+    if (!arr.is_array()) return {tenants_json, false};
+
+    // Seed "used" with every subnet already assigned.
+    std::vector<std::string> used;
+    for (const auto& t : arr)
+        if (t.is_object()) {
+            const std::string s = t.value("vpn.subnet", std::string());
+            if (!s.empty()) used.push_back(s);
+        }
+
+    bool changed = false;
+    for (auto& t : arr) {
+        if (!t.is_object()) continue;
+        if (!t.value("vpn.subnet", std::string()).empty()) continue;  // has one
+        const std::string s =
+            allocate_tenant_subnet(pool_cidr, used, tenant_prefix);
+        if (s.empty()) continue;            // pool exhausted — leave unassigned
+        t["vpn.subnet"] = s;
+        used.push_back(s);
+        changed = true;
+    }
+    return {arr.dump(), changed};
 }
 
 }} // namespace server::openvpn

@@ -31,6 +31,7 @@ add_executable(iot-cloudd
     ../../../modules/server/openvpn/src/vpn_registry.cpp
     ../../../modules/server/openvpn/src/openvpn_server.cpp
     ../../../modules/server/openvpn/src/cert_authority.cpp
+    ../../../modules/server/openvpn/src/tenant_subnet.cpp
     ../../../modules/server/dnat/src/device_dnat.cpp)
 
 if(DEFINED DATASTORE_LIB)

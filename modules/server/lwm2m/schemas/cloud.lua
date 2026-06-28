@@ -336,6 +336,14 @@ return {
       default = "10.9.0.0/24",
     },
 
+    -- Multi-tenant VPN pool (apps/docs/tdd-multi-tenant-cloud.md, P4): iot-cloudd
+    -- carves a per-tenant /24 from this pool for every cloud.tenants entry that
+    -- lacks a vpn.subnet. Kept clear of the legacy default-tenant 10.9.0.0/24.
+    ["cloud.vpn.tenant.pool"] = {
+      type    = "string",
+      default = "10.9.16.0/20",
+    },
+
     -- JSON array of device serials with a live VPN tunnel right now, written
     -- by iot-cloudd from the openvpn management interface. lwm2m-dm reads it to
     -- stop pushing the cert once the device's tunnel is up.
