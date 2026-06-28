@@ -27,6 +27,17 @@ return {
       default = "[]",
     },
 
+    -- Multi-tenant registry (apps/docs/tdd-multi-tenant-cloud.md, P1). JSON
+    -- array of tenants, each: { id, name, vpn.subnet, proxy.port.start/end,
+    -- dm.uri, status }. A deployment with no tenants behaves as today: every
+    -- untagged endpoint/credential/user belongs to the implicit "default"
+    -- tenant. Operators add tenants here (later via the platform-operator
+    -- console) to host multiple organizations on one cloud-iot.
+    ["cloud.tenants"] = {
+      type    = "string",
+      default = "[]",
+    },
+
     -- LwM2M registration status. Written by lwm2m-dm (SOLE writer) from its
     -- ClientRegistry whenever a device registers / updates / deregisters or
     -- a lifetime lapses; read by iot-cloudd to merge online/offline +
