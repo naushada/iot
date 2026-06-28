@@ -1019,6 +1019,29 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                                         reg.endpoint.c_str(), ver.c_str(),
                                         reg.peerHost.c_str(),
                                         static_cast<unsigned>(reg.peerPort)));
+                                    // One-shot: consume the job. Remove it from
+                                    // cloud.update.pending so the cloud NEVER
+                                    // re-pushes on a later registration or after a
+                                    // cloud restart (otaSent is in-memory and was
+                                    // lost on restart → the old re-push "on its
+                                    // own"). The cloud only pushes as a direct
+                                    // result of an operator queueing a job;
+                                    // delivery consumes it. The operator re-pushes
+                                    // to retry a missed device.
+                                    {
+                                        nlohmann::json remaining =
+                                            nlohmann::json::array();
+                                        for (const auto& j : arr) {
+                                            if (j.value("endpoint", "") ==
+                                                    reg.endpoint &&
+                                                j.value("url", "") == url)
+                                                continue;   // drop the delivered one
+                                            remaining.push_back(j);
+                                        }
+                                        dsCertPush->set(
+                                            "cloud.update.pending",
+                                            data_store::Value{remaining.dump()});
+                                    }
                                     // Reflect "updating" in cloud.update.status.
                                     std::vector<data_store::Client::GetResult> sg;
                                     nlohmann::json st = nlohmann::json::array();
