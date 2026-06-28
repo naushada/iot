@@ -32,8 +32,12 @@ EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
 # nvram). It's gated by the synaptics-killswitch LICENSE_FLAG, accepted in
 # entrypoint.sh / kas-iot.yml. If your meta-raspberrypi revision names it
 # differently, swap to linux-firmware-bcm43430.
+# packagegroup-iot-debug pulls packagegroup-iot-full (the whole gateway
+# daemon set + runtime deps) PLUS the on-device debugging toolset (vim,
+# strace, gdb, lsof, tcpdump, i2c-tools, …). For a slimmer production
+# image swap this to packagegroup-iot-full and drop debug-tweaks above.
 IMAGE_INSTALL:append = " \
-    packagegroup-iot-full \
+    packagegroup-iot-debug \
     kernel-modules \
     linux-firmware-rpidistro-bcm43430 \
     pi-bluetooth \
@@ -41,8 +45,6 @@ IMAGE_INSTALL:append = " \
     openssh \
     opkg \
     kernel-module-tun \
-    htop \
-    nano \
 "
 
 # Headroom on the rootfs for opkg-installed .ipk updates + logs (512 MB).

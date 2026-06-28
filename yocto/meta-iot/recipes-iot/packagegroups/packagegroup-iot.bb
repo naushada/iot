@@ -59,10 +59,32 @@ RDEPENDS:${PN}-full = "\
 # wpa_cli. The DHCP client comes from the recipe's
 # RRECOMMENDS:iot-wifi-client = busybox-udhcpc.
 
-# ── Debug: includes test binaries ─────────────────────────────────
-# For CI and developer images.
+# ── Debug: full stack + on-device debugging toolset ───────────────
+# For CI and developer/field-debug images. Adds editors and the tools you
+# reach for when ssh'd into a misbehaving RPi (process/syscall tracing,
+# open-fd/socket inspection, packet capture, USB/I2C/MMC bus probing).
 RDEPENDS:${PN}-debug = "\
     ${PN}-full \
+    vim \
+    nano \
+    less \
+    htop \
+    procps \
+    strace \
+    ltrace \
+    gdb \
+    lsof \
+    file \
+    tree \
+    curl \
+    wget \
+    socat \
+    tcpdump \
+    bind-utils \
+    ethtool \
+    usbutils \
+    i2c-tools \
+    mmc-utils \
 "
 # Note: test binaries (lwm2m_test, ds-tests, etc.) are not yet split
 # into a separate iot-test package. Add them here when PACKAGECONFIG[gtest]
