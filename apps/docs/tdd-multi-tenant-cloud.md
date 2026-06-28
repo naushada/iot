@@ -31,12 +31,16 @@ Every slice keeps the **default tenant byte-identical to today**, so existing
 single-tenant deployments and fielded devices are unaffected (verified by gtest
 + a 200/200 default-tenant load run per slice).
 
-**Known follow-up — tenant endpoint keying:** `iot-cloudd`'s `EndpointRegistry`
-keys by serial, but a tenant device registers `/rd` as `<tenant>:<serial>`, so
-the `cloud.lwm2m.registrations` → registry online/offline merge won't match a
-tenant device until the registry keys by the full endpoint. Default devices
-(ep == serial) are unaffected. Tracked for the keying slice before tenant
-devices can show "online" + receive a per-device DNAT.
+**Tenant endpoint keying (addressed for the heal path).** `iot-cloudd` now keys
+the registry by the **tenant-qualified endpoint** (`<tenant>:<serial>`; bare
+serial for the default tenant) when healing endpoints from
+`cloud.endpoint.credentials`, so it matches what a tenant device registers `/rd`
+as and the `cloud.lwm2m.registrations` → registry online/offline merge resolves
+it. Default devices (key == serial) are unchanged; duplicate serials across
+tenants stay distinct. **Remaining:** the runtime provision *watcher*
+(`cloud.provision.request`) still takes a bare serial — tenant provisioning via
+the operator console (P4) will pass the qualified endpoint; until then tenant
+devices enter the registry via the startup heal.
 
 ## 1. Problem
 

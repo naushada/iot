@@ -403,11 +403,21 @@ std::size_t rehydrate_registry(data_store::Client& ds,
             for (const auto& c : creds) {
                 if (!c.is_object()) continue;
                 auto serial = c.value("serial", std::string());
-                if (serial.empty() || reg.lookup_by_ep(serial)) continue;
-                if (prov.provision(serial)) {
-                    // Tag the healed endpoint with its tenant from the cred row
-                    // so cloud.endpoints carries it (multi-tenant scoping).
-                    reg.update_tenant(serial, c.value("tenant", std::string()));
+                if (serial.empty()) continue;
+                const auto tenant = c.value("tenant", std::string());
+                // Registry key = the tenant-qualified endpoint
+                // ("<tenant>:<serial>" for a tenant row, bare serial for the
+                // default tenant) so it MATCHES what a tenant device registers
+                // /rd as — otherwise the cloud.lwm2m.registrations → registry
+                // online/offline merge (keyed by endpoint) never matches a
+                // tenant device. Default rows are unchanged (key == serial);
+                // duplicate serials across tenants stay distinct.
+                const std::string key =
+                    (tenant.empty() || tenant == "default")
+                        ? serial : (tenant + ":" + serial);
+                if (reg.lookup_by_ep(key)) continue;
+                if (prov.provision(key)) {
+                    reg.update_tenant(key, tenant);
                     ++healed;
                 }
             }
