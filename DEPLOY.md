@@ -443,6 +443,56 @@ Full Yocto / layer docs, including how to change the architecture, the
 image payload, or the Wi-Fi firmware package:
 [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md).
 
+### 6. Pull a CI-built OTA bundle + update via the device UI
+
+CI builds the whole-userspace OTA bundle (`iot-bundle-<ver>-<machine>.tar.gz`,
+every `iot-*.ipk` + runtime-lib deps) on every release cut. You do **not** need
+a local Yocto build to update a fielded device — download the bundle artifact and
+apply it from the device UI **Software Update** page (no reflash, no ssh).
+
+Cutting a release (`release/vX.Y.Z` branch push) runs
+`.github/workflows/release-build.yml`, which produces two artifacts: the
+`iot-bundle-<machine>` (the OTA bundle — what you want here) and the heavier
+`iot-image-<machine>` (`.wic.bz2`, only for flashing a blank SD card).
+
+```sh
+# 1. find the release-build run for the version you want
+gh run list --workflow release-build.yml --branch release/v1.3.5 --limit 3
+
+# 2. download ONLY the bundle artifact (skip the multi-GB .wic.bz2)
+gh run download <RUN_ID> -n iot-bundle-raspberrypi3-64 -D ./ota
+#   ./ota/iot-bundle-1.3.5-raspberrypi3-64.tar.gz            ← upload this
+#   ./ota/iot-bundle-1.3.5-raspberrypi3-64.tar.gz.sha256
+#   ./ota/iot-bundle-1.3.5-raspberrypi3-64.tar.gz.manifest.json
+
+# (unsure of the artifact name? list them — it's iot-bundle-<MACHINE>)
+gh api repos/naushada/iot/actions/runs/<RUN_ID>/artifacts -q '.artifacts[].name'
+
+# 3. verify integrity before applying
+( cd ota && sha256sum -c *.sha256 )
+```
+
+Then apply it:
+
+- **Local device UI** (no cloud): open `https://<device-ip>:8080` (admin/admin) →
+  **Software Update** → upload `iot-bundle-…tar.gz` → Apply. The device
+  sha256-verifies, `opkg install`s every `.ipk`, and restarts the daemons.
+- **Fleet, from the cloud UI**: drop the tarball into the cloud firmware feed and
+  push over LwM2M Object 5 to a multi-selected list of devices — see
+  [`apps/docs/tdd-ab-image-ota.md`](apps/docs/tdd-ab-image-ota.md) §10 for the
+  manifest row shape and the field gotchas (`cloud.firmware.base.url` must be
+  `https://`, the manifest `sha256` must be a single line, the stager runs as
+  root). The cloud only pushes a job an operator queues, and consumes it on
+  delivery (one-shot — it will not re-push on a later registration or restart).
+
+Notes:
+- CI artifacts are retained **90 days**, then expire — re-dispatch
+  `release-build.yml` to regenerate an old version's bundle.
+- The OTA restarts daemons, so expect a brief LwM2M re-handshake right after.
+- Pick a version carrying the fixes you need (e.g. 1.3.6+ for both the
+  re-bootstrap and overlay-mount fixes); the bundle is built from that
+  release branch.
+
 ---
 
 ## Path B — Bare metal / VM
