@@ -17,9 +17,14 @@ instance).
 | P1c | Console read-isolation: session `tenant` + scoped `/api/v1/cloud/*` | #487 | ✅ merged |
 | P1d | `iot-cloudd` row-tagging: `cloud.endpoints` rows carry `tenant` | #488 | ✅ merged |
 | P3a | Per-tenant VPN **subnet math + nft isolation rules** (pure, gtest) | _this_ | 🔵 |
+| P1e | `db/get cloud.endpoints` tenant scoping (**live UI isolation**) | _this_ | 🔵 |
 | P3b | Wire P3a: OpenVPN `/16` + per-client CCD static IPs + apply nft | — | ⏭️ needs tun validation |
-| — | `db/get cloud.endpoints` tenant scoping (live UI isolation) | — | ⏭️ |
 | P4/P5 | Platform-operator console; per-tenant CA; quotas | — | ⏭️ |
+
+With P1e the **console is tenant-isolated end to end**: `iot-cloudd` tags
+`cloud.endpoints` rows (P1d), and both the cloud-API handler (P1c) and the
+generic `db/get` the cloud-ui actually uses (P1e) filter to the session's
+tenant. A platform operator (`tenant = "*"`) still sees all.
 
 P3 splits into **P3a** (the pure allocation/rule-generation core — landed here,
 fully unit-tested) and **P3b** (the live OpenVPN client-config-dir + nftables

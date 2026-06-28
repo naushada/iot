@@ -8,6 +8,7 @@
 
 #include "handler.hpp"
 #include "auth.hpp"
+#include "tenant_scope.hpp"
 #include "parser.hpp"
 #include "router.hpp"
 
@@ -233,6 +234,29 @@ TEST(CloudApiTenant, SingleEndpointHiddenAcrossTenant) {
     req.headers["cookie"] = "iot-session=" + tok;
     auto r = f.router.route(req);
     EXPECT_EQ(r.status, 404);                        // not leaked to acme
+}
+
+// ── db/get cloud.endpoints tenant scoping (tenant_scope.cpp) ────────
+
+TEST(ScopeEndpointsJson, FiltersByTenantWithLegacyDefault) {
+    const std::string v = R"([
+        {"endpoint":"a","tenant":"acme"},
+        {"endpoint":"b"},
+        {"endpoint":"c","tenant":"globex"}
+    ])";
+    auto acme = json::parse(http_server::scope_endpoints_json(v, "acme"));
+    ASSERT_EQ(acme.size(), 1U);
+    EXPECT_EQ(acme[0]["endpoint"], "a");
+
+    auto def = json::parse(http_server::scope_endpoints_json(v, "default"));
+    ASSERT_EQ(def.size(), 1U);
+    EXPECT_EQ(def[0]["endpoint"], "b");           // untagged == default
+}
+
+TEST(ScopeEndpointsJson, OperatorAndNonArrayPassThrough) {
+    const std::string v = R"([{"endpoint":"a","tenant":"acme"}])";
+    EXPECT_EQ(http_server::scope_endpoints_json(v, "*"), v);   // operator: unchanged
+    EXPECT_EQ(http_server::scope_endpoints_json("not json", "acme"), "not json");
 }
 
 } // namespace
