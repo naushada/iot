@@ -4,6 +4,7 @@
 
 #include "provisioning_policy.hpp"
 #include "psk_gen.hpp"
+#include "tenant_policy.hpp"
 
 using iot::resolve_endpoint;
 
@@ -207,4 +208,48 @@ TEST(ResolveDmPsk, NoMasterOrUnparseableYieldsEmpty) {
     EXPECT_EQ("", iot::resolve_dm_psk("[]", iot::format_dm_identity(kSerial), ""));
     EXPECT_EQ("", iot::resolve_dm_psk("[]", "not-a-dm-id", kMaster));
     EXPECT_EQ("", iot::resolve_dm_psk("[]", "", kMaster));
+}
+
+// ── Multi-tenant resolution (tdd-multi-tenant-cloud.md) ──────────────────────
+
+TEST(ResolveBsPskTenant, UntaggedRowIsByteIdenticalToLegacy) {
+    // The whole backward-compat guarantee: an untagged row resolves under the
+    // device's legacy sha256(serial)[:32] identity exactly as before — a fielded
+    // device stays online after the cloud gains tenant awareness.
+    const std::string creds =
+        R"([{"serial":"100000003d1f9c2e","bs.psk.key":"feedface"}])";
+    EXPECT_EQ(iot::bs_identity("default", kSerial), std::string(kSha256Id));
+    EXPECT_EQ("feedface", iot::resolve_bs_psk(creds, kSha256Id, kMaster));
+}
+
+TEST(ResolveBsPskTenant, TenantRowMatchesTenantIdentityOnly) {
+    // A tenant-tagged row authenticates only against its tenant-qualified
+    // identity, never the bare-serial (default) one.
+    const std::string creds =
+        R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"acmekey"}])";
+    EXPECT_EQ("acmekey",
+              iot::resolve_bs_psk(creds, iot::bs_identity("acme", kSerial), ""));
+    // The default identity for the same serial must NOT resolve the acme row.
+    EXPECT_EQ("", iot::resolve_bs_psk(creds, kSha256Id, ""));
+}
+
+TEST(ResolveBsPskTenant, NoCrossTenantAuthOnDuplicateSerial) {
+    // Two tenants, same serial, different keys. Each identity resolves only its
+    // own tenant's key.
+    const std::string creds =
+        R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"acmekey"},)"
+        R"({"serial":"100000003d1f9c2e","tenant":"globex","bs.psk.key":"globexkey"}])";
+    EXPECT_EQ("acmekey",
+              iot::resolve_bs_psk(creds, iot::bs_identity("acme", kSerial), ""));
+    EXPECT_EQ("globexkey",
+              iot::resolve_bs_psk(creds, iot::bs_identity("globex", kSerial), ""));
+}
+
+TEST(ResolveDmPskTenant, DerivesFromTenantQualifiedDmIdentity) {
+    // The derive path parses both legacy and tenant DM identities to the same
+    // serial, so the derived DM key is identical regardless of tenant suffix.
+    EXPECT_EQ(kDerivedDm,
+              iot::resolve_dm_psk("[]", iot::dm_identity("default", kSerial), kMaster));
+    EXPECT_EQ(kDerivedDm,
+              iot::resolve_dm_psk("[]", iot::dm_identity("acme", kSerial), kMaster));
 }
