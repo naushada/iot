@@ -120,6 +120,7 @@ void sync_endpoints_to_ds(data_store::Client& ds,
         item["installed_version"] = ep.installed_version;  // device /3/0/3
         item["lifetime"]      = ep.lifetime;     // heartbeat interval (s)
         item["location"]      = ep.location;     // /rd/<id> registration path
+        item["tenant"]        = ep.tenant.empty() ? "default" : ep.tenant;
         arr.push_back(item);
     }
     ds.set("cloud.endpoints", data_store::Value{arr.dump()});
@@ -383,6 +384,7 @@ std::size_t rehydrate_registry(data_store::Client& ds,
                 info.last_seen_unix = e.value("last_seen_unix", std::int64_t{0});
                 info.installed_version =
                     e.value("installed_version", std::string());
+                info.tenant         = e.value("tenant", std::string());
                 if (reg.add(info)) {
                     vpn.reserve(info.ep, info.tun_ip, info.proxy_port);
                     ++restored;
@@ -402,7 +404,12 @@ std::size_t rehydrate_registry(data_store::Client& ds,
                 if (!c.is_object()) continue;
                 auto serial = c.value("serial", std::string());
                 if (serial.empty() || reg.lookup_by_ep(serial)) continue;
-                if (prov.provision(serial)) ++healed;
+                if (prov.provision(serial)) {
+                    // Tag the healed endpoint with its tenant from the cred row
+                    // so cloud.endpoints carries it (multi-tenant scoping).
+                    reg.update_tenant(serial, c.value("tenant", std::string()));
+                    ++healed;
+                }
             }
         }
     } catch (const std::exception& ex) {
@@ -1079,6 +1086,21 @@ int main(int argc, char** argv) {
 
                     auto result = provisioner.provision(*ep);
                     if (result.has_value()) {
+                        // Multi-tenant: tag the endpoint with its tenant from
+                        // the cred row so cloud.endpoints carries it. The manual
+                        // provision flow has no tenant field → "" == default.
+                        try {
+                            auto cr = nlohmann::json::parse(
+                                ds_str(ds, "cloud.endpoint.credentials", "[]"));
+                            if (cr.is_array())
+                                for (const auto& c : cr)
+                                    if (c.is_object() &&
+                                        c.value("serial", std::string()) == *ep) {
+                                        ep_reg.update_tenant(
+                                            *ep, c.value("tenant", std::string()));
+                                        break;
+                                    }
+                        } catch (...) {}
                         ACE_DEBUG((LM_INFO,
                                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l provisioned %C"
                                             " tun=%C proxy=%d\n"),

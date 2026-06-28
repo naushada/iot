@@ -98,6 +98,11 @@ public:
     /// cloud.lwm2m.registrations. Display only. Returns true if it changed.
     bool update_lan_ip(const std::string& ep, const std::string& ip);
 
+    /// Set the endpoint's owning tenant (multi-tenant cloud). Display/scoping
+    /// only, no index. Empty is normalised to nothing (== default). Returns
+    /// true if it changed. See apps/docs/tdd-multi-tenant-cloud.md.
+    bool update_tenant(const std::string& ep, const std::string& tenant);
+
     /// Lookup by endpoint name.  Returns nullptr when not found.
     const EndpointInfo* lookup_by_ep(const std::string& ep) const;
 

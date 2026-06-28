@@ -92,6 +92,16 @@ bool EndpointRegistry::update_lan_ip(const std::string& ep,
     return true;
 }
 
+bool EndpointRegistry::update_tenant(const std::string& ep,
+                                     const std::string& tenant) {
+    std::lock_guard<std::mutex> lk(m_mutex);
+    auto it = m_by_ep.find(ep);
+    if (it == m_by_ep.end()) return false;       // unknown endpoint
+    if (it->second.tenant == tenant) return false;  // unchanged
+    it->second.tenant = tenant;                   // display/scoping only, no index
+    return true;
+}
+
 bool EndpointRegistry::update_reg_meta(const std::string& ep,
                                        std::uint32_t lifetime,
                                        const std::string& location) {

@@ -1,10 +1,35 @@
 # TDD — Shared multi-tenant cloud-iot
 
-Status: **proposed** (design only; no code). Successor decision to the current
-"separate cloud per customer" model (`apps/docs/tdd-device-transfer.md` D2).
-Capacity headroom that makes this worth doing is measured in
-`apps/docs/tdd-cloud-load-benchmark.md` (~100 reg/s, <2% CPU at 2000 devices on
-one modest VM → ample room for multiple tenants per instance).
+Status: **in progress** (implementation landing in slices). Successor decision
+to the current "separate cloud per customer" model
+(`apps/docs/tdd-device-transfer.md` D2). Capacity headroom that makes this worth
+doing is measured in `apps/docs/tdd-cloud-load-benchmark.md` (~100 reg/s, <2%
+CPU at 2000 devices on one modest VM → ample room for multiple tenants per
+instance).
+
+## Implementation progress
+
+| Slice | What | PR | Status |
+|---|---|---|---|
+| P1a | Core primitives (`tenant_policy`, `cloud.tenants` schema) | #484 | ✅ merged |
+| P1b | Tenant-aware BS/DM PSK resolvers (default == legacy) | #485 | ✅ merged |
+| P2a | BS `provisioning_resolver` (device→tenant onboarding); e2e 200/200 | #486 | ✅ merged |
+| P1c | Console read-isolation: session `tenant` + scoped `/api/v1/cloud/*` | #487 | ✅ merged |
+| P1d | `iot-cloudd` row-tagging: `cloud.endpoints` rows carry `tenant` | _this_ | 🔵 |
+| — | `db/get cloud.endpoints` tenant scoping (live UI isolation) | — | ⏭️ next |
+| P3 | Per-tenant VPN subnet + nftables isolation | — | ⏭️ |
+| P4/P5 | Platform-operator console; per-tenant CA; quotas | — | ⏭️ |
+
+Every slice keeps the **default tenant byte-identical to today**, so existing
+single-tenant deployments and fielded devices are unaffected (verified by gtest
++ a 200/200 default-tenant load run per slice).
+
+**Known follow-up — tenant endpoint keying:** `iot-cloudd`'s `EndpointRegistry`
+keys by serial, but a tenant device registers `/rd` as `<tenant>:<serial>`, so
+the `cloud.lwm2m.registrations` → registry online/offline merge won't match a
+tenant device until the registry keys by the full endpoint. Default devices
+(ep == serial) are unaffected. Tracked for the keying slice before tenant
+devices can show "online" + receive a per-device DNAT.
 
 ## 1. Problem
 
