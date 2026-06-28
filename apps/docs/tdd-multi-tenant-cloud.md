@@ -23,7 +23,9 @@ instance).
 | P4a | Tenant registry: auto VPN-subnet assignment (`cloud.tenants` watch) | _this_ | 🔵 |
 | P4b | Tenant-aware provision *watcher* + tenant-qualified cred minting | _this_ | 🔵 |
 | P4c | Operator console UI (Angular tenant CRUD page) | — | ⏭️ needs node |
-| P5 | Per-tenant CA; quotas; audit log | — | ⏭️ |
+| P5a | Per-tenant device **quota** (`max.devices`), enforced at provision | _this_ | 🔵 |
+| P5b | Per-tenant CA / cert namespace | — | ⏭️ needs tun validation |
+| P5c | Audit log of platform-operator + provisioning actions | — | ⏭️ |
 
 **P3b/P3c split:** P3b applies the inter-tenant **nft drop** table
 (`build_tenant_isolation_rules` over the tenant subnets) via the same
