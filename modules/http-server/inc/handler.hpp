@@ -23,9 +23,14 @@ void install_handlers(Router& router,
 
 /// Install /api/v1/cloud/* handlers (L21/D7).  Pointers must outlive
 /// the router.  Call after install_handlers().
+/// `auth` (optional) scopes reads to the caller's tenant: a session whose
+/// tenant is "*" (platform operator) sees all; otherwise only endpoints in the
+/// session's tenant. nullptr (or no session) → no filtering (legacy behaviour),
+/// so existing single-tenant deployments are unaffected.
 void install_cloud_handlers(Router& router,
                             server::lwm2m::EndpointRegistry* ep_reg,
-                            server::lwm2m::BootstrapProvisioner* provisioner);
+                            server::lwm2m::BootstrapProvisioner* provisioner,
+                            SessionStore* auth = nullptr);
 
 /// Install the per-device UI reverse proxy at /dev/<ep>/ (design:
 /// apps/docs/tdd-device-ui-path-proxy.md). Resolves <ep> -> dev_tun_ip from

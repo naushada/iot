@@ -2,6 +2,7 @@
 
 #include "handler.hpp"
 
+#include "auth.hpp"
 #include "endpoint_registry.hpp"
 #include "bootstrap.hpp"
 
@@ -20,35 +21,57 @@ json parse_body(const std::string& body) {
     catch (const std::exception&) { return json::object(); }
 }
 
+/// The tenant this request acts as. No auth wired → "*" (no filtering, legacy).
+/// Authenticated → the session's tenant; no/invalid session → "default".
+std::string request_tenant(const HttpParser::Request& req, SessionStore* auth) {
+    if (!auth) return "*";
+    const std::string token =
+        extract_session_cookie(req.headers, auth->cookie_name());
+    const auto* s = token.empty() ? nullptr : auth->validate(token);
+    return s ? s->tenant : std::string("default");
+}
+
+/// An endpoint row (its tenant, "" == "default") is visible to a viewer whose
+/// tenant is `as` when `as` is "*" or the tenants match.
+bool visible_to(const std::string& row_tenant, const std::string& as) {
+    if (as == "*") return true;
+    const std::string rt = row_tenant.empty() ? std::string("default") : row_tenant;
+    return rt == as;
+}
+
 } // namespace
 
 void install_cloud_handlers(Router& router,
                             server::lwm2m::EndpointRegistry* ep_reg,
-                            server::lwm2m::BootstrapProvisioner* provisioner) {
+                            server::lwm2m::BootstrapProvisioner* provisioner,
+                            SessionStore* auth) {
 
     // ── GET /api/v1/cloud/endpoints ──────────────────────────────
     router.add("GET", "/api/v1/cloud/endpoints",
-        [ep_reg](const HttpParser::Request& /*req*/) -> HttpResponse {
+        [ep_reg, auth](const HttpParser::Request& req) -> HttpResponse {
             HttpResponse r;
             if (!ep_reg) {
                 r.status = 500;
                 r.body = R"({"ok":false,"err":"registry not connected"})";
                 return r;
             }
+            const std::string as = request_tenant(req, auth);
             auto eps = ep_reg->list_all();
             json arr = json::array();
             for (const auto& e : eps) {
+                if (!visible_to(e.tenant, as)) continue;   // tenant read-isolation
                 json item;
                 item["endpoint"]   = e.ep;
                 item["tun_ip"]     = e.tun_ip;
                 item["dev_tun_ip"] = e.dev_tun_ip;
                 item["proxy_port"] = e.proxy_port;
                 item["registered"] = e.registered;
+                item["tenant"]     = e.tenant.empty() ? "default" : e.tenant;
                 arr.push_back(item);
             }
             json resp;
             resp["ok"]        = true;
-            resp["count"]     = eps.size();
+            resp["count"]     = arr.size();   // visible (tenant-scoped) count
             resp["endpoints"] = arr;
             r.body = resp.dump();
             return r;
@@ -56,7 +79,7 @@ void install_cloud_handlers(Router& router,
 
     // ── GET /api/v1/cloud/endpoint?ep=<ep> ───────────────────────
     router.add("GET", "/api/v1/cloud/endpoint",
-        [ep_reg](const HttpParser::Request& req) -> HttpResponse {
+        [ep_reg, auth](const HttpParser::Request& req) -> HttpResponse {
             HttpResponse r;
             if (!ep_reg) {
                 r.status = 500;
@@ -71,7 +94,9 @@ void install_cloud_handlers(Router& router,
             }
             std::string ep = it->second;
             const auto* info = ep_reg->lookup_by_ep(ep);
-            if (!info) {
+            // Out-of-tenant endpoints are indistinguishable from missing ones
+            // (don't leak existence across tenants).
+            if (!info || !visible_to(info->tenant, request_tenant(req, auth))) {
                 r.status = 404;
                 r.body = R"({"ok":false,"err":"endpoint not found"})";
                 return r;
