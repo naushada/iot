@@ -90,6 +90,7 @@ set(APP_SRC
     ../src/rpi_serial.cpp
     ../src/psk_gen.cpp
     ../src/provisioning_policy.cpp
+    ../src/tenant_policy.cpp
 )
 
 add_executable(cloud_loadgen cloud_loadgen.cpp ${APP_SRC})

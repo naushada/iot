@@ -253,3 +253,86 @@ TEST(ResolveDmPskTenant, DerivesFromTenantQualifiedDmIdentity) {
     EXPECT_EQ(kDerivedDm,
               iot::resolve_dm_psk("[]", iot::dm_identity("acme", kSerial), kMaster));
 }
+
+// ── plan_bs_account ─────────────────────────────────────────────────────────
+
+TEST(PlanBsAccount, DefaultCommissionedIsLegacy) {
+    const std::string creds =
+        R"([{"serial":"100000003d1f9c2e","bs.psk.key":"bs","dm.psk.id":)"
+        R"("rpi100000003d1f9c2e@cloud.local","dm.psk.key":"dm"}])";
+    auto p = iot::plan_bs_account(/*ep*/kSerial, creds, /*tenants*/"[]",
+                                  /*global dm.uri*/"coaps://h:5683", /*master*/"");
+    EXPECT_TRUE(p.ok);
+    EXPECT_EQ(p.tenant, "default");
+    EXPECT_EQ(p.serial, kSerial);
+    EXPECT_EQ(p.bs_identity, std::string(kSha256Id));           // legacy
+    EXPECT_EQ(p.dm_identity, "rpi100000003d1f9c2e@cloud.local"); // legacy
+    EXPECT_EQ(p.dm_uri, "coaps://h:5683");
+    EXPECT_FALSE(p.zero_touch);
+}
+
+TEST(PlanBsAccount, DefaultZeroTouchWhenNoRow) {
+    auto p = iot::plan_bs_account(kSerial, "[]", "[]", "coaps://h:5683", kMaster);
+    EXPECT_TRUE(p.ok);
+    EXPECT_TRUE(p.zero_touch);
+    EXPECT_EQ(p.bs_identity, std::string(kSerial));   // raw serial (override path)
+    EXPECT_EQ(p.dm_identity, "rpi100000003d1f9c2e@cloud.local");
+    EXPECT_EQ(p.dm_key, kDerivedDm);
+}
+
+TEST(PlanBsAccount, RejectsWhenNoRowNoMasterOrNoDmUri) {
+    EXPECT_FALSE(iot::plan_bs_account(kSerial, "[]", "[]", "coaps://h:5683", "").ok);
+    EXPECT_FALSE(iot::plan_bs_account(kSerial, "[]", "[]", /*no dm.uri*/"", kMaster).ok);
+}
+
+TEST(PlanBsAccount, TenantCommissionedScopedAndQualified) {
+    const std::string tenants =
+        R"([{"id":"acme","vpn.subnet":"10.9.16.0/24","status":"active"}])";
+    const std::string creds =
+        R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"abs",)"
+        R"("dm.psk.id":"rpi100000003d1f9c2e@acme.cloud.local","dm.psk.key":"adm"}])";
+    auto p = iot::plan_bs_account("acme:100000003d1f9c2e", creds, tenants,
+                                  "coaps://h:5683", "");
+    EXPECT_TRUE(p.ok);
+    EXPECT_EQ(p.tenant, "acme");
+    EXPECT_EQ(p.serial, kSerial);
+    EXPECT_EQ(p.bs_identity, iot::bs_identity("acme", kSerial));   // tenant-qualified
+    EXPECT_EQ(p.dm_identity, "rpi100000003d1f9c2e@acme.cloud.local");
+    EXPECT_EQ(p.dm_key, "adm");
+    EXPECT_EQ(p.dm_uri, "coaps://h:5683");                          // global fallback
+}
+
+TEST(PlanBsAccount, TenantDmUriOverride) {
+    const std::string tenants =
+        R"([{"id":"acme","dm.uri":"coaps://acme.example:5683","status":"active"}])";
+    const std::string creds =
+        R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"abs",)"
+        R"("dm.psk.id":"rpi100000003d1f9c2e@acme.cloud.local","dm.psk.key":"adm"}])";
+    auto p = iot::plan_bs_account("acme:100000003d1f9c2e", creds, tenants,
+                                  "coaps://global:5683", "");
+    ASSERT_TRUE(p.ok);
+    EXPECT_EQ(p.dm_uri, "coaps://acme.example:5683");
+}
+
+TEST(PlanBsAccount, RejectsUnknownOrSuspendedTenant) {
+    const std::string creds =
+        R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"abs",)"
+        R"("dm.psk.id":"x","dm.psk.key":"adm"}])";
+    // Unknown tenant (empty registry).
+    EXPECT_FALSE(iot::plan_bs_account("acme:100000003d1f9c2e", creds, "[]",
+                                      "coaps://h:5683", "").ok);
+    // Suspended tenant.
+    const std::string suspended =
+        R"([{"id":"acme","status":"suspended"}])";
+    EXPECT_FALSE(iot::plan_bs_account("acme:100000003d1f9c2e", creds, suspended,
+                                      "coaps://h:5683", "").ok);
+}
+
+TEST(PlanBsAccount, TenantRowNotVisibleToDefault) {
+    // A tenant-tagged row must not satisfy a default-tenant (legacy) bootstrap.
+    const std::string creds =
+        R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"abs",)"
+        R"("dm.psk.id":"x","dm.psk.key":"adm"}])";
+    auto p = iot::plan_bs_account(kSerial, creds, "[]", "coaps://h:5683", "");
+    EXPECT_FALSE(p.ok);   // no default row, no master
+}
