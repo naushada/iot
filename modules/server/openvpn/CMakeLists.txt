@@ -59,4 +59,14 @@ if(BUILD_SERVER_OPENVPN_TESTS)
     target_link_libraries(cert-authority-tests
         GTest::gtest_main GTest::gtest ACE pthread)
     add_test(NAME cert-authority-tests COMMAND cert-authority-tests)
+
+    # Multi-tenant subnet math + nft isolation rules (pure; no ACE/tun).
+    add_executable(tenant-subnet-tests
+        test/tenant_subnet_test.cpp
+        src/tenant_subnet.cpp)
+    target_include_directories(tenant-subnet-tests
+        PRIVATE ${OVPN_SERVER_DIR}/inc)
+    target_link_libraries(tenant-subnet-tests
+        GTest::gtest_main GTest::gtest pthread)
+    add_test(NAME tenant-subnet-tests COMMAND tenant-subnet-tests)
 endif()
