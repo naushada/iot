@@ -31,11 +31,14 @@ do_deploy[depends] += "iot:do_package_write_ipk"
 # NEW or version-bumped lib dep makes `opkg install` fail on a stale device with
 # "nothing provides <lib> >= <ver>" — observed 1.3.0→1.3.2: iot-lwm2m needs
 # libsqlite3-0>=3.45.3 (the SQLite DurableSampleBuffer) and iot-mqtt needs
-# libmosquitto1>=2.0.22, neither on the 1.3.0 image. Bundle them so the OTA is
-# self-contained. Bare package basenames; the newest matching .ipk is included.
+# libmosquitto1>=2.0.22, neither on the 1.3.0 image; and 1.3.3→1.3.5: an OpenSSL
+# bump made every iot-* (and libmosquitto1) need libcrypto3>=3.5.7 / libssl3,
+# which the older image lacks. Bundle these runtime libs so the OTA is
+# self-contained across a dependency/version bump. Bare package basenames; the
+# newest matching .ipk is included.
 # Build-deps that drag these in so their .ipk is written to the feed before bundling.
-IOT_BUNDLE_EXTRA_PKGS ?= "libsqlite3-0 libmosquitto1"
-do_deploy[depends] += "sqlite3:do_package_write_ipk mosquitto:do_package_write_ipk"
+IOT_BUNDLE_EXTRA_PKGS ?= "libsqlite3-0 libmosquitto1 libcrypto3 libssl3"
+do_deploy[depends] += "sqlite3:do_package_write_ipk mosquitto:do_package_write_ipk openssl:do_package_write_ipk"
 
 do_deploy() {
     feed="${DEPLOY_DIR_IPK}"
