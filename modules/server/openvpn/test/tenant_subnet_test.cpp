@@ -117,3 +117,37 @@ TEST(AssignMissingSubnets, BadInputUnchanged) {
     EXPECT_FALSE(changed);
     EXPECT_EQ(out, "not json");
 }
+
+// ── tenant_at_capacity ──────────────────────────────────────────────────────
+
+TEST(TenantAtCapacity, EnforcesMaxDevices) {
+    const std::string tenants = R"([{"id":"acme","max.devices":2}])";
+    const std::string two = R"([
+        {"serial":"a","tenant":"acme"},
+        {"serial":"b","tenant":"acme"}
+    ])";
+    // full → a NEW serial is blocked
+    EXPECT_TRUE(tenant_at_capacity(tenants, two, "acme", "c"));
+    // full → re-provisioning an EXISTING serial is allowed
+    EXPECT_FALSE(tenant_at_capacity(tenants, two, "acme", "a"));
+    // under cap → allowed
+    const std::string one = R"([{"serial":"a","tenant":"acme"}])";
+    EXPECT_FALSE(tenant_at_capacity(tenants, one, "acme", "c"));
+}
+
+TEST(TenantAtCapacity, UnlimitedWhenNoMax) {
+    const std::string tenants = R"([{"id":"acme"}])";          // no max.devices
+    const std::string many = R"([
+        {"serial":"a","tenant":"acme"},{"serial":"b","tenant":"acme"}
+    ])";
+    EXPECT_FALSE(tenant_at_capacity(tenants, many, "acme", "c"));
+    // Unknown tenant → no cap.
+    EXPECT_FALSE(tenant_at_capacity("[]", many, "acme", "c"));
+}
+
+TEST(TenantAtCapacity, CountsDefaultTenantUntagged) {
+    const std::string tenants = R"([{"id":"default","max.devices":1}])";
+    const std::string one = R"([{"serial":"a"}])";            // untagged == default
+    EXPECT_TRUE(tenant_at_capacity(tenants, one, "default", "b"));
+    EXPECT_FALSE(tenant_at_capacity(tenants, one, "default", "a"));
+}

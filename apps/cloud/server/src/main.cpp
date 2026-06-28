@@ -1098,6 +1098,22 @@ int main(int argc, char** argv) {
                         if (!t.empty() && !s.empty()) { p_tenant = t; p_serial = s; }
                     }
 
+                    // Multi-tenant (P5): enforce the per-tenant device quota
+                    // (cloud.tenants "max.devices"). A new serial over the cap is
+                    // rejected; a re-provision of an existing one is allowed.
+                    if (server::openvpn::tenant_at_capacity(
+                            ds_str(ds, "cloud.tenants", "[]"),
+                            ds_str(ds, "cloud.endpoint.credentials", "[]"),
+                            p_tenant, p_serial)) {
+                        ACE_ERROR((LM_WARNING,
+                                   ACE_TEXT("%D cloudd:thread:%t %M %N:%l provision "
+                                            "rejected: tenant '%C' at capacity (%C)\n"),
+                                   p_tenant.c_str(), p_serial.c_str()));
+                        ds.set("cloud.provision.request",
+                               data_store::Value{std::string("")});
+                        continue;
+                    }
+
                     // PSK provisioning (task M-wire): the endpoint name IS
                     // the raw serial. Read the engineer-pasted BS PSK from
                     // the carrier, mint a DM PSK, and upsert a per-endpoint

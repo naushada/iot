@@ -132,4 +132,38 @@ std::pair<std::string, bool> assign_missing_subnets(
     return {arr.dump(), changed};
 }
 
+bool tenant_at_capacity(const std::string& tenants_json,
+                        const std::string& creds_json,
+                        const std::string& tenant,
+                        const std::string& candidate_serial) {
+    // The tenant's cap (0 / absent ⇒ unlimited).
+    long max_devices = 0;
+    {
+        auto ts = nlohmann::json::parse(tenants_json, nullptr, false);
+        if (ts.is_array())
+            for (const auto& t : ts)
+                if (t.is_object() && t.value("id", std::string()) == tenant) {
+                    max_devices = t.value("max.devices", 0);
+                    break;
+                }
+    }
+    if (max_devices <= 0) return false;
+
+    // Current count of this tenant's credential rows; a re-provision of an
+    // already-present serial doesn't grow it, so it's never blocked.
+    long count = 0;
+    auto cr = nlohmann::json::parse(creds_json, nullptr, false);
+    if (cr.is_array())
+        for (const auto& c : cr) {
+            if (!c.is_object()) continue;
+            const std::string ct = c.value("tenant", std::string());
+            const std::string et = ct.empty() ? std::string("default") : ct;
+            if (et != tenant) continue;
+            if (c.value("serial", std::string()) == candidate_serial)
+                return false;            // already provisioned → allowed
+            ++count;
+        }
+    return count >= max_devices;
+}
+
 }} // namespace server::openvpn

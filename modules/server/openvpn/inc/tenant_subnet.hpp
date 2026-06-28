@@ -46,6 +46,16 @@ std::pair<std::string, bool> assign_missing_subnets(
     const std::string& pool_cidr,
     int tenant_prefix = 24);
 
+/// Per-tenant device quota (P5). True if provisioning `candidate_serial` into
+/// `tenant` would exceed that tenant's "max.devices" (from `tenants_json`),
+/// where the current count is the number of `creds_json` rows in the tenant.
+/// A missing / <=0 max.devices is unlimited → false. Re-provisioning a serial
+/// already in the tenant is always allowed → false (it doesn't grow the count).
+bool tenant_at_capacity(const std::string& tenants_json,
+                        const std::string& creds_json,
+                        const std::string& tenant,
+                        const std::string& candidate_serial);
+
 }} // namespace server::openvpn
 
 #endif /* __iot_tenant_subnet_hpp__ */
