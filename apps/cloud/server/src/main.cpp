@@ -1087,6 +1087,17 @@ int main(int argc, char** argv) {
                                ACE_TEXT("%D cloudd:thread:%t %M %N:%l provision request '%C'\n"),
                                ep->c_str()));
 
+                    // Multi-tenant (P4b): a request may be tenant-qualified
+                    // ("<tenant>:<serial>"). Split it — the cred row is keyed by
+                    // the bare serial + a tenant tag, while the registry/DNAT use
+                    // the qualified endpoint (== what the device registers /rd
+                    // as). A colon-less request is the default tenant (legacy).
+                    std::string p_tenant = "default", p_serial = *ep;
+                    if (auto col = ep->find(':'); col != std::string::npos) {
+                        auto t = ep->substr(0, col), s = ep->substr(col + 1);
+                        if (!t.empty() && !s.empty()) { p_tenant = t; p_serial = s; }
+                    }
+
                     // PSK provisioning (task M-wire): the endpoint name IS
                     // the raw serial. Read the engineer-pasted BS PSK from
                     // the carrier, mint a DM PSK, and upsert a per-endpoint
@@ -1107,7 +1118,7 @@ int main(int argc, char** argv) {
                                 ds_str(ds, "cloud.endpoint.credentials", "[]");
                             const std::string next =
                                 server::lwm2m::upsert_credential(
-                                    cur, *ep, bs_psk, dm_psk);
+                                    cur, p_serial, bs_psk, dm_psk, p_tenant);
                             ds.set("cloud.endpoint.credentials",
                                    data_store::Value{next});
                             ds.set("cloud.provision.bs.psk",
@@ -1116,7 +1127,8 @@ int main(int argc, char** argv) {
                                        ACE_TEXT("%D cloudd:thread:%t %M %N:%l stored "
                                                 "credentials for %C (identity=%C)\n"),
                                        ep->c_str(),
-                                       server::lwm2m::format_identity(*ep).c_str()));
+                                       server::lwm2m::format_identity(
+                                           p_serial, p_tenant).c_str()));
                         } catch (const std::exception& e) {
                             ACE_ERROR((LM_ERROR,
                                        ACE_TEXT("%D cloudd:thread:%t %M %N:%l credential "
@@ -1131,14 +1143,14 @@ int main(int argc, char** argv) {
                     // formatted identity, for traceability.
                     if (cert_ca.have_ca()) {
                         const std::string cn =
-                            server::lwm2m::format_identity(*ep);
+                            server::lwm2m::format_identity(p_serial, p_tenant);
                         if (auto mc = cert_ca.mint_client(cn)) {
                             try {
                                 const std::string cur =
                                     ds_str(ds, "cloud.endpoint.credentials", "[]");
                                 const std::string next =
                                     server::lwm2m::upsert_vpn_cert(
-                                        cur, *ep, mc->ca_crt,
+                                        cur, p_serial, mc->ca_crt,
                                         mc->client_crt, mc->client_key);
                                 ds.set("cloud.endpoint.credentials",
                                        data_store::Value{next});
@@ -1159,23 +1171,14 @@ int main(int argc, char** argv) {
                         }
                     }
 
+                    // Provision keyed by the (possibly tenant-qualified)
+                    // endpoint so the registry key matches the device's /rd.
                     auto result = provisioner.provision(*ep);
                     if (result.has_value()) {
-                        // Multi-tenant: tag the endpoint with its tenant from
-                        // the cred row so cloud.endpoints carries it. The manual
-                        // provision flow has no tenant field → "" == default.
-                        try {
-                            auto cr = nlohmann::json::parse(
-                                ds_str(ds, "cloud.endpoint.credentials", "[]"));
-                            if (cr.is_array())
-                                for (const auto& c : cr)
-                                    if (c.is_object() &&
-                                        c.value("serial", std::string()) == *ep) {
-                                        ep_reg.update_tenant(
-                                            *ep, c.value("tenant", std::string()));
-                                        break;
-                                    }
-                        } catch (...) {}
+                        // Tag the registry row with the tenant so cloud.endpoints
+                        // carries it ("" == default).
+                        ep_reg.update_tenant(
+                            *ep, p_tenant == "default" ? std::string() : p_tenant);
                         ACE_DEBUG((LM_INFO,
                                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l provisioned %C"
                                             " tun=%C proxy=%d\n"),
