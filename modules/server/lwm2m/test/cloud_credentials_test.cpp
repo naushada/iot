@@ -18,6 +18,30 @@ TEST(CloudCredentials, FormatsIdentity) {
     EXPECT_EQ("rpi100000abcd@cloud.local", format_identity("100000abcd"));
 }
 
+TEST(CloudCredentials, TenantQualifiedUpsert) {
+    // Tenant row: identity/dm.psk.id are tenant-qualified + a "tenant" tag.
+    auto out = upsert_credential("[]", "SER1", "bbbb", "dddd", "acme");
+    auto j = json::parse(out);
+    ASSERT_EQ(j.size(), 1u);
+    EXPECT_EQ(j[0]["serial"],    "SER1");
+    EXPECT_EQ(j[0]["tenant"],    "acme");
+    EXPECT_EQ(j[0]["identity"],  "rpiSER1@acme.cloud.local");
+    EXPECT_EQ(j[0]["dm.psk.id"], "rpiSER1@acme.cloud.local");
+    EXPECT_EQ(format_identity("SER1", "acme"), "rpiSER1@acme.cloud.local");
+}
+
+TEST(CloudCredentials, DefaultTenantUpsertIsLegacyUntagged) {
+    // Default tenant reproduces the legacy untagged row, and the 4-arg overload
+    // == the 5-arg with tenant="default".
+    auto def5 = upsert_credential("[]", "SER1", "bbbb", "dddd", "default");
+    auto def4 = upsert_credential("[]", "SER1", "bbbb", "dddd");
+    EXPECT_EQ(def5, def4);
+    auto j = json::parse(def5);
+    EXPECT_EQ(j[0]["identity"], "rpiSER1@cloud.local");
+    EXPECT_FALSE(j[0].contains("tenant"));
+    EXPECT_EQ(format_identity("SER1", "default"), "rpiSER1@cloud.local");
+}
+
 TEST(CloudCredentials, UpsertAppendsNewRecord) {
     auto out = upsert_credential("[]", "SER1", "bbbb", "dddd");
     auto arr = json::parse(out);

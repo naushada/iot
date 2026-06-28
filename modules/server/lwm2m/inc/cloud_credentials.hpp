@@ -29,6 +29,12 @@ struct CredPair {
 /// Cloud canonical identity for a raw device serial: rpi<serial>@cloud.local.
 std::string format_identity(const std::string& serial);
 
+/// Tenant-qualified identity (multi-tenant cloud): the default/empty tenant
+/// gives the legacy rpi<serial>@cloud.local; any other tenant gives
+/// rpi<serial>@<tenant>.cloud.local. Matches tenant_policy::dm_identity.
+std::string format_identity(const std::string& serial,
+                            const std::string& tenant);
+
 /// Mint a cryptographically-random `nbytes` (default 32) DM PSK, lowercase
 /// hex-encoded (2*nbytes chars). Throws std::runtime_error if no entropy
 /// source is available. The BS PSK is device-generated; this is the cloud's
@@ -44,6 +50,16 @@ std::string upsert_credential(const std::string& array_json,
                               const std::string& serial,
                               const std::string& bs_psk_hex,
                               const std::string& dm_psk_hex);
+
+/// Tenant-aware upsert (multi-tenant cloud, P4b): the record's identity /
+/// dm.psk.id are tenant-qualified and a non-default tenant is recorded in a
+/// "tenant" field so the BS/DM resolvers + console scope correctly. The
+/// 4-arg overload is this with tenant = "default" (legacy, untagged).
+std::string upsert_credential(const std::string& array_json,
+                              const std::string& serial,
+                              const std::string& bs_psk_hex,
+                              const std::string& dm_psk_hex,
+                              const std::string& tenant);
 
 /// Remove the record matching `key` against any of its identity forms
 /// (serial / identity / dm.psk.id). No-op if absent. Returns the updated array.

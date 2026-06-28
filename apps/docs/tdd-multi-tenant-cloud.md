@@ -21,7 +21,8 @@ instance).
 | P3b | Apply inter-tenant nft isolation table (compile-verified) | _this_ | 🔵 needs tun validation |
 | P3c | OpenVPN `/16` + per-client CCD static IP from tenant `/24` | — | ⏭️ needs tun validation |
 | P4a | Tenant registry: auto VPN-subnet assignment (`cloud.tenants` watch) | _this_ | 🔵 |
-| P4b | Operator console UI (tenant CRUD) + tenant-aware provision *watcher* | — | ⏭️ |
+| P4b | Tenant-aware provision *watcher* + tenant-qualified cred minting | _this_ | 🔵 |
+| P4c | Operator console UI (Angular tenant CRUD page) | — | ⏭️ needs node |
 | P5 | Per-tenant CA; quotas; audit log | — | ⏭️ |
 
 **P3b/P3c split:** P3b applies the inter-tenant **nft drop** table

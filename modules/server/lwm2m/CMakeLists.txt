@@ -76,6 +76,6 @@ if(BUILD_SERVER_LWM2M_TESTS)
     target_include_directories(cloud-credentials-tests
         PRIVATE ${LWM2M_SERVER_DIR}/inc ${JSON_INCLUDE_DIR})
     target_link_libraries(cloud-credentials-tests
-        GTest::gtest_main GTest::gtest pthread)
+        GTest::gtest_main GTest::gtest pthread crypto)
     add_test(NAME cloud-credentials-tests COMMAND cloud-credentials-tests)
 endif()

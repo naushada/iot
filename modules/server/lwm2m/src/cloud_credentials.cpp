@@ -42,6 +42,12 @@ std::string format_identity(const std::string& serial) {
     return "rpi" + serial + "@cloud.local";
 }
 
+std::string format_identity(const std::string& serial,
+                            const std::string& tenant) {
+    if (tenant.empty() || tenant == "default") return format_identity(serial);
+    return "rpi" + serial + "@" + tenant + ".cloud.local";
+}
+
 std::string generate_psk_hex(std::size_t nbytes) {
     std::vector<unsigned char> buf(nbytes);
     std::ifstream urandom("/dev/urandom", std::ios::binary);
@@ -74,8 +80,17 @@ std::string upsert_credential(const std::string& array_json,
                               const std::string& serial,
                               const std::string& bs_psk_hex,
                               const std::string& dm_psk_hex) {
+    return upsert_credential(array_json, serial, bs_psk_hex, dm_psk_hex,
+                             "default");
+}
+
+std::string upsert_credential(const std::string& array_json,
+                              const std::string& serial,
+                              const std::string& bs_psk_hex,
+                              const std::string& dm_psk_hex,
+                              const std::string& tenant) {
     json arr = parse_array(array_json);
-    const std::string identity = format_identity(serial);
+    const std::string identity = format_identity(serial, tenant);
 
     // JSON field names follow the dotted convention (dm.psk.id, …).
     json rec = {
@@ -85,6 +100,8 @@ std::string upsert_credential(const std::string& array_json,
         {"dm.psk.id",  identity},
         {"dm.psk.key", dm_psk_hex},
     };
+    // Record a non-default tenant so the resolvers + console scope this row.
+    if (!tenant.empty() && tenant != "default") rec["tenant"] = tenant;
 
     // Replace an existing entry for this serial (idempotent provision).
     for (auto& e : arr) {
