@@ -28,6 +28,7 @@ export class MainComponent implements OnInit {
     { id: 'services',  label: 'Services',  svg: 'assets/icons/services.svg' },
     { id: 'logs',      label: 'Logs',      svg: 'assets/icons/logs.svg' },
     { id: 'users',     label: 'Users',     svg: 'assets/icons/users.svg' },
+    { id: 'tenants',   label: 'Tenants',   svg: 'assets/icons/tenants.svg' },
     { id: 'software',  label: 'Software',  svg: 'assets/icons/software.svg' },
   ];
   menus = [...this.DEFAULT_MENUS];

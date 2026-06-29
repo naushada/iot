@@ -25,7 +25,7 @@ instance).
 | P5a | Per-tenant device **quota** (`max.devices`), enforced at provision | #495 | ✅ merged |
 | P3c-bb | P3c building blocks: per-tenant IP alloc + OpenVPN CCD (inert) | #496 | ✅ merged |
 | **PB** | **Adopt Option B (device-agnostic tenancy): bare identities, tenant from cred-row tag, `cloud.provision.tenant` carrier; revert qualified `ep`/identity** | _this_ | 🔵 gtest |
-| P4c | Operator console UI (tenant CRUD + `provision.tenant` selector) | — | ⏭️ needs node |
+| P4c | Operator console UI: **Tenants CRUD page** + Endpoints **tenant selector** (`provision.tenant`) | _this_ | 🟡 needs node build/validation |
 | P5b | Per-tenant CA / cert namespace | — | ⏭️ needs tun validation |
 | P5c | Audit log of platform-operator + provisioning actions | — | ⏭️ |
 

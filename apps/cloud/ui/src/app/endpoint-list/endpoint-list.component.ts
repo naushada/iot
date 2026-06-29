@@ -48,7 +48,13 @@ interface EpCred {
                      placeholder="paste BS PSK from device-ui" />
               <clr-control-helper *dsDebug><app-ds-hint key="cloud.provision.bs.psk"></app-ds-hint></clr-control-helper>
             </clr-input-container>
-            <div></div>
+            <clr-select-container *ngIf="tenantIds.length > 1 && !editing">
+              <label>Tenant</label>
+              <select clrSelect [(ngModel)]="provTenant">
+                <option *ngFor="let t of tenantIds" [value]="t">{{ t }}</option>
+              </select>
+              <clr-control-helper *dsDebug><app-ds-hint key="cloud.provision.tenant"></app-ds-hint></clr-control-helper>
+            </clr-select-container>
             <div></div>
           </div>
           <button class="btn btn-primary" style="margin-top:16px;"
@@ -204,6 +210,11 @@ export class EndpointListComponent implements OnInit, OnDestroy {
   serverTunIp = '';
   // PSK provisioning (task O).
   provSerial = ''; provBsPsk = ''; provisioning = false; devMode = false;
+  // Multi-tenant (P4c): which tenant the device is provisioned into. The device
+  // stays tenant-agnostic — this only tags the cred/registry rows cloud-side via
+  // the cloud.provision.tenant carrier. "default" = single-tenant (legacy).
+  provTenant = 'default';
+  tenantIds: string[] = ['default'];
   // Edit mode: re-provision an existing endpoint to update its BS PSK in place.
   editing = false;
   private sub = new Subscription(); private active = true;
@@ -262,7 +273,8 @@ export class EndpointListComponent implements OnInit, OnDestroy {
     this.ticker = setInterval(() => { this.now = Math.floor(Date.now() / 1000); }, 1000);
     this.startLongPoll();
     this.http.dbGet(['cloud.dev.mode', 'cloud.endpoint.credentials',
-                     'cloud.proxy.device.ui.port', 'cloud.vpn.subnet']).subscribe({
+                     'cloud.proxy.device.ui.port', 'cloud.vpn.subnet',
+                     'cloud.tenants']).subscribe({
       next: (r) => {
         if (r.ok && r.data) {
           const d = r.data as Record<string, unknown>;
@@ -274,6 +286,14 @@ export class EndpointListComponent implements OnInit, OnDestroy {
             const arr = JSON.parse(String(d['cloud.endpoint.credentials'] || '[]'));
             this.creds = Array.isArray(arr) ? arr : [];
           } catch { this.creds = []; }
+          // Tenant dropdown options: "default" + every active tenant.
+          try {
+            const ts = JSON.parse(String(d['cloud.tenants'] || '[]'));
+            const ids = (Array.isArray(ts) ? ts : [])
+              .filter((t) => (t?.status || 'active') === 'active' && t?.id)
+              .map((t) => String(t.id));
+            this.tenantIds = ['default', ...ids.filter((id) => id !== 'default')];
+          } catch { this.tenantIds = ['default']; }
         }
       },
       error: () => {}
@@ -305,7 +325,12 @@ export class EndpointListComponent implements OnInit, OnDestroy {
     if (!serial) { this.toast.error('Serial number required'); return; }
     if (!/^[0-9a-f]{32}$/.test(psk)) { this.toast.error('BS PSK must be 32 hex chars'); return; }
     this.provisioning = true;
+    // Order matters: the tenant carrier + BS PSK must be in place before the
+    // request key fires iot-cloudd's watcher. The device stays tenant-agnostic;
+    // this only tags the cred/registry rows (Option B). Editing keeps the
+    // existing tenant (the form hides the selector), so re-send the current one.
     this.http.dbSet([
+      { key: 'cloud.provision.tenant', value: this.provTenant || 'default' },
       { key: 'cloud.provision.bs.psk', value: psk },
       { key: 'cloud.provision.request', value: serial },
     ]).subscribe({
@@ -314,6 +339,7 @@ export class EndpointListComponent implements OnInit, OnDestroy {
         if (r.ok) {
           this.toast.success((this.editing ? 'Updated PSK for ' : 'Provisioning ') + serial);
           this.provSerial = ''; this.provBsPsk = ''; this.editing = false;
+          this.provTenant = 'default';
         }
         else this.toast.error(r.err || 'Provision failed');
       },
@@ -330,6 +356,11 @@ export class EndpointListComponent implements OnInit, OnDestroy {
     this.provSerial = ep;
     this.provBsPsk = '';
     this.editing = true;
+    // Preserve the device's existing tenant on re-provision (the selector is
+    // hidden in edit mode) so the in-place update never silently re-tenants it.
+    const c = this.creds.find((x) => x.serial === ep || x.identity === ep) as
+      (EpCred & { tenant?: string }) | undefined;
+    this.provTenant = c?.tenant || 'default';
     try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch { /* noop */ }
   }
 
@@ -337,6 +368,7 @@ export class EndpointListComponent implements OnInit, OnDestroy {
     this.editing = false;
     this.provSerial = '';
     this.provBsPsk = '';
+    this.provTenant = 'default';
   }
 
   private startLongPoll(): void {
