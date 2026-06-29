@@ -18,16 +18,16 @@ TEST(CloudCredentials, FormatsIdentity) {
     EXPECT_EQ("rpi100000abcd@cloud.local", format_identity("100000abcd"));
 }
 
-TEST(CloudCredentials, TenantQualifiedUpsert) {
-    // Tenant row: identity/dm.psk.id are tenant-qualified + a "tenant" tag.
+TEST(CloudCredentials, TenantTaggedUpsertKeepsBareIdentity) {
+    // Option B: a tenant row carries a "tenant" tag but keeps the BARE identity
+    // (the device never sends its tenant).
     auto out = upsert_credential("[]", "SER1", "bbbb", "dddd", "acme");
     auto j = json::parse(out);
     ASSERT_EQ(j.size(), 1u);
     EXPECT_EQ(j[0]["serial"],    "SER1");
     EXPECT_EQ(j[0]["tenant"],    "acme");
-    EXPECT_EQ(j[0]["identity"],  "rpiSER1@acme.cloud.local");
-    EXPECT_EQ(j[0]["dm.psk.id"], "rpiSER1@acme.cloud.local");
-    EXPECT_EQ(format_identity("SER1", "acme"), "rpiSER1@acme.cloud.local");
+    EXPECT_EQ(j[0]["identity"],  "rpiSER1@cloud.local");   // bare
+    EXPECT_EQ(j[0]["dm.psk.id"], "rpiSER1@cloud.local");   // bare
 }
 
 TEST(CloudCredentials, DefaultTenantUpsertIsLegacyUntagged) {
@@ -39,7 +39,6 @@ TEST(CloudCredentials, DefaultTenantUpsertIsLegacyUntagged) {
     auto j = json::parse(def5);
     EXPECT_EQ(j[0]["identity"], "rpiSER1@cloud.local");
     EXPECT_FALSE(j[0].contains("tenant"));
-    EXPECT_EQ(format_identity("SER1", "default"), "rpiSER1@cloud.local");
 }
 
 TEST(CloudCredentials, UpsertAppendsNewRecord) {

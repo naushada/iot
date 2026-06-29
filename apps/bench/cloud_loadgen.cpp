@@ -158,10 +158,10 @@ public:
         }
         m_fd = m_sock.get_handle();
 
-        // Tenant-qualified bootstrap endpoint: "tenant:serial" (default tenant
-        // ⇒ bare serial, legacy on the wire). The serial stays bare for key
-        // derivation + credential-row matching.
-        const std::string ep = iot::join_endpoint(m_cfg.tenant, m_serial);
+        // Device-agnostic tenancy (Option B): the device bootstraps with its
+        // BARE serial regardless of tenant — the tenant lives only in the cred
+        // row's tag (emitted by emit-creds), never on the wire.
+        const std::string ep = m_serial;
 
         m_dtls  = std::make_shared<DTLSAdapter>(m_fd, m_cfg.logLevel);
         m_store = std::make_shared<lwm2m::ObjectStore>();
@@ -186,7 +186,7 @@ public:
         // the 128 KB ds-cli arg cap at high N). Secret = 128-bit key derived
         // from seed + serial. add_credential stores hex; the PSK callback
         // hex-decodes it to 16 bytes (fits DTLS_PSK_MAX_KEY_LEN).
-        const std::string bsId     = iot::bs_identity(m_cfg.tenant, m_serial);
+        const std::string bsId     = iot::bs_identity(std::string(), m_serial);
         const std::string bsPskHex = bs_key16(m_cfg.masterHex, m_serial);
         if (bsPskHex.empty()) {
             ACE_ERROR_RETURN((LM_ERROR,
@@ -541,11 +541,11 @@ static void emit_creds(const Config& cfg) {
     std::printf("[");
     for (std::uint32_t i = 0; i < cfg.count; ++i) {
         const std::string s = cfg.serialPrefix + std::to_string(i);
-        // No "identity" field: the device presents bs_identity(tenant,serial),
-        // which the cloud recomputes per row. Omitting it keeps the array under
-        // ds-cli's 128 KB single-arg cap at high device counts. The "tenant"
-        // tag is emitted only for a non-default tenant (default rows stay
-        // untagged = legacy).
+        // No "identity" field: the device presents the bare sha256(serial)[:32]
+        // (Option B — tenant-agnostic), which the cloud recomputes per row.
+        // Omitting it keeps the array under ds-cli's 128 KB single-arg cap at
+        // high N. The "tenant" tag is emitted for a non-default tenant (default
+        // rows stay untagged = legacy); identities stay BARE either way.
         const std::string tenantField =
             cfg.tenant.empty() ? std::string()
                                : ("\"tenant\":\"" + cfg.tenant + "\",");
@@ -554,7 +554,7 @@ static void emit_creds(const Config& cfg) {
                     "\"dm.psk.key\":\"%s\"}",
                     i ? "," : "", s.c_str(), tenantField.c_str(),
                     bs_key16(cfg.masterHex, s).c_str(),
-                    iot::dm_identity(cfg.tenant, s).c_str(),
+                    iot::dm_identity(std::string(), s).c_str(),
                     dm_key16(cfg.masterHex, s).c_str());
     }
     std::printf("]\n");

@@ -67,14 +67,14 @@ std::string resolve_bs_psk(const std::string& credentials_json,
             if (!e.is_object()) continue;
             const std::string serial = e.value("serial", std::string());
             const std::string key    = e.value("bs.psk.key", std::string());
-            // Tenant-aware canonical BS identity. For an untagged row this is
-            // bs_identity("default", serial) == sha256(serial)[:32] — byte-for-
-            // byte the legacy match, so fielded devices are unaffected. A
-            // tenant-tagged row matches only its tenant's identity, so two
-            // tenants sharing a serial never cross-authenticate.
-            const std::string tenant = e.value("tenant", std::string());
+            // Device-agnostic tenancy (Option B): the device presents the SAME
+            // bare canonical identity regardless of tenant — sha256(serial)[:32].
+            // Serials are globally unique across tenants, so this is unambiguous;
+            // the tenant lives only in the matched row's "tenant" tag (read
+            // downstream, not needed for key selection). Identical to the
+            // single-tenant behaviour, so fielded devices are unaffected.
             if (!serial.empty() && !key.empty() &&
-                bs_identity(tenant, serial) == presented)
+                sha256_hex(serial).substr(0, 32) == presented)
                 return key;
         }
         for (const auto& e : arr) {
@@ -166,40 +166,27 @@ BsAccountPlan plan_bs_account(const std::string& ep,
                               const std::string& tenants_json,
                               const std::string& global_dm_uri,
                               const std::string& master_hex) {
+    // Device-agnostic tenancy (Option B): the device bootstraps with its bare
+    // serial — it never sends its tenant. The endpoint IS the serial; the tenant
+    // is the matched credential row's "tenant" tag (serials are globally unique,
+    // so the match is unambiguous). Identities are bare (rpi<serial>@cloud.local,
+    // sha256(serial)[:32]), exactly as single-tenant. The tenant only selects the
+    // per-tenant dm.uri + tags the endpoint downstream.
     BsAccountPlan p;
-    const EndpointId eid = split_endpoint(ep);
-    p.tenant = eid.tenant;
-    p.serial = eid.serial;
-
-    // A non-default tenant must be a known, active tenant. The default tenant is
-    // always allowed (legacy single-tenant deployments have no cloud.tenants).
+    p.serial = ep;
+    p.tenant = kDefaultTenant;
     p.dm_uri = global_dm_uri;
-    if (p.tenant != kDefaultTenant) {
-        auto t = find_tenant(tenants_json, p.tenant);
-        if (!t.has_value() || !t->active) return p;          // ok stays false
-        if (!t->dm_uri.empty()) p.dm_uri = t->dm_uri;        // per-tenant override
-    } else {
-        // The default tenant may still carry a registry override.
-        auto t = find_tenant(tenants_json, p.tenant);
-        if (t.has_value() && !t->dm_uri.empty()) p.dm_uri = t->dm_uri;
-    }
 
-    // Commissioned row, scoped to this tenant.
+    // Commissioned row matched by serial (or the legacy identity==ep override).
     auto arr = nlohmann::json::parse(credentials_json, nullptr, false);
     if (arr.is_array()) {
         for (const auto& e : arr) {
             if (!e.is_object()) continue;
+            if (e.value("serial", std::string()) != ep &&
+                e.value("identity", std::string()) != ep)
+                continue;
             const std::string rt = e.value("tenant", std::string());
-            const std::string rtenant = rt.empty() ? std::string(kDefaultTenant) : rt;
-            if (rtenant != p.tenant) continue;
-            const std::string rserial = e.value("serial", std::string());
-            // Match by serial within the tenant; for the default tenant also
-            // honour the legacy identity==ep override path.
-            const bool match =
-                (rserial == p.serial) ||
-                (p.tenant == kDefaultTenant &&
-                 e.value("identity", std::string()) == ep);
-            if (!match) continue;
+            p.tenant      = rt.empty() ? std::string(kDefaultTenant) : rt;
             p.bs_key      = e.value("bs.psk.key", std::string());
             p.dm_key      = e.value("dm.psk.key", std::string());
             p.dm_identity = e.value("dm.psk.id",  std::string());
@@ -207,23 +194,30 @@ BsAccountPlan plan_bs_account(const std::string& ep,
         }
     }
 
+    // A non-default tenant must be a known, active tenant; its dm.uri (when set)
+    // overrides the global one. A default deployment has no cloud.tenants.
+    {
+        auto t = find_tenant(tenants_json, p.tenant);
+        if (p.tenant != kDefaultTenant && (!t.has_value() || !t->active))
+            return p;                                        // ok stays false
+        if (t.has_value() && !t->dm_uri.empty()) p.dm_uri = t->dm_uri;
+    }
+
     // Zero-touch (HKDF) tier: no stored row but a master is available → derive
-    // statelessly. The device presents its raw serial as the BS identity here
-    // (override path), matching the legacy zero-touch behaviour.
+    // statelessly from the bare serial.
     if ((p.dm_key.empty() || p.dm_identity.empty()) && !master_hex.empty()) {
         p.bs_key      = derive_bs_psk_hex(master_hex, p.serial);
         p.dm_key      = derive_dm_psk_hex(master_hex, p.serial);
-        p.dm_identity = dm_identity(p.tenant, p.serial);
+        p.dm_identity = format_dm_identity(p.serial);        // bare
         p.zero_touch  = true;
     }
 
-    if (p.dm_identity.empty())
-        p.dm_identity = dm_identity(p.tenant, p.serial);
+    if (p.dm_identity.empty()) p.dm_identity = format_dm_identity(p.serial);
 
-    // BS DTLS identity written to the device's Security /0/0. Commissioned tier
-    // uses the tenant-qualified canonical identity (default ⇒ sha256(serial)[:32]
-    // byte-for-byte); zero-touch keeps the raw serial the device presents.
-    p.bs_identity = p.zero_touch ? p.serial : bs_identity(p.tenant, p.serial);
+    // BS DTLS identity written to the device's Security /0/0 — the bare canonical
+    // sha256(serial)[:32] (zero-touch keeps the raw serial the device presents).
+    p.bs_identity = p.zero_touch ? p.serial
+                                 : sha256_hex(p.serial).substr(0, 32);
 
     p.ok = !p.dm_identity.empty() && !p.dm_key.empty() && !p.dm_uri.empty();
     return p;

@@ -27,13 +27,9 @@ struct CredPair {
 };
 
 /// Cloud canonical identity for a raw device serial: rpi<serial>@cloud.local.
+/// Device-agnostic tenancy (Option B): always bare — the device never sends its
+/// tenant; the tenant lives only as a credential-row tag.
 std::string format_identity(const std::string& serial);
-
-/// Tenant-qualified identity (multi-tenant cloud): the default/empty tenant
-/// gives the legacy rpi<serial>@cloud.local; any other tenant gives
-/// rpi<serial>@<tenant>.cloud.local. Matches tenant_policy::dm_identity.
-std::string format_identity(const std::string& serial,
-                            const std::string& tenant);
 
 /// Mint a cryptographically-random `nbytes` (default 32) DM PSK, lowercase
 /// hex-encoded (2*nbytes chars). Throws std::runtime_error if no entropy

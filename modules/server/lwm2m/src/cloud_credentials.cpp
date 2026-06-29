@@ -42,12 +42,6 @@ std::string format_identity(const std::string& serial) {
     return "rpi" + serial + "@cloud.local";
 }
 
-std::string format_identity(const std::string& serial,
-                            const std::string& tenant) {
-    if (tenant.empty() || tenant == "default") return format_identity(serial);
-    return "rpi" + serial + "@" + tenant + ".cloud.local";
-}
-
 std::string generate_psk_hex(std::size_t nbytes) {
     std::vector<unsigned char> buf(nbytes);
     std::ifstream urandom("/dev/urandom", std::ios::binary);
@@ -90,7 +84,10 @@ std::string upsert_credential(const std::string& array_json,
                               const std::string& dm_psk_hex,
                               const std::string& tenant) {
     json arr = parse_array(array_json);
-    const std::string identity = format_identity(serial, tenant);
+    // Device-agnostic tenancy (Option B): the identity is BARE
+    // (rpi<serial>@cloud.local) regardless of tenant — the device never sends
+    // its tenant. The tenant is recorded only as a row tag (below).
+    const std::string identity = format_identity(serial);
 
     // JSON field names follow the dotted convention (dm.psk.id, …).
     json rec = {
