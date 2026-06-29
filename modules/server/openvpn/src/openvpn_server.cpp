@@ -132,6 +132,11 @@ std::string build_server_config(const OpenVpnServerConfig& c) {
     ss << "port "  << c.port  << "\n";
     ss << "topology subnet\n";
     ss << "server " << net << " " << mask << "\n";
+    // Multi-tenant (P3c): per-client static IPs via client-config-dir. Each
+    // device's CCD file (named by its cert CN) does ifconfig-push to an address
+    // in its tenant's /24, so the inter-tenant nft drops (P3b) match. Emitted
+    // only when configured — a single-tenant deployment is unchanged.
+    if (!c.ccd_dir.empty()) ss << "client-config-dir " << c.ccd_dir << "\n";
     // Push a DNS resolver to clients (when configured) so the device learns
     // it in the PUSH_REPLY and surfaces vpn.assigned.dns. topology subnet
     // already auto-pushes route-gateway + ifconfig (ip+netmask).
