@@ -456,19 +456,13 @@ std::size_t rehydrate_registry(data_store::Client& ds,
                 auto serial = c.value("serial", std::string());
                 if (serial.empty()) continue;
                 const auto tenant = c.value("tenant", std::string());
-                // Registry key = the tenant-qualified endpoint
-                // ("<tenant>:<serial>" for a tenant row, bare serial for the
-                // default tenant) so it MATCHES what a tenant device registers
-                // /rd as — otherwise the cloud.lwm2m.registrations → registry
-                // online/offline merge (keyed by endpoint) never matches a
-                // tenant device. Default rows are unchanged (key == serial);
-                // duplicate serials across tenants stay distinct.
-                const std::string key =
-                    (tenant.empty() || tenant == "default")
-                        ? serial : (tenant + ":" + serial);
-                if (reg.lookup_by_ep(key)) continue;
-                if (prov.provision(key)) {
-                    reg.update_tenant(key, tenant);
+                // Device-agnostic tenancy (Option B): the registry key is the
+                // BARE serial (globally unique) == what every device registers
+                // /rd as, regardless of tenant. The tenant is only a row tag,
+                // carried into cloud.endpoints for the console.
+                if (reg.lookup_by_ep(serial)) continue;
+                if (prov.provision(serial)) {
+                    reg.update_tenant(serial, tenant);
                     ++healed;
                 }
             }
@@ -1087,16 +1081,15 @@ int main(int argc, char** argv) {
                                ACE_TEXT("%D cloudd:thread:%t %M %N:%l provision request '%C'\n"),
                                ep->c_str()));
 
-                    // Multi-tenant (P4b): a request may be tenant-qualified
-                    // ("<tenant>:<serial>"). Split it — the cred row is keyed by
-                    // the bare serial + a tenant tag, while the registry/DNAT use
-                    // the qualified endpoint (== what the device registers /rd
-                    // as). A colon-less request is the default tenant (legacy).
-                    std::string p_tenant = "default", p_serial = *ep;
-                    if (auto col = ep->find(':'); col != std::string::npos) {
-                        auto t = ep->substr(0, col), s = ep->substr(col + 1);
-                        if (!t.empty() && !s.empty()) { p_tenant = t; p_serial = s; }
-                    }
+                    // Multi-tenant (Option B): the device is tenant-agnostic, so
+                    // the request IS the bare serial. The target tenant comes from
+                    // the cloud.provision.tenant carrier (set by the operator
+                    // console alongside the request); empty ⇒ default. The cred
+                    // row is tagged with it; the registry/DNAT key by the bare
+                    // serial (globally unique) == what the device registers /rd as.
+                    const std::string p_serial = *ep;
+                    std::string p_tenant = ds_str(ds, "cloud.provision.tenant", "");
+                    if (p_tenant.empty()) p_tenant = "default";
 
                     // Multi-tenant (P5): enforce the per-tenant device quota
                     // (cloud.tenants "max.devices"). A new serial over the cap is
@@ -1144,7 +1137,7 @@ int main(int argc, char** argv) {
                                                 "credentials for %C (identity=%C)\n"),
                                        ep->c_str(),
                                        server::lwm2m::format_identity(
-                                           p_serial, p_tenant).c_str()));
+                                           p_serial).c_str()));
                         } catch (const std::exception& e) {
                             ACE_ERROR((LM_ERROR,
                                        ACE_TEXT("%D cloudd:thread:%t %M %N:%l credential "
@@ -1159,7 +1152,7 @@ int main(int argc, char** argv) {
                     // formatted identity, for traceability.
                     if (cert_ca.have_ca()) {
                         const std::string cn =
-                            server::lwm2m::format_identity(p_serial, p_tenant);
+                            server::lwm2m::format_identity(p_serial);
                         if (auto mc = cert_ca.mint_client(cn)) {
                             try {
                                 const std::string cur =
@@ -1188,13 +1181,13 @@ int main(int argc, char** argv) {
                     }
 
                     // Provision keyed by the (possibly tenant-qualified)
-                    // endpoint so the registry key matches the device's /rd.
-                    auto result = provisioner.provision(*ep);
+                    // bare serial — globally unique, == the device's /rd ep.
+                    auto result = provisioner.provision(p_serial);
                     if (result.has_value()) {
                         // Tag the registry row with the tenant so cloud.endpoints
                         // carries it ("" == default).
                         ep_reg.update_tenant(
-                            *ep, p_tenant == "default" ? std::string() : p_tenant);
+                            p_serial, p_tenant == "default" ? std::string() : p_tenant);
                         ACE_DEBUG((LM_INFO,
                                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l provisioned %C"
                                             " tun=%C proxy=%d\n"),
@@ -1206,10 +1199,12 @@ int main(int argc, char** argv) {
                                             " '%C' (dup or exhausted)\n"),
                                    ep->c_str()));
                     }
-                    // One-shot: clear the request so a watch replay on cloudd
-                    // restart doesn't re-provision (and resurrect) a since-
-                    // deprovisioned endpoint. The "" re-fire is ignored above.
+                    // One-shot: clear the request + tenant carrier so a watch
+                    // replay on cloudd restart doesn't re-provision (and
+                    // resurrect) a since-deprovisioned endpoint.
                     ds.set("cloud.provision.request",
+                           data_store::Value{std::string("")});
+                    ds.set("cloud.provision.tenant",
                            data_store::Value{std::string("")});
                 }
             } else if (ev.key == "cloud.deprovision.request") {

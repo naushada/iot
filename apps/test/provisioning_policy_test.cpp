@@ -210,129 +210,75 @@ TEST(ResolveDmPsk, NoMasterOrUnparseableYieldsEmpty) {
     EXPECT_EQ("", iot::resolve_dm_psk("[]", "", kMaster));
 }
 
-// ── Multi-tenant resolution (tdd-multi-tenant-cloud.md) ──────────────────────
+// ── Multi-tenant resolution — Option B: device-agnostic (tdd §3) ─────────────
+// The device presents its BARE serial regardless of tenant; the tenant lives
+// only in the matched cred row's "tenant" tag (serials are globally unique).
 
-TEST(ResolveBsPskTenant, UntaggedRowIsByteIdenticalToLegacy) {
-    // The whole backward-compat guarantee: an untagged row resolves under the
-    // device's legacy sha256(serial)[:32] identity exactly as before — a fielded
-    // device stays online after the cloud gains tenant awareness.
-    const std::string creds =
+TEST(ResolveBsPskTenant, BareIdentityMatchesRegardlessOfTag) {
+    // Untagged AND tenant-tagged rows both resolve under the device's bare
+    // sha256(serial)[:32] — the device never sends its tenant.
+    const std::string def =
         R"([{"serial":"100000003d1f9c2e","bs.psk.key":"feedface"}])";
-    EXPECT_EQ(iot::bs_identity("default", kSerial), std::string(kSha256Id));
-    EXPECT_EQ("feedface", iot::resolve_bs_psk(creds, kSha256Id, kMaster));
-}
+    EXPECT_EQ("feedface", iot::resolve_bs_psk(def, kSha256Id, kMaster));
 
-TEST(ResolveBsPskTenant, TenantRowMatchesTenantIdentityOnly) {
-    // A tenant-tagged row authenticates only against its tenant-qualified
-    // identity, never the bare-serial (default) one.
-    const std::string creds =
+    const std::string acme =
         R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"acmekey"}])";
-    EXPECT_EQ("acmekey",
-              iot::resolve_bs_psk(creds, iot::bs_identity("acme", kSerial), ""));
-    // The default identity for the same serial must NOT resolve the acme row.
-    EXPECT_EQ("", iot::resolve_bs_psk(creds, kSha256Id, ""));
+    EXPECT_EQ("acmekey", iot::resolve_bs_psk(acme, kSha256Id, ""));
 }
 
-TEST(ResolveBsPskTenant, NoCrossTenantAuthOnDuplicateSerial) {
-    // Two tenants, same serial, different keys. Each identity resolves only its
-    // own tenant's key.
-    const std::string creds =
-        R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"acmekey"},)"
-        R"({"serial":"100000003d1f9c2e","tenant":"globex","bs.psk.key":"globexkey"}])";
-    EXPECT_EQ("acmekey",
-              iot::resolve_bs_psk(creds, iot::bs_identity("acme", kSerial), ""));
-    EXPECT_EQ("globexkey",
-              iot::resolve_bs_psk(creds, iot::bs_identity("globex", kSerial), ""));
-}
+// ── plan_bs_account (Option B) ──────────────────────────────────────────────
 
-TEST(ResolveDmPskTenant, DerivesFromTenantQualifiedDmIdentity) {
-    // The derive path parses both legacy and tenant DM identities to the same
-    // serial, so the derived DM key is identical regardless of tenant suffix.
-    EXPECT_EQ(kDerivedDm,
-              iot::resolve_dm_psk("[]", iot::dm_identity("default", kSerial), kMaster));
-    EXPECT_EQ(kDerivedDm,
-              iot::resolve_dm_psk("[]", iot::dm_identity("acme", kSerial), kMaster));
-}
-
-// ── plan_bs_account ─────────────────────────────────────────────────────────
-
-TEST(PlanBsAccount, DefaultCommissionedIsLegacy) {
+TEST(PlanBsAccount, DefaultCommissionedIsBareLegacy) {
     const std::string creds =
         R"([{"serial":"100000003d1f9c2e","bs.psk.key":"bs","dm.psk.id":)"
         R"("rpi100000003d1f9c2e@cloud.local","dm.psk.key":"dm"}])";
     auto p = iot::plan_bs_account(/*ep*/kSerial, creds, /*tenants*/"[]",
-                                  /*global dm.uri*/"coaps://h:5683", /*master*/"");
+                                  "coaps://h:5683", /*master*/"");
     EXPECT_TRUE(p.ok);
     EXPECT_EQ(p.tenant, "default");
     EXPECT_EQ(p.serial, kSerial);
-    EXPECT_EQ(p.bs_identity, std::string(kSha256Id));           // legacy
-    EXPECT_EQ(p.dm_identity, "rpi100000003d1f9c2e@cloud.local"); // legacy
-    EXPECT_EQ(p.dm_uri, "coaps://h:5683");
-    EXPECT_FALSE(p.zero_touch);
-}
-
-TEST(PlanBsAccount, DefaultZeroTouchWhenNoRow) {
-    auto p = iot::plan_bs_account(kSerial, "[]", "[]", "coaps://h:5683", kMaster);
-    EXPECT_TRUE(p.ok);
-    EXPECT_TRUE(p.zero_touch);
-    EXPECT_EQ(p.bs_identity, std::string(kSerial));   // raw serial (override path)
+    EXPECT_EQ(p.bs_identity, std::string(kSha256Id));
     EXPECT_EQ(p.dm_identity, "rpi100000003d1f9c2e@cloud.local");
-    EXPECT_EQ(p.dm_key, kDerivedDm);
+    EXPECT_EQ(p.dm_uri, "coaps://h:5683");
 }
 
-TEST(PlanBsAccount, RejectsWhenNoRowNoMasterOrNoDmUri) {
-    EXPECT_FALSE(iot::plan_bs_account(kSerial, "[]", "[]", "coaps://h:5683", "").ok);
-    EXPECT_FALSE(iot::plan_bs_account(kSerial, "[]", "[]", /*no dm.uri*/"", kMaster).ok);
-}
-
-TEST(PlanBsAccount, TenantCommissionedScopedAndQualified) {
-    const std::string tenants =
-        R"([{"id":"acme","vpn.subnet":"10.9.16.0/24","status":"active"}])";
-    const std::string creds =
-        R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"abs",)"
-        R"("dm.psk.id":"rpi100000003d1f9c2e@acme.cloud.local","dm.psk.key":"adm"}])";
-    auto p = iot::plan_bs_account("acme:100000003d1f9c2e", creds, tenants,
-                                  "coaps://h:5683", "");
-    EXPECT_TRUE(p.ok);
-    EXPECT_EQ(p.tenant, "acme");
-    EXPECT_EQ(p.serial, kSerial);
-    EXPECT_EQ(p.bs_identity, iot::bs_identity("acme", kSerial));   // tenant-qualified
-    EXPECT_EQ(p.dm_identity, "rpi100000003d1f9c2e@acme.cloud.local");
-    EXPECT_EQ(p.dm_key, "adm");
-    EXPECT_EQ(p.dm_uri, "coaps://h:5683");                          // global fallback
-}
-
-TEST(PlanBsAccount, TenantDmUriOverride) {
+TEST(PlanBsAccount, TenantFromRowBareIdentitiesPerTenantUri) {
+    // The device still sends the BARE serial; the tenant is the row's tag, and
+    // identities stay bare. The tenant only selects the per-tenant dm.uri.
     const std::string tenants =
         R"([{"id":"acme","dm.uri":"coaps://acme.example:5683","status":"active"}])";
     const std::string creds =
         R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"abs",)"
-        R"("dm.psk.id":"rpi100000003d1f9c2e@acme.cloud.local","dm.psk.key":"adm"}])";
-    auto p = iot::plan_bs_account("acme:100000003d1f9c2e", creds, tenants,
+        R"("dm.psk.id":"rpi100000003d1f9c2e@cloud.local","dm.psk.key":"adm"}])";
+    auto p = iot::plan_bs_account(/*ep=bare serial*/kSerial, creds, tenants,
                                   "coaps://global:5683", "");
-    ASSERT_TRUE(p.ok);
-    EXPECT_EQ(p.dm_uri, "coaps://acme.example:5683");
+    EXPECT_TRUE(p.ok);
+    EXPECT_EQ(p.tenant, "acme");                       // from the row's tag
+    EXPECT_EQ(p.bs_identity, std::string(kSha256Id));  // bare, not tenant-qualified
+    EXPECT_EQ(p.dm_identity, "rpi100000003d1f9c2e@cloud.local");  // bare
+    EXPECT_EQ(p.dm_key, "adm");
+    EXPECT_EQ(p.dm_uri, "coaps://acme.example:5683");  // per-tenant override
 }
 
-TEST(PlanBsAccount, RejectsUnknownOrSuspendedTenant) {
+TEST(PlanBsAccount, RejectsUnknownOrSuspendedTenantOnRow) {
     const std::string creds =
         R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"abs",)"
-        R"("dm.psk.id":"x","dm.psk.key":"adm"}])";
-    // Unknown tenant (empty registry).
-    EXPECT_FALSE(iot::plan_bs_account("acme:100000003d1f9c2e", creds, "[]",
-                                      "coaps://h:5683", "").ok);
-    // Suspended tenant.
-    const std::string suspended =
-        R"([{"id":"acme","status":"suspended"}])";
-    EXPECT_FALSE(iot::plan_bs_account("acme:100000003d1f9c2e", creds, suspended,
-                                      "coaps://h:5683", "").ok);
+        R"("dm.psk.id":"rpi100000003d1f9c2e@cloud.local","dm.psk.key":"adm"}])";
+    EXPECT_FALSE(iot::plan_bs_account(kSerial, creds, "[]",
+                                      "coaps://h:5683", "").ok);       // unknown
+    EXPECT_FALSE(iot::plan_bs_account(kSerial, creds,
+                 R"([{"id":"acme","status":"suspended"}])",
+                 "coaps://h:5683", "").ok);                            // suspended
 }
 
-TEST(PlanBsAccount, TenantRowNotVisibleToDefault) {
-    // A tenant-tagged row must not satisfy a default-tenant (legacy) bootstrap.
-    const std::string creds =
-        R"([{"serial":"100000003d1f9c2e","tenant":"acme","bs.psk.key":"abs",)"
-        R"("dm.psk.id":"x","dm.psk.key":"adm"}])";
-    auto p = iot::plan_bs_account(kSerial, creds, "[]", "coaps://h:5683", "");
-    EXPECT_FALSE(p.ok);   // no default row, no master
+TEST(PlanBsAccount, DefaultZeroTouchAndRejects) {
+    auto z = iot::plan_bs_account(kSerial, "[]", "[]", "coaps://h:5683", kMaster);
+    EXPECT_TRUE(z.ok);
+    EXPECT_TRUE(z.zero_touch);
+    EXPECT_EQ(z.bs_identity, std::string(kSerial));   // raw serial (override path)
+    EXPECT_EQ(z.dm_identity, "rpi100000003d1f9c2e@cloud.local");
+    EXPECT_EQ(z.dm_key, kDerivedDm);
+
+    EXPECT_FALSE(iot::plan_bs_account(kSerial, "[]", "[]", "coaps://h:5683", "").ok);
+    EXPECT_FALSE(iot::plan_bs_account(kSerial, "[]", "[]", /*no dm.uri*/"", kMaster).ok);
 }

@@ -374,9 +374,9 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                 bs.serverUri         = bsUri;
                 bs.isBootstrapServer = true;
                 bs.securityMode      = 0;       // PSK
-                // Tenant-qualified canonical BS identity (default tenant ⇒
-                // sha256(serial)[:32], byte-identical to legacy); zero-touch ⇒
-                // the raw serial the device presents. Computed by plan_bs_account.
+                // Bare canonical BS identity sha256(serial)[:32] (Option B —
+                // device-agnostic, byte-identical to single-tenant); zero-touch
+                // ⇒ the raw serial the device presents. From plan_bs_account.
                 bs.identity          = plan.bs_identity;
                 bs.secretKey         = bsKey;   // hex (omitted by encoder if empty)
                 bs.shortServerId     = 0;       // ignored for a BS account

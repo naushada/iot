@@ -21,9 +21,11 @@ instance).
 | P3b | Apply inter-tenant nft isolation table (compile-verified) | _this_ | 🔵 needs tun validation |
 | P3c | OpenVPN `/16` + per-client CCD static IP from tenant `/24` | — | ⏭️ needs tun validation |
 | P4a | Tenant registry: auto VPN-subnet assignment (`cloud.tenants` watch) | _this_ | 🔵 |
-| P4b | Tenant-aware provision *watcher* + tenant-qualified cred minting | _this_ | 🔵 |
-| P4c | Operator console UI (Angular tenant CRUD page) | — | ⏭️ needs node |
-| P5a | Per-tenant device **quota** (`max.devices`), enforced at provision | _this_ | 🔵 |
+| P4b | Tenant-aware provision *watcher* + cred minting | #494 | ✅ merged |
+| P5a | Per-tenant device **quota** (`max.devices`), enforced at provision | #495 | ✅ merged |
+| P3c-bb | P3c building blocks: per-tenant IP alloc + OpenVPN CCD (inert) | #496 | ✅ merged |
+| **PB** | **Adopt Option B (device-agnostic tenancy): bare identities, tenant from cred-row tag, `cloud.provision.tenant` carrier; revert qualified `ep`/identity** | _this_ | 🔵 gtest |
+| P4c | Operator console UI (tenant CRUD + `provision.tenant` selector) | — | ⏭️ needs node |
 | P5b | Per-tenant CA / cert namespace | — | ⏭️ needs tun validation |
 | P5c | Audit log of platform-operator + provisioning actions | — | ⏭️ |
 
@@ -58,16 +60,25 @@ Every slice keeps the **default tenant byte-identical to today**, so existing
 single-tenant deployments and fielded devices are unaffected (verified by gtest
 + a 200/200 default-tenant load run per slice).
 
-**Tenant endpoint keying (addressed for the heal path).** `iot-cloudd` now keys
-the registry by the **tenant-qualified endpoint** (`<tenant>:<serial>`; bare
-serial for the default tenant) when healing endpoints from
-`cloud.endpoint.credentials`, so it matches what a tenant device registers `/rd`
-as and the `cloud.lwm2m.registrations` → registry online/offline merge resolves
-it. Default devices (key == serial) are unchanged; duplicate serials across
-tenants stay distinct. **Remaining:** the runtime provision *watcher*
-(`cloud.provision.request`) still takes a bare serial — tenant provisioning via
-the operator console (P4) will pass the qualified endpoint; until then tenant
-devices enter the registry via the startup heal.
+> **Design change — Option B (device-agnostic), adopted 2026-06-29.** The
+> original design encoded the tenant into the device's identity
+> (`ep=<tenant>:<serial>`, `sha256("tenant:serial")[:32]`). On review that
+> over-coupled the device to cloud org structure: it only existed to keep the
+> DTLS-PSK identity unique when two tenants share a serial. We instead **require
+> globally-unique device serials** and keep the device **fully tenant-agnostic**
+> — it bootstraps with its bare serial exactly as single-tenant. The tenant
+> lives **only in the matched `cloud.endpoint.credentials` row's `tenant` tag**;
+> the cloud derives it from there. This decouples the device, makes tenant
+> transfer a pure cloud-side row edit, and keeps the default tenant automatically
+> byte-identical. The sections below reflect Option B; D3 records the switch.
+
+**Endpoint keying (Option B).** Identities are **bare** everywhere
+(`sha256(serial)[:32]`, `rpi<serial>@cloud.local`) and the registry/DNAT key by
+the **bare serial** — globally unique, so it matches what every device registers
+`/rd` as, regardless of tenant. The provision *watcher* reads the target tenant
+from a `cloud.provision.tenant` carrier (set by the operator console alongside
+`cloud.provision.request`) and tags the cred + registry rows; the startup heal
+tags from the existing row's `tenant`.
 
 ## 1. Problem
 
@@ -106,7 +117,7 @@ cloud-iot to host **multiple organizations** with strong isolation.
 |---|---|---|---|
 | D1 | Tenant identifier | UUID / operator slug | **short slug** (`acme`), 3–32 `[a-z0-9-]`; human-readable in keys, URLs, CNs |
 | D2 | Credential store shape | per-tenant arrays / one array + `tenant` field | **one `cloud.endpoint.credentials` array, each row tagged `tenant`** — reuses the existing resolver path; tenant is *derived* from the matched row. Minimal blast radius. |
-| D3 | Device→tenant resolution at DTLS handshake | encode tenant in identity / global identity→tenant index / lookup by matched cred row | **tenant-qualified PSK identity** (below) → unambiguous even with duplicate serials; the matched row confirms it |
+| D3 | Device→tenant resolution at DTLS handshake | encode tenant in identity / global identity→tenant index / lookup by matched cred row | **lookup by matched cred row (Option B, device-agnostic)** — device presents its bare serial; the tenant is the matched row's `tenant` tag. Requires globally-unique serials (documented constraint). Decouples the device from org structure; transfer = a cloud-side row edit. *(Superseded the original "tenant-qualified PSK identity" choice on 2026-06-29 — that only bought duplicate-serial support, at the cost of coupling the device.)* |
 | D4 | VPN isolation | N OpenVPN servers / one server + per-tenant subnet via CCD | **one OpenVPN server on a `/16`, per-tenant `/24` carved via client-config-dir static IPs + per-tenant nftables** — avoids N daemons; isolation enforced by nft |
 | D5 | VPN PKI | per-tenant CA / one CA, tenant in cert CN | **one runtime CA, tenant in the client-cert CN/OU**; network isolation is the nft subnet boundary, not the CA. (Per-tenant CA is a later hardening option.) |
 | D6 | Console authz | per-tenant user arrays / `tenant_id` on each account + role | **`tenant_id` + role on each `auth.users.accounts` entry**; a reserved `*` tenant = platform-operator (cross-tenant) |
@@ -146,28 +157,31 @@ secondary index `by_tenant`. No new top-level keys for device data — keeps the
 sync/rehydrate paths (`sync_endpoints_to_ds`, the startup rehydrate) intact, just
 tenant-aware.
 
-### 4.3 Device → tenant resolution (D3) — the crux
+### 4.3 Device → tenant resolution (D3) — the crux (Option B, device-agnostic)
 
-A device must prove which tenant it is, and duplicate serials across tenants must
-not collide. **Tenant-qualified identity:**
+The device is **tenant-agnostic** — it bootstraps with its **bare serial**,
+exactly as single-tenant. Globally-unique serials make this unambiguous; the
+tenant is the matched credential row's tag.
 
-- Onboarding provisions the device's bootstrap `ep` as **`<tenant>:<serial>`**
-  (e.g. `acme:000000fe26a4ff`) and its BS PSK identity as
-  `sha256("<tenant>:<serial>")[:32]`.
-- `POST /bs?ep=acme:<serial>` → the BS splits off the tenant, validates it
-  against `cloud.tenants`, and provisions the DM account with a tenant-scoped DM
-  identity `rpi<serial>@acme.cloud.local` (extends today's
-  `rpi<serial>@cloud.local`; `format_dm_identity` /`serial_from_dm_identity` in
-  `provisioning_policy.cpp` gain a tenant arg).
-- `resolve_bs_psk` / `resolve_dm_psk` match the tenant-qualified identity against
-  the (tenant-tagged) credential rows, so a row only authenticates within its
-  tenant. Duplicate serials in different tenants → different identities → no
-  collision.
+- Onboarding provisions a `cloud.endpoint.credentials` row keyed by the bare
+  serial, **tagged `"tenant":"acme"`**, with **bare** identities (BS
+  `sha256(serial)[:32]`, DM `rpi<serial>@cloud.local`). The operator console
+  selects the tenant via the `cloud.provision.tenant` carrier — the device never
+  learns it.
+- `POST /bs?ep=<serial>` → `plan_bs_account` matches the row by serial, reads its
+  `tenant` tag, validates it against `cloud.tenants`, and provisions the DM
+  account with the **bare** DM identity + the **per-tenant `dm.uri`**.
+- `resolve_bs_psk` / `resolve_dm_psk` match the **bare** identity against the
+  credential rows and return the key; the tenant isn't needed for key selection
+  (it's read from the matched row downstream). Globally-unique serials guarantee
+  a single match.
 - The matched row's `tenant` then drives everything downstream: which VPN subnet
-  the device gets, which registry bucket it lands in, which `dm.uri` it’s told.
+  the device gets, which registry bucket it lands in, which `dm.uri` it's told.
 
-Backward compatibility: an `ep` with no `:` ⇒ `default` tenant + today's
-identity scheme. Fielded devices keep working untouched.
+**Duplicate serials across tenants are disallowed** (the documented constraint
+that buys this simplicity). The quota/provision path can reject a serial already
+present under another tenant. Backward compatibility is automatic: an untagged
+row ⇒ `default` tenant + today's exact bytes; fielded devices are untouched.
 
 ### 4.4 VPN isolation (D4/D5)
 

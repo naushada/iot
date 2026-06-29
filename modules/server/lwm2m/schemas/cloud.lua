@@ -171,6 +171,16 @@ return {
       type    = "string",
       default = "",
     },
+    -- Target tenant for the next provision (multi-tenant, Option B). The device
+    -- is tenant-agnostic — it bootstraps with its bare serial — so the operator
+    -- console sets this alongside cloud.provision.request to tag the new cred
+    -- row + registry row. Empty ⇒ default tenant (single-tenant legacy).
+    -- iot-cloudd clears it after each provision.
+    ["cloud.provision.tenant"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
     -- Deprovision request: iot-httpd writes the endpoint name here;
     -- iot-cloudd watches this key and calls deprovision().
     ["cloud.deprovision.request"] = {
