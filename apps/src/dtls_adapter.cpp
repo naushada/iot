@@ -333,12 +333,15 @@ void DTLSAdapter::hard_reset() {
     dtls_debug("DTLSAdapter::hard_reset recreated dtls context (peer table cleared)\n");
 }
 
-void DTLSAdapter::reset_and_connect(const std::string& ip, const std::uint16_t& port) {
-    // reset_and_connect is only ever used to (re)establish the BS bootstrap
-    // session. If a prior successful bootstrap pinned the DM identity, restore
-    // the BS identity so this fresh handshake presents BS creds, not the DM
-    // identity+key the BS server cannot resolve.
-    reset_to_bootstrap_identity();
+void DTLSAdapter::reset_and_connect(const std::string& ip, const std::uint16_t& port,
+                                   bool toBootstrapIdentity) {
+    // For a BS re-handshake, restore the BS identity so this fresh handshake
+    // presents BS creds, not the DM identity+key the BS server cannot resolve.
+    // For the DM switch (toBootstrapIdentity=false) the caller has just pinned
+    // the DM identity via active_identity(); resetting it here would make the DM
+    // handshake present the BS identity (sha256(serial)), which the DM server
+    // has no PSK for — the device would wedge at dm-connecting forever.
+    if (toBootstrapIdentity) reset_to_bootstrap_identity();
     session(ip, port);
     m_peerSession = m_session;
     isClient(true);

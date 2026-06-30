@@ -1575,7 +1575,15 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
             // tears the stale peer down first so a PLAINTEXT ClientHello starts a
             // clean handshake the restarted DM accepts — auto-recovery after any
             // cloud bounce/upgrade.
-            dtls->reset_and_connect(dmHost, dmPort);
+            //
+            // toBootstrapIdentity=FALSE: keep the DM identity pinned just above.
+            // reset_and_connect() defaults to restoring the BS identity (it was
+            // built for the BS re-handshake); using that default here made the DM
+            // handshake present sha256(serial) — the DM server has no PSK for it,
+            // so the device wedged at dm-connecting AND never registered (the OTA
+            // "stuck at 90%" + offline regression from the reset_and_connect-on-
+            // DM-switch fix). Keeping the DM identity is the whole point here.
+            dtls->reset_and_connect(dmHost, dmPort, /*toBootstrapIdentity=*/false);
         }
         // Apply the bootstrap-delivered registration lifetime (Server Object
         // RID 1) — the client uses this, sourced by the BS from
