@@ -8,7 +8,7 @@ BootstrapProvisioner::BootstrapProvisioner(EndpointRegistry& ep_reg,
     : m_ep_reg(ep_reg), m_vpn_reg(vpn_reg) {}
 
 std::optional<BootstrapResult> BootstrapProvisioner::provision(
-    const std::string& ep) {
+    const std::string& ep, const std::string& tenant_subnet) {
 
     const std::string server_uri = "coaps://cloud:5684";
 
@@ -29,9 +29,12 @@ std::optional<BootstrapResult> BootstrapProvisioner::provision(
         return result;
     }
 
-    // New endpoint: allocate tunnel IP + proxy port.
-    auto alloc = m_vpn_reg.allocate(ep);
-    if (!alloc.has_value()) return std::nullopt;   // ports exhausted
+    // New endpoint: allocate tunnel IP + proxy port. A tenant device draws its
+    // IP from its tenant /24 (P3c); the default tenant uses the base pool.
+    auto alloc = tenant_subnet.empty()
+                     ? m_vpn_reg.allocate(ep)
+                     : m_vpn_reg.allocate_in_subnet(ep, tenant_subnet);
+    if (!alloc.has_value()) return std::nullopt;   // subnet / ports exhausted
 
     // Register in the endpoint registry
     EndpointInfo info;

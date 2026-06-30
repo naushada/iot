@@ -20,7 +20,7 @@ instance).
 | P1e | `db/get cloud.endpoints` tenant scoping (**live UI isolation**) | _this_ | 🔵 |
 | P3b | Apply inter-tenant nft isolation table (compile-verified) | _this_ | 🔵 needs tun validation |
 | P3c-i | **Integration foundation** (gtest): `VpnRegistry::allocate_in_subnet` (tenant-/24 IP + base-pool guard) + `plan_ccd_files` (per-device CCD plan) | _this_ | 🟢 gtest |
-| P3c-ii | iot-cloudd glue: server `/16` + `ccd_dir`, allocate tenant IPs in provision/heal, write CCD files | — | ⏭️ needs tun validation |
+| P3c-ii | iot-cloudd glue: `ccd_dir` opt-in knob, allocate tenant IPs in provision/heal, write+prune CCD files (reconcile_routing) | _this_ | 🟡 compile-clean, needs tun validation |
 | P4a | Tenant registry: auto VPN-subnet assignment (`cloud.tenants` watch) | _this_ | 🔵 |
 | P4b | Tenant-aware provision *watcher* + cred minting | #494 | ✅ merged |
 | P5a | Per-tenant device **quota** (`max.devices`), enforced at provision | #495 | ✅ merged |

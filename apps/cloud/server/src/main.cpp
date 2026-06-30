@@ -47,6 +47,8 @@
 #include <unordered_map>
 
 #include <sys/stat.h>
+#include <dirent.h>
+#include <unistd.h>
 
 #include <nlohmann/json.hpp>
 
@@ -225,6 +227,71 @@ void rebuild_device_dnat(data_store::Client& ds, const std::string& tun_dev) {
                    static_cast<unsigned>(in.devices.size()),
                    static_cast<int>(in.ui_port)));
     }
+}
+
+// Multi-tenant (P3c): reconcile the OpenVPN client-config-dir from the current
+// fleet. One file per tenant device, named by its cert CN (rpi<serial>@cloud.
+// local — what OpenVPN matches CCD entries against), pinning it to its tenant
+// /24 IP via ifconfig-push. NO-OP when ccd_dir is empty (single-tenant) so the
+// default deployment never touches the filesystem. Idempotent (full rewrite +
+// prune of stale files), same discipline as rebuild_device_dnat. The whole dir
+// is ours, so any file not in the current plan (deprovisioned / de-tenanted
+// device) is removed. `server_pool_cidr` (the /16) supplies the ifconfig-push
+// netmask under `topology subnet`.
+void rebuild_tenant_ccd(data_store::Client& ds, const std::string& ccd_dir,
+                        const std::string& server_pool_cidr) {
+    if (ccd_dir.empty()) return;            // multi-tenant VPN not enabled
+    ::mkdir(ccd_dir.c_str(), 0750);         // ensure it exists (ignore EEXIST)
+
+    const auto plan = server::openvpn::plan_ccd_files(
+        ds_str(ds, "cloud.endpoints", "[]"), server_pool_cidr);
+
+    std::set<std::string> wanted;
+    for (const auto& f : plan) {
+        const std::string cn = server::lwm2m::format_identity(f.serial);
+        wanted.insert(cn);
+        std::ofstream out(ccd_dir + "/" + cn, std::ios::trunc);
+        if (out) out << f.contents;
+    }
+    // Prune stale entries.
+    if (DIR* d = ::opendir(ccd_dir.c_str())) {
+        while (dirent* e = ::readdir(d)) {
+            const std::string name = e->d_name;
+            if (name == "." || name == "..") continue;
+            if (!wanted.count(name)) ::unlink((ccd_dir + "/" + name).c_str());
+        }
+        ::closedir(d);
+    }
+    ACE_DEBUG((LM_DEBUG,
+               ACE_TEXT("%D cloudd:thread:%t %M %N:%l tenant CCD reconciled "
+                        "(%u file(s)) in %C\n"),
+               static_cast<unsigned>(plan.size()), ccd_dir.c_str()));
+}
+
+// Multi-tenant (P3c): the VPN /24 assigned to `tenant` (from cloud.tenants), or
+// "" for the default/empty tenant or when multi-tenant VPN is off — the caller
+// then falls back to the base-pool allocation. Empty result == legacy behaviour.
+std::string tenant_subnet_of(data_store::Client& ds, const std::string& tenant) {
+    if (tenant.empty() || tenant == "default") return {};
+    if (ds_str(ds, "cloud.vpn.ccd.dir", "").empty()) return {};   // VPN MT off
+    try {
+        auto arr = nlohmann::json::parse(ds_str(ds, "cloud.tenants", "[]"));
+        if (arr.is_array()) for (const auto& t : arr) {
+            if (t.is_object() && t.value("id", std::string()) == tenant)
+                return t.value("vpn.subnet", std::string());
+        }
+    } catch (const std::exception&) { /* fall through to "" */ }
+    return {};
+}
+
+// Device-routing reconcile: the per-device UI DNAT + the per-tenant OpenVPN CCD,
+// which must track the SAME endpoint changes. Callers use this everywhere the
+// DNAT was rebuilt before. The CCD half is a no-op unless multi-tenant VPN
+// (cloud.vpn.ccd.dir) is enabled, so single-tenant behaviour is unchanged.
+void reconcile_routing(data_store::Client& ds, const std::string& tun_dev) {
+    rebuild_device_dnat(ds, tun_dev);
+    rebuild_tenant_ccd(ds, ds_str(ds, "cloud.vpn.ccd.dir", ""),
+                       ds_str(ds, "cloud.vpn.subnet", "10.9.0.0/24"));
 }
 
 // Merge lwm2m-dm's registration status into the EndpointRegistry. lwm2m-dm
@@ -461,7 +528,9 @@ std::size_t rehydrate_registry(data_store::Client& ds,
                 // /rd as, regardless of tenant. The tenant is only a row tag,
                 // carried into cloud.endpoints for the console.
                 if (reg.lookup_by_ep(serial)) continue;
-                if (prov.provision(serial)) {
+                // P3c: a tenant device draws its tunnel IP from its tenant /24
+                // (when multi-tenant VPN is on); default tenant uses the base pool.
+                if (prov.provision(serial, tenant_subnet_of(ds, tenant))) {
                     reg.update_tenant(serial, tenant);
                     ++healed;
                 }
@@ -664,6 +733,13 @@ int main(int argc, char** argv) {
         // DNS resolver pushed to devices (so the device surfaces vpn.assigned.dns).
         // Empty disables the push; default 1.1.1.1 so the field is populated.
         c.dns       = ds_str(ds, "cloud.vpn.dns", "1.1.1.1");
+        // Multi-tenant (P3c): per-client static IPs via OpenVPN client-config-dir.
+        // EMPTY by default → no client-config-dir line → single-tenant config is
+        // byte-identical. To enable multi-tenant VPN the operator sets
+        // cloud.vpn.ccd.dir (e.g. /etc/iot/vpn/ccd) AND widens cloud.vpn.subnet
+        // to a /16 covering the default /24 + the tenant pool (10.9.0.0/16); then
+        // each tenant device is pinned into its tenant /24 by a CCD file.
+        c.ccd_dir   = ds_str(ds, "cloud.vpn.ccd.dir", "");
         return c;
     };
     server::openvpn::OpenVpnServerConfig ovpn_cfg = load_ovpn_cfg();
@@ -680,6 +756,7 @@ int main(int argc, char** argv) {
         {"cloud.vpn.mgmt.port",   data_store::Value{static_cast<std::int32_t>(ovpn_cfg.mgmt_port)}},
         {"cloud.vpn.verb",        data_store::Value{static_cast<std::int32_t>(ovpn_cfg.verb)}},
         {"cloud.vpn.dns",         data_store::Value{ovpn_cfg.dns}},
+        {"cloud.vpn.ccd.dir",     data_store::Value{ovpn_cfg.ccd_dir}},
     });
     // Live hot-reload of the VPN server config: watch the knobs that feed
     // build_server_config so an operator changing proto/port/cipher/etc. in the
@@ -690,7 +767,7 @@ int main(int argc, char** argv) {
     auto ws_vpncfg = ds.watch(std::vector<std::string>{
         "cloud.vpn.proto", "cloud.vpn.listen.port", "cloud.vpn.cipher",
         "cloud.vpn.dev", "cloud.vpn.subnet", "cloud.vpn.dns",
-        "cloud.vpn.verb", "cloud.vpn.mgmt.port",
+        "cloud.vpn.verb", "cloud.vpn.mgmt.port", "cloud.vpn.ccd.dir",
         "cloud.vpn.ca.crt", "cloud.vpn.server.crt", "cloud.vpn.server.key",
     }, 1000);
     if (!ws_vpncfg.ok) {
@@ -883,7 +960,7 @@ int main(int argc, char** argv) {
     }
     // Reconstruct the full rule set from the persisted cloud.endpoints so a
     // restart restores every device's mapping atomically before any sync.
-    rebuild_device_dnat(ds, tun_dev);
+    reconcile_routing(ds, tun_dev);
 
     ACE_DEBUG((LM_INFO,
                ACE_TEXT("%D cloudd:thread:%t %M %N:%l started, ds=%C vpn-subnet=%C"
@@ -1182,7 +1259,12 @@ int main(int argc, char** argv) {
 
                     // Provision keyed by the (possibly tenant-qualified)
                     // bare serial — globally unique, == the device's /rd ep.
-                    auto result = provisioner.provision(p_serial);
+                    // P3c: a tenant device draws its tunnel IP from its tenant /24
+                    // (when multi-tenant VPN is on); default tenant uses the base
+                    // pool. The CCD reconcile below pins it; the loop's routing
+                    // reconcile (DNAT + CCD) also re-runs on the registry change.
+                    auto result = provisioner.provision(
+                        p_serial, tenant_subnet_of(ds, p_tenant));
                     if (result.has_value()) {
                         // Tag the registry row with the tenant so cloud.endpoints
                         // carries it ("" == default).
@@ -1404,7 +1486,7 @@ int main(int argc, char** argv) {
             // provision/deprovision/online-change may have added/removed a
             // device → its cloud:<proxy_port> mapping must follow).
             sync_endpoints_to_ds(ds, ep_reg);
-            rebuild_device_dnat(ds, tun_dev);
+            reconcile_routing(ds, tun_dev);
             sync_tick = 0;
         } else {
             // recv_event timed out — periodic housekeeping
@@ -1445,7 +1527,7 @@ int main(int argc, char** argv) {
                 }
                 if (ip_changed) {
                     sync_endpoints_to_ds(ds, ep_reg);
-                    rebuild_device_dnat(ds, tun_dev);
+                    reconcile_routing(ds, tun_dev);
                 }
             }
 
@@ -1456,7 +1538,7 @@ int main(int argc, char** argv) {
                 sync_endpoints_to_ds(ds, ep_reg);
                 // Safety-net DNAT rebuild — also picks up a live
                 // cloud.proxy.device.ui.port change.
-                rebuild_device_dnat(ds, tun_dev);
+                reconcile_routing(ds, tun_dev);
                 ds.set("cloud.vpn.port.next",
                        data_store::Value{static_cast<std::uint32_t>(proxy_port_start)});
                 g_log.apply_level(ds);
