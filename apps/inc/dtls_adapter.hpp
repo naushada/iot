@@ -174,7 +174,16 @@ class DTLSAdapter {
         /// a known-suspect session (e.g. a bootstrap that never completed over a
         /// stale "connected" peer) gets a fresh ClientHello instead of a doomed
         /// renegotiation. Use when the session must be assumed dead.
-        void reset_and_connect(const std::string& ip, const std::uint16_t& port);
+        ///
+        /// `toBootstrapIdentity` (default true) restores the BS identity before
+        /// the handshake — correct when re-establishing the *bootstrap* session.
+        /// Pass FALSE when switching to the *DM* server after a successful
+        /// bootstrap: the caller has just pinned the DM identity via
+        /// active_identity(), and resetting to the BS identity would make the DM
+        /// handshake present sha256(serial) — which the DM server has no PSK for
+        /// (the device then wedges at dm-connecting, never registering).
+        void reset_and_connect(const std::string& ip, const std::uint16_t& port,
+                               bool toBootstrapIdentity = true);
         /// Nuke and recreate the whole tinydtls context (empty peer table), the
         /// in-process equivalent of restarting iot-lwm2m-client. connect()/
         /// reset_and_connect() reset the peer matched by dtls_get_peer(&m_session),
