@@ -9,6 +9,7 @@
 #include <set>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -191,6 +192,30 @@ std::string build_ccd_entry(const std::string& ip,
     in_addr a{};
     if (::inet_pton(AF_INET, ip.c_str(), &a) != 1) return {};   // bad ip
     return "ifconfig-push " + ip + " " + u32_to_ip(mask_of(sprefix)) + "\n";
+}
+
+std::vector<CcdFile> plan_ccd_files(const std::string& endpoints_json,
+                                    const std::string& server_pool_cidr) {
+    std::vector<CcdFile> out;
+    // Bail early on an invalid pool (build_ccd_entry would reject each row too).
+    if (parse_cidr(server_pool_cidr).second < 0) return out;
+
+    auto arr = nlohmann::json::parse(endpoints_json, /*cb*/nullptr,
+                                     /*allow_exceptions*/false);
+    if (!arr.is_array()) return out;
+
+    for (const auto& e : arr) {
+        if (!e.is_object()) continue;
+        const std::string tenant = e.value("tenant", std::string());
+        if (tenant.empty() || tenant == "default") continue;  // base pool → no pin
+        const std::string serial = e.value("endpoint", std::string());
+        const std::string tun_ip = e.value("tun_ip", std::string());
+        if (serial.empty() || tun_ip.empty()) continue;
+        const std::string body = build_ccd_entry(tun_ip, server_pool_cidr);
+        if (body.empty()) continue;
+        out.push_back(CcdFile{serial, body});
+    }
+    return out;
 }
 
 }} // namespace server::openvpn

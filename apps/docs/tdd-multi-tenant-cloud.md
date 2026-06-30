@@ -19,7 +19,8 @@ instance).
 | P3a | Per-tenant VPN **subnet math + nft isolation rules** (pure, gtest) | _this_ | 🔵 |
 | P1e | `db/get cloud.endpoints` tenant scoping (**live UI isolation**) | _this_ | 🔵 |
 | P3b | Apply inter-tenant nft isolation table (compile-verified) | _this_ | 🔵 needs tun validation |
-| P3c | OpenVPN `/16` + per-client CCD static IP from tenant `/24` | — | ⏭️ needs tun validation |
+| P3c-i | **Integration foundation** (gtest): `VpnRegistry::allocate_in_subnet` (tenant-/24 IP + base-pool guard) + `plan_ccd_files` (per-device CCD plan) | _this_ | 🟢 gtest |
+| P3c-ii | iot-cloudd glue: server `/16` + `ccd_dir`, allocate tenant IPs in provision/heal, write CCD files | — | ⏭️ needs tun validation |
 | P4a | Tenant registry: auto VPN-subnet assignment (`cloud.tenants` watch) | _this_ | 🔵 |
 | P4b | Tenant-aware provision *watcher* + cred minting | #494 | ✅ merged |
 | P5a | Per-tenant device **quota** (`max.devices`), enforced at provision | #495 | ✅ merged |

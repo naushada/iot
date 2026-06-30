@@ -40,6 +40,15 @@ public:
     /// the subnet or port range is exhausted.
     std::optional<VpnAllocation> allocate(const std::string& ep);
 
+    /// Multi-tenant (P3c): allocate a tunnel IP from `subnet_cidr` (a tenant's
+    /// /24, which lies OUTSIDE this registry's base pool) plus a proxy port,
+    /// avoiding any IP already handed out. Returns nullopt when the tenant
+    /// subnet or the port range is exhausted. The tenant IP is tracked as
+    /// allocated but is never returned to the base free pool on release (it is
+    /// re-derivable from the tenant subnet on demand).
+    std::optional<VpnAllocation> allocate_in_subnet(const std::string& ep,
+                                                    const std::string& subnet_cidr);
+
     /// Restore a previously-persisted allocation at startup (rehydration).
     /// Marks `ip` / `port` as in-use for `ep` so the pools never hand them
     /// out again — unlike allocate(), the caller supplies the exact values

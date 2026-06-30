@@ -132,4 +132,54 @@ TEST(VpnRegistryTest, ContainsIp) {
     EXPECT_FALSE(reg.contains_ip("10.9.0.255"));   // broadcast
 }
 
+// ── 13. Multi-tenant: allocate_in_subnet (P3c) ──────────────────────
+
+TEST(VpnRegistryTest, AllocateInTenantSubnet) {
+    // Base pool is the legacy /24; a tenant device draws from its own /24
+    // (10.9.16.0/24, OUTSIDE the base pool) but shares the proxy-port range.
+    VpnRegistry reg("10.9.0.0/24", 5001, 5003);
+    auto a = reg.allocate_in_subnet("dev-a", "10.9.16.0/24");
+    ASSERT_TRUE(a.has_value());
+    EXPECT_EQ(a->tun_ip, "10.9.16.2");        // .0 net, .1 gw → first host .2
+    EXPECT_EQ(a->proxy_port, 5001U);          // port from the shared range
+    // A second tenant device gets the next free IP in its /24 + next port.
+    auto b = reg.allocate_in_subnet("dev-b", "10.9.16.0/24");
+    ASSERT_TRUE(b.has_value());
+    EXPECT_EQ(b->tun_ip, "10.9.16.3");
+    EXPECT_EQ(b->proxy_port, 5002U);
+}
+
+TEST(VpnRegistryTest, AllocateInSubnetReDerivesAfterRelease) {
+    // release() frees the tenant IP; the next allocate_in_subnet re-derives the
+    // same first host (it's tracked while in use, re-derivable once freed).
+    VpnRegistry reg("10.9.0.0/24");
+    auto a = reg.allocate_in_subnet("dev", "10.9.16.0/24");
+    ASSERT_TRUE(a.has_value());
+    EXPECT_EQ(a->tun_ip, "10.9.16.2");
+    reg.release("dev");
+    auto b = reg.allocate_in_subnet("dev2", "10.9.16.0/24");
+    ASSERT_TRUE(b.has_value());
+    EXPECT_EQ(b->tun_ip, "10.9.16.2");        // freed → re-derived
+}
+
+TEST(VpnRegistryTest, TenantIpNotReturnedToBasePool) {
+    // Releasing a tenant IP must not pollute the base /24 free pool: a later
+    // base allocate() yields a base-subnet IP, never the released tenant IP.
+    VpnRegistry reg("10.9.0.0/24");
+    auto t = reg.allocate_in_subnet("dev", "10.9.16.0/24");
+    ASSERT_TRUE(t.has_value());
+    EXPECT_EQ(t->tun_ip, "10.9.16.2");
+    reg.release("dev");
+    auto base = reg.allocate("base");
+    ASSERT_TRUE(base.has_value());
+    EXPECT_NE(base->tun_ip, "10.9.16.2");                 // not the tenant IP
+    EXPECT_EQ(base->tun_ip.rfind("10.9.0.", 0), 0u);      // a base-subnet IP
+}
+
+TEST(VpnRegistryTest, AllocateInSubnetPortExhaustion) {
+    VpnRegistry reg("10.9.0.0/24", 5001, 5001);   // exactly one port
+    EXPECT_TRUE(reg.allocate_in_subnet("a", "10.9.16.0/24").has_value());
+    EXPECT_FALSE(reg.allocate_in_subnet("b", "10.9.16.0/24").has_value()); // no port
+}
+
 } // namespace

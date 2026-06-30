@@ -1,8 +1,11 @@
 #include "vpn_registry.hpp"
 
+#include "tenant_subnet.hpp"   // allocate_ip_in_subnet (multi-tenant P3c)
+
 #include <algorithm>
 #include <arpa/inet.h>
 #include <cstring>
+#include <vector>
 
 namespace server {
 namespace openvpn {
@@ -86,6 +89,35 @@ std::optional<VpnAllocation> VpnRegistry::allocate(const std::string& ep) {
     return a;
 }
 
+std::optional<VpnAllocation>
+VpnRegistry::allocate_in_subnet(const std::string& ep,
+                                const std::string& subnet_cidr) {
+    std::lock_guard<std::mutex> lk(m_mutex);
+
+    if (m_free_ports.empty()) return std::nullopt;
+
+    // Pick a host IP from the tenant subnet, avoiding every IP this registry has
+    // already handed out (base pool + all tenants) so two tenants whose /24s
+    // were mis-configured to overlap still never collide.
+    std::vector<std::string> used(m_allocated_ips.begin(), m_allocated_ips.end());
+    const std::string ip = allocate_ip_in_subnet(subnet_cidr, used);
+    if (ip.empty()) return std::nullopt;
+
+    auto port_it = m_free_ports.begin();
+
+    VpnAllocation a;
+    a.ep         = ep;
+    a.tun_ip     = ip;            // from the tenant /24, NOT the base free pool
+    a.proxy_port = *port_it;
+
+    m_free_ports.erase(port_it);
+    m_allocated_ips.insert(ip);   // tracked as in-use; not drawn from m_free_ips
+    m_allocated_ports.insert(a.proxy_port);
+    m_ep_to_alloc[ep] = a;
+
+    return a;
+}
+
 void VpnRegistry::reserve(const std::string& ep, const std::string& ip,
                           std::uint16_t port) {
     std::lock_guard<std::mutex> lk(m_mutex);
@@ -141,9 +173,22 @@ void VpnRegistry::release(const std::string& ep) {
 }
 
 void VpnRegistry::release_ip_locked(const std::string& ip) {
-    if (m_allocated_ips.erase(ip)) {
-        m_free_ips.insert(ip);
+    if (!m_allocated_ips.erase(ip)) return;
+    // Only return it to the base free pool if it belongs to THIS registry's own
+    // subnet. A tenant IP (handed out by allocate_in_subnet from a tenant /24
+    // outside the base pool) must NOT pollute the base allocator — dropping it
+    // from m_allocated_ips is enough (it's re-derivable from the tenant subnet).
+    const auto cidr = parse_cidr(m_subnet_cidr);
+    const int prefix = cidr.second;
+    if (prefix > 0 && prefix < 32) {
+        const std::uint32_t mask  = ~0u << (32 - prefix);
+        const std::uint32_t net   = cidr.first & mask;
+        const std::uint32_t bcast = net | ~mask;
+        const std::uint32_t v     = ip_to_u32(ip);
+        if (v > net && v < bcast) m_free_ips.insert(ip);   // base host range
+        return;
     }
+    m_free_ips.insert(ip);   // unusual prefix → preserve legacy behaviour
 }
 
 void VpnRegistry::release_port_locked(std::uint16_t port) {
