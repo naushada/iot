@@ -14,6 +14,7 @@ include_directories(${OVPN_SERVER_DIR}/inc ${ACE_ROOT}/include)
 
 add_library(server_openvpn STATIC
     src/vpn_registry.cpp
+    src/tenant_subnet.cpp
     src/openvpn_server.cpp
     src/cert_authority.cpp)
 
@@ -28,7 +29,8 @@ if(BUILD_SERVER_OPENVPN_TESTS)
 
     add_executable(vpn-registry-tests
         test/vpn_registry_test.cpp
-        src/vpn_registry.cpp)
+        src/vpn_registry.cpp
+        src/tenant_subnet.cpp)
     target_include_directories(vpn-registry-tests
         PRIVATE ${OVPN_SERVER_DIR}/inc)
     target_link_libraries(vpn-registry-tests

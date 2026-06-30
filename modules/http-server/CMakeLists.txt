@@ -164,7 +164,8 @@ if(BUILD_HTTP_SERVER_TESTS)
             test/cloud_api_test.cpp
             ${HTTP_MODULE_DIR}/../server/lwm2m/src/endpoint_registry.cpp
             ${HTTP_MODULE_DIR}/../server/lwm2m/src/bootstrap.cpp
-            ${HTTP_MODULE_DIR}/../server/openvpn/src/vpn_registry.cpp)
+            ${HTTP_MODULE_DIR}/../server/openvpn/src/vpn_registry.cpp
+            ${HTTP_MODULE_DIR}/../server/openvpn/src/tenant_subnet.cpp)
         target_link_libraries(http-cloud-api-tests
             http_server_lib
             GTest::gtest_main GTest::gtest)

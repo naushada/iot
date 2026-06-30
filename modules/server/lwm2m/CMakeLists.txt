@@ -51,7 +51,8 @@ if(BUILD_SERVER_LWM2M_TESTS)
         test/bootstrap_test.cpp
         src/bootstrap.cpp
         src/endpoint_registry.cpp
-        ../openvpn/src/vpn_registry.cpp)
+        ../openvpn/src/vpn_registry.cpp
+        ../openvpn/src/tenant_subnet.cpp)
     target_include_directories(bootstrap-tests
         PRIVATE ${LWM2M_SERVER_DIR}/inc
         PRIVATE ${LWM2M_SERVER_DIR}/../openvpn/inc)

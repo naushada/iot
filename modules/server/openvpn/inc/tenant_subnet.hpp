@@ -74,6 +74,22 @@ std::string allocate_ip_in_subnet(const std::string& subnet_cidr,
 std::string build_ccd_entry(const std::string& ip,
                             const std::string& server_cidr);
 
+/// One planned OpenVPN client-config-dir file for a tenant device.
+struct CcdFile {
+    std::string serial;    ///< the endpoint serial (caller maps it → the cert CN
+                           ///< filename, e.g. rpi<serial>@cloud.local)
+    std::string contents;  ///< the file body (a build_ccd_entry line)
+};
+
+/// Plan the CCD files for the current fleet: one entry per `cloud.endpoints` row
+/// that has a non-default tenant tag AND a `tun_ip`, pinning that device to its
+/// tenant IP via build_ccd_entry(tun_ip, server_pool_cidr). Default-tenant rows
+/// get NO file (they draw dynamically from the base pool). Pure — the caller
+/// writes <ccd_dir>/<cn> = contents (and prunes stale files). Returns empty on a
+/// non-array `endpoints_json` or an invalid `server_pool_cidr`.
+std::vector<CcdFile> plan_ccd_files(const std::string& endpoints_json,
+                                    const std::string& server_pool_cidr);
+
 }} // namespace server::openvpn
 
 #endif /* __iot_tenant_subnet_hpp__ */

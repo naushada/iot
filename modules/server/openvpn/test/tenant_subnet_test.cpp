@@ -186,3 +186,31 @@ TEST(BuildCcdEntry, BadInput) {
     EXPECT_EQ(build_ccd_entry("not-an-ip", "10.9.0.0/16"), "");
     EXPECT_EQ(build_ccd_entry("10.9.16.2", "garbage"), "");
 }
+
+// ── plan_ccd_files ──────────────────────────────────────────────────────────
+
+TEST(PlanCcdFiles, OnlyTenantRowsWithTunIp) {
+    // default/untagged rows and rows without a tun_ip get NO CCD file; only
+    // tenant-tagged rows with a tun_ip are pinned, using the server pool mask.
+    const std::string eps = R"([
+        {"endpoint":"ser-acme","tenant":"acme","tun_ip":"10.9.16.2"},
+        {"endpoint":"ser-def","tun_ip":"10.9.0.5"},
+        {"endpoint":"ser-glx","tenant":"globex","tun_ip":"10.9.17.2"},
+        {"endpoint":"ser-noip","tenant":"acme"},
+        {"endpoint":"ser-defx","tenant":"default","tun_ip":"10.9.0.9"}
+    ])";
+    auto plan = plan_ccd_files(eps, "10.9.0.0/16");
+    ASSERT_EQ(plan.size(), 2u);                       // acme + globex only
+    EXPECT_EQ(plan[0].serial, "ser-acme");
+    EXPECT_EQ(plan[0].contents, "ifconfig-push 10.9.16.2 255.255.0.0\n");
+    EXPECT_EQ(plan[1].serial, "ser-glx");
+    EXPECT_EQ(plan[1].contents, "ifconfig-push 10.9.17.2 255.255.0.0\n");
+}
+
+TEST(PlanCcdFiles, BadInputs) {
+    EXPECT_TRUE(plan_ccd_files("not json", "10.9.0.0/16").empty());
+    EXPECT_TRUE(plan_ccd_files("{}", "10.9.0.0/16").empty());          // not array
+    EXPECT_TRUE(plan_ccd_files(
+        R"([{"endpoint":"a","tenant":"acme","tun_ip":"10.9.16.2"}])",
+        "garbage").empty());                                          // bad pool
+}
