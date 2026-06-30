@@ -188,6 +188,15 @@ return {
       type    = "string",
       default = "",
     },
+    -- Operator audit log (multi-tenant P5c). A capped, newest-first JSON array
+    -- of {ts,actor,tenant,action,target} records. iot-httpd appends an entry in
+    -- the db/set handler for tenant + device lifecycle actions (sole writer);
+    -- the cloud-ui Audit page reads it. Admin-only.
+    ["cloud.audit.log"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "[]",
+    },
 
     -- ── OTA software update (LwM2M Firmware Update Object 5) ──────────
     -- Operator-curated catalogue of artifacts in the cloud firmware feed

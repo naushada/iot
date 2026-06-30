@@ -83,6 +83,9 @@
       <!-- Tenants (multi-tenant operator console) -->
       <app-tenants *ngIf="selectedMenu==='tenants'"></app-tenants>
 
+      <!-- Audit log (operator/provisioning actions) -->
+      <app-audit *ngIf="selectedMenu==='audit'"></app-audit>
+
       <!-- Software Update -->
       <app-software-update *ngIf="selectedMenu==='software'"></app-software-update>
     </div>
