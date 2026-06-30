@@ -363,6 +363,19 @@ return {
       default = "10.9.16.0/20",
     },
 
+    -- Multi-tenant VPN enable knob (P3c). EMPTY by default → no
+    -- client-config-dir line in the OpenVPN config, no CCD files written →
+    -- single-tenant deployments are byte-identical. To turn on per-tenant static
+    -- IPs the operator sets this to a directory (e.g. /etc/iot/vpn/ccd) AND
+    -- widens cloud.vpn.subnet to a /16 covering the default /24 + the tenant pool
+    -- (10.9.0.0/16); iot-cloudd then pins each tenant device into its tenant /24
+    -- via a CCD file and allocates its tunnel IP from that /24.
+    ["cloud.vpn.ccd.dir"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
+
     -- JSON array of device serials with a live VPN tunnel right now, written
     -- by iot-cloudd from the openvpn management interface. lwm2m-dm reads it to
     -- stop pushing the cert once the device's tunnel is up.

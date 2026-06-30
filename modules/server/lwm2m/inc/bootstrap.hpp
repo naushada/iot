@@ -30,9 +30,16 @@ class BootstrapProvisioner {
 public:
     BootstrapProvisioner(EndpointRegistry& ep_reg, openvpn::VpnRegistry& vpn_reg);
 
-    /// Provision a new endpoint.  Returns nullopt when the endpoint
-    /// already exists or subnet/port pool is exhausted.
-    std::optional<BootstrapResult> provision(const std::string& ep);
+    /// Provision a new endpoint.  Returns nullopt when the subnet/port pool is
+    /// exhausted (an already-provisioned endpoint reuses its allocation).
+    ///
+    /// Multi-tenant (P3c): when `tenant_subnet` is non-empty (the device's
+    /// tenant /24, e.g. "10.9.16.0/24"), the tunnel IP is allocated from THAT
+    /// subnet via VpnRegistry::allocate_in_subnet instead of the base pool, so
+    /// the device lands in its tenant's address range (pinned by an OpenVPN CCD
+    /// file). Empty ⇒ the legacy base-pool allocation (default tenant).
+    std::optional<BootstrapResult> provision(const std::string& ep,
+                                             const std::string& tenant_subnet = "");
 
     /// Remove a previously provisioned endpoint.
     bool deprovision(const std::string& ep);
