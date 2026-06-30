@@ -43,6 +43,7 @@ add_library(http_server_lib STATIC
     src/handler.cpp
     src/handler_cloud.cpp
     src/tenant_scope.cpp
+    src/audit.cpp
     src/handler_proxy.cpp
     src/handler_shell.cpp
     src/shell.cpp
@@ -169,6 +170,13 @@ if(BUILD_HTTP_SERVER_TESTS)
             GTest::gtest_main GTest::gtest)
         add_test(NAME http-cloud-api-tests COMMAND http-cloud-api-tests)
     endif()
+
+    # Audit-log helpers (P5c) — pure JSON math, no ds/HTTP.
+    add_executable(http-audit-tests
+        test/audit_test.cpp
+        src/audit.cpp)
+    target_link_libraries(http-audit-tests GTest::gtest_main GTest::gtest)
+    add_test(NAME http-audit-tests COMMAND http-audit-tests)
 endif()
 
 # ─────────────────────────── Install ───────────────────────────

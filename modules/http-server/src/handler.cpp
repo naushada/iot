@@ -1,3 +1,4 @@
+#include "audit.hpp"
 #include "auth.hpp"
 #include "handler.hpp"
 #include "tenant_scope.hpp"
@@ -13,6 +14,7 @@
 
 #include <cctype>
 #include <chrono>
+#include <ctime>
 #include <condition_variable>
 #include <fstream>
 #include <iterator>
@@ -160,14 +162,19 @@ void install_handlers(Router& router,
                 r.body = R"({"ok":false,"err":"data store not connected"})";
                 return r;
             }
-            // ── Access control ─────────────────────────────────
+            // ── Access control + actor attribution (P5c audit) ──
             std::string access_level = "Admin";  // default: full access
+            std::string actor = "system", actor_tenant = "default";
             if (auth && auth->enabled()) {
                 std::string token = extract_session_cookie(req.headers,
                                                            auth->cookie_name());
                 if (!token.empty()) {
                     const auto* session = auth->validate(token);
-                    if (session) access_level = session->access;
+                    if (session) {
+                        access_level = session->access;
+                        actor        = session->username;
+                        actor_tenant = session->tenant;
+                    }
                 }
             }
             try {
@@ -207,6 +214,43 @@ void install_handlers(Router& router,
                     r.status = 400;
                     r.body = R"({"ok":false,"err":")" + rs.err + "\"}";
                     return r;
+                }
+                // ── P5c: record operator/provisioning actions in the audit log.
+                // Only a small watchlist of keys is auditable (tenant + device
+                // lifecycle); the actor comes from the session above. Best-effort
+                // — a failed audit write never fails the operator's set.
+                {
+                    std::vector<http_server::AuditEntry> events;
+                    const long now = static_cast<long>(std::time(nullptr));
+                    for (const auto& p : pairs) {
+                        const std::string action =
+                            http_server::audit_action_for_key(p.first);
+                        if (action.empty()) continue;
+                        std::string target;
+                        if (auto s = data_store::to_string(p.second)) target = *s;
+                        // Skip iot-cloudd's clear-to-"" of the request carriers
+                        // (a system step, not an operator action).
+                        if (target.empty() && action.rfind("device.", 0) == 0)
+                            continue;
+                        http_server::AuditEntry e;
+                        e.ts = now; e.actor = actor; e.tenant = actor_tenant;
+                        e.action = action;
+                        // tenant.update / bs.master.update carry no per-row
+                        // target; the others log their serial.
+                        e.target = (action == "tenant.update" ||
+                                    action == "bs.master.update") ? "" : target;
+                        events.push_back(std::move(e));
+                    }
+                    if (!events.empty()) {
+                        std::vector<data_store::Client::GetResult> got;
+                        std::string log = "[]";
+                        if (ds->get({"cloud.audit.log"}, got).ok &&
+                            !got.empty() && got[0].has_value) {
+                            if (auto s = data_store::to_string(got[0].value)) log = *s;
+                        }
+                        for (const auto& e : events) log = http_server::append_audit(log, e);
+                        ds->set({{ "cloud.audit.log", data_store::Value{log} }});
+                    }
                 }
                 json resp;
                 resp["ok"] = true;

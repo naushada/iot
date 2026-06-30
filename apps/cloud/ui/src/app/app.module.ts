@@ -35,6 +35,7 @@ import { ServicesListComponent } from './services/services-list/services-list.co
 import { HttpConfigComponent } from './http-config/http-config.component';
 import { UsersComponent } from './users/users.component';
 import { TenantsComponent } from './tenants/tenants.component';
+import { AuditComponent } from './audit/audit.component';
 import { SoftwareUpdateComponent } from './software-update/software-update.component';
 
 import { SsoAuthInterceptor } from '../common/sso-auth.interceptor';
@@ -51,7 +52,7 @@ import { DsDebugDirective } from '../common/ds-debug.directive';
     RoutingSubmenuComponent, CustomRulesComponent, DeviceForwardingComponent,
     Lwm2mSubmenuComponent, Lwm2mConfigComponent, BsConfigComponent,
     ServicesSubmenuComponent, ServicesListComponent, HttpConfigComponent,
-    UsersComponent, TenantsComponent, SoftwareUpdateComponent,
+    UsersComponent, TenantsComponent, AuditComponent, SoftwareUpdateComponent,
     DsHintComponent, DsDebugDirective,
   ],
   imports: [

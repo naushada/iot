@@ -27,7 +27,7 @@ instance).
 | **PB** | **Adopt Option B (device-agnostic tenancy): bare identities, tenant from cred-row tag, `cloud.provision.tenant` carrier; revert qualified `ep`/identity** | _this_ | 🔵 gtest |
 | P4c | Operator console UI: **Tenants CRUD page** + Endpoints **tenant selector** (`provision.tenant`) | _this_ | 🟡 needs node build/validation |
 | P5b | Per-tenant CA / cert namespace | — | ⏭️ needs tun validation |
-| P5c | Audit log of platform-operator + provisioning actions | — | ⏭️ |
+| P5c | **Audit log** of operator + provisioning actions (`cloud.audit.log`, iot-httpd db/set hook + read-only UI) | _this_ | 🟢 gtest + ng-build |
 
 **P3b/P3c split:** P3b applies the inter-tenant **nft drop** table
 (`build_tenant_isolation_rules` over the tenant subnets) via the same
