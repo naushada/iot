@@ -48,13 +48,19 @@ interface EpCred {
                      placeholder="paste BS PSK from device-ui" />
               <clr-control-helper *dsDebug><app-ds-hint key="cloud.provision.bs.psk"></app-ds-hint></clr-control-helper>
             </clr-input-container>
-            <clr-select-container *ngIf="tenantIds.length > 1 && !editing">
+            <!-- Platform operator: free choice. Tenant-scoped operator: pinned. -->
+            <clr-select-container *ngIf="isOperator && tenantIds.length > 1 && !editing">
               <label>Tenant</label>
               <select clrSelect [(ngModel)]="provTenant">
                 <option *ngFor="let t of tenantIds" [value]="t">{{ t }}</option>
               </select>
               <clr-control-helper *dsDebug><app-ds-hint key="cloud.provision.tenant"></app-ds-hint></clr-control-helper>
             </clr-select-container>
+            <clr-input-container *ngIf="!isOperator && !editing">
+              <label>Tenant</label>
+              <input clrInput [value]="provTenant" readonly />
+              <clr-control-helper>Provisions into your tenant.</clr-control-helper>
+            </clr-input-container>
             <div></div>
           </div>
           <button class="btn btn-primary" style="margin-top:16px;"
@@ -220,6 +226,9 @@ export class EndpointListComponent implements OnInit, OnDestroy {
   private sub = new Subscription(); private active = true;
 
   get isAdmin(): boolean { return this.session.isAdmin; }
+  /// Platform operator ("*") can provision into any tenant; a tenant-scoped
+  /// operator is PINNED to their own tenant (can't provision elsewhere).
+  get isOperator(): boolean { return this.session.isPlatformOperator; }
 
   /** Same-origin path-scoped device-UI URL (reverse-proxied by iot-httpd over
    *  the VPN tun). The endpoint is URL-encoded so urn:dev:* names are path-safe.
@@ -286,14 +295,23 @@ export class EndpointListComponent implements OnInit, OnDestroy {
             const arr = JSON.parse(String(d['cloud.endpoint.credentials'] || '[]'));
             this.creds = Array.isArray(arr) ? arr : [];
           } catch { this.creds = []; }
-          // Tenant dropdown options: "default" + every active tenant.
-          try {
-            const ts = JSON.parse(String(d['cloud.tenants'] || '[]'));
-            const ids = (Array.isArray(ts) ? ts : [])
-              .filter((t) => (t?.status || 'active') === 'active' && t?.id)
-              .map((t) => String(t.id));
-            this.tenantIds = ['default', ...ids.filter((id) => id !== 'default')];
-          } catch { this.tenantIds = ['default']; }
+          // Tenant options. A platform operator ("*") picks any tenant; a
+          // tenant-scoped operator is PINNED to their own — the dropdown then
+          // collapses to one option so they can only provision into their tenant
+          // (the server also enforces this — see the db/set handler).
+          if (!this.isOperator) {
+            const t = this.session.tenant || 'default';
+            this.tenantIds = [t];
+            this.provTenant = t;
+          } else {
+            try {
+              const ts = JSON.parse(String(d['cloud.tenants'] || '[]'));
+              const ids = (Array.isArray(ts) ? ts : [])
+                .filter((t) => (t?.status || 'active') === 'active' && t?.id)
+                .map((t) => String(t.id));
+              this.tenantIds = ['default', ...ids.filter((id) => id !== 'default')];
+            } catch { this.tenantIds = ['default']; }
+          }
         }
       },
       error: () => {}
@@ -339,7 +357,7 @@ export class EndpointListComponent implements OnInit, OnDestroy {
         if (r.ok) {
           this.toast.success((this.editing ? 'Updated PSK for ' : 'Provisioning ') + serial);
           this.provSerial = ''; this.provBsPsk = ''; this.editing = false;
-          this.provTenant = 'default';
+          this.provTenant = this.pinnedTenant();
         }
         else this.toast.error(r.err || 'Provision failed');
       },
@@ -368,7 +386,13 @@ export class EndpointListComponent implements OnInit, OnDestroy {
     this.editing = false;
     this.provSerial = '';
     this.provBsPsk = '';
-    this.provTenant = 'default';
+    this.provTenant = this.pinnedTenant();
+  }
+
+  /// The tenant a fresh provision defaults to: any ("default") for a platform
+  /// operator, else the operator's own tenant (they can't provision elsewhere).
+  private pinnedTenant(): string {
+    return this.isOperator ? 'default' : (this.session.tenant || 'default');
   }
 
   private startLongPoll(): void {

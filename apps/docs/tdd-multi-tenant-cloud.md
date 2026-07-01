@@ -29,7 +29,8 @@ instance).
 | P4c | Operator console UI: **Tenants CRUD page** + Endpoints **tenant selector** (`provision.tenant`) | _this_ | 🟡 needs node build/validation |
 | P5b | Per-tenant CA / cert namespace | — | ⏭️ needs tun validation |
 | P5c | **Audit log** of operator + provisioning actions (`cloud.audit.log`, iot-httpd db/set hook + read-only UI) | _this_ | 🟢 gtest + ng-build |
-| P4d | **User↔tenant (D6 finish):** Users page tenant field + column; `/api/v1/users` GET/POST carry `tenant`; login returns tenant → session `isPlatformOperator`; built-in admin defaults to `*`; Tenants/Audit pages gated to the operator | _this_ | 🟢 compile + ng-build |
+| P4d | **User↔tenant (D6 finish):** Users page tenant field + column; `/api/v1/users` GET/POST carry `tenant`; login returns tenant → session `isPlatformOperator`; built-in admin defaults to `*`; Tenants/Audit pages gated to the operator | #503 | ✅ merged |
+| P4e | **Provision tenant-scoping (D7 finish):** a tenant-scoped operator can only provision into their own tenant — UI pins the selector to `session.tenant`; db/set force-pins `cloud.provision.tenant` server-side (defence-in-depth) | _this_ | 🟢 compile + ng-build |
 
 **P3b/P3c split:** P3b applies the inter-tenant **nft drop** table
 (`build_tenant_isolation_rules` over the tenant subnets) via the same

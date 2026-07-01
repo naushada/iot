@@ -209,6 +209,26 @@ void install_handlers(Router& router,
                     r.body = R"({"ok":false,"err":"forbidden: read-only access"})";
                     return r;
                 }
+                // Multi-tenant (D7): a tenant-scoped operator can only provision
+                // into THEIR OWN tenant. Pin cloud.provision.tenant to the
+                // session tenant (overriding any value the caller sent), and if a
+                // provision request comes in without one, inject it — so a crafted
+                // API call can't tag a device into another tenant. The platform
+                // operator ("*") is unrestricted.
+                if (auth && auth->enabled() && actor_tenant != "*") {
+                    bool hasTenantPair = false, hasRequest = false;
+                    for (auto& p : pairs) {
+                        if (p.first == "cloud.provision.tenant") {
+                            p.second = data_store::Value{actor_tenant};
+                            hasTenantPair = true;
+                        } else if (p.first == "cloud.provision.request") {
+                            hasRequest = true;
+                        }
+                    }
+                    if (hasRequest && !hasTenantPair)
+                        pairs.emplace_back("cloud.provision.tenant",
+                                           data_store::Value{actor_tenant});
+                }
                 auto rs = ds->set(pairs);
                 if (!rs.ok) {
                     r.status = 400;
