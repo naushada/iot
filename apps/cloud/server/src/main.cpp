@@ -1226,11 +1226,12 @@ int main(int argc, char** argv) {
                     // Mint a per-device VPN client cert (Phase 2) signed by
                     // the runtime CA and stash it in the credential record for
                     // LwM2M Object-2048 delivery (Phase 3). CN = the cloud
-                    // formatted identity, for traceability.
+                    // formatted identity (bare); the tenant is stamped into the
+                    // cert OU (P5b) for namespacing + revocation scoping.
                     if (cert_ca.have_ca()) {
                         const std::string cn =
                             server::lwm2m::format_identity(p_serial);
-                        if (auto mc = cert_ca.mint_client(cn)) {
+                        if (auto mc = cert_ca.mint_client(cn, p_tenant)) {
                             try {
                                 const std::string cur =
                                     ds_str(ds, "cloud.endpoint.credentials", "[]");

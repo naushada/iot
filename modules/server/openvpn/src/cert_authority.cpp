@@ -237,7 +237,8 @@ std::optional<std::string> CertAuthority::revoke(const std::string& client_cert_
     return result;
 }
 
-std::optional<MintedCert> CertAuthority::mint_client(const std::string& cn) {
+std::optional<MintedCert> CertAuthority::mint_client(const std::string& cn,
+                                                     const std::string& tenant) {
     if (!have_ca()) {
         ACE_ERROR((LM_ERROR,
                    ACE_TEXT("%D cloudd:thread:%t %M %N:%l mint_client(%C): no CA "
@@ -246,6 +247,12 @@ std::optional<MintedCert> CertAuthority::mint_client(const std::string& cn) {
         return std::nullopt;
     }
     const std::string safe = sanitize_cn(cn);
+    // Tenant → /OU=<tenant> (P5b). Sanitised like the CN and single-quoted in the
+    // -subj arg, so no shell/DN metacharacter can escape. Default/empty ⇒ no OU
+    // (byte-identical single-tenant subject).
+    std::string ou;
+    if (!tenant.empty() && tenant != "default")
+        ou = "/OU=" + sanitize_cn(tenant);
 
     // Work in a private temp dir so concurrent/repeated mints don't collide
     // and nothing leaks into the persistent volume.
@@ -277,7 +284,7 @@ std::optional<MintedCert> CertAuthority::mint_client(const std::string& cn) {
         ensure_crl() &&
         run_openssl("genrsa -out '" + key + "' 2048") &&
         run_openssl("req -new -key '" + key + "' -out '" + csr +
-                    "' -subj '/O=IoT Cloud/CN=" + safe + "'") &&
+                    "' -subj '/O=IoT Cloud" + ou + "/CN=" + safe + "'") &&
         run_openssl("ca -batch -notext -rand_serial -config '" + m_p.ca_cnf + "' -days " +
                     std::to_string(m_p.days) + " -in '" + csr + "' -out '" + crt + "'");
 
