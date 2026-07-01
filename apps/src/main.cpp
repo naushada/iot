@@ -693,6 +693,20 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         if (!a) return;
         const auto now = Clock::now();
 
+        // Pump tinydtls' handshake retransmission on the SERVER side too. The
+        // client tick does this (on_tick_client), but the server never did — so a
+        // lost cloud→device handshake flight (e.g. ServerHelloDone) was NEVER
+        // retransmitted. The device would retransmit its earlier flight, the
+        // server would reject it as a duplicate ("message sequence number too
+        // small, expected 2, got 1"), and the DM handshake deadlocked until the
+        // device restarted onto a fresh source port (a new peer). Pumping it here
+        // makes the handshake self-heal on packet loss — symmetric with the
+        // client, and covers EVERY peer in the server's DTLS context at once.
+        for (auto& kv : a->udpAdapter()->services()) {
+            if (kv.second && kv.second->dtlsAdapter())
+                kv.second->dtlsAdapter()->check_retransmit();
+        }
+
         auto expired = registry->expire(now);
         if (!expired.empty()) {
             ACE_DEBUG((LM_INFO,
