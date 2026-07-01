@@ -25,7 +25,7 @@ interface TenantRow {
     <div class="page">
       <h3>Tenants</h3>
 
-      <ng-container *ngIf="isAdmin; else noAccess">
+      <ng-container *ngIf="isOperator; else noAccess">
         <!-- Create / update -->
         <div class="form-grid" style="align-items:end;">
           <clr-input-container>
@@ -93,7 +93,7 @@ interface TenantRow {
       </ng-container>
 
       <ng-template #noAccess>
-        <p class="hint">You need Admin access to manage tenants.</p>
+        <p class="hint">Only the platform operator (tenant <code>*</code>) can manage tenants.</p>
       </ng-template>
     </div>
   `,
@@ -116,12 +116,12 @@ export class TenantsComponent implements OnInit {
   loading = false;
   saving = false;
 
-  get isAdmin(): boolean { return this.session.isAdmin; }
+  get isOperator(): boolean { return this.session.isPlatformOperator; }
 
   constructor(private http: HttpsvcService, private session: SessionService,
               private toast: ToastService) {}
 
-  ngOnInit(): void { if (this.isAdmin) this.reload(); }
+  ngOnInit(): void { if (this.isOperator) this.reload(); }
 
   reload(): void {
     this.loading = true;

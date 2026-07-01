@@ -23,7 +23,7 @@ interface AuditRow {
         <button class="btn btn-sm btn-link" (click)="reload()" [disabled]="loading">Refresh</button>
       </h3>
 
-      <ng-container *ngIf="isAdmin; else noAccess">
+      <ng-container *ngIf="isOperator; else noAccess">
         <p class="hint">
           Tenant &amp; device lifecycle actions (provision, deprovision, tenant
           changes), newest first. Recorded by the cloud at the point of action.
@@ -52,7 +52,7 @@ interface AuditRow {
       </ng-container>
 
       <ng-template #noAccess>
-        <p class="hint">You need Admin access to view the audit log.</p>
+        <p class="hint">Only the platform operator (tenant <code>*</code>) can view the audit log.</p>
       </ng-template>
     </div>
   `,
@@ -67,11 +67,11 @@ export class AuditComponent implements OnInit {
   rows: AuditRow[] = [];
   loading = false;
 
-  get isAdmin(): boolean { return this.session.isAdmin; }
+  get isOperator(): boolean { return this.session.isPlatformOperator; }
 
   constructor(private http: HttpsvcService, private session: SessionService) {}
 
-  ngOnInit(): void { if (this.isAdmin) this.reload(); }
+  ngOnInit(): void { if (this.isOperator) this.reload(); }
 
   fmt(ts: number): string {
     if (!ts) return '—';

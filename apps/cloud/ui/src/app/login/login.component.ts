@@ -19,7 +19,7 @@ export class LoginComponent {
     this.http.login({ id: this.id, password: this.password }).subscribe({
       next: (r) => {
         this.loggingIn = false;
-        if (r.ok) { this.session.setFromLogin(r.access); this.router.navigate(['/main']); }
+        if (r.ok) { this.session.setFromLogin(r.access, r.tenant); this.router.navigate(['/main']); }
         else { this.error = r.err || 'Login failed'; }
       },
       error: () => { this.loggingIn = false; this.error = 'Connection failed'; }

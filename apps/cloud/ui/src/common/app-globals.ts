@@ -77,12 +77,14 @@ export interface LoginResponse {
   ok: boolean;
   role?: string;
   access?: string;   // "Admin" | "Viewer"
+  tenant?: string;   // owning tenant ("*" = platform operator, sees all)
   err?: string;
 }
 
 export interface SessionInfo {
   role: string;
   access: string;    // "Admin" | "Viewer"
+  tenant: string;    // "*" = platform operator, else a tenant slug
 }
 
 // ── User accounts (managed via /api/v1/users) ───────────────────────
@@ -90,6 +92,7 @@ export interface SessionInfo {
 export interface UserAccount {
   id: string;
   access: string;    // "Admin" | "Viewer"
+  tenant?: string;   // owning tenant ("*" = platform operator)
 }
 
 export interface UserListResponse {
@@ -102,6 +105,7 @@ export interface UserCreateRequest {
   id: string;
   password: string;
   access: string;    // "Admin" | "Viewer"
+  tenant?: string;   // owning tenant ("*" = platform operator)
 }
 
 export interface UserMutateResponse {
