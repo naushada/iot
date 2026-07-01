@@ -121,6 +121,39 @@ TEST(CertAuthority, mint_client_returns_family_that_chains_to_ca) {
                               "' '" + p.srv_crt + "' >/dev/null 2>&1").c_str()));
 }
 
+TEST(CertAuthority, mint_client_stamps_tenant_ou) {
+    if (!have_openssl()) GTEST_SKIP() << "openssl CLI not available";
+    const std::string dir = scratch();
+    if (dir.empty()) GTEST_SKIP() << "no writable scratch dir";
+    CaPaths p = paths_under(dir);
+
+    CertAuthority ca(p);
+    ASSERT_TRUE(ca.ensure());
+
+    // grep the cert subject. Case-sensitive "OU" matches only the field label
+    // (the org "IoT Cloud" contains lowercase "ou", not "OU").
+    auto subj_has = [](const std::string& file, const std::string& pat) {
+        return std::system(("/usr/bin/openssl x509 -subject -noout -in '" + file +
+                            "' | grep -q '" + pat + "'").c_str());
+    };
+
+    // Tenant device: /OU=acme stamped; CN stays BARE.
+    auto acme = ca.mint_client("rpi100000abcd@cloud.local", "acme");
+    ASSERT_TRUE(acme.has_value());
+    const std::string acrt = dir + "/acme.crt";
+    std::ofstream(acrt, std::ios::binary) << acme->client_crt;
+    EXPECT_EQ(0, subj_has(acrt, "OU"));                          // OU field present
+    EXPECT_EQ(0, subj_has(acrt, "acme"));                        // = the tenant
+    EXPECT_EQ(0, subj_has(acrt, "rpi100000abcd@cloud.local"));   // CN unchanged
+
+    // Default tenant: NO OU — byte-identical to the single-tenant subject.
+    auto def = ca.mint_client("rpi200000dcba@cloud.local", "default");
+    ASSERT_TRUE(def.has_value());
+    const std::string dcrt = dir + "/def.crt";
+    std::ofstream(dcrt, std::ios::binary) << def->client_crt;
+    EXPECT_NE(0, subj_has(dcrt, "OU"));                          // no OU field
+}
+
 TEST(CertAuthority, mint_without_ca_fails) {
     const std::string dir = scratch();
     if (dir.empty()) GTEST_SKIP() << "no writable scratch dir";

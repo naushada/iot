@@ -70,7 +70,15 @@ public:
     /// Mint a client cert + key signed by the CA, CN = sanitized `cn`. Signed
     /// via `openssl ca` so the cert is recorded in the CA database and is
     /// revocable later. Returns std::nullopt on failure (no CA, openssl/IO).
-    std::optional<MintedCert> mint_client(const std::string& cn);
+    ///
+    /// Multi-tenant (P5b): when `tenant` is non-empty/non-default it is stamped
+    /// into the cert's Organizational Unit (/OU=<tenant>) — one CA, certs
+    /// namespaced + traceable by tenant. The CN stays BARE (rpi<serial>@cloud.
+    /// local) so OpenVPN's client-config-dir lookup + the device flow are
+    /// unaffected. Network isolation remains the nft subnet boundary (D4/D5), not
+    /// the CA; the OU is for traceability + revocation scoping.
+    std::optional<MintedCert> mint_client(const std::string& cn,
+                                          const std::string& tenant = "");
 
     /// Ensure the CRL/CA-database scaffolding exists (openssl.cnf, index.txt,
     /// serial, crlnumber, newcerts/, and an initial empty CRL). Idempotent and
