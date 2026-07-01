@@ -30,6 +30,13 @@ import { UserAccount } from '../../common/app-globals';
             </select>
             <clr-control-helper *dsDebug><app-ds-hint key="auth.users.accounts"></app-ds-hint></clr-control-helper>
           </clr-select-container>
+          <clr-select-container>
+            <label>Tenant</label>
+            <select clrSelect [(ngModel)]="newTenant">
+              <option *ngFor="let t of tenantIds" [value]="t">{{ t === '*' ? '* (platform operator)' : t }}</option>
+            </select>
+            <clr-control-helper *dsDebug><app-ds-hint key="auth.users.accounts (tenant)"></app-ds-hint></clr-control-helper>
+          </clr-select-container>
           <div class="btn-cell">
             <button class="btn btn-primary" (click)="create()" [disabled]="saving">
               {{ saving ? 'Saving…' : 'Add / Update' }}
@@ -42,12 +49,16 @@ import { UserAccount } from '../../common/app-globals';
         <clr-datagrid [clrDgLoading]="loading" style="margin-top:20px;">
           <clr-dg-column>User ID</clr-dg-column>
           <clr-dg-column>Access</clr-dg-column>
+          <clr-dg-column>Tenant</clr-dg-column>
           <clr-dg-column>Actions</clr-dg-column>
 
           <clr-dg-row *clrDgItems="let u of users">
             <clr-dg-cell>{{ u.id }}</clr-dg-cell>
             <clr-dg-cell>
               <app-status-badge [label]="u.access" [state]="u.access==='Admin' ? 'connected' : 'idle'"></app-status-badge>
+            </clr-dg-cell>
+            <clr-dg-cell>
+              <code>{{ u.tenant === '*' ? '* (operator)' : (u.tenant || 'default') }}</code>
             </clr-dg-cell>
             <clr-dg-cell>
               <button class="btn btn-sm btn-danger" *ngIf="u.id !== 'admin'" (click)="remove(u.id)">Delete</button>
@@ -78,6 +89,9 @@ export class UsersComponent implements OnInit {
   newPassword = '';
   newAccess = 'Viewer';
   accessLevels = ['Admin', 'Viewer'];
+  // Tenant options: default + platform-operator (*) + every active tenant.
+  newTenant = 'default';
+  tenantIds: string[] = ['default', '*'];
   loading = false;
   saving = false;
 
@@ -86,7 +100,7 @@ export class UsersComponent implements OnInit {
   constructor(private http: HttpsvcService, private session: SessionService,
               private toast: ToastService) {}
 
-  ngOnInit(): void { if (this.isAdmin) this.reload(); }
+  ngOnInit(): void { if (this.isAdmin) { this.reload(); this.loadTenants(); } }
 
   reload(): void {
     this.loading = true;
@@ -96,15 +110,36 @@ export class UsersComponent implements OnInit {
     });
   }
 
+  /// Populate the Tenant dropdown: default + "*" (platform operator) + the
+  /// active tenants from cloud.tenants.
+  loadTenants(): void {
+    this.http.dbGet(['cloud.tenants']).subscribe({
+      next: (r) => {
+        const ids: string[] = ['default', '*'];
+        if (r.ok && r.data) {
+          try {
+            const arr = JSON.parse(String(r.data['cloud.tenants'] ?? '[]'));
+            (Array.isArray(arr) ? arr : [])
+              .filter((t) => (t?.status || 'active') === 'active' && t?.id && t.id !== 'default')
+              .forEach((t) => ids.push(String(t.id)));
+          } catch { /* keep defaults */ }
+        }
+        this.tenantIds = ids;
+      },
+      error: () => {}
+    });
+  }
+
   create(): void {
     if (!this.newId || !this.newPassword) { this.toast.error('ID and password required'); return; }
     this.saving = true;
-    this.http.createUser({ id: this.newId, password: this.newPassword, access: this.newAccess }).subscribe({
+    this.http.createUser({ id: this.newId, password: this.newPassword,
+                           access: this.newAccess, tenant: this.newTenant }).subscribe({
       next: (r) => {
         this.saving = false;
         if (r.ok) {
           this.toast.success('User ' + r.id + ' saved');
-          this.newId = ''; this.newPassword = ''; this.newAccess = 'Viewer';
+          this.newId = ''; this.newPassword = ''; this.newAccess = 'Viewer'; this.newTenant = 'default';
           this.reload();
         } else { this.toast.error(r.err || 'Failed to save user'); }
       },

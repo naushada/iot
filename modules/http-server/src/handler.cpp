@@ -410,6 +410,9 @@ void install_handlers(Router& router,
                     access = CredentialStore::load_user_access(*ds, id);
                     tenant = CredentialStore::load_user_tenant(*ds, id);
                 }
+                // Built-in admin is the platform operator ("*" = all tenants)
+                // unless explicitly scoped via auth.users.admin.tenant.
+                if (tenant.empty() || tenant == "default") tenant = "*";
             } else {
                 role = "user";
                 bool found = false;
@@ -441,6 +444,7 @@ void install_handlers(Router& router,
             resp["ok"]     = true;
             resp["role"]   = role;
             resp["access"] = access;
+            resp["tenant"] = tenant;   // owning tenant ("*" = platform operator)
             r.body = resp.dump();
             if (!token.empty()) {
                 r.headers["Set-Cookie"] = make_set_cookie(
@@ -1543,11 +1547,18 @@ void install_handlers(Router& router,
             json admin;
             admin["id"]     = "admin";
             admin["access"] = CredentialStore::load_user_access(*ds, "admin");
+            // Built-in admin is the platform operator ("*" = sees all tenants)
+            // unless explicitly scoped via auth.users.admin.tenant.
+            {
+                std::string at = CredentialStore::load_user_tenant(*ds, "admin");
+                admin["tenant"] = (at.empty() || at == "default") ? "*" : at;
+            }
             users.push_back(admin);
             for (const auto& u : load_accounts(ds)) {
                 json e;
                 e["id"]     = u.value("id", "");
                 e["access"] = u.value("access", "Viewer");
+                e["tenant"] = u.value("tenant", "default");
                 users.push_back(e);
             }
             json resp;
@@ -1587,6 +1598,7 @@ void install_handlers(Router& router,
             std::string uid      = doc.value("id", "");
             std::string password = doc.value("password", "");
             std::string uaccess  = doc.value("access", "Viewer");
+            std::string utenant  = doc.value("tenant", "default");
             if (uid.empty() || password.empty()) {
                 r.status = 400;
                 r.body = R"({"ok":false,"err":"id and password required"})";
@@ -1598,6 +1610,27 @@ void install_handlers(Router& router,
                 return r;
             }
             if (uaccess != "Admin" && uaccess != "Viewer") uaccess = "Viewer";
+            // Multi-tenant (D6): the user's owning tenant — "*" (platform
+            // operator, sees all), "default", or a known cloud.tenants id. Reject
+            // an unknown tenant so a typo can't orphan a user outside isolation.
+            if (utenant.empty()) utenant = "default";
+            if (utenant != "*" && utenant != "default") {
+                bool known = false;
+                std::string tenants_json = "[]";
+                {
+                    std::vector<data_store::Client::GetResult> g;
+                    if (ds->get({"cloud.tenants"}, g).ok && !g.empty() && g[0].has_value)
+                        if (auto s = data_store::to_string(g[0].value)) tenants_json = *s;
+                }
+                auto ts = nlohmann::json::parse(tenants_json, nullptr, false);
+                if (ts.is_array()) for (const auto& t : ts)
+                    if (t.is_object() && t.value("id", std::string()) == utenant) { known = true; break; }
+                if (!known) {
+                    r.status = 400;
+                    r.body = R"({"ok":false,"err":"unknown tenant"})";
+                    return r;
+                }
+            }
 
             auto accounts = load_accounts(ds);
             std::string hash = sha256_hex(password);
@@ -1606,6 +1639,7 @@ void install_handlers(Router& router,
                 if (u.value("id", "") == uid) {
                     u["hash"]   = hash;
                     u["access"] = uaccess;
+                    u["tenant"] = utenant;
                     updated = true;
                     break;
                 }
@@ -1615,6 +1649,7 @@ void install_handlers(Router& router,
                 e["id"]     = uid;
                 e["hash"]   = hash;
                 e["access"] = uaccess;
+                e["tenant"] = utenant;
                 accounts.push_back(e);
             }
             json resp;
