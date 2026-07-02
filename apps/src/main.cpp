@@ -1505,6 +1505,17 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     auto bootRetryAfter =
         std::make_shared<std::chrono::steady_clock::time_point>();
     auto bootBackoff  = std::make_shared<int>(2);   // seconds; doubles, cap 30
+    // DM DTLS connect watchdog. Once on_done switches us to the DM the handshake
+    // must reach "connected" within this window; if it never does (the DM has no
+    // PSK for our identity, or a stale DM peer rejects the ClientHello) the
+    // registration FSM stays Unregistered — never Failed — so Task K's
+    // registration-rejection fallback can't catch it, and the device would spin
+    // at dm-connecting until the (90s) registration lifetime expires. This arms
+    // the wired should_rebootstrap(dm_dtls_failed=true) trigger instead. Epoch
+    // (default-constructed) = unarmed; armed lazily on the first Done-but-not-
+    // connected tick, disarmed the moment the DM session comes up.
+    auto dmConnectDeadline =
+        std::make_shared<std::chrono::steady_clock::time_point>();
 
     // After the Bootstrap commit, switch the LwM2MClient peer + DTLS identity
     // to the DM and (re)connect; the tick sends Register once the DM
@@ -1741,7 +1752,8 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         std::make_shared<std::chrono::steady_clock::time_point>();
     app->udpAdapter()->on_tick_client([wreg, wdm, wapp, rebind, wbs,
                                        reboot_after, bootPhase, bootDeadline,
-                                       bootRetryAfter, bootBackoff, bsHost, bsPort,
+                                       bootRetryAfter, bootBackoff, dmConnectDeadline,
+                                       bsHost, bsPort,
                                        dtls, &ds, lastConn, lastKeepalive, sendst]() {
         // Liveness first: petting the watchdog here ties it to the reactor
         // actually dispatching this 1 Hz tick. If the reactor stalls (the
@@ -1908,6 +1920,47 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
                 // clear the flag so we don't double-act on it later.
                 reg->clear_pending_reregister();
             }
+
+            // DM DTLS connect watchdog (see dmConnectDeadline above). This is
+            // the wired trigger for should_rebootstrap(dm_dtls_failed=true): a DM
+            // handshake that never reaches "connected" leaves reg Unregistered
+            // (never Failed), so Task K's registration-rejection path can't see
+            // it. On timeout we fall back to the Bootstrap server — re-pointing
+            // the LwM2MClient peer to the BS and reset_and_connect(bsHost,bsPort)
+            // (which restores the BS identity, so /bs presents BS creds not the
+            // unresolvable DM identity+key), then replaying the boot path so /bs
+            // is re-POSTed once the BS handshake is up. Only meaningful with a BS
+            // configured; a plain-DM device (Skipped) has nowhere to fall back.
+            if (*bootPhase == BootPhase::Done) {
+                if (dtlsReady) {
+                    *dmConnectDeadline =
+                        std::chrono::steady_clock::time_point{};      // disarm
+                } else if (*dmConnectDeadline ==
+                           std::chrono::steady_clock::time_point{}) {
+                    *dmConnectDeadline = now + std::chrono::seconds(15); // arm
+                } else if (now >= *dmConnectDeadline && wbs.lock() &&
+                           iot::should_rebootstrap(
+                               /*dm_dtls_failed*/true,
+                               /*dm_registration_rejected*/false)) {
+                    ACE_ERROR((LM_WARNING,
+                               ACE_TEXT("%D lwm2m:thread:%t %M %N:%l DM DTLS "
+                                        "handshake did not complete — falling "
+                                        "back to bootstrap for fresh DM "
+                                        "credentials\n")));
+                    for (auto& [type, ctx] : a->udpAdapter()->services()) {
+                        if (type != ::UDPAdapter::ServiceType_t::LwM2MClient)
+                            continue;
+                        ctx->peerHost(bsHost);
+                        ctx->peerPort(bsPort);
+                    }
+                    if (dtls) dtls->reset_and_connect(bsHost, bsPort);
+                    *bootPhase         = BootPhase::NotStarted;
+                    *bootBackoff       = 1;
+                    *bootRetryAfter    = now;
+                    *dmConnectDeadline =
+                        std::chrono::steady_clock::time_point{};      // disarm
+                }
+            }
         }
 
         // FUP-DS-10 — endpoint hot-reload kicks the re-register cycle.
@@ -1993,8 +2046,10 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
         // Task K — DM rejected us (registration FSM in Failed after a
         // 4.0x). Fall back to the bootstrap server for fresh DM
         // credentials. `should_rebootstrap` centralises the trigger
-        // (here: registration rejection; a DM DTLS auth failure surfaces
-        // the same way once the handshake gives up). Cooldown prevents a
+        // (here: registration rejection — the peer, i.e. a *completed* DM
+        // handshake got a 4.0x. A DM DTLS handshake that never completes is
+        // caught separately by the dmConnectDeadline watchdog above, which
+        // arms should_rebootstrap(dm_dtls_failed=true)). Cooldown prevents a
         // spin against a server that keeps rejecting. NOTE: this re-POSTs
         // /bs over the LwM2MClient service, correct when BS+DM share a
         // peer; the separate-DM-peer topology needs a peer swap back to
