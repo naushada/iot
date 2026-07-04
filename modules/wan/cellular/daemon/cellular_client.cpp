@@ -30,6 +30,9 @@ void CellularClient::load_config_from_ds() {
     got.clear();
     if (m_ds.get({std::string("cell.gps.enable")}, got).ok && !got.empty() && got[0].has_value)
         if (auto b = data_store::to_bool(got[0].value)) m_cfg.gps_enable = *b;
+    got.clear();
+    if (m_ds.get({std::string("sms.enable")}, got).ok && !got.empty() && got[0].has_value)
+        if (auto b = data_store::to_bool(got[0].value)) m_cfg.sms_enable = *b;
 }
 
 int CellularClient::run() {
@@ -97,6 +100,18 @@ void CellularClient::poll_modem() {
         m_at->write_line("AT+CGDCONT=1,\"IP\",\"" + m_cfg.apn + "\"");
         m_apn_sent = true;
     }
+    if (m_cfg.sms_enable && !m_sms_setup) {
+        // One-time: PDU mode, route new-message notifications as +CMTI URCs,
+        // prefer modem storage, then drain anything already stored (PDU stat 4 =
+        // ALL). The +CMGL/+CMTI/+CMGR replies are handled in on_at_line via
+        // m_sms. See apps/docs/tdd-mangoh-cellular-sms.md.
+        m_at->write_line("AT+CMGF=0");
+        m_at->write_line("AT+CNMI=2,1,0,0,0");
+        m_at->write_line("AT+CPMS=\"ME\",\"ME\",\"ME\"");
+        m_at->write_line("AT+CMGL=4");
+        m_sms_setup = true;
+        ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS receive enabled (PDU mode)\n")));
+    }
     m_at->write_line("AT+CSQ");
     m_at->write_line("AT+COPS?");
     m_at->write_line("AT+CEREG?");
@@ -130,6 +145,21 @@ void CellularClient::poll_modem() {
 }
 
 void CellularClient::on_at_line(const std::string& line) {
+    // SMS-related lines (URCs, +CMGR/+CMGL headers, and the PDU line that
+    // follows) go to the receive state machine instead of the status dispatcher;
+    // it returns the follow-up commands to issue and any decoded messages.
+    if (m_cfg.sms_enable && m_sms.wants(line)) {
+        SmsReceiver::Out out = m_sms.on_line(line);
+        for (const auto& cmd : out.commands) m_at->write_line(cmd);
+        for (const auto& msg : out.messages) {
+            m_state.set_sms(msg);
+            ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS from %C: %C\n"),
+                       msg.sender.c_str(), msg.text.c_str()));
+        }
+        if (!out.messages.empty()) publish();
+        return;
+    }
+
     dispatch_at_line(line, m_state);
     if (starts_with(line, "+CREG:") || starts_with(line, "+CGREG:") ||
         starts_with(line, "+CEREG:")) {

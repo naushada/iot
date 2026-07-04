@@ -11,6 +11,10 @@
 --                             Quectel via AT+QGPS (empty → poll AT+QGPSLOC).
 --   cell.poll.interval.sec  - status poll cadence (+CSQ/+COPS/+CREG) (default 30)
 --   cell.gps.enable         - enable GNSS reads (default true)
+--   sms.enable              - enable MT SMS receive (AT+CMGF/CNMI/CMGR) (default
+--                             false — operator opts in once the SIM/carrier is
+--                             confirmed to deliver MT SMS on this NB-IoT plan)
+--   sms.forward.cloud       - forward received SMS to cloud-iot (default false)
 --
 -- Write keys (daemon → operator / device-ui / lwm2m client). All string-typed
 -- so the daemon publishes the cache batch verbatim; the device-ui and the
@@ -50,6 +54,8 @@ return {
     ["cell.gps.tty"]           = admin_str(""),
     ["cell.poll.interval.sec"] = { access = "Admin", type = "integer", default = 30, min = 5, max = 3600 },
     ["cell.gps.enable"]        = { access = "Admin", type = "boolean", default = true },
+    ["sms.enable"]             = { access = "Admin", type = "boolean", default = false },
+    ["sms.forward.cloud"]      = { access = "Admin", type = "boolean", default = false },
 
     -- write (daemon-published status)
     ["cell.state"]       = viewer_str(),
@@ -72,5 +78,12 @@ return {
     ["gps.sats"]    = viewer_str(),
     ["gps.utc"]     = viewer_str(),
     ["gps.version"] = viewer_str(),
+
+    -- SMS (daemon-published; latest received message + a running count)
+    ["sms.last.sender"] = viewer_str(),
+    ["sms.last.text"]   = viewer_str(),
+    ["sms.last.ts"]     = viewer_str(),
+    ["sms.count"]       = viewer_str(),
+    ["sms.version"]     = viewer_str(),
   },
 }

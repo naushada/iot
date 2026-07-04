@@ -866,9 +866,12 @@ void install_handlers(Router& router,
                     data_store::Client::kInvalidHandle;
                 data_store::Client::WatchHandle wh_sens =
                     data_store::Client::kInvalidHandle;
+                data_store::Client::WatchHandle wh_sms =
+                    data_store::Client::kInvalidHandle;
                 ds->watch("cell.version", notify, &wh_cell);
                 ds->watch("gps.version", notify, &wh_gps);
                 ds->watch("iot.sensor.version", notify, &wh_sens);
+                ds->watch("sms.version", notify, &wh_sms);
                 if (ws.ok) {
                     std::unique_lock<std::mutex> lk(st->m);
                     st->cv.wait_for(lk, std::chrono::seconds(timeout),
@@ -892,6 +895,8 @@ void install_handlers(Router& router,
                     ds->unwatch(wh_gps);
                 if (wh_sens != data_store::Client::kInvalidHandle)
                     ds->unwatch(wh_sens);
+                if (wh_sms != data_store::Client::kInvalidHandle)
+                    ds->unwatch(wh_sms);
                 // Fall through to build the full status snapshot
             }
             std::vector<data_store::Client::GetResult> got;
@@ -919,6 +924,8 @@ void install_handlers(Router& router,
                 "cell.signal.dbm", "cell.signal.bars", "cell.ip", "cell.iccid",
                 "gps.fix", "gps.lat", "gps.lon", "gps.alt", "gps.speed",
                 "gps.course", "gps.sats", "gps.utc",
+                // Received SMS (cellular-client → sms.*)
+                "sms.last.sender", "sms.last.text", "sms.last.ts", "sms.count",
                 // mangOH onboard sensors
                 "iot.sensor.temp", "iot.sensor.humidity", "iot.sensor.pressure",
                 "iot.sensor.lux", "iot.sensor.accel", "iot.sensor.gyro",
@@ -1078,6 +1085,11 @@ void install_handlers(Router& router,
                 else if (k == "cell.signal.bars")  cell["signal_bars"] = sv();
                 else if (k == "cell.ip")           cell["ip"] = sv();
                 else if (k == "cell.iccid")        cell["iccid"] = sv();
+                // Received SMS (surfaced on the WAN → Cellular tile)
+                else if (k == "sms.last.sender")   cell["sms_sender"] = sv();
+                else if (k == "sms.last.text")     cell["sms_text"] = sv();
+                else if (k == "sms.last.ts")       cell["sms_ts"] = sv();
+                else if (k == "sms.count")         cell["sms_count"] = sv();
 
                 // GPS / GNSS (cellular-client → gps.*)
                 else if (k == "gps.fix")    gps["fix"] = sv();

@@ -69,7 +69,7 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
   }
 
   get rows(): { key: string; value: string; isBadge?: boolean; isSignal?: boolean; dsKey: string }[] {
-    return [
+    const rows = [
       { key: 'State',        value: this.c.state || 'unknown', isBadge: true, dsKey: 'cell.state' },
       { key: 'Operator',     value: this.c.operator || '—',    dsKey: 'cell.operator' },
       { key: 'Technology',   value: this.c.tech || '—',        dsKey: 'cell.tech' },
@@ -78,6 +78,16 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
       { key: 'IP Address',   value: this.c.ip || '—',          dsKey: 'cell.ip' },
       { key: 'SIM ICCID',    value: this.c.iccid || '—',       dsKey: 'cell.iccid' },
     ];
+    // Received SMS — only shown once at least one message has arrived.
+    if (this.c.sms_count && this.c.sms_count !== '0') {
+      rows.push(
+        { key: 'SMS Received', value: this.c.sms_count,             dsKey: 'sms.count' },
+        { key: 'Last SMS From', value: this.c.sms_sender || '—',    dsKey: 'sms.last.sender' },
+        { key: 'Last SMS At',   value: this.c.sms_ts || '—',        dsKey: 'sms.last.ts' },
+        { key: 'Last SMS Text', value: this.c.sms_text || '—',      dsKey: 'sms.last.text' },
+      );
+    }
+    return rows;
   }
 
   constructor(private ds: DataStoreService) {}

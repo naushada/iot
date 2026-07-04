@@ -20,7 +20,9 @@ add_library(cellular_core STATIC
     src/at_parser.cpp
     src/nmea_parser.cpp
     src/cell_state.cpp
-    src/line_router.cpp)
+    src/line_router.cpp
+    src/sms_pdu.cpp
+    src/sms_receiver.cpp)
 target_include_directories(cellular_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc)
 target_compile_options(cellular_core PRIVATE -Wall -Wextra)
 add_library(cellular::core ALIAS cellular_core)
@@ -68,7 +70,9 @@ if(CELLULAR_BUILD_TESTS)
         test/at_parser_test.cpp
         test/nmea_parser_test.cpp
         test/cell_state_test.cpp
-        test/line_router_test.cpp)
+        test/line_router_test.cpp
+        test/sms_pdu_test.cpp
+        test/sms_receiver_test.cpp)
     target_link_libraries(cellular-tests cellular_core GTest::gtest GTest::gtest_main pthread)
     include(GoogleTest)
     if(CELLULAR_TOP_LEVEL)
