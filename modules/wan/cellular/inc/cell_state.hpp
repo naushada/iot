@@ -41,6 +41,13 @@ class CellularState {
         void set_reg_reason(const std::string& reason);
         void set_ip(const std::string& ip);
         void set_iccid(const std::string& iccid);
+        /// Modem/SIM identity (from ATI / AT+CNUM). Each ignores an empty value
+        /// and is set at most once meaningfully; capability is model-derived.
+        void set_imei(const std::string& imei);
+        void set_msisdn(const std::string& msisdn);
+        void set_model(const std::string& model);
+        void set_fw(const std::string& fw);
+        void set_capability(const std::string& cap);
         void set_gps(const GpsFix& fix);
         /// Record a received SMS: updates sms.last.* and bumps sms.count.
         void set_sms(const SmsMessage& msg);
@@ -53,6 +60,7 @@ class CellularState {
         mutable std::mutex m_mtx;
         std::string m_state;
         std::string m_operator, m_tech, m_reg, m_ip, m_iccid, m_rat, m_regReason;
+        std::string m_imei, m_msisdn, m_model, m_fw, m_capability;
         int  m_dbm = 0, m_bars = 0;
         bool m_haveSignal = false, m_haveCell = false;
         GpsFix m_gps;

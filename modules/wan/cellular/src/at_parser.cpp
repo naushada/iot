@@ -202,6 +202,40 @@ std::string parse_ceer(const std::string& line) {
     return body.substr(a, b - a);
 }
 
+std::string parse_cnum(const std::string& line) {
+    if (!contains(lower(line), "+cnum:")) return {};
+    const auto parts = split_csv(after_colon(line));
+    // +CNUM: <alpha>,<number>,<type> — the number is field 1.
+    if (parts.size() >= 2) return strip_quotes(parts[1]);
+    return {};
+}
+
+std::string parse_imei(const std::string& line) {
+    if (lower(line).rfind("imei:", 0) != 0) return {};   // "IMEI:" only (not "IMEI SV:")
+    std::string d;
+    for (char c : after_colon(line)) if (c >= '0' && c <= '9') d.push_back(c);
+    return d.size() >= 14 ? d : std::string{};
+}
+
+std::string parse_labeled(const std::string& line, const char* label) {
+    const std::string lbl = lower(std::string(label)) + ":";
+    if (lower(line).rfind(lbl, 0) != 0) return {};
+    std::string v = after_colon(line);
+    std::size_t a = 0, b = v.size();
+    while (a < b && (v[a] == ' ' || v[a] == '\t')) ++a;
+    while (b > a && (v[b-1] == ' ' || v[b-1] == '\t' || v[b-1] == '\r')) --b;
+    return v.substr(a, b - a);
+}
+
+std::string model_capability(const std::string& model) {
+    const std::string m = lower(model);
+    if (contains(m, "wp77") || contains(m, "hl78") || contains(m, "bg96"))
+        return "LTE-M / NB-IoT / GSM";
+    if (contains(m, "wp76") || contains(m, "em75") || contains(m, "ec25"))
+        return "LTE Cat-4 / 3G / 2G";
+    return {};
+}
+
 Vendor parse_vendor(const std::string& gmi_or_model) {
     const std::string s = lower(gmi_or_model);
     // Manufacturer names (AT+GMI) — unambiguous.

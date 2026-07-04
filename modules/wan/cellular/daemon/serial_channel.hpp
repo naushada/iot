@@ -37,6 +37,10 @@ class SerialChannel : public ACE_Event_Handler {
         /// Send `cmd` followed by a carriage return. Returns bytes sent or -1.
         int write_line(const std::string& cmd);
 
+        /// Send raw bytes verbatim (no CR appended) — for the AT+CMGS PDU + the
+        /// Ctrl-Z terminator. Returns bytes sent or -1.
+        int write_raw(const std::string& bytes);
+
         /* ACE_Event_Handler */
         ACE_HANDLE get_handle() const override;
         int handle_input(ACE_HANDLE) override;

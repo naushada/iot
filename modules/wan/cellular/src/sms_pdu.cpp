@@ -300,4 +300,135 @@ bool decode_sms_deliver(const std::string& pdu_hex, SmsMessage& out) {
     return true;
 }
 
+// ── SMS-SUBMIT encode (MO send) ──────────────────────────────────────────────
+
+namespace {
+
+/// Decode UTF-8 `s` into Unicode code points. Invalid bytes pass through as
+/// U+FFFD-ish (the byte value) — good enough for the SMS body path.
+std::vector<std::uint32_t> utf8_decode(const std::string& s) {
+    std::vector<std::uint32_t> cps;
+    for (std::size_t i = 0; i < s.size();) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        std::uint32_t cp; int n;
+        if (c < 0x80)        { cp = c;          n = 1; }
+        else if ((c >> 5) == 0x6) { cp = c & 0x1F; n = 2; }
+        else if ((c >> 4) == 0xE) { cp = c & 0x0F; n = 3; }
+        else if ((c >> 3) == 0x1E){ cp = c & 0x07; n = 4; }
+        else { cps.push_back(c); ++i; continue; }
+        if (i + static_cast<std::size_t>(n) > s.size()) { cps.push_back(c); ++i; continue; }
+        bool ok = true;
+        for (int k = 1; k < n; ++k) {
+            const unsigned char cc = static_cast<unsigned char>(s[i + k]);
+            if ((cc & 0xC0) != 0x80) { ok = false; break; }
+            cp = (cp << 6) | (cc & 0x3F);
+        }
+        if (!ok) { cps.push_back(c); ++i; continue; }
+        cps.push_back(cp);
+        i += static_cast<std::size_t>(n);
+    }
+    return cps;
+}
+
+/// Map a Unicode code point to a GSM 7-bit septet (or 0x1B + extension septet).
+/// Returns false if `cp` is not representable in the GSM 7-bit alphabet.
+bool gsm7_septets_for(std::uint32_t cp, std::vector<std::uint8_t>& out) {
+    for (int i = 0; i < 128; ++i)
+        if (kGsm7Basic[i] == cp && i != 0x1B) { out.push_back(static_cast<std::uint8_t>(i)); return true; }
+    // extension table (reverse of gsm7_ext)
+    struct E { std::uint8_t sept; std::uint32_t cp; };
+    static const E kExt[] = {
+        {0x0A,0x000C},{0x14,0x005E},{0x28,0x007B},{0x29,0x007D},{0x2F,0x005C},
+        {0x3C,0x005B},{0x3D,0x007E},{0x3E,0x005D},{0x40,0x007C},{0x65,0x20AC},
+    };
+    for (const auto& e : kExt)
+        if (e.cp == cp) { out.push_back(0x1B); out.push_back(e.sept); return true; }
+    return false;
+}
+
+/// Pack GSM 7-bit septets LSB-first into octets (reverse of gsm7_unpack).
+std::vector<std::uint8_t> gsm7_pack(const std::vector<std::uint8_t>& septets) {
+    std::vector<std::uint8_t> out;
+    std::uint32_t acc = 0;
+    int nbits = 0;
+    for (std::uint8_t s : septets) {
+        acc |= static_cast<std::uint32_t>(s & 0x7F) << nbits;
+        nbits += 7;
+        while (nbits >= 8) { out.push_back(static_cast<std::uint8_t>(acc & 0xFF)); acc >>= 8; nbits -= 8; }
+    }
+    if (nbits > 0) out.push_back(static_cast<std::uint8_t>(acc & 0xFF));
+    return out;
+}
+
+void put_hex(std::string& s, std::uint8_t b) {
+    static const char* H = "0123456789ABCDEF";
+    s.push_back(H[b >> 4]);
+    s.push_back(H[b & 0x0F]);
+}
+
+} // namespace
+
+bool encode_sms_submit(const std::string& to, const std::string& utf8_text,
+                       std::string& pdu_hex, int& tpdu_len) {
+    // Recipient digits + type-of-address.
+    bool intl = false;
+    std::string digits;
+    for (char c : to) {
+        if (c == '+') intl = true;
+        else if (c >= '0' && c <= '9') digits.push_back(c);
+    }
+    if (digits.empty()) return false;
+
+    std::vector<std::uint8_t> tpdu;
+    tpdu.push_back(0x11);                       // SUBMIT, VPF=relative
+    tpdu.push_back(0x00);                       // TP-MR
+    tpdu.push_back(static_cast<std::uint8_t>(digits.size()));   // TP-DA length (digits)
+    tpdu.push_back(intl ? 0x91 : 0x81);         // TP-TOA
+    for (std::size_t i = 0; i < digits.size(); i += 2) {        // swapped BCD
+        const std::uint8_t lo = static_cast<std::uint8_t>(digits[i] - '0');
+        const std::uint8_t hi = (i + 1 < digits.size())
+            ? static_cast<std::uint8_t>(digits[i + 1] - '0') : 0x0F;
+        tpdu.push_back(static_cast<std::uint8_t>((hi << 4) | lo));
+    }
+    tpdu.push_back(0x00);                        // TP-PID
+
+    // Body: GSM 7-bit if every char maps, else UCS2.
+    const std::vector<std::uint32_t> cps = utf8_decode(utf8_text);
+    std::vector<std::uint8_t> septets;
+    bool gsm7 = true;
+    for (std::uint32_t cp : cps)
+        if (!gsm7_septets_for(cp, septets)) { gsm7 = false; break; }
+
+    if (gsm7) {
+        tpdu.push_back(0x00);                    // TP-DCS = GSM7
+        tpdu.push_back(0xAA);                    // TP-VP relative (~4 days)
+        tpdu.push_back(static_cast<std::uint8_t>(septets.size()));   // TP-UDL (septets)
+        for (std::uint8_t b : gsm7_pack(septets)) tpdu.push_back(b);
+    } else {
+        std::vector<std::uint8_t> ud;            // UTF-16BE
+        for (std::uint32_t cp : cps) {
+            if (cp > 0xFFFF) {
+                cp -= 0x10000;
+                const std::uint16_t hi = static_cast<std::uint16_t>(0xD800 + (cp >> 10));
+                const std::uint16_t lo = static_cast<std::uint16_t>(0xDC00 + (cp & 0x3FF));
+                ud.push_back(hi >> 8); ud.push_back(hi & 0xFF);
+                ud.push_back(lo >> 8); ud.push_back(lo & 0xFF);
+            } else {
+                ud.push_back(static_cast<std::uint8_t>(cp >> 8));
+                ud.push_back(static_cast<std::uint8_t>(cp & 0xFF));
+            }
+        }
+        tpdu.push_back(0x08);                    // TP-DCS = UCS2
+        tpdu.push_back(0xAA);                    // TP-VP
+        tpdu.push_back(static_cast<std::uint8_t>(ud.size()));        // TP-UDL (octets)
+        for (std::uint8_t b : ud) tpdu.push_back(b);
+    }
+
+    tpdu_len = static_cast<int>(tpdu.size());    // AT+CMGS length excludes the SMSC octet
+    pdu_hex.clear();
+    put_hex(pdu_hex, 0x00);                       // SMSC = use the SIM default
+    for (std::uint8_t b : tpdu) put_hex(pdu_hex, b);
+    return true;
+}
+
 } // namespace cellular

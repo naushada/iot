@@ -58,6 +58,29 @@ TEST(SmsPdu, ConcatenatedUcs2Part) {
     EXPECT_EQ(m.text, "AB");
 }
 
+// Encode a GSM 7-bit SMS-SUBMIT (MO send) — hand-computed vector: SMSC "00",
+// SUBMIT+relative-VP, dest +1234, PID 00, DCS 00 (GSM7), VP AA, "hi" packed.
+TEST(SmsPdu, EncodeSubmitGsm7) {
+    std::string pdu; int len = 0;
+    ASSERT_TRUE(encode_sms_submit("+1234", "hi", pdu, len));
+    EXPECT_EQ(pdu, "001100049121430000AA02E834");
+    EXPECT_EQ(len, 12);   // TPDU octets, excluding the SMSC "00" — for AT+CMGS=<len>
+}
+
+// Non-GSM7 body → UCS2 (DCS 08); also exercises odd-length address F-padding.
+TEST(SmsPdu, EncodeSubmitUcs2) {
+    std::string pdu; int len = 0;
+    ASSERT_TRUE(encode_sms_submit("+1", "\xE4\xB8\xAD", pdu, len));   // "中" U+4E2D
+    EXPECT_EQ(pdu, "0011000191F10008AA024E2D");
+    EXPECT_EQ(len, 11);
+}
+
+TEST(SmsPdu, EncodeSubmitRejectsEmptyRecipient) {
+    std::string pdu; int len = 0;
+    EXPECT_FALSE(encode_sms_submit("", "hi", pdu, len));
+    EXPECT_FALSE(encode_sms_submit("+", "hi", pdu, len));
+}
+
 TEST(SmsPdu, RejectsMalformed) {
     SmsMessage m;
     EXPECT_FALSE(decode_sms_deliver("", m));              // empty

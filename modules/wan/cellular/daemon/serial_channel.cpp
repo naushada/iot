@@ -59,6 +59,10 @@ int SerialChannel::write_line(const std::string& cmd) {
     return static_cast<int>(m_tty.send_n(out.data(), out.size()));
 }
 
+int SerialChannel::write_raw(const std::string& bytes) {
+    return static_cast<int>(m_tty.send_n(bytes.data(), bytes.size()));
+}
+
 ACE_HANDLE SerialChannel::get_handle() const {
     return const_cast<ACE_TTY_IO&>(m_tty).get_handle();
 }
