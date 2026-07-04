@@ -52,6 +52,14 @@ void CellularState::set_gps(const GpsFix& fix) {
     m_gps = fix; m_haveGps = true; ++m_gpsVersion;
 }
 
+void CellularState::set_sms(const SmsMessage& msg) {
+    std::lock_guard<std::mutex> lk(m_mtx);
+    m_smsSender = msg.sender;
+    m_smsText   = msg.text;
+    m_smsTs     = msg.scts;
+    ++m_smsCount; m_haveSms = true; ++m_smsVersion;
+}
+
 std::vector<KV> CellularState::to_kv() const {
     std::lock_guard<std::mutex> lk(m_mtx);
     std::vector<KV> kv;
@@ -80,6 +88,13 @@ std::vector<KV> CellularState::to_kv() const {
             if (!m_gps.utc.empty()) kv.push_back({"gps.utc", m_gps.utc});
         }
         kv.push_back({"gps.version", std::to_string(m_gpsVersion)});
+    }
+    if (m_haveSms) {
+        kv.push_back({"sms.last.sender", m_smsSender});
+        kv.push_back({"sms.last.text",   m_smsText});
+        if (!m_smsTs.empty()) kv.push_back({"sms.last.ts", m_smsTs});
+        kv.push_back({"sms.count",   std::to_string(m_smsCount)});
+        kv.push_back({"sms.version", std::to_string(m_smsVersion)});
     }
     return kv;
 }

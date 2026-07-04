@@ -8,6 +8,7 @@
 
 #include "at_parser.hpp"
 #include "nmea_parser.hpp"
+#include "sms_pdu.hpp"
 
 /**
  * @file cell_state.hpp
@@ -37,6 +38,8 @@ class CellularState {
         void set_ip(const std::string& ip);
         void set_iccid(const std::string& iccid);
         void set_gps(const GpsFix& fix);
+        /// Record a received SMS: updates sms.last.* and bumps sms.count.
+        void set_sms(const SmsMessage& msg);
 
         /// `cell.*` + `gps.*` batch (only populated fields are emitted), plus a
         /// per-domain version counter for the device-ui long-poll.
@@ -50,7 +53,10 @@ class CellularState {
         bool m_haveSignal = false, m_haveCell = false;
         GpsFix m_gps;
         bool m_haveGps = false;
-        std::uint64_t m_cellVersion = 0, m_gpsVersion = 0;
+        std::string m_smsSender, m_smsText, m_smsTs;
+        std::uint64_t m_smsCount = 0;
+        bool m_haveSms = false;
+        std::uint64_t m_cellVersion = 0, m_gpsVersion = 0, m_smsVersion = 0;
 };
 
 } // namespace cellular

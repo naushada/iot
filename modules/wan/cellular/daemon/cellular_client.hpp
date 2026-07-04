@@ -11,6 +11,7 @@
 #include "nmea_parser.hpp"
 #include "at_parser.hpp"
 #include "serial_channel.hpp"
+#include "sms_receiver.hpp"
 
 /**
  * @file cellular_client.hpp
@@ -35,6 +36,7 @@ class CellularClient : public ACE_Event_Handler {
             std::string  apn;
             unsigned     interval_sec = 30;
             bool         gps_enable = true;
+            bool         sms_enable = false;            ///< MT SMS receive (off by default)
         };
 
         explicit CellularClient(Config cfg) : m_cfg(std::move(cfg)) {}
@@ -67,6 +69,8 @@ class CellularClient : public ACE_Event_Handler {
         Vendor                          m_vendor = Vendor::Generic;
         bool                            m_gps_started = false; ///< GNSS engine kicked
         unsigned                        m_poll_count = 0;      ///< for periodic GNSS restart
+        SmsReceiver                     m_sms;                 ///< MT SMS receive state machine
+        bool                            m_sms_setup = false;   ///< one-time CMGF/CNMI/CMGL done
 };
 
 } // namespace cellular

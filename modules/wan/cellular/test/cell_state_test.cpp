@@ -65,6 +65,24 @@ TEST(CellState, VersionBumpsOnChange) {
     EXPECT_NE(v1, v2);
 }
 
+TEST(CellState, SmsPublished) {
+    CellularState st;
+    SmsMessage m;
+    m.sender = "+1234"; m.text = "hello"; m.scts = "2026-07-04T12:00:00";
+    st.set_sms(m);
+
+    auto kv = st.to_kv();
+    EXPECT_EQ(val(kv, "sms.last.sender"), "+1234");
+    EXPECT_EQ(val(kv, "sms.last.text"), "hello");
+    EXPECT_EQ(val(kv, "sms.last.ts"), "2026-07-04T12:00:00");
+    EXPECT_EQ(val(kv, "sms.count"), "1");
+    EXPECT_TRUE(has(kv, "sms.version"));
+    EXPECT_FALSE(has(kv, "cell.state"));       // nothing else set
+
+    st.set_sms(m);                             // second message → count bumps
+    EXPECT_EQ(val(st.to_kv(), "sms.count"), "2");
+}
+
 TEST(CellState, InvalidSignalIgnored) {
     CellularState st;
     st.set_state("searching");

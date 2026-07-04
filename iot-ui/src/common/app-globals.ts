@@ -110,6 +110,11 @@ export interface CellStatus {
   signal_bars?: string;  // "0".."5"
   ip?: string;
   iccid?: string;
+  // Last received SMS (mobile-terminated), from sms.* — only when sms.enable.
+  sms_sender?: string;
+  sms_text?: string;
+  sms_ts?: string;
+  sms_count?: string;
 }
 
 // GPS / GNSS fix, from gps.* (decimal-string fields).
