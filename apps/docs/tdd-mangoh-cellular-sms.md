@@ -399,3 +399,10 @@ confirmation remains. **First reflash** the RPi with an image built from current
   cycle and `cell.rat.current` reflects it.
 - [ ] **Multi-domain registration** — a 2G-only camp shows *registered* on the
   tile (driven by `+CREG`, not just `+CEREG`).
+- [ ] **Resolve the SIM identity** — the MO sender showed a French `+33 7000023024234`
+  MSISDN + a Belgian `+32` SMSC + `CREG 0,5` (roaming), yet the SIM is believed to
+  be a local Airtel India SIM. Read the SIM's own (un-rewritable) identity to
+  settle it: `AT+CIMI` (IMSI MCC — `404/405`=India, `208`=France) and `AT+ICCID`
+  (`8991…`=India, `8933…`=France). If it is genuinely Airtel, the `+33` sender is
+  likely a gateway-rewritten originating address and the `+32` SMSC is a stale NV
+  value — fix with `AT+CSCA="+91<AirtelSMSC>"`.
