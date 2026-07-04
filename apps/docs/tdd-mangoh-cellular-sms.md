@@ -376,3 +376,26 @@ at "AT+CMGR=<n>"                           # PDU → decode_sms_deliver
 — or just set `cell.rat=gsm` (or `auto`) + `sms.enable=true` in the device-ui
 **WAN → Cellular** config and start `iot-cellular-client`; the message lands on
 the tile's "Last SMS" row.
+
+### 10.G ⬜ TODO — remaining bench validation (parked 2026-07-04)
+
+All of the below is **code-complete + merged + CI-green**; only on-hardware
+confirmation remains. **First reflash** the RPi with an image built from current
+`main` (the on-device image predates these merges), then:
+
+- [ ] **MT receive e2e** — with a SIM/sender that actually delivers MT (enable
+  International SMS on the sending phone, or use a SIM with MT entitlement): text
+  the SIM's MSISDN, confirm `+CMTI` → `AT+CMGR` PDU, and that `sms.enable=true`
+  surfaces it on the tile's "Last SMS" row. Paste the real DELIVER PDU to confirm
+  `decode_sms_deliver` matches byte-for-byte.
+- [ ] **MO send via daemon** — the `AT+CMGS=<len>` → `>` → PDU + Ctrl-Z one-shot-
+  timer handshake (`sms.send.*` → `sms.send.status="sent"`). MO was proven by
+  hand (§10.E); this validates the daemon's prompt timing. If the 1 s delay is
+  too short/long for the WP7702, tune the `kSendAct` timer in `start_send`.
+- [ ] **Identity reads** — `ATI` → `cell.imei`/`cell.model`/`cell.fw` and
+  `AT+CNUM` → `cell.msisdn` populate (CNUM was blank on the IoT SIM; MSISDN may
+  stay empty — that's expected).
+- [ ] **RAT set** — `cell.rat=gsm` (or `auto`) applies via `AT!SELRAT` + the CFUN
+  cycle and `cell.rat.current` reflects it.
+- [ ] **Multi-domain registration** — a 2G-only camp shows *registered* on the
+  tile (driven by `+CREG`, not just `+CEREG`).
