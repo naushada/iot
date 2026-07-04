@@ -91,6 +91,10 @@ std::string parse_labeled(const std::string& line, const char* label);
 /// "LTE-M / NB-IoT / GSM"), or "" if unknown.
 std::string model_capability(const std::string& model);
 
+/// APN from a `+CGDCONT: <cid>,"IP","<apn>",...` context line → "<apn>", or ""
+/// (an undefined/empty context). Used to read back the provisioned data APN.
+std::string parse_cgdcont(const std::string& line);
+
 /// `+CGPADDR: <cid>,"<ip>"` (or unquoted) → the IPv4/IPv6 string, or "".
 std::string parse_cgpaddr(const std::string& line);
 

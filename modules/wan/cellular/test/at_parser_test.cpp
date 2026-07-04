@@ -93,6 +93,13 @@ TEST(AtIdentity, CnumImeiModelCapability) {
     EXPECT_EQ(model_capability("Telit"), "");
 }
 
+TEST(AtCgdcont, ExtractsApn) {
+    EXPECT_EQ(parse_cgdcont("+CGDCONT: 1,\"IP\",\"airtelgprs.com\",\"0.0.0.0\",0,0"),
+              "airtelgprs.com");
+    EXPECT_EQ(parse_cgdcont("+CGDCONT: 1,\"IP\",\"\",\"0.0.0.0\",0,0"), "");  // undefined
+    EXPECT_EQ(parse_cgdcont("OK"), "");
+}
+
 TEST(AtCgpaddr, ExtractsIp) {
     EXPECT_EQ(parse_cgpaddr("+CGPADDR: 1,\"10.181.22.7\""), "10.181.22.7");
     EXPECT_EQ(parse_cgpaddr("+CGPADDR: 1,100.92.3.44"), "100.92.3.44");

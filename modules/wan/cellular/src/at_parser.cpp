@@ -236,6 +236,14 @@ std::string model_capability(const std::string& model) {
     return {};
 }
 
+std::string parse_cgdcont(const std::string& line) {
+    if (!contains(lower(line), "+cgdcont:")) return {};
+    const auto parts = split_csv(after_colon(line));
+    // +CGDCONT: <cid>,"<PDP_type>","<apn>",... — the APN is field 2.
+    if (parts.size() >= 3) return strip_quotes(parts[2]);
+    return {};
+}
+
 Vendor parse_vendor(const std::string& gmi_or_model) {
     const std::string s = lower(gmi_or_model);
     // Manufacturer names (AT+GMI) — unambiguous.

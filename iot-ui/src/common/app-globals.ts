@@ -117,6 +117,7 @@ export interface CellStatus {
   model?: string;        // modem model (ATI), e.g. WP7702
   fw?: string;           // modem firmware revision (ATI)
   capability?: string;   // RAT capability, e.g. "LTE-M / NB-IoT / GSM"
+  apn?: string;          // provisioned data APN read back (AT+CGDCONT?)
   sms_send_status?: string;  // MO send progress: "sending"/"sent"/"failed: …"
   // Last received SMS (mobile-terminated), from sms.* — only when sms.enable.
   sms_sender?: string;

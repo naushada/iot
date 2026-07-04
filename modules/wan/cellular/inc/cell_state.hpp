@@ -48,6 +48,8 @@ class CellularState {
         void set_model(const std::string& model);
         void set_fw(const std::string& fw);
         void set_capability(const std::string& cap);
+        /// Provisioned data-context APN (from AT+CGDCONT?).
+        void set_apn(const std::string& apn);
         void set_gps(const GpsFix& fix);
         /// Record a received SMS: updates sms.last.* and bumps sms.count.
         void set_sms(const SmsMessage& msg);
@@ -60,7 +62,7 @@ class CellularState {
         mutable std::mutex m_mtx;
         std::string m_state;
         std::string m_operator, m_tech, m_reg, m_ip, m_iccid, m_rat, m_regReason;
-        std::string m_imei, m_msisdn, m_model, m_fw, m_capability;
+        std::string m_imei, m_msisdn, m_model, m_fw, m_capability, m_apn;
         int  m_dbm = 0, m_bars = 0;
         bool m_haveSignal = false, m_haveCell = false;
         GpsFix m_gps;

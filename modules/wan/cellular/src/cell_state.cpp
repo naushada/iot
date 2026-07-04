@@ -78,6 +78,12 @@ void CellularState::set_capability(const std::string& cap) {
     m_capability = cap; m_haveCell = true; ++m_cellVersion;
 }
 
+void CellularState::set_apn(const std::string& apn) {
+    std::lock_guard<std::mutex> lk(m_mtx);
+    if (apn.empty() || apn == m_apn) return;
+    m_apn = apn; m_haveCell = true; ++m_cellVersion;
+}
+
 void CellularState::set_ip(const std::string& ip) {
     std::lock_guard<std::mutex> lk(m_mtx);
     m_ip = ip; m_haveCell = true; ++m_cellVersion;
@@ -119,6 +125,7 @@ std::vector<KV> CellularState::to_kv() const {
         if (!m_model.empty())    kv.push_back({"cell.model", m_model});
         if (!m_fw.empty())       kv.push_back({"cell.fw", m_fw});
         if (!m_capability.empty())kv.push_back({"cell.capability", m_capability});
+        if (!m_apn.empty())      kv.push_back({"cell.apn.current", m_apn});
         if (m_haveSignal) {
             kv.push_back({"cell.signal.dbm",  std::to_string(m_dbm)});
             kv.push_back({"cell.signal.bars", std::to_string(m_bars)});
