@@ -45,6 +45,36 @@ TEST(AtCreg, States) {
     EXPECT_STREQ(reg_str(Reg::Roaming), "roaming");
 }
 
+TEST(AtReg, BestAcrossDomains) {
+    // 2G camp: registered via +CREG, but +CEREG (LTE) reads not-registered —
+    // the combined result must be the registered one, not "offline".
+    EXPECT_EQ(best_reg(Reg::Roaming, Reg::Unknown, Reg::NotRegistered), Reg::Roaming);
+    EXPECT_EQ(best_reg(Reg::NotRegistered, Reg::NotRegistered, Reg::Home), Reg::Home);
+    EXPECT_EQ(best_reg(Reg::Searching, Reg::Denied, Reg::Unknown), Reg::Searching);
+    EXPECT_EQ(best_reg(Reg::Home, Reg::Roaming, Reg::Roaming), Reg::Home);   // Home preferred
+    EXPECT_EQ(best_reg(Reg::Unknown, Reg::Unknown, Reg::Unknown), Reg::Unknown);
+}
+
+TEST(AtSelrat, TokenToIndex) {
+    EXPECT_EQ(selrat_index("auto"), 0);
+    EXPECT_EQ(selrat_index("GSM"), 2);          // case-insensitive
+    EXPECT_EQ(selrat_index("2g"), 2);
+    EXPECT_EQ(selrat_index("lte"), 6);
+    EXPECT_EQ(selrat_index("gsm+lte"), 12);
+    EXPECT_EQ(selrat_index("nonsense"), -1);
+}
+
+TEST(AtSelrat, ParsesName) {
+    EXPECT_EQ(parse_selrat("!SELRAT: 06, LTE Only"), "LTE Only");
+    EXPECT_EQ(parse_selrat("!SELRAT: 00, Automatic"), "Automatic");
+    EXPECT_EQ(parse_selrat("+CSQ: 12,99"), "");    // not a SELRAT line
+}
+
+TEST(AtCeer, ExtractsCause) {
+    EXPECT_EQ(parse_ceer("+CEER: PLMN not allowed"), "PLMN not allowed");
+    EXPECT_EQ(parse_ceer("ERROR"), "");            // firmware without CEER
+}
+
 TEST(AtCgpaddr, ExtractsIp) {
     EXPECT_EQ(parse_cgpaddr("+CGPADDR: 1,\"10.181.22.7\""), "10.181.22.7");
     EXPECT_EQ(parse_cgpaddr("+CGPADDR: 1,100.92.3.44"), "100.92.3.44");

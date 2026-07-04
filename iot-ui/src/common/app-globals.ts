@@ -110,6 +110,8 @@ export interface CellStatus {
   signal_bars?: string;  // "0".."5"
   ip?: string;
   iccid?: string;
+  rat?: string;          // current radio-access-tech (AT!SELRAT?), e.g. "LTE Only"
+  reg_reason?: string;   // network reject cause (AT+CEER), when not registered
   // Last received SMS (mobile-terminated), from sms.* — only when sms.enable.
   sms_sender?: string;
   sms_text?: string;

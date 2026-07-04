@@ -1,5 +1,6 @@
 #include "cellular_client.hpp"
 
+#include <cstdio>
 #include <vector>
 
 #include <ace/Log_Msg.h>
@@ -23,6 +24,7 @@ void CellularClient::load_config_from_ds() {
     str("cell.modem.tty", m_cfg.modem_tty);
     str("cell.gps.tty",   m_cfg.gps_tty);
     str("cell.apn",       m_cfg.apn);
+    str("cell.rat",       m_cfg.rat);
 
     std::vector<data_store::Client::GetResult> got;
     if (m_ds.get({std::string("cell.poll.interval.sec")}, got).ok && !got.empty() && got[0].has_value)
@@ -102,19 +104,53 @@ void CellularClient::poll_modem() {
     }
     if (m_cfg.sms_enable && !m_sms_setup) {
         // One-time: PDU mode, route new-message notifications as +CMTI URCs,
-        // prefer modem storage, then drain anything already stored (PDU stat 4 =
-        // ALL). The +CMGL/+CMTI/+CMGR replies are handled in on_at_line via
-        // m_sms. See apps/docs/tdd-mangoh-cellular-sms.md.
+        // then drain anything already stored (PDU stat 4 = ALL). We do NOT force
+        // AT+CPMS to a specific store — HW check showed the WP7702 only offers
+        // "SM" (SIM), and forcing "ME" would misdirect reads; the modem's default
+        // keeps the receive/read stores aligned and +CMTI carries the store name
+        // + index anyway. The +CMGL/+CMTI/+CMGR replies land in on_at_line → m_sms.
+        // See apps/docs/tdd-mangoh-cellular-sms.md.
         m_at->write_line("AT+CMGF=0");
         m_at->write_line("AT+CNMI=2,1,0,0,0");
-        m_at->write_line("AT+CPMS=\"ME\",\"ME\",\"ME\"");
         m_at->write_line("AT+CMGL=4");
         m_sms_setup = true;
         ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS receive enabled (PDU mode)\n")));
     }
+    // Sierra RAT (radio-access-tech) select — one-time once the vendor is known.
+    // Optionally force the operator's cell.rat (AT!SELRAT + a CFUN cycle so it
+    // takes effect), then always read it back for cell.rat.current. This is the
+    // knob that unwedges an LTE-only modem where only 2G is in range.
+    if (m_vendor == Vendor::Sierra && !m_rat_done) {
+        m_at->write_line("AT!ENTERCND=\"A710\"");
+        const int idx = m_cfg.rat.empty() ? -1 : selrat_index(m_cfg.rat);
+        if (idx >= 0) {
+            char buf[16];
+            std::snprintf(buf, sizeof buf, "AT!SELRAT=%02d", idx);
+            m_at->write_line(buf);
+            m_at->write_line("AT+CFUN=0");
+            m_at->write_line("AT+CFUN=1");
+            ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] RAT set to %C (!SELRAT=%d)\n"),
+                       m_cfg.rat.c_str(), idx));
+        } else if (!m_cfg.rat.empty()) {
+            ACE_ERROR((LM_WARNING, ACE_TEXT("%D [cell] unknown cell.rat '%C' — "
+                       "leaving RAT unchanged\n"), m_cfg.rat.c_str()));
+        }
+        m_at->write_line("AT!SELRAT?");   // → parse_selrat → cell.rat.current
+        m_rat_done = true;
+    }
+
     m_at->write_line("AT+CSQ");
     m_at->write_line("AT+COPS?");
+    // Poll every registration domain — a modem camped on 2G registers via +CREG
+    // while +CEREG (LTE) reads not-registered; on_at_line combines them.
+    m_at->write_line("AT+CREG?");
+    m_at->write_line("AT+CGREG?");
     m_at->write_line("AT+CEREG?");
+    // When not attached, ask the network reject cause (best-effort; some
+    // firmwares answer ERROR, which parse_ceer simply ignores).
+    if (m_lastReg == Reg::Denied || m_lastReg == Reg::NotRegistered ||
+        m_lastReg == Reg::Searching)
+        m_at->write_line("AT+CEER");
     m_at->write_line("AT+CGPADDR=1");
     m_at->write_line(iccid_command(m_vendor));   // QCCID/ICCID/CCID per vendor
 
@@ -163,7 +199,23 @@ void CellularClient::on_at_line(const std::string& line) {
     dispatch_at_line(line, m_state);
     if (starts_with(line, "+CREG:") || starts_with(line, "+CGREG:") ||
         starts_with(line, "+CEREG:")) {
-        m_lastReg = parse_creg(line);
+        // Update the matching domain, then combine to the best across all three
+        // (dispatch_at_line already set cell.reg from this single line; override
+        // it with the combined result so a 2G +CREG isn't masked by an LTE
+        // +CEREG "not-registered").
+        const Reg r = parse_creg(line);
+        if      (starts_with(line, "+CREG:"))  m_reg_cs  = r;
+        else if (starts_with(line, "+CGREG:")) m_reg_ps  = r;
+        else                                   m_reg_eps = r;
+        m_lastReg = best_reg(m_reg_cs, m_reg_ps, m_reg_eps);
+        m_state.set_reg(m_lastReg);
+        if (m_lastReg == Reg::Home || m_lastReg == Reg::Roaming)
+            m_state.set_reg_reason("");        // registered → clear any stale cause
+    } else if (starts_with(line, "!SELRAT:")) {
+        m_state.set_rat(parse_selrat(line));   // → cell.rat.current
+    } else if (starts_with(line, "+CEER:")) {
+        if (m_lastReg != Reg::Home && m_lastReg != Reg::Roaming)
+            m_state.set_reg_reason(parse_ceer(line));
     } else if (starts_with(line, "+CGPADDR:")) {
         m_haveIp = !parse_cgpaddr(line).empty();
     } else if (m_vendor == Vendor::Generic) {

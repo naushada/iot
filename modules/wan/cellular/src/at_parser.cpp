@@ -128,6 +128,23 @@ const char* reg_str(Reg r) {
     }
 }
 
+Reg best_reg(Reg cs, Reg ps, Reg eps) {
+    auto rank = [](Reg r) {
+        switch (r) {
+            case Reg::Home:          return 5;
+            case Reg::Roaming:       return 4;
+            case Reg::Searching:     return 3;
+            case Reg::Denied:        return 2;
+            case Reg::NotRegistered: return 1;
+            case Reg::Unknown:       default: return 0;
+        }
+    };
+    Reg best = cs;
+    if (rank(ps)  > rank(best)) best = ps;
+    if (rank(eps) > rank(best)) best = eps;
+    return best;
+}
+
 std::string parse_cgpaddr(const std::string& line) {
     const std::string body = after_colon(line);
     if (body.empty()) return {};
@@ -149,6 +166,40 @@ namespace {
     bool contains(const std::string& hay, const char* needle) {
         return hay.find(needle) != std::string::npos;
     }
+}
+
+int selrat_index(const std::string& rat) {
+    const std::string s = lower(rat);
+    if (s == "auto" || s == "automatic" || s == "all")   return 0;
+    if (s == "umts" || s == "3g")                        return 1;
+    if (s == "gsm"  || s == "2g")                        return 2;
+    if (s == "gsm+umts")                                 return 5;
+    if (s == "lte"  || s == "4g")                        return 6;
+    if (s == "gsm+umts+lte")                             return 7;
+    if (s == "umts+lte")                                 return 11;
+    if (s == "gsm+lte")                                  return 12;
+    return -1;
+}
+
+std::string parse_selrat(const std::string& line) {
+    if (!contains(lower(line), "!selrat:")) return {};
+    // "!SELRAT: 06, LTE Only" → the name after the comma; else the whole tail.
+    const std::string body = after_colon(line);
+    const auto comma = body.find(',');
+    std::string name = (comma == std::string::npos) ? body : body.substr(comma + 1);
+    std::size_t a = 0, b = name.size();
+    while (a < b && (name[a] == ' ' || name[a] == '\t')) ++a;
+    while (b > a && (name[b-1] == ' ' || name[b-1] == '\t' || name[b-1] == '\r')) --b;
+    return name.substr(a, b - a);
+}
+
+std::string parse_ceer(const std::string& line) {
+    if (!contains(lower(line), "+ceer:")) return {};
+    std::string body = after_colon(line);
+    std::size_t a = 0, b = body.size();
+    while (a < b && body[a] == ' ') ++a;
+    while (b > a && (body[b-1] == ' ' || body[b-1] == '\r')) --b;
+    return body.substr(a, b - a);
 }
 
 Vendor parse_vendor(const std::string& gmi_or_model) {

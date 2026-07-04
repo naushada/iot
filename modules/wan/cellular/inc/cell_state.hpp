@@ -35,6 +35,10 @@ class CellularState {
         void set_signal(const Signal& s);
         void set_operator(const Operator& op);
         void set_reg(Reg r);
+        /// Modem's current radio-access-tech selection (from AT!SELRAT?).
+        void set_rat(const std::string& rat);
+        /// Network reject/registration reason (from AT+CEER); "" clears it.
+        void set_reg_reason(const std::string& reason);
         void set_ip(const std::string& ip);
         void set_iccid(const std::string& iccid);
         void set_gps(const GpsFix& fix);
@@ -48,7 +52,7 @@ class CellularState {
     private:
         mutable std::mutex m_mtx;
         std::string m_state;
-        std::string m_operator, m_tech, m_reg, m_ip, m_iccid;
+        std::string m_operator, m_tech, m_reg, m_ip, m_iccid, m_rat, m_regReason;
         int  m_dbm = 0, m_bars = 0;
         bool m_haveSignal = false, m_haveCell = false;
         GpsFix m_gps;

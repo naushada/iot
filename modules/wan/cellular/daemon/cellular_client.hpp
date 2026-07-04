@@ -34,6 +34,7 @@ class CellularClient : public ACE_Event_Handler {
             std::string  modem_tty = "/dev/ttyUSB2";
             std::string  gps_tty;                       ///< "" → no NMEA GNSS
             std::string  apn;
+            std::string  rat;                           ///< "" leave; auto|gsm|lte|… (Sierra !SELRAT)
             unsigned     interval_sec = 30;
             bool         gps_enable = true;
             bool         sms_enable = false;            ///< MT SMS receive (off by default)
@@ -64,6 +65,10 @@ class CellularClient : public ACE_Event_Handler {
         std::unique_ptr<SerialChannel>  m_gnss;
         bool                            m_apn_sent = false;
         Reg                             m_lastReg = Reg::Unknown;
+        Reg                             m_reg_cs = Reg::Unknown;   ///< +CREG (2G/3G CS)
+        Reg                             m_reg_ps = Reg::Unknown;   ///< +CGREG (2G/3G PS)
+        Reg                             m_reg_eps = Reg::Unknown;  ///< +CEREG (LTE EPS)
+        bool                            m_rat_done = false;        ///< one-time Sierra !SELRAT apply/read
         bool                            m_haveIp = false;
         bool                            m_gps_via_at = false;  ///< GNSS over AT poll (no NMEA tty)
         Vendor                          m_vendor = Vendor::Generic;

@@ -75,9 +75,14 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
       { key: 'Technology',   value: this.c.tech || '—',        dsKey: 'cell.tech' },
       { key: 'Registration', value: this.c.reg || '—',         dsKey: 'cell.reg' },
       { key: 'Signal',       value: this.signalText, isSignal: true, dsKey: 'cell.signal.dbm' },
+      { key: 'RAT',          value: this.c.rat || '—',         dsKey: 'cell.rat.current' },
       { key: 'IP Address',   value: this.c.ip || '—',          dsKey: 'cell.ip' },
       { key: 'SIM ICCID',    value: this.c.iccid || '—',       dsKey: 'cell.iccid' },
     ];
+    // Network reject reason — only surfaced when present and not registered.
+    if (this.c.reg_reason) {
+      rows.push({ key: 'Reject Reason', value: this.c.reg_reason, dsKey: 'cell.reg.reason' });
+    }
     // Received SMS — only shown once at least one message has arrived.
     if (this.c.sms_count && this.c.sms_count !== '0') {
       rows.push(

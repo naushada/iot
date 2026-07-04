@@ -54,6 +54,20 @@ import { ToastService } from '../../../common/toast.service';
         </div>
 
         <div class="form-grid">
+          <clr-select-container>
+            <label>Radio Access Tech</label>
+            <select clrSelect [disabled]="!isAdmin" formControlName="rat">
+              <option value="">Leave unchanged</option>
+              <option value="auto">Automatic</option>
+              <option value="gsm">GSM (2G) only</option>
+              <option value="umts">UMTS (3G) only</option>
+              <option value="lte">LTE only</option>
+              <option value="gsm+lte">GSM + LTE</option>
+              <option value="gsm+umts+lte">GSM + UMTS + LTE</option>
+            </select>
+            <clr-control-helper>Applied via AT!SELRAT (Sierra). Pick GSM if only 2G is in range.</clr-control-helper>
+            <clr-control-helper *dsDebug><app-ds-hint key="cell.rat"></app-ds-hint></clr-control-helper>
+          </clr-select-container>
           <clr-checkbox-container>
             <label>GNSS</label>
             <clr-checkbox-wrapper>
@@ -63,8 +77,17 @@ import { ToastService } from '../../../common/toast.service';
             </clr-checkbox-wrapper>
             <clr-control-helper *dsDebug><app-ds-hint key="cell.gps.enable"></app-ds-hint></clr-control-helper>
           </clr-checkbox-container>
+          <clr-checkbox-container>
+            <label>SMS</label>
+            <clr-checkbox-wrapper>
+              <input type="checkbox" clrCheckbox [disabled]="!isAdmin"
+                     formControlName="smsEnable" />
+              <label>Receive SMS</label>
+            </clr-checkbox-wrapper>
+            <clr-control-helper *dsDebug><app-ds-hint key="sms.enable"></app-ds-hint></clr-control-helper>
+          </clr-checkbox-container>
           <!-- pad to fill the 4-column row (Project Rule 5) -->
-          <div></div><div></div><div></div>
+          <div></div>
         </div>
 
         <div style="margin-top:24px;">
@@ -89,7 +112,7 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
   private sub = new Subscription();
   private readonly KEYS = [
     'cell.apn', 'cell.modem.tty', 'cell.gps.tty',
-    'cell.poll.interval.sec', 'cell.gps.enable',
+    'cell.poll.interval.sec', 'cell.gps.enable', 'cell.rat', 'sms.enable',
   ];
 
   get isAdmin(): boolean { return this.session.isAdmin; }
@@ -104,6 +127,8 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
       gpsTty:    [''],
       pollSec:   [30],
       gpsEnable: [true],
+      rat:       [''],
+      smsEnable: [false],
     });
   }
 
@@ -125,6 +150,8 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
       gpsTty:    d['cell.gps.tty']           ?? this.form.value.gpsTty,
       pollSec:   d['cell.poll.interval.sec'] ?? this.form.value.pollSec,
       gpsEnable: d['cell.gps.enable']        ?? this.form.value.gpsEnable,
+      rat:       d['cell.rat']               ?? this.form.value.rat,
+      smsEnable: d['sms.enable']             ?? this.form.value.smsEnable,
     });
   }
 
@@ -138,6 +165,8 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
       { key: 'cell.gps.tty',           value: v.gpsTty ?? '' },
       { key: 'cell.poll.interval.sec', value: Number(v.pollSec) || 30 },
       { key: 'cell.gps.enable',        value: !!v.gpsEnable },
+      { key: 'cell.rat',               value: v.rat ?? '' },
+      { key: 'sms.enable',             value: !!v.smsEnable },
     ]).subscribe({
       next: (r) => {
         this.saving = false;
