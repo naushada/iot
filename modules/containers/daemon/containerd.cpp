@@ -1,11 +1,16 @@
 #include "containerd.hpp"
 
+#include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
 #include <sstream>
 #include <utility>
 #include <vector>
+
+#include <sys/prctl.h>
+#include <sys/wait.h>
 
 #include <ace/Log_Msg.h>
 #include <ace/OS_NS_unistd.h>
@@ -54,6 +59,51 @@ std::string sanitize_name(const std::string& n) {
     }
     if (s.empty()) s = "x";
     return s;
+}
+
+// The container's cgroup dir, resolved from its init pid. cgroup v2 (unified):
+// /proc/<pid>/cgroup has a single "0::/<path>" line → /sys/fs/cgroup/<path>.
+// Empty on v1 / parse failure (usage then reads as "—").
+std::string cgroup_dir_for(long pid) {
+    if (pid <= 0) return {};
+    const std::string body = slurp("/proc/" + std::to_string(pid) + "/cgroup");
+    const std::string tag = "0::";
+    for (std::size_t p = 0; p < body.size();) {
+        std::size_t e = body.find('\n', p);
+        if (e == std::string::npos) e = body.size();
+        const std::string line = body.substr(p, e - p);
+        if (line.rfind(tag, 0) == 0)
+            return "/sys/fs/cgroup" + line.substr(tag.size());
+        p = e + 1;
+    }
+    return {};
+}
+
+// First whitespace-delimited long long in a file (e.g. memory.current), or -1.
+long long read_ll_file(const std::string& path) {
+    const std::string s = slurp(path);
+    if (s.empty()) return -1;
+    try { return std::stoll(s); } catch (...) { return -1; }
+}
+
+// cpu.stat "usage_usec <N>" cumulative CPU time (µs), or -1.
+long long read_cpu_usage_usec(const std::string& dir) {
+    const std::string s = slurp(dir + "/cpu.stat");
+    const std::string key = "usage_usec ";
+    const std::size_t p = s.find(key);
+    if (p == std::string::npos) return -1;
+    try { return std::stoll(s.substr(p + key.size())); } catch (...) { return -1; }
+}
+
+std::string human_bytes(long long b) {
+    if (b < 0) return {};
+    const char* u[] = {"B", "K", "M", "G"};
+    double v = static_cast<double>(b);
+    int i = 0;
+    while (v >= 1024.0 && i < 3) { v /= 1024.0; ++i; }
+    char out[32];
+    std::snprintf(out, sizeof out, (i == 0 ? "%.0f%s" : "%.1f%s"), v, u[i]);
+    return out;
 }
 
 std::string json_escape(const std::string& s) {
@@ -155,6 +205,8 @@ void Containerd::publish_instances_locked() {
            << "\"net\":\""     << json_escape(c->net_mode)   << "\","
            << "\"mem\":\""     << json_escape(c->mem)        << "\","
            << "\"cpus\":\""    << json_escape(c->cpus)       << "\","
+           << "\"memUsage\":\""<< json_escape(c->mem_usage)  << "\","
+           << "\"cpuPct\":\""  << json_escape(c->cpu_pct)    << "\","
            << "\"pid\":"       << c->pid                     << ","
            << "\"exitCode\":"  << (c->exit_code < 0 ? std::string("null")
                                                     : std::to_string(c->exit_code)) << ","
@@ -217,6 +269,26 @@ void Containerd::handle_command() {
         if (inst) do_stop(inst);
         else ACE_ERROR((LM_ERROR, ACE_TEXT("%D [ctr] stop: no such container %C\n"),
                         name.c_str()));
+        return;
+    }
+
+    if (action == "logs") {
+        // Publish the tail of the container's console log for the device-ui to
+        // display. Volatile (transient view), tagged with the name it is for.
+        std::string cid;
+        { std::lock_guard<std::mutex> lk(m_mtx);
+          if (ContainerInstance* i = find_locked(name)) cid = i->id; }
+        std::string body;
+        if (!cid.empty()) {
+            body = slurp(m_cfg.run + "/logs/" + cid + ".log");
+            const std::size_t kMax = 16 * 1024;              // last 16 KB
+            if (body.size() > kMax) body = body.substr(body.size() - kMax);
+        }
+        m_ds.set_volatile(std::vector<data_store::KV>{
+            {"container.log.name", data_store::Value{name}},
+            {"container.log",      data_store::Value{body}}});
+        ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ctr] logs %C: %u bytes\n"),
+                   name.c_str(), static_cast<unsigned>(body.size())));
         return;
     }
 
@@ -402,6 +474,12 @@ void Containerd::run_worker(ContainerInstance* inst, std::string image_id,
                             bool bridge, std::string net_subnet, std::string id, int octet) {
     std::string err;
     auto fail = [&](const std::string& msg) {
+        // Surface the reason in the journal too — the run worker's failures
+        // (crun create/start, bridge networking, missing CMD) otherwise land
+        // only in ds container.instances, making a failed run look silent in
+        // `journalctl` after the "overlay mounted" line.
+        ACE_ERROR((LM_ERROR, ACE_TEXT("%D [ctr] %C: run failed: %C\n"),
+                   id.c_str(), msg.c_str()));
         std::lock_guard<std::mutex> lk(m_mtx);
         inst->error = msg; inst->state = "error";
         if (inst->host_octet) { free_octet_locked(inst->host_octet); inst->host_octet = 0; }
@@ -458,8 +536,14 @@ void Containerd::run_worker(ContainerInstance* inst, std::string image_id,
     mkdir_p(state_root);
     CrunRuntime crun(state_root);
     crun.remove(id, true, err);   // clear any stale container
+    // Per-container console log — the container's stdout+stderr. Lives outside
+    // the bundle (which is torn down on exit) so it survives for post-mortem
+    // ("why did it exit in 2s"); truncated at each run start.
+    const std::string log_path = run_root + "/logs/" + id + ".log";
+    mkdir_p(run_root + "/logs");
+    spit(log_path, std::string());
     { std::lock_guard<std::mutex> lk(m_mtx); inst->state = "created"; publish_instances_locked(); }
-    if (!crun.create(id, bundle, err)) {
+    if (!crun.create(id, bundle, err, log_path)) {
         unmount_overlay(run_root, id, err);
         fail("crun create failed: " + err);
         inst->run_active.store(false); return;
@@ -492,9 +576,18 @@ void Containerd::run_worker(ContainerInstance* inst, std::string image_id,
     ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ctr] %C: started pid=%d\n"),
                id.c_str(), static_cast<int>(pid)));
 
-    // ── Supervise: poll until exit, honoring stop ──────────────────────────
+    // ── Supervise: wait for exit, honoring stop ────────────────────────────
+    // Prefer waitpid() on the (subreaper-reparented) container init so we
+    // capture its real exit code; crun `state` doesn't expose it. If the init
+    // isn't our child (subreaper unavailable), fall back to polling crun state
+    // with an unknown (-1) code.
     bool term_sent = false;
     int  grace_ticks = 0;
+    int  exit_code = -1;
+    // Live cgroup usage sampling (best-effort; blank on cgroup v1 / missing files).
+    const std::string cg = cgroup_dir_for(pid);
+    long long prev_usec = read_cpu_usage_usec(cg);
+    auto      prev_t    = std::chrono::steady_clock::now();
     while (true) {
         bool shutting = false;
         for (int i = 0; i < 8; ++i) {        // ~2s poll, 250ms wakeups for fast teardown
@@ -503,14 +596,45 @@ void Containerd::run_worker(ContainerInstance* inst, std::string image_id,
         }
         if (shutting) { crun.kill(id, "KILL", err); break; }
 
+        int wst = 0;
+        const pid_t r = (pid > 0)
+            ? ::waitpid(static_cast<pid_t>(pid), &wst, WNOHANG) : -1;
+        if (r == static_cast<pid_t>(pid)) {                // reaped our init
+            exit_code = WIFEXITED(wst)   ? WEXITSTATUS(wst)
+                      : WIFSIGNALED(wst) ? 128 + WTERMSIG(wst) : -1;
+            break;
+        }
+        // Authoritative liveness even when pid isn't our child (r<0/ECHILD).
         CrunStatus st = crun.state(id);
-        if (!st.exists || st.status == "stopped") break;   // exited
+        if (!st.exists || st.status == "stopped") break;   // exited (code unknown)
         if (inst->stop_requested.load()) {
             if (!term_sent) {
                 crun.kill(id, "TERM", err); term_sent = true; grace_ticks = 0;
             } else if (++grace_ticks >= 5) {               // ~10s grace → SIGKILL
                 crun.kill(id, "KILL", err);
             }
+        }
+
+        // Sample memory.current + cpu.stat and publish live usage for the grid.
+        if (!cg.empty()) {
+            const long long mem  = read_ll_file(cg + "/memory.current");
+            const long long usec = read_cpu_usage_usec(cg);
+            const auto now_t = std::chrono::steady_clock::now();
+            std::string mem_s = human_bytes(mem), cpu_s;
+            if (usec >= 0 && prev_usec >= 0) {
+                const double dt_us =
+                    std::chrono::duration<double, std::micro>(now_t - prev_t).count();
+                if (dt_us > 0.0) {
+                    double pct = 100.0 * static_cast<double>(usec - prev_usec) / dt_us;
+                    if (pct < 0.0) pct = 0.0;
+                    char b[16]; std::snprintf(b, sizeof b, "%.1f%%", pct);
+                    cpu_s = b;
+                }
+            }
+            prev_usec = usec; prev_t = now_t;
+            std::lock_guard<std::mutex> lk(m_mtx);
+            inst->mem_usage = mem_s; inst->cpu_pct = cpu_s;
+            publish_instances_locked();
         }
     }
 
@@ -523,11 +647,12 @@ void Containerd::run_worker(ContainerInstance* inst, std::string image_id,
         std::lock_guard<std::mutex> lk(m_mtx);
         if (inst->host_octet) { free_octet_locked(inst->host_octet); inst->host_octet = 0; }
         inst->merged.clear(); inst->ip.clear(); inst->gateway.clear();
-        inst->pid = 0; inst->state = "stopped";
+        inst->mem_usage.clear(); inst->cpu_pct.clear();
+        inst->pid = 0; inst->exit_code = exit_code; inst->state = "stopped";
         publish_instances_locked();
     }
-    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ctr] %C: stopped%C\n"),
-               id.c_str(), by_req ? " (by request)" : " (exited)"));
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ctr] %C: stopped (%C, exit=%d)\n"),
+               id.c_str(), by_req ? "by request" : "exited", exit_code));
     inst->run_active.store(false);
 }
 
@@ -584,11 +709,23 @@ void Containerd::do_remove(const std::string& name) {
     crun.remove(doomed->id, true, err);
     bridge_down(doomed->id);
     unmount_overlay(m_cfg.run, doomed->id, err);
+    ACE_OS::unlink((m_cfg.run + "/logs/" + doomed->id + ".log").c_str());
 }
 
 int Containerd::run() {
     if (!m_ds.connect(m_cfg.ds_sock).ok)
         ACE_ERROR_RETURN((LM_ERROR, ACE_TEXT("%D [ctr] ds connect failed\n")), 1);
+
+    // Become a child subreaper so a container's init process — which crun
+    // double-forks and detaches — reparents to us and stays waitpid()-able.
+    // That is how run_worker captures the real container exit code; crun's
+    // `state` does not expose it. Best-effort: on failure the supervisor falls
+    // back to crun-state polling with an unknown (-1) exit code.
+    if (::prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0) {
+        ACE_ERROR((LM_ERROR, ACE_TEXT("%D [ctr] PR_SET_CHILD_SUBREAPER failed "
+                                      "(errno=%d) — container exit codes may "
+                                      "read as unknown\n"), errno));
+    }
 
     // Baseline the command token BEFORE watching so a stale value (a previous
     // session's request) does not fire on boot.

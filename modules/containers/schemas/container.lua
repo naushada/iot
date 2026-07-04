@@ -64,7 +64,7 @@ return {
     ["container.instances"]     = { access = "Viewer", type = "string", default = "[]" },
     ["container.cmd.request"]   = { access = "Admin",  type = "string", default = "" },
     ["container.cmd.name"]      = { access = "Admin",  type = "string", default = "" },
-    ["container.cmd.action"]    = { access = "Admin",  type = "string", default = "" },  -- pull|run|stop|remove
+    ["container.cmd.action"]    = { access = "Admin",  type = "string", default = "" },  -- pull|run|stop|remove|logs
     ["container.cmd.image"]     = { access = "Admin",  type = "string", default = "" },
     ["container.cmd.entrypoint"]= { access = "Admin",  type = "string", default = "" },
     ["container.cmd.cmd"]       = { access = "Admin",  type = "string", default = "" },
@@ -85,4 +85,11 @@ return {
     ["container.exit.code"]     = { access = "Viewer", type = "string", default = "" },
     ["container.status"]        = { access = "Viewer", type = "string", default = "" },
     ["container.error"]         = { access = "Viewer", type = "string", default = "" },
+
+    -- Container console log (stdout+stderr), published on demand by the
+    -- `logs` command envelope: the daemon writes the tail (last 16 KB) of the
+    -- named container's log for the device-ui Logs viewer. Admin-gated — output
+    -- may contain application secrets.
+    ["container.log"]           = { access = "Admin",  type = "string", default = "" },
+    ["container.log.name"]      = { access = "Admin",  type = "string", default = "" },
 }

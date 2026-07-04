@@ -24,8 +24,13 @@ public:
     explicit CrunRuntime(std::string state_root);
 
     /// `crun create --bundle <bundle_dir> <id>` — set up namespaces/cgroups
-    /// from <bundle_dir>/config.json, paused before the user process.
-    bool create(const std::string& id, const std::string& bundle_dir, std::string& err);
+    /// from <bundle_dir>/config.json, paused before the user process. When
+    /// `io_log` is set, the container's stdout+stderr are redirected (appended)
+    /// there — the container inherits crun-create's stdio, so this is where the
+    /// process's console output must be wired up. On failure `err` is the tail
+    /// of that log (crun's own diagnostics land there too).
+    bool create(const std::string& id, const std::string& bundle_dir,
+                std::string& err, const std::string& io_log = "");
 
     /// `crun start <id>` — exec the container's process.
     bool start(const std::string& id, std::string& err);
@@ -40,7 +45,8 @@ public:
     bool remove(const std::string& id, bool force, std::string& err);
 
 private:
-    int run(const std::vector<std::string>& args, std::string* out, std::string& err);
+    int run(const std::vector<std::string>& args, std::string* out,
+            std::string& err, const std::string& io_out = "");
 
     std::string m_state_root;
     std::string m_crun;   ///< resolved crun binary path

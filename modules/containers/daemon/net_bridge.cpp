@@ -1,5 +1,6 @@
 #include "net_bridge.hpp"
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
@@ -101,6 +102,23 @@ void write_proc(const char* path, const char* val) {
     if (f) { std::fputs(val, f); std::fclose(f); }
 }
 
+// Linux caps interface names at IFNAMSIZ-1 = 15 chars. The container id
+// ("c-<name>") can be longer, so a naive "vh-"/"vp-" + id overflows (e.g. name
+// "mqtt-openssl" → "vp-c-mqtt-openssl" = 17 chars → the kernel rejects it with
+// "name not a valid ifname" and bridge networking fails). Derive a fixed-width
+// name from a hash of the id instead: prefix ("vh"/"vp", 2 chars) + 11 hex of
+// FNV-1a(id) = 13 chars, safely under 15, and deterministic so bridge_down()
+// reconstructs the same pair for teardown. The "vh"/"vp" prefixes keep the host
+// and peer ends distinct for the same id.
+std::string veth_name(const char* prefix /* "vh" | "vp" */, const std::string& id) {
+    std::uint64_t h = 1469598103934665603ULL;           // FNV-1a 64 offset basis
+    for (unsigned char c : id) { h ^= c; h *= 1099511628211ULL; }
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%s%011llx", prefix,
+                  static_cast<unsigned long long>(h & 0xFFFFFFFFFFFULL)); // 44 bits
+    return std::string(buf);
+}
+
 } // namespace
 
 BridgeNet bridge_up(long container_pid, const std::string& subnet_cidr,
@@ -110,9 +128,9 @@ BridgeNet bridge_up(long container_pid, const std::string& subnet_cidr,
     if (!plan.ok) { res.error = "invalid bridge subnet/octet: " + subnet_cidr; return res; }
 
     const std::string& ip = ip_tool();
-    const std::string host_veth = "vh-" + id;   // host end (≤15 chars)
-    const std::string peer_veth = "vp-" + id;   // container end
-    const std::string netns     = "ctr-" + id;  // ip-netns name for the bind mount
+    const std::string host_veth = veth_name("vh", id);  // host end (≤15 chars)
+    const std::string peer_veth = veth_name("vp", id);  // container end (≤15)
+    const std::string netns     = "ctr-" + id;  // ip-netns name (not an ifname)
     const std::string pfx       = std::to_string(plan.prefix);
     std::string err;
 
@@ -170,7 +188,7 @@ BridgeNet bridge_up(long container_pid, const std::string& subnet_cidr,
 }
 
 void bridge_down(const std::string& id) {
-    run_ok({ip_tool(), "link", "del", "vh-" + id});
+    run_ok({ip_tool(), "link", "del", veth_name("vh", id)});
     run_ok({ip_tool(), "netns", "del", "ctr-" + id});
 }
 
