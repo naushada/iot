@@ -17,7 +17,9 @@ import { ToastService } from '../../common/toast.service';
 interface ContainerRow {
   name: string; image: string; imageId: string; size: string;
   state: string; ip: string; gateway: string; net: string;
-  mem: string; cpus: string; pid: number; exitCode: number | null;
+  mem: string; cpus: string;            // configured limits (set at pull)
+  memUsage: string; cpuPct: string;     // live cgroup usage while running
+  pid: number; exitCode: number | null;
   started: number; error: string;
 }
 
@@ -38,7 +40,7 @@ interface ContainerRow {
           <clr-dg-column [style.width.px]="80">Net</clr-dg-column>
           <clr-dg-column [style.width.px]="80">Mem</clr-dg-column>
           <clr-dg-column [style.width.px]="70">CPU</clr-dg-column>
-          <clr-dg-column [style.width.px]="200">Actions</clr-dg-column>
+          <clr-dg-column [style.width.px]="250">Actions</clr-dg-column>
 
           <clr-dg-row *clrDgItems="let r of rows" [clrDgItem]="r">
             <clr-dg-cell><strong>{{ r.name }}</strong></clr-dg-cell>
@@ -52,13 +54,15 @@ interface ContainerRow {
               <span class="hint" *ngIf="!r.ip">—</span>
             </clr-dg-cell>
             <clr-dg-cell>{{ r.net || 'host' }}</clr-dg-cell>
-            <clr-dg-cell>{{ r.mem || '—' }}</clr-dg-cell>
-            <clr-dg-cell>{{ r.cpus || '—' }}</clr-dg-cell>
+            <clr-dg-cell [title]="r.mem ? 'limit ' + r.mem : 'no limit'">{{ r.memUsage || '—' }}</clr-dg-cell>
+            <clr-dg-cell [title]="r.cpus ? 'limit ' + r.cpus + ' cpu' : 'no limit'">{{ r.cpuPct || '—' }}</clr-dg-cell>
             <clr-dg-cell>
               <button class="btn btn-sm btn-success-outline" (click)="run(r)"
                       [disabled]="!canRun(r)">Run</button>
               <button class="btn btn-sm btn-danger-outline" (click)="stop(r)"
                       [disabled]="!canStop(r)">Stop</button>
+              <button class="btn btn-sm btn-outline" (click)="logs(r)"
+                      [disabled]="!r.imageId">Logs</button>
               <button class="btn btn-sm btn-outline" (click)="remove(r)"
                       [disabled]="busy(r)">Remove</button>
             </clr-dg-cell>
@@ -135,6 +139,18 @@ interface ContainerRow {
           shares the device IP; <strong>Bridge</strong> gives each container its
           own IP (<code>10.88.0.2</code>, <code>.3</code>, …) with masqueraded
           egress. Credentials are write-only — sent once, never read back.</p>
+
+        <!-- ── Logs viewer (container console; last 16 KB) ──────────────── -->
+        <clr-modal [(clrModalOpen)]="logsOpen" [clrModalSize]="'lg'">
+          <h3 class="modal-title">Logs — {{ logsName }}</h3>
+          <div class="modal-body">
+            <pre class="logs">{{ logsText || '(no console output captured)' }}</pre>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline" (click)="refreshLogs()">Refresh</button>
+            <button class="btn btn-primary" (click)="logsOpen = false">Close</button>
+          </div>
+        </clr-modal>
       </ng-container>
 
       <ng-template #noAccess><p class="hint">You need Admin access to manage containers.</p></ng-template>
@@ -151,6 +167,9 @@ interface ContainerRow {
     .btn-cell { display: flex; align-items: flex-end; }
     .btn-cell .btn { white-space: nowrap; }
     .btn-sm { margin: 0 2px; }
+    .logs { max-height: 50vh; overflow: auto; font-size: 11px; line-height: 1.45;
+      background: #1b2a32; color: #d0e0e8; padding: 12px; border-radius: 3px;
+      white-space: pre-wrap; word-break: break-word; margin: 0; }
   `]
 })
 export class ContainersComponent implements OnInit, OnDestroy {
@@ -170,7 +189,13 @@ export class ContainersComponent implements OnInit, OnDestroy {
   netMode = 'host';
 
   private timer: ReturnType<typeof setInterval> | null = null;
-  private readonly KEYS = ['container.instances', 'container.pull.progress', 'container.pull.detail'];
+  private readonly KEYS = ['container.instances', 'container.pull.progress', 'container.pull.detail',
+                           'container.log', 'container.log.name'];
+
+  // Logs modal (populated on demand by the `logs` command → container.log).
+  logsOpen = false;
+  logsName = '';
+  logsText = '';
 
   get isAdmin(): boolean { return this.session.isAdmin; }
 
@@ -215,7 +240,13 @@ export class ContainersComponent implements OnInit, OnDestroy {
       if (!r.ok || !r.data) return;
       const d = r.data;
       try {
-        const arr = JSON.parse(String(d['container.instances'] ?? '[]'));
+        // Only refresh rows when this poll actually carried the key. A proxied
+        // response that omits container.instances must NOT be read as "no
+        // containers" — that blanks the table until the next good poll (the
+        // "table flashes empty on click" symptom). Keep the previous rows.
+        const raw = d['container.instances'];
+        if (raw === undefined || raw === null) return;
+        const arr = JSON.parse(String(raw));
         if (Array.isArray(arr)) {
           this.rows = arr.map((x: Record<string, unknown>) => ({
             name: String(x['name'] ?? ''),
@@ -228,6 +259,8 @@ export class ContainersComponent implements OnInit, OnDestroy {
             net: String(x['net'] ?? 'host'),
             mem: String(x['mem'] ?? ''),
             cpus: String(x['cpus'] ?? ''),
+            memUsage: String(x['memUsage'] ?? ''),
+            cpuPct: String(x['cpuPct'] ?? ''),
             pid: Number(x['pid']) || 0,
             exitCode: x['exitCode'] === null || x['exitCode'] === undefined ? null : Number(x['exitCode']),
             started: Number(x['started']) || 0,
@@ -237,7 +270,23 @@ export class ContainersComponent implements OnInit, OnDestroy {
       } catch { /* keep the previous rows on a transient parse error */ }
       this.pullProgress = Math.max(0, Math.min(100, Number(d['container.pull.progress']) || 0));
       this.pullDetail   = String(d['container.pull.detail'] ?? '');
+      // Refresh the open Logs modal when a `logs` command's output lands for it.
+      if (this.logsOpen && String(d['container.log.name'] ?? '') === this.logsName) {
+        const t = d['container.log'];
+        if (t !== undefined && t !== null) this.logsText = String(t);
+      }
     });
+  }
+
+  logs(r: ContainerRow): void {
+    this.logsName = r.name;
+    this.logsText = 'Loading…';
+    this.logsOpen = true;
+    this.sendCmd(r.name, 'logs', 'Fetching logs for ' + r.name + '…');
+  }
+
+  refreshLogs(): void {
+    if (this.logsName) this.sendCmd(this.logsName, 'logs', 'Refreshing logs…');
   }
 
   // ── commands (the container.cmd.* envelope) ──────────────────────────────

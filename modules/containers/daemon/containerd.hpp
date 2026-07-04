@@ -63,6 +63,11 @@ struct ContainerInstance {
     int         exit_code = -1;       ///< -1 = none
     long long   started = 0;
 
+    // live cgroup usage (sampled by the supervise loop while running; cleared on
+    // exit). Formatted for direct display — "12.3M" / "3.2%"; empty ⇒ "—".
+    std::string mem_usage;            ///< memory.current, human bytes
+    std::string cpu_pct;              ///< cpu.stat usage delta over wall time
+
     // runtime
     std::string       merged;         ///< mounted rootfs path
     std::thread       run_thread;

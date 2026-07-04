@@ -57,10 +57,14 @@ CrunRuntime::CrunRuntime(std::string state_root)
     : m_state_root(std::move(state_root)), m_crun(resolve_crun()) {}
 
 int CrunRuntime::run(const std::vector<std::string>& args, std::string* out,
-                     std::string& err) {
-    const std::string out_path = make_temp("out");
-    const std::string err_path = make_temp("err");
-    if (out_path.empty() || err_path.empty()) {
+                     std::string& err, const std::string& io_out) {
+    // io_out set ⇒ redirect the child's stdout+stderr to that persistent log
+    // (container console capture); otherwise capture to throwaway temp files so
+    // we can parse crun's own stdout (state JSON) / stderr (error text).
+    const bool log_mode = !io_out.empty();
+    const std::string out_path = log_mode ? std::string() : make_temp("out");
+    const std::string err_path = log_mode ? std::string() : make_temp("err");
+    if (!log_mode && (out_path.empty() || err_path.empty())) {
         err = "could not create temp files";
         if (!out_path.empty()) ::unlink(out_path.c_str());
         if (!err_path.empty()) ::unlink(err_path.c_str());
@@ -82,8 +86,14 @@ int CrunRuntime::run(const std::vector<std::string>& args, std::string* out,
     opts.command_line(argv.data());
 
     int devnull = ::open("/dev/null", O_RDONLY);
-    int outfd   = ::open(out_path.c_str(), O_WRONLY | O_TRUNC);
-    int errfd   = ::open(err_path.c_str(), O_WRONLY | O_TRUNC);
+    int outfd, errfd;
+    if (log_mode) {
+        outfd = ::open(io_out.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+        errfd = (outfd >= 0) ? ::dup(outfd) : -1;   // merge stderr → same log
+    } else {
+        outfd = ::open(out_path.c_str(), O_WRONLY | O_TRUNC);
+        errfd = ::open(err_path.c_str(), O_WRONLY | O_TRUNC);
+    }
     if (devnull >= 0 && outfd >= 0 && errfd >= 0)
         opts.set_handles(devnull, outfd, errfd);
 
@@ -104,6 +114,15 @@ int CrunRuntime::run(const std::vector<std::string>& args, std::string* out,
     proc.wait(&status);
     const int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 
+    if (log_mode) {
+        // No temp files; on failure surface the tail of the console log (holds
+        // crun's own create diagnostics too).
+        if (code != 0) {
+            const std::string tail = read_file(io_out);
+            err = trim(tail.size() > 512 ? tail.substr(tail.size() - 512) : tail);
+        }
+        return code;
+    }
     if (out) *out = read_file(out_path);
     if (code != 0) err = trim(read_file(err_path));
     ::unlink(out_path.c_str());
@@ -112,8 +131,8 @@ int CrunRuntime::run(const std::vector<std::string>& args, std::string* out,
 }
 
 bool CrunRuntime::create(const std::string& id, const std::string& bundle_dir,
-                         std::string& err) {
-    return run({"create", "--bundle", bundle_dir, id}, nullptr, err) == 0;
+                         std::string& err, const std::string& io_log) {
+    return run({"create", "--bundle", bundle_dir, id}, nullptr, err, io_log) == 0;
 }
 
 bool CrunRuntime::start(const std::string& id, std::string& err) {
