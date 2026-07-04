@@ -107,6 +107,10 @@ private:
     void do_run(ContainerInstance* inst);
     void do_stop(ContainerInstance* inst);
     void do_remove(const std::string& name);
+    // Delete image content (manifests/blobs/extracted layers) no live container
+    // references — reclaims disk after a re-pull or remove. Skipped while a pull
+    // is in flight. Safe: shared layers are kept (see image_prune planner).
+    void do_prune();
     // The supervise body of a running container (own thread). Args by value so
     // the thread owns its copies; `inst` stays valid because do_remove refuses to
     // erase a container while its run_active flag is set.
@@ -115,6 +119,20 @@ private:
                     std::string ov_entrypoint, std::string ov_cmd,
                     std::string lim_mem, std::string lim_cpus,
                     bool bridge, std::string net_subnet, std::string id, int octet);
+    // Wait for a running container to exit (or a stop request), sampling live
+    // cgroup usage, then tear it down (crun delete + bridge/overlay unwind) and
+    // publish the final stopped state. Shared by run_worker (own_child=true —
+    // waitpid captures the real exit code) and rehydrate (own_child=false — the
+    // container reparented to init while we were down, so we poll crun state and
+    // the exit code reads as unknown). Clears inst->run_active on return.
+    void supervise(ContainerInstance* inst, std::string id, std::string run_root,
+                   bool bridge, long init_pid, bool own_child);
+
+    // Startup reconcile: rebuild the container map from the data-store's
+    // `container.instances` roster (the source of truth — we keep no on-disk
+    // state) and reconcile each entry against live crun state, re-attaching a
+    // supervisor to any container that kept running while the daemon was down.
+    void rehydrate_from_ds();
 
     // m_mtx MUST be held for these.
     ContainerInstance* find_locked(const std::string& name);

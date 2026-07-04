@@ -29,7 +29,9 @@ add_library(containers_core STATIC
     src/registry.cpp
     src/oci_layer.cpp
     src/oci_bundle.cpp
-    src/container_net.cpp)
+    src/container_net.cpp
+    src/container_roster.cpp
+    src/image_prune.cpp)
 target_include_directories(containers_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/inc
     ${NLOHMANN_JSON_INCLUDE})
@@ -90,7 +92,9 @@ if(CONTAINERS_BUILD_TESTS)
         test/registry_test.cpp
         test/oci_layer_test.cpp
         test/oci_bundle_test.cpp
-        test/container_net_test.cpp)
+        test/container_net_test.cpp
+        test/container_roster_test.cpp
+        test/image_prune_test.cpp)
     target_link_libraries(containers-tests containers_core GTest::gtest GTest::gtest_main pthread)
     include(GoogleTest)
     if(CONTAINERS_TOP_LEVEL)

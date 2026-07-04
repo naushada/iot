@@ -21,8 +21,12 @@
 #include "data_store/stats_publisher.hpp"
 #include "data_store/value.hpp"
 
+#include <filesystem>
+
 #include "container_net.hpp"   // kDefaultSubnet
+#include "container_roster.hpp"
 #include "crun_runtime.hpp"
+#include "image_prune.hpp"
 #include "http_client.hpp"     // mkdir_p
 #include "image_ref.hpp"
 #include "layer_store.hpp"
@@ -104,6 +108,20 @@ std::string human_bytes(long long b) {
     char out[32];
     std::snprintf(out, sizeof out, (i == 0 ? "%.0f%s" : "%.1f%s"), v, u[i]);
     return out;
+}
+
+// Bare sha256 hex from a "sha256:<hex>" digest (or the string unchanged).
+std::string digest_hex(const std::string& digest) {
+    const std::size_t c = digest.find(':');
+    return c == std::string::npos ? digest : digest.substr(c + 1);
+}
+
+// Last octet of a dotted-quad "10.88.0.2" → 2, for reclaiming a bridge IP on
+// rehydrate. 0 on parse failure / empty.
+int octet_from_ip(const std::string& ip) {
+    const std::size_t dot = ip.find_last_of('.');
+    if (dot == std::string::npos) return 0;
+    try { return std::stoi(ip.substr(dot + 1)); } catch (...) { return 0; }
 }
 
 std::string json_escape(const std::string& s) {
@@ -203,8 +221,11 @@ void Containerd::publish_instances_locked() {
            << "\"ip\":\""      << json_escape(c->ip)         << "\","
            << "\"gateway\":\"" << json_escape(c->gateway)    << "\","
            << "\"net\":\""     << json_escape(c->net_mode)   << "\","
+           << "\"subnet\":\""  << json_escape(c->net_subnet) << "\","
            << "\"mem\":\""     << json_escape(c->mem)        << "\","
            << "\"cpus\":\""    << json_escape(c->cpus)       << "\","
+           << "\"entrypoint\":\""<< json_escape(c->entrypoint)<< "\","
+           << "\"cmd\":\""     << json_escape(c->cmd)        << "\","
            << "\"memUsage\":\""<< json_escape(c->mem_usage)  << "\","
            << "\"cpuPct\":\""  << json_escape(c->cpu_pct)    << "\","
            << "\"pid\":"       << c->pid                     << ","
@@ -214,7 +235,11 @@ void Containerd::publish_instances_locked() {
            << "\"error\":\""   << json_escape(c->error)      << "\"}";
     }
     ss << "]";
-    m_ds.set_volatile(std::string("container.instances"), data_store::Value{ss.str()});
+    // Persistent (not volatile): the roster is the durable source of truth the
+    // daemon reads back to rehydrate after a restart/OTA — a volatile write is
+    // lost if ds itself restarts. Live usage fields (mem/cpu) ride along; they
+    // are re-derived from crun/cgroups on the next tick after a rehydrate.
+    m_ds.set(std::string("container.instances"), data_store::Value{ss.str()});
 
     // Legacy single-container mirror (first instance) so an un-migrated UI still
     // shows something during rollout.
@@ -252,6 +277,13 @@ int Containerd::handle_exception(ACE_HANDLE) {
 void Containerd::handle_command() {
     const std::string name   = get_str("container.cmd.name");
     const std::string action = get_str("container.cmd.action");
+    // Prune is store-wide — it needs no container name, so handle it before the
+    // name/action guard below.
+    if (action == "prune") {
+        ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ctr] cmd: action=prune\n")));
+        do_prune();
+        return;
+    }
     if (name.empty() || action.empty()) {
         ACE_ERROR((LM_ERROR, ACE_TEXT("%D [ctr] command missing name/action "
                                       "(name=%C action=%C)\n"),
@@ -404,13 +436,15 @@ void Containerd::do_pull(ContainerInstance* inst) {
             {"container.pull.detail",   data_store::Value{name + (r.ok ? ": pull complete"
                                                                        : ": " + r.error)}}});
         m_pull_active.store(false);
-        if (r.ok)
+        if (r.ok) {
             ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ctr] pull ok %C: %C (%lld bytes)\n"),
                        name.c_str(), r.image_id.c_str(),
                        static_cast<long long>(r.total_size)));
-        else
+            do_prune();   // a re-pull may have orphaned the old image
+        } else {
             ACE_ERROR((LM_ERROR, ACE_TEXT("%D [ctr] pull failed %C: %C\n"),
                        name.c_str(), r.error.c_str()));
+        }
     });
 }
 
@@ -576,16 +610,27 @@ void Containerd::run_worker(ContainerInstance* inst, std::string image_id,
     ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ctr] %C: started pid=%d\n"),
                id.c_str(), static_cast<int>(pid)));
 
+    // Hand off to the shared supervisor: we forked/subreaped this init, so
+    // own_child=true lets it waitpid() the real exit code.
+    supervise(inst, id, run_root, bridge, pid, /*own_child=*/true);
+}
+
+void Containerd::supervise(ContainerInstance* inst, std::string id, std::string run_root,
+                           bool bridge, long init_pid, bool own_child) {
+    std::string err;
+    CrunRuntime crun(run_root + "/state");
+
     // ── Supervise: wait for exit, honoring stop ────────────────────────────
     // Prefer waitpid() on the (subreaper-reparented) container init so we
-    // capture its real exit code; crun `state` doesn't expose it. If the init
-    // isn't our child (subreaper unavailable), fall back to polling crun state
-    // with an unknown (-1) code.
+    // capture its real exit code; crun `state` doesn't expose it. On re-attach
+    // after a restart the init reparented to pid 1 (not our child), so
+    // own_child=false skips waitpid and we poll crun state with an unknown (-1)
+    // code.
     bool term_sent = false;
     int  grace_ticks = 0;
     int  exit_code = -1;
     // Live cgroup usage sampling (best-effort; blank on cgroup v1 / missing files).
-    const std::string cg = cgroup_dir_for(pid);
+    const std::string cg = cgroup_dir_for(init_pid);
     long long prev_usec = read_cpu_usage_usec(cg);
     auto      prev_t    = std::chrono::steady_clock::now();
     while (true) {
@@ -597,9 +642,9 @@ void Containerd::run_worker(ContainerInstance* inst, std::string image_id,
         if (shutting) { crun.kill(id, "KILL", err); break; }
 
         int wst = 0;
-        const pid_t r = (pid > 0)
-            ? ::waitpid(static_cast<pid_t>(pid), &wst, WNOHANG) : -1;
-        if (r == static_cast<pid_t>(pid)) {                // reaped our init
+        const pid_t r = (own_child && init_pid > 0)
+            ? ::waitpid(static_cast<pid_t>(init_pid), &wst, WNOHANG) : -1;
+        if (own_child && r == static_cast<pid_t>(init_pid)) {   // reaped our init
             exit_code = WIFEXITED(wst)   ? WEXITSTATUS(wst)
                       : WIFSIGNALED(wst) ? 128 + WTERMSIG(wst) : -1;
             break;
@@ -710,6 +755,151 @@ void Containerd::do_remove(const std::string& name) {
     bridge_down(doomed->id);
     unmount_overlay(m_cfg.run, doomed->id, err);
     ACE_OS::unlink((m_cfg.run + "/logs/" + doomed->id + ".log").c_str());
+    do_prune();   // the removed container's image may now be dangling
+}
+
+void Containerd::do_prune() {
+    if (m_pull_active.load()) {
+        ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ctr] prune: skipped (pull in progress)\n")));
+        return;
+    }
+    // Snapshot live image ids under the lock; do all manifest reads + deletes
+    // without it (the store is content-addressed and immutable per hex).
+    std::vector<std::string> live_ids;
+    {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        for (auto& kv : m_containers)
+            if (is_valid_digest(kv.second->image_id)) live_ids.push_back(kv.second->image_id);
+    }
+
+    const std::string root = m_cfg.root;
+    std::vector<ImageRefs> live;
+    bool resolved_all = true;
+    std::set<std::string> seen;
+    for (const auto& id : live_ids) {
+        if (!seen.insert(id).second) continue;                  // dedup shared image
+        const std::string hex = digest_hex(id);
+        ImageRefs r; r.config_hex = hex;
+        const ImageManifest im = parse_image_manifest(slurp(root + "/manifests/" + hex + ".json"));
+        if (!im.ok) {
+            resolved_all = false;                               // keep its layers conservatively
+            ACE_ERROR((LM_WARNING, ACE_TEXT("%D [ctr] prune: manifest %C unreadable — "
+                                            "suppressing blob/layer prune\n"), hex.c_str()));
+        } else {
+            for (const auto& l : im.layers) r.layer_hexes.push_back(digest_hex(l.digest));
+        }
+        live.push_back(std::move(r));
+    }
+
+    // Scan the three store dirs into a bare-hex inventory.
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    DiskInventory disk;
+    for (const auto& e : fs::directory_iterator(root + "/manifests", ec)) {
+        const std::string fn = e.path().filename().string();
+        if (fn.size() > 5 && fn.compare(fn.size() - 5, 5, ".json") == 0)
+            disk.manifests.push_back(fn.substr(0, fn.size() - 5));
+    }
+    for (const auto& e : fs::directory_iterator(root + "/blobs/sha256", ec))
+        disk.blobs.push_back(e.path().filename().string());
+    for (const auto& e : fs::directory_iterator(root + "/layers", ec))
+        if (e.is_directory(ec)) disk.layers.push_back(e.path().filename().string());
+
+    const PrunePlan plan = plan_image_prune(live, disk, resolved_all);
+
+    long long freed = 0;
+    int n = 0;
+    auto rm_file = [&](const std::string& p) {
+        std::error_code e;
+        const auto sz = fs::file_size(p, e);
+        fs::remove(p, e);
+        if (!e) { freed += static_cast<long long>(sz); ++n; }
+    };
+    for (const auto& h : plan.manifests) rm_file(root + "/manifests/" + h + ".json");
+    for (const auto& h : plan.blobs)     rm_file(root + "/blobs/sha256/" + h);
+    for (const auto& h : plan.layers) {
+        const std::string p = root + "/layers/" + h;
+        std::uintmax_t bytes = 0;
+        std::error_code e;
+        for (const auto& f : fs::recursive_directory_iterator(p, e)) {
+            std::error_code e2;
+            if (f.is_regular_file(e2)) bytes += fs::file_size(f, e2);
+        }
+        std::error_code re;
+        if (fs::remove_all(p, re) > 0 && !re) { freed += static_cast<long long>(bytes); ++n; }
+    }
+
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ctr] prune: removed %d item(s), freed %C\n"),
+               n, human_bytes(freed).c_str()));
+    if (n > 0)
+        m_ds.set_volatile(std::string("container.pull.detail"),
+                          data_store::Value{std::string("pruned: freed ") + human_bytes(freed)});
+}
+
+void Containerd::rehydrate_from_ds() {
+    // The data-store roster is the source of truth. Rebuild the container map
+    // from it and reconcile each entry against live crun state so a container
+    // that kept running across a daemon restart / OTA reappears in the table
+    // (instead of the daemon booting blank and the UI showing "0 containers").
+    std::vector<RosterEntry> entries;
+    if (!parse_roster(get_str("container.instances"), entries)) {
+        ACE_ERROR((LM_ERROR, ACE_TEXT("%D [ctr] rehydrate: roster JSON unparsable "
+                                      "— starting empty\n")));
+        return;
+    }
+
+    CrunRuntime crun(m_cfg.run + "/state");
+    int running = 0;
+    std::lock_guard<std::mutex> lk(m_mtx);
+    for (const auto& e : entries) {
+        ContainerInstance* inst = ensure_locked(e.name);
+        inst->image_ref  = e.image;
+        inst->image_id   = e.image_id;
+        inst->image_size = e.size;
+        inst->net_mode   = e.net.empty() ? std::string("host") : e.net;
+        inst->net_subnet = e.subnet;
+        inst->mem = e.mem; inst->cpus = e.cpus;
+        inst->entrypoint = e.entrypoint; inst->cmd = e.cmd;
+
+        const CrunStatus st = crun.state(inst->id);
+        const bool bridge = (inst->net_mode == "bridge");
+        if (st.exists && st.status == "running") {
+            inst->pid = st.pid;
+            inst->state = "running";
+            inst->error.clear();
+            if (bridge) {                       // reclaim its IP/octet
+                inst->ip = e.ip; inst->gateway = e.gateway;
+                const int oct = octet_from_ip(e.ip);
+                if (oct) { inst->host_octet = oct; m_used_octets.insert(oct); }
+                else ACE_ERROR((LM_WARNING, ACE_TEXT("%D [ctr] rehydrate: %C running "
+                        "bridge but IP unknown — octet not reclaimed\n"), e.name.c_str()));
+            }
+            // Re-attach a supervisor (not our child → crun-state polling). Mirrors
+            // do_run's bookkeeping so stop/exit/teardown behave identically.
+            inst->run_active.store(true);
+            inst->stop_requested.store(false);
+            const std::string run_root = m_cfg.run;
+            const long pid = st.pid;
+            if (inst->run_thread.joinable()) inst->run_thread.join();
+            inst->run_thread = std::thread([this, inst, run_root, bridge, pid]() {
+                supervise(inst, inst->id, run_root, bridge, pid, /*own_child=*/false);
+            });
+            ++running;
+            ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ctr] rehydrate: %C still running "
+                                         "pid=%ld — re-attached\n"), e.name.c_str(), pid));
+        } else {
+            // Not running: settle to a resting state + clear any stale leftovers.
+            inst->state = is_valid_digest(inst->image_id) ? "pulled" : "idle";
+            inst->pid = 0; inst->ip.clear(); inst->gateway.clear();
+            std::string err;
+            crun.remove(inst->id, true, err);
+            bridge_down(inst->id);
+            unmount_overlay(m_cfg.run, inst->id, err);
+        }
+    }
+    publish_instances_locked();
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [ctr] rehydrate: %u container(s), %d running\n"),
+               static_cast<unsigned>(entries.size()), running));
 }
 
 int Containerd::run() {
@@ -731,12 +921,17 @@ int Containerd::run() {
     // session's request) does not fire on boot.
     { std::lock_guard<std::mutex> lk(m_mtx); m_cmd_token = get_str("container.cmd.request"); }
 
+    // Reset only the transient status keys — NOT container.instances, which we
+    // read back below to rehydrate the roster (see rehydrate_from_ds).
     m_ds.set_volatile(std::vector<data_store::KV>{
-        {"container.instances",     data_store::Value{std::string("[]")}},
         {"container.state",         data_store::Value{std::string("idle")}},
         {"container.pull.progress", data_store::Value{std::string("0")}},
         {"container.pull.detail",   data_store::Value{std::string("")}},
         {"container.error",         data_store::Value{std::string("")}}});
+
+    // Rebuild the container map from the data-store + reconcile with crun before
+    // accepting commands, so anything still running reappears in the table.
+    rehydrate_from_ds();
 
     data_store::Client::WatchHandle h = data_store::Client::kInvalidHandle;
     if (!m_ds.watch(

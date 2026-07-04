@@ -54,17 +54,22 @@ return {
     -- above remain as a view of the most-recently-touched container during the
     -- daemon migration.
     --
-    --   container.instances  - JSON array; one object per container, e.g.
+    --   container.instances  - JSON array; one object per container. This is the
+    --       durable roster the daemon reads back on startup to rehydrate its map
+    --       (persistent set(), NOT volatile — so it survives an OTA/ds restart;
+    --       the daemon reconciles each entry against live crun state on boot).
+    --       Carries the config needed to fully reconstruct a container
+    --       (image/net/subnet/mem/cpus/entrypoint/cmd) plus the live view, e.g.
     --       [{"name":"web","image":"docker.io/library/nginx:latest",
     --         "state":"running","ip":"10.88.0.2","gateway":"10.88.0.1",
-    --         "pid":1234,"exitCode":null,"mem":"256M","cpus":"0.5",
-    --         "net":"bridge","error":""}]
+    --         "net":"bridge","subnet":"10.88.0.0/24","mem":"256M","cpus":"0.5",
+    --         "entrypoint":"","cmd":"","pid":1234,"exitCode":null,"error":""}]
     --   container.cmd.*      - command envelope; set the fields then bump
     --                          container.cmd.request to execute one action.
     ["container.instances"]     = { access = "Viewer", type = "string", default = "[]" },
     ["container.cmd.request"]   = { access = "Admin",  type = "string", default = "" },
     ["container.cmd.name"]      = { access = "Admin",  type = "string", default = "" },
-    ["container.cmd.action"]    = { access = "Admin",  type = "string", default = "" },  -- pull|run|stop|remove|logs
+    ["container.cmd.action"]    = { access = "Admin",  type = "string", default = "" },  -- pull|run|stop|remove|logs|prune (prune is store-wide, needs no name)
     ["container.cmd.image"]     = { access = "Admin",  type = "string", default = "" },
     ["container.cmd.entrypoint"]= { access = "Admin",  type = "string", default = "" },
     ["container.cmd.cmd"]       = { access = "Admin",  type = "string", default = "" },
