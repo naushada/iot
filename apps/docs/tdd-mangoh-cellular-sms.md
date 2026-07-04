@@ -258,10 +258,14 @@ SH
 ## 10. HW bring-up log — WP7702 on RPi over USB (Task H, 2026-07-04)
 
 First on-hardware bring-up: a **mangOH Yellow (Sierra WP7702)** cabled to an
-RPi3B by USB. The modem, config and SMS stack all proved correct; the message
-could not be delivered only because of a **roaming/carrier boundary** (Orange
-Belgium SIM roaming in India). Every finding below is now wired into the daemon +
-device-ui so the next bench session is push-button.
+RPi3B (`iot-fe26a4ff`) by USB. The modem, config and SMS stack all proved
+correct: registration, signal, RAT and **MO (send) SMS** were validated on the
+real modem. The one thing not yet observed is an **MT (receive) SMS landing on
+this particular SIM** — which turned out to be a **global/IoT SIM** (French `+33`
+MSISDN, Belgian `+32` SMSC) that registers as a *visitor* on Airtel India, and
+whose plan appears to be **MO-capable but not delivering MT** from an external
+sender. Every diagnostic finding below is now wired into the daemon + device-ui
+so the next bench session is push-button.
 
 ### 10.A Discovery + AT access (busybox device)
 
@@ -308,22 +312,61 @@ at "AT+CSCA?"      # +CSCA: "+3247…" — ✅ SMSC provisioned (MT-SMS possible
    → **Removed the forced CPMS — the modem's default keeps receive/read stores
    aligned, and `+CMTI` carries the store name + index anyway.**
 
-### 10.D Outcome + the real boundary
+### 10.D Registration progression
 
-Fully validated device-side: enumerate → SIM READY → correct RAT/bands → real
-signal → sees operator → SMSC present → **registered (roaming, 2G)**. The SMS
-itself did **not** arrive (`AT+CPMS?` stayed `"SM",0,50`, `AT+CMGL=4` empty) —
-the earlier `AT+CREG: 0,3` (denied) and the empty inbox point to the **Orange
-Belgium SIM's roaming/MT-SMS not being served on Airtel India**. That is a
-SIM/carrier limitation, not the modem or our code — the `sms_pdu`/`SmsReceiver`
-path is proven by gtests over real PDU vectors. To finish Task H, use a SIM
-permitted on the local network (a local Airtel/Jio SIM, or an IoT SIM with an
-India roaming agreement), then:
+After forcing GSM (10.C #1), registration walked `+CREG: 0,2` (searching) →
+`0,3` (denied, transient) → **`0,5` (registered)**. `AT+COPS?` then showed
+`IND airtel`, 2G. Note stat **5 = "roaming"** — the tell (with the `+32`/`+33`
+identifiers below) that this is a **foreign-homed IoT SIM registering as a
+visitor**, not a native Airtel SIM. Once registered, `AT+CFUN` cycles are
+avoided (they re-open the search + clear `AT+CNMI`).
+
+### 10.E Finding the SIM's MSISDN (needed to test MT)
+
+`AT+CNUM` returned empty (this SIM doesn't store `EF_MSISDN`). The reliable way:
+**send one MO SMS to a known phone — the sender number it shows IS the MSISDN.**
+
+```sh
+at "AT+CMGF=1"                             # text mode for the send test
+exec 3<>/dev/ttyUSB2
+printf 'AT+CMGS="+9198XXXXXXXX"\r' >&3     # a phone you can read
+sleep 1; printf 'Hello from WP7702\x1a' >&3   # \x1a = Ctrl-Z ends the message
+sleep 6; while read -t 8 -r l <&3; do printf '%s\n' "$l"; done; exec 3>&-
+```
+
+→ `+CMGS: <ref>` + OK, and the phone received "Hello from WP7702" **from
+`+33 7000023024234`** — a **French M2M number**. So the SIM is a European-homed
+IoT SIM (French MSISDN, Belgian SMSC), roaming on Airtel. (USSD `AT+CUSD=1,
+"*282#",15` is an alternative, but only meaningful on a native operator SIM.)
+
+### 10.F Outcome — MO ✅, MT pending (SIM entitlement)
+
+| Path | Result |
+| --- | --- |
+| enumerate / SIM / RAT / signal / operator / SMSC | ✅ |
+| **registration** (2G, via `+CREG`) | ✅ `0,5` |
+| **MO SMS** (send) | ✅ phone received it from `+33 7000023024234` |
+| **MT SMS** (receive) | ❌ never landed — `AT+CPMS?` stayed `"SM",0,50`, `AT+CMGL=4` empty |
+
+`AT+CMGL` reads storage directly (independent of `AT+CNMI`), so an empty inbox
+means the **network never delivered** the MT message — a delivery/entitlement
+issue, not device config. With MO working, the likely cause is this **M2M SIM's
+plan: MT-SMS disabled, restricted to the provider platform, or not enabled for
+external/international senders** (common for IoT SIMs). That is a SIM/carrier
+setting — the modem and our code are proven, and `sms_pdu`/`SmsReceiver` are
+validated by gtests over real GSM 03.40 PDU vectors; they decode the instant a
+real `+CMTI`/`+CMGR` arrives.
+
+**To finish Task H:** use a SIM whose plan delivers MT-SMS from an external
+sender (a native Airtel/Jio SIM, or the IoT SIM once MT is enabled in the
+provider portal). Then either drive it by hand —
 
 ```sh
 at "AT+CMGF=0"; at "AT+CNMI=2,1,0,0,0"     # (the daemon does this when sms.enable)
-# text the SIM, watch for +CMTI: "SM",<n>, then:
+# text the SIM's MSISDN, watch for +CMTI: "SM",<n>, then:
 at "AT+CMGR=<n>"                           # PDU → decode_sms_deliver
 ```
-…or just set `cell.rat=gsm` (or `auto`) + `sms.enable=true` in the device-ui
-**WAN → Cellular** config and start `iot-cellular-client`.
+
+— or just set `cell.rat=gsm` (or `auto`) + `sms.enable=true` in the device-ui
+**WAN → Cellular** config and start `iot-cellular-client`; the message lands on
+the tile's "Last SMS" row.
