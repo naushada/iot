@@ -75,6 +75,24 @@ TEST(AtCeer, ExtractsCause) {
     EXPECT_EQ(parse_ceer("ERROR"), "");            // firmware without CEER
 }
 
+TEST(AtIdentity, CnumImeiModelCapability) {
+    EXPECT_EQ(parse_cnum("+CNUM: \"\",\"+337000023024234\",145"), "+337000023024234");
+    EXPECT_EQ(parse_cnum("OK"), "");
+
+    EXPECT_EQ(parse_imei("IMEI: 352653090190117"), "352653090190117");
+    EXPECT_EQ(parse_imei("IMEI SV:  4"), "");       // not the IMEI line
+    EXPECT_EQ(parse_imei("Model: WP7702"), "");
+
+    EXPECT_EQ(parse_labeled("Model: WP7702", "Model"), "WP7702");
+    EXPECT_EQ(parse_labeled("Revision: SWI9X06Y_02.32.02.00", "Revision"),
+              "SWI9X06Y_02.32.02.00");
+    EXPECT_EQ(parse_labeled("Manufacturer: Sierra", "Model"), "");
+
+    EXPECT_EQ(model_capability("WP7702"), "LTE-M / NB-IoT / GSM");
+    EXPECT_EQ(model_capability("EC25"), "LTE Cat-4 / 3G / 2G");
+    EXPECT_EQ(model_capability("Telit"), "");
+}
+
 TEST(AtCgpaddr, ExtractsIp) {
     EXPECT_EQ(parse_cgpaddr("+CGPADDR: 1,\"10.181.22.7\""), "10.181.22.7");
     EXPECT_EQ(parse_cgpaddr("+CGPADDR: 1,100.92.3.44"), "100.92.3.44");

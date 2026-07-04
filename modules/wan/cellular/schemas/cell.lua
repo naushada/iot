@@ -67,9 +67,22 @@ return {
     ["cell.signal.bars"] = viewer_str(),
     ["cell.ip"]          = viewer_str(),
     ["cell.iccid"]       = viewer_str(),
+    ["cell.imei"]        = viewer_str(),   -- modem IMEI (ATI)
+    ["cell.msisdn"]      = viewer_str(),   -- SIM number (AT+CNUM; often blank)
+    ["cell.model"]       = viewer_str(),   -- modem model (ATI), e.g. WP7702
+    ["cell.fw"]          = viewer_str(),   -- modem firmware revision (ATI)
+    ["cell.capability"]  = viewer_str(),   -- RAT capability, e.g. "LTE-M / NB-IoT / GSM"
     ["cell.rat.current"] = viewer_str(),   -- RAT the modem reports (AT!SELRAT?)
     ["cell.reg.reason"]  = viewer_str(),   -- network reject cause (AT+CEER), if any
     ["cell.version"]     = viewer_str(),
+
+    -- MO SMS send envelope: set sms.send.to + sms.send.text, then bump
+    -- sms.send.request (monotonic token) to send. The daemon publishes progress
+    -- in sms.send.status ("sending"/"sent <ref>"/"failed: <reason>").
+    ["sms.send.to"]      = { access = "Admin", type = "string", default = "" },
+    ["sms.send.text"]    = { access = "Admin", type = "string", default = "" },
+    ["sms.send.request"] = { access = "Admin", type = "string", default = "" },
+    ["sms.send.status"]  = viewer_str(),
 
     -- GPS / GNSS (daemon-published)
     ["gps.fix"]     = viewer_str(),

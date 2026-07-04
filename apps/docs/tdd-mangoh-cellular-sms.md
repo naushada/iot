@@ -250,6 +250,12 @@ SH
 - **PR-C** ✅ — daemon wiring (one-time setup + `on_at_line` feed) + device-ui
   tile + Yocto (no new package). Behaviour gated off by default; flip
   `sms.enable=true` on the bench for Task H (the on-HW validation).
+- **PR-E** ✅ — cellular management UI: **MO SMS send** (`encode_sms_submit`
+  GSM7/UCS2 → `sms.send.*` envelope → daemon `AT+CMGS` with a one-shot-timer data
+  phase; UI compose card), plus modem/SIM **identity + capability** (IMEI, MSISDN,
+  model, firmware, capability from `ATI`/`AT+CNUM`) on the WAN→Cellular tile. 52/52
+  gtests (encode round-trip + identity parsers), daemon + `iot-httpd` clean.
+  ⚠ the `AT+CMGS` prompt/Ctrl-Z handshake needs one bench check.
 - **PR-D** ✅ (this session) — cellular diagnostics wired from the HW bring-up
   (§10): multi-RAT registration polling, RAT get/set (`cell.rat`/`cell.rat.current`),
   reject-cause (`cell.reg.reason`), and the `AT+CPMS` storage fix. Daemon + tile +

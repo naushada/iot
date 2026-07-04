@@ -41,6 +41,16 @@ struct SmsMessage {
 /// false on malformed/short/truncated input or a non-DELIVER PDU.
 bool decode_sms_deliver(const std::string& pdu_hex, SmsMessage& out);
 
+/// Encode an SMS-SUBMIT PDU for `AT+CMGS` (mobile-originated send). `to` is the
+/// recipient in "+E.164" (leading '+' → international) or bare national digits;
+/// `utf8_text` is the body (GSM 7-bit default alphabet when every character
+/// maps, else UCS2). Sets `pdu_hex` (uppercase, SMSC field = "00" = use the
+/// SIM default) and `tpdu_len` = the octet count EXCLUDING that SMSC field, which
+/// is the number `AT+CMGS=<tpdu_len>` expects. Returns false on an empty/invalid
+/// recipient. See apps/docs/tdd-mangoh-cellular-sms.md.
+bool encode_sms_submit(const std::string& to, const std::string& utf8_text,
+                       std::string& pdu_hex, int& tpdu_len);
+
 } // namespace cellular
 
 #endif /*__cellular_sms_pdu_hpp__*/

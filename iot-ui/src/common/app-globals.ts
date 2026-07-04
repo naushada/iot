@@ -112,6 +112,12 @@ export interface CellStatus {
   iccid?: string;
   rat?: string;          // current radio-access-tech (AT!SELRAT?), e.g. "LTE Only"
   reg_reason?: string;   // network reject cause (AT+CEER), when not registered
+  imei?: string;         // modem IMEI (ATI)
+  msisdn?: string;       // SIM number (AT+CNUM; often blank)
+  model?: string;        // modem model (ATI), e.g. WP7702
+  fw?: string;           // modem firmware revision (ATI)
+  capability?: string;   // RAT capability, e.g. "LTE-M / NB-IoT / GSM"
+  sms_send_status?: string;  // MO send progress: "sending"/"sent"/"failed: …"
   // Last received SMS (mobile-terminated), from sms.* — only when sms.enable.
   sms_sender?: string;
   sms_text?: string;

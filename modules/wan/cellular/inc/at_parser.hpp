@@ -74,6 +74,23 @@ std::string parse_selrat(const std::string& line);
 /// reason, i.e. this returns "" for a non-`+CEER:` line.)
 std::string parse_ceer(const std::string& line);
 
+/// Subscriber number from `+CNUM: <alpha>,"<number>",<type>` → "<number>", or ""
+/// (this record is often empty on IoT SIMs).
+std::string parse_cnum(const std::string& line);
+
+/// IMEI from an `ATI` "IMEI: <digits>" line (excludes the "IMEI SV:" line) → the
+/// digit string (>=14), or "".
+std::string parse_imei(const std::string& line);
+
+/// The trimmed value of an `ATI` "<Label>: <value>" line (case-insensitive),
+/// e.g. parse_labeled(line, "Model") on "Model: WP7702" → "WP7702"; "" if the
+/// line does not start with that label.
+std::string parse_labeled(const std::string& line, const char* label);
+
+/// Coarse RAT capability string for a modem model (e.g. WP7702 →
+/// "LTE-M / NB-IoT / GSM"), or "" if unknown.
+std::string model_capability(const std::string& model);
+
 /// `+CGPADDR: <cid>,"<ip>"` (or unquoted) → the IPv4/IPv6 string, or "".
 std::string parse_cgpaddr(const std::string& line);
 

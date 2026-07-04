@@ -2,6 +2,7 @@
 #define __cellular_client_hpp__
 
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include <ace/Event_Handler.h>
@@ -47,8 +48,11 @@ class CellularClient : public ACE_Event_Handler {
         /// Returns a process exit code.
         int run();
 
-        /// Poll timer: query the modem + publish the current state.
+        /// Poll timer: query the modem + publish the current state. Also drives
+        /// the MO-send data phase when fired with the send-timer act.
         int handle_timeout(const ACE_Time_Value&, const void*) override;
+        /// Reactor wakeup from the sms.send.request ds watch (listener thread).
+        int handle_exception(ACE_HANDLE = ACE_INVALID_HANDLE) override;
 
     private:
         void load_config_from_ds();
@@ -56,6 +60,8 @@ class CellularClient : public ACE_Event_Handler {
         void on_nmea_line(const std::string& line);
         void poll_modem();
         void publish();
+        void on_send_request(const data_store::Client::Event& ev);
+        void start_send();          // reactor thread: encode + issue AT+CMGS
 
         Config                          m_cfg;
         data_store::Client              m_ds;
@@ -69,7 +75,16 @@ class CellularClient : public ACE_Event_Handler {
         Reg                             m_reg_ps = Reg::Unknown;   ///< +CGREG (2G/3G PS)
         Reg                             m_reg_eps = Reg::Unknown;  ///< +CEREG (LTE EPS)
         bool                            m_rat_done = false;        ///< one-time Sierra !SELRAT apply/read
+        bool                            m_ident_done = false;      ///< one-time ATI / AT+CNUM identity read
         bool                            m_haveIp = false;
+
+        // MO SMS send (sms.send.* envelope). The ds watch fires on the listener
+        // thread → records the token + notify()s the reactor; start_send() runs
+        // on the reactor thread, and the PDU data phase is a one-shot timer.
+        std::mutex                      m_send_mtx;
+        std::string                     m_send_token;              ///< baseline of sms.send.request
+        bool                            m_send_pending = false;
+        std::string                     m_send_pdu;                ///< encoded PDU awaiting the '>' data phase
         bool                            m_gps_via_at = false;  ///< GNSS over AT poll (no NMEA tty)
         Vendor                          m_vendor = Vendor::Generic;
         bool                            m_gps_started = false; ///< GNSS engine kicked

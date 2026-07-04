@@ -1,6 +1,8 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { DataStoreService } from '../../../common/datastore.service';
+import { SessionService } from '../../../common/session.service';
+import { ToastService } from '../../../common/toast.service';
 import { CellStatus } from '../../../common/app-globals';
 
 /// Cellular modem (mangOH Yellow WP) status. Reads cell.* off the shared
@@ -38,6 +40,20 @@ import { CellStatus } from '../../../common/app-globals';
 
         <clr-dg-footer>{{ rows.length }} properties</clr-dg-footer>
       </clr-datagrid>
+
+      <div class="send" *ngIf="isAdmin">
+        <h4>Send SMS</h4>
+        <div class="row">
+          <input clrInput placeholder="+CountryNumber" [(ngModel)]="smsTo" name="smsTo" />
+          <input clrInput class="msg" placeholder="Message" [(ngModel)]="smsText" name="smsText" />
+          <button class="btn btn-sm btn-primary" [disabled]="sending || !smsTo || !smsText"
+                  (click)="sendSms()">{{ sending ? 'Sending…' : 'Send' }}</button>
+        </div>
+        <p class="send-status" *ngIf="c.sms_send_status">
+          Status: {{ c.sms_send_status }}
+        </p>
+        <p class="hint">Mobile-originated via the modem (AT+CMGS). Delivery depends on the SIM's SMS plan.</p>
+      </div>
     </div>
   `,
   styles: [`
@@ -53,11 +69,40 @@ import { CellStatus } from '../../../common/app-globals';
     .bar:nth-child(5) { height: 14px; }
     .bar.on { background: #2e7d32; }
     .sig-text { vertical-align: middle; }
+    .send { margin-top: 24px; max-width: 640px; }
+    .send h4 { font-size: 14px; font-weight: 600; color: #333; margin: 0 0 10px 0; }
+    .send .row { display: flex; gap: 8px; align-items: center; }
+    .send .msg { flex: 1; }
+    .send-status { font-size: 13px; color: #555; margin: 8px 0 0 0; }
+    .hint { color: #888; font-size: 12px; margin: 6px 0 0 0; }
   `]
 })
 export class CellularStatusComponent implements OnInit, OnDestroy {
   c: CellStatus = {};
+  smsTo = '';
+  smsText = '';
+  sending = false;
   private sub = new Subscription();
+
+  get isAdmin(): boolean { return this.session.isAdmin; }
+
+  sendSms(): void {
+    if (!this.isAdmin || !this.smsTo || !this.smsText) return;
+    this.sending = true;
+    // Set the envelope, then bump the request token (unique) to trigger the send.
+    this.ds.write([
+      { key: 'sms.send.to',      value: this.smsTo },
+      { key: 'sms.send.text',    value: this.smsText },
+      { key: 'sms.send.request', value: String(Date.now()) },
+    ]).subscribe({
+      next: (r) => {
+        this.sending = false;
+        if (r.ok) { this.toast.success('SMS queued — see status below'); this.smsText = ''; }
+        else this.toast.error('Send failed');
+      },
+      error: () => { this.sending = false; this.toast.error('Send failed'); },
+    });
+  }
 
   get hasData(): boolean { return !!(this.c.state || this.c.operator || this.c.signal_dbm); }
   get barsNum(): number { const n = parseInt(this.c.signal_bars || '', 10); return isNaN(n) ? 0 : n; }
@@ -76,8 +121,13 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
       { key: 'Registration', value: this.c.reg || '—',         dsKey: 'cell.reg' },
       { key: 'Signal',       value: this.signalText, isSignal: true, dsKey: 'cell.signal.dbm' },
       { key: 'RAT',          value: this.c.rat || '—',         dsKey: 'cell.rat.current' },
+      { key: 'Capability',   value: this.c.capability || '—',  dsKey: 'cell.capability' },
       { key: 'IP Address',   value: this.c.ip || '—',          dsKey: 'cell.ip' },
       { key: 'SIM ICCID',    value: this.c.iccid || '—',       dsKey: 'cell.iccid' },
+      { key: 'IMEI',         value: this.c.imei || '—',        dsKey: 'cell.imei' },
+      { key: 'MSISDN',       value: this.c.msisdn || '—',      dsKey: 'cell.msisdn' },
+      { key: 'Model',        value: this.c.model || '—',       dsKey: 'cell.model' },
+      { key: 'Firmware',     value: this.c.fw || '—',          dsKey: 'cell.fw' },
     ];
     // Network reject reason — only surfaced when present and not registered.
     if (this.c.reg_reason) {
@@ -95,7 +145,9 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
     return rows;
   }
 
-  constructor(private ds: DataStoreService) {}
+  constructor(private ds: DataStoreService,
+              private session: SessionService,
+              private toast: ToastService) {}
 
   ngOnInit(): void {
     this.sub.add(this.ds.observeStatus().subscribe((s) => { this.c = s.cell || {}; }));

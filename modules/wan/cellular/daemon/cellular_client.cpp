@@ -13,6 +13,10 @@ namespace cellular {
 
 namespace {
     bool starts_with(const std::string& s, const char* p) { return s.rfind(p, 0) == 0; }
+    // Distinct timer act so handle_timeout can tell the periodic poll (act=null)
+    // from the one-shot MO-send data phase (act=&kSendTagStorage).
+    const int   kSendTagStorage = 0;
+    const void* const kSendAct = &kSendTagStorage;
 }
 
 void CellularClient::load_config_from_ds() {
@@ -72,6 +76,18 @@ int CellularClient::run() {
     m_state.set_state("init");
     publish();
 
+    // MO SMS send: baseline the request token (so a stale value doesn't fire on
+    // boot) then watch it. The callback runs on the ds listener thread → it only
+    // records the token + notify()s the reactor (start_send runs reactor-side).
+    {
+        std::vector<data_store::Client::GetResult> got;
+        if (m_ds.get({std::string("sms.send.request")}, got).ok && !got.empty() && got[0].has_value)
+            if (auto s = data_store::to_string(got[0].value)) m_send_token = *s;
+    }
+    data_store::Client::WatchHandle wh = data_store::Client::kInvalidHandle;
+    m_ds.watch(std::vector<std::string>{"sms.send.request"},
+               [this](const data_store::Client::Event& ev) { on_send_request(ev); }, &wh);
+
     // First poll after 1s, then every interval. The reactor dispatches the
     // serial handles + this timer on one thread — no polling loop.
     ACE_Reactor::instance()->schedule_timer(
@@ -89,10 +105,64 @@ int CellularClient::run() {
     return 0;
 }
 
-int CellularClient::handle_timeout(const ACE_Time_Value&, const void*) {
+int CellularClient::handle_timeout(const ACE_Time_Value&, const void* act) {
+    if (act == kSendAct) {
+        // MO-send data phase: the modem has had a moment to emit the '>' prompt
+        // after AT+CMGS=<len>; now send the PDU + Ctrl-Z (0x1A). The +CMGS: /
+        // +CMS ERROR result is handled in on_at_line.
+        if (m_at && !m_send_pdu.empty()) m_at->write_raw(m_send_pdu + "\x1a");
+        m_send_pdu.clear();
+        return 0;
+    }
     poll_modem();
     publish();
     return 0;
+}
+
+void CellularClient::on_send_request(const data_store::Client::Event& ev) {
+    if (ev.key != "sms.send.request") return;
+    const std::string val = data_store::to_string(ev.value).value_or(std::string());
+    {
+        std::lock_guard<std::mutex> lk(m_send_mtx);
+        if (val.empty() || val == m_send_token) return;   // unchanged / cleared
+        m_send_token = val;
+        m_send_pending = true;
+    }
+    ACE_Reactor::instance()->notify(this);                 // → handle_exception
+}
+
+int CellularClient::handle_exception(ACE_HANDLE) {
+    bool pending;
+    { std::lock_guard<std::mutex> lk(m_send_mtx); pending = m_send_pending; m_send_pending = false; }
+    if (pending) start_send();
+    return 0;
+}
+
+void CellularClient::start_send() {
+    if (!m_at) return;
+    auto get = [this](const char* key) -> std::string {
+        std::vector<data_store::Client::GetResult> got;
+        if (m_ds.get({std::string(key)}, got).ok && !got.empty() && got[0].has_value)
+            if (auto s = data_store::to_string(got[0].value)) return *s;
+        return {};
+    };
+    const std::string to   = get("sms.send.to");
+    const std::string text = get("sms.send.text");
+
+    std::string pdu;
+    int len = 0;
+    if (to.empty() || !encode_sms_submit(to, text, pdu, len)) {
+        m_ds.set_volatile(std::string("sms.send.status"),
+                          data_store::Value{std::string("failed: invalid recipient")});
+        ACE_ERROR((LM_ERROR, ACE_TEXT("%D [cell] SMS send: bad recipient '%C'\n"), to.c_str()));
+        return;
+    }
+    m_ds.set_volatile(std::string("sms.send.status"), data_store::Value{std::string("sending")});
+    m_at->write_line("AT+CMGF=0");                       // ensure PDU mode
+    m_at->write_line("AT+CMGS=" + std::to_string(len));  // → modem emits '>'
+    m_send_pdu = pdu;                                    // data phase on the one-shot timer
+    ACE_Reactor::instance()->schedule_timer(this, kSendAct, ACE_Time_Value(1));
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS send → %C (%d octets)\n"), to.c_str(), len));
 }
 
 void CellularClient::poll_modem() {
@@ -137,6 +207,14 @@ void CellularClient::poll_modem() {
         }
         m_at->write_line("AT!SELRAT?");   // → parse_selrat → cell.rat.current
         m_rat_done = true;
+    }
+
+    // One-time identity read: ATI (manufacturer/model/revision/IMEI in one
+    // labelled block) + AT+CNUM (SIM number, often blank). Parsed in on_at_line.
+    if (!m_ident_done) {
+        m_at->write_line("ATI");
+        m_at->write_line("AT+CNUM");
+        m_ident_done = true;
     }
 
     m_at->write_line("AT+CSQ");
@@ -216,6 +294,25 @@ void CellularClient::on_at_line(const std::string& line) {
     } else if (starts_with(line, "+CEER:")) {
         if (m_lastReg != Reg::Home && m_lastReg != Reg::Roaming)
             m_state.set_reg_reason(parse_ceer(line));
+    } else if (starts_with(line, "+CNUM:")) {
+        m_state.set_msisdn(parse_cnum(line));
+    } else if (starts_with(line, "+CMGS:")) {
+        m_ds.set_volatile(std::string("sms.send.status"),
+                          data_store::Value{std::string("sent")});
+        ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS sent: %C\n"), line.c_str()));
+    } else if (starts_with(line, "+CMS ERROR") || starts_with(line, "+CME ERROR")) {
+        // Only treat as a send failure while a send is in flight (these can also
+        // answer a failed read); harmless to publish the last error otherwise.
+        m_ds.set_volatile(std::string("sms.send.status"),
+                          data_store::Value{std::string("failed: ") + line});
+    } else if (!parse_imei(line).empty()) {
+        m_state.set_imei(parse_imei(line));    // ATI "IMEI: ..." line
+    } else if (!parse_labeled(line, "Model").empty()) {
+        const std::string model = parse_labeled(line, "Model");
+        m_state.set_model(model);
+        m_state.set_capability(model_capability(model));
+    } else if (!parse_labeled(line, "Revision").empty()) {
+        m_state.set_fw(parse_labeled(line, "Revision"));
     } else if (starts_with(line, "+CGPADDR:")) {
         m_haveIp = !parse_cgpaddr(line).empty();
     } else if (m_vendor == Vendor::Generic) {
