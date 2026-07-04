@@ -924,7 +924,7 @@ void install_handlers(Router& router,
                 "cell.signal.dbm", "cell.signal.bars", "cell.ip", "cell.iccid",
                 "cell.rat.current", "cell.reg.reason",
                 "cell.imei", "cell.msisdn", "cell.model", "cell.fw",
-                "cell.capability", "sms.send.status",
+                "cell.capability", "cell.apn.current", "sms.send.status",
                 "gps.fix", "gps.lat", "gps.lon", "gps.alt", "gps.speed",
                 "gps.course", "gps.sats", "gps.utc",
                 // Received SMS (cellular-client → sms.*)
@@ -1095,6 +1095,7 @@ void install_handlers(Router& router,
                 else if (k == "cell.model")        cell["model"] = sv();
                 else if (k == "cell.fw")           cell["fw"] = sv();
                 else if (k == "cell.capability")   cell["capability"] = sv();
+                else if (k == "cell.apn.current")  cell["apn"] = sv();
                 else if (k == "sms.send.status")   cell["sms_send_status"] = sv();
                 // Received SMS (surfaced on the WAN → Cellular tile)
                 else if (k == "sms.last.sender")   cell["sms_sender"] = sv();

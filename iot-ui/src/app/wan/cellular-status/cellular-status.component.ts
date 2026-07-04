@@ -122,6 +122,7 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
       { key: 'Signal',       value: this.signalText, isSignal: true, dsKey: 'cell.signal.dbm' },
       { key: 'RAT',          value: this.c.rat || '—',         dsKey: 'cell.rat.current' },
       { key: 'Capability',   value: this.c.capability || '—',  dsKey: 'cell.capability' },
+      { key: 'APN',          value: this.c.apn || '—',         dsKey: 'cell.apn.current' },
       { key: 'IP Address',   value: this.c.ip || '—',          dsKey: 'cell.ip' },
       { key: 'SIM ICCID',    value: this.c.iccid || '—',       dsKey: 'cell.iccid' },
       { key: 'IMEI',         value: this.c.imei || '—',        dsKey: 'cell.imei' },

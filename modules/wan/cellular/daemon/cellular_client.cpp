@@ -214,6 +214,7 @@ void CellularClient::poll_modem() {
     if (!m_ident_done) {
         m_at->write_line("ATI");
         m_at->write_line("AT+CNUM");
+        m_at->write_line("AT+CGDCONT?");   // → cell.apn.current (provisioned data APN)
         m_ident_done = true;
     }
 
@@ -296,6 +297,8 @@ void CellularClient::on_at_line(const std::string& line) {
             m_state.set_reg_reason(parse_ceer(line));
     } else if (starts_with(line, "+CNUM:")) {
         m_state.set_msisdn(parse_cnum(line));
+    } else if (starts_with(line, "+CGDCONT:")) {
+        m_state.set_apn(parse_cgdcont(line));   // → cell.apn.current
     } else if (starts_with(line, "+CMGS:")) {
         m_ds.set_volatile(std::string("sms.send.status"),
                           data_store::Value{std::string("sent")});

@@ -72,6 +72,7 @@ return {
     ["cell.model"]       = viewer_str(),   -- modem model (ATI), e.g. WP7702
     ["cell.fw"]          = viewer_str(),   -- modem firmware revision (ATI)
     ["cell.capability"]  = viewer_str(),   -- RAT capability, e.g. "LTE-M / NB-IoT / GSM"
+    ["cell.apn.current"] = viewer_str(),   -- provisioned data APN read back (AT+CGDCONT?)
     ["cell.rat.current"] = viewer_str(),   -- RAT the modem reports (AT!SELRAT?)
     ["cell.reg.reason"]  = viewer_str(),   -- network reject cause (AT+CEER), if any
     ["cell.version"]     = viewer_str(),
