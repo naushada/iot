@@ -36,6 +36,18 @@ void CellularState::set_reg(Reg r) {
     m_reg = reg_str(r); m_haveCell = true; ++m_cellVersion;
 }
 
+void CellularState::set_rat(const std::string& rat) {
+    std::lock_guard<std::mutex> lk(m_mtx);
+    if (rat.empty() || rat == m_rat) return;
+    m_rat = rat; m_haveCell = true; ++m_cellVersion;
+}
+
+void CellularState::set_reg_reason(const std::string& reason) {
+    std::lock_guard<std::mutex> lk(m_mtx);
+    if (reason == m_regReason) return;
+    m_regReason = reason; m_haveCell = true; ++m_cellVersion;
+}
+
 void CellularState::set_ip(const std::string& ip) {
     std::lock_guard<std::mutex> lk(m_mtx);
     m_ip = ip; m_haveCell = true; ++m_cellVersion;
@@ -68,6 +80,8 @@ std::vector<KV> CellularState::to_kv() const {
         if (!m_operator.empty()) kv.push_back({"cell.operator", m_operator});
         if (!m_tech.empty())     kv.push_back({"cell.tech", m_tech});
         if (!m_reg.empty())      kv.push_back({"cell.reg", m_reg});
+        if (!m_rat.empty())      kv.push_back({"cell.rat.current", m_rat});
+        if (!m_regReason.empty())kv.push_back({"cell.reg.reason", m_regReason});
         if (!m_ip.empty())       kv.push_back({"cell.ip", m_ip});
         if (!m_iccid.empty())    kv.push_back({"cell.iccid", m_iccid});
         if (m_haveSignal) {

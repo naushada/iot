@@ -922,6 +922,7 @@ void install_handlers(Router& router,
                 // Cellular modem (mangOH WP) + GPS
                 "cell.state", "cell.operator", "cell.tech", "cell.reg",
                 "cell.signal.dbm", "cell.signal.bars", "cell.ip", "cell.iccid",
+                "cell.rat.current", "cell.reg.reason",
                 "gps.fix", "gps.lat", "gps.lon", "gps.alt", "gps.speed",
                 "gps.course", "gps.sats", "gps.utc",
                 // Received SMS (cellular-client → sms.*)
@@ -1085,6 +1086,8 @@ void install_handlers(Router& router,
                 else if (k == "cell.signal.bars")  cell["signal_bars"] = sv();
                 else if (k == "cell.ip")           cell["ip"] = sv();
                 else if (k == "cell.iccid")        cell["iccid"] = sv();
+                else if (k == "cell.rat.current")  cell["rat"] = sv();
+                else if (k == "cell.reg.reason")   cell["reg_reason"] = sv();
                 // Received SMS (surfaced on the WAN → Cellular tile)
                 else if (k == "sms.last.sender")   cell["sms_sender"] = sv();
                 else if (k == "sms.last.text")     cell["sms_text"] = sv();

@@ -53,6 +53,27 @@ Reg parse_creg(const std::string& line);
 /// Canonical lowercase token for a Reg ("home", "roaming", "searching", …).
 const char* reg_str(Reg r);
 
+/// Combine the CS (`+CREG`), PS (`+CGREG`) and EPS (`+CEREG`) registration
+/// states into the best one (registered > searching > denied > not-registered >
+/// unknown; Home preferred over Roaming). A modem camped on 2G registers via
+/// `+CREG` while `+CEREG` (LTE) reads not-registered — polling only CEREG
+/// misreports it as offline, so the daemon polls all three and combines here.
+Reg best_reg(Reg cs, Reg ps, Reg eps);
+
+/// The Sierra `AT!SELRAT=<n>` index for a friendly RAT token, or -1 if unknown:
+///   "auto"/"all" → 0, "umts"/"3g" → 1, "gsm"/"2g" → 2, "gsm+umts" → 5,
+///   "lte"/"4g" → 6, "gsm+umts+lte" → 7, "umts+lte" → 11, "gsm+lte" → 12.
+int selrat_index(const std::string& rat);
+
+/// Human RAT name from a `!SELRAT: <n>, <name>` reply → "<name>" (e.g.
+/// "LTE Only"), or "" if not a SELRAT line.
+std::string parse_selrat(const std::string& line);
+
+/// Failure/reject cause text from a `+CEER: <text>` reply → "<text>", or "".
+/// (Some firmwares answer `AT+CEER` with ERROR — the daemon treats that as no
+/// reason, i.e. this returns "" for a non-`+CEER:` line.)
+std::string parse_ceer(const std::string& line);
+
 /// `+CGPADDR: <cid>,"<ip>"` (or unquoted) → the IPv4/IPv6 string, or "".
 std::string parse_cgpaddr(const std::string& line);
 

@@ -250,3 +250,80 @@ SH
 - **PR-C** ✅ — daemon wiring (one-time setup + `on_at_line` feed) + device-ui
   tile + Yocto (no new package). Behaviour gated off by default; flip
   `sms.enable=true` on the bench for Task H (the on-HW validation).
+- **PR-D** ✅ (this session) — cellular diagnostics wired from the HW bring-up
+  (§10): multi-RAT registration polling, RAT get/set (`cell.rat`/`cell.rat.current`),
+  reject-cause (`cell.reg.reason`), and the `AT+CPMS` storage fix. Daemon + tile +
+  config-form. 48/48 gtests, `iot-httpd` clean.
+
+## 10. HW bring-up log — WP7702 on RPi over USB (Task H, 2026-07-04)
+
+First on-hardware bring-up: a **mangOH Yellow (Sierra WP7702)** cabled to an
+RPi3B by USB. The modem, config and SMS stack all proved correct; the message
+could not be delivered only because of a **roaming/carrier boundary** (Orange
+Belgium SIM roaming in India). Every finding below is now wired into the daemon +
+device-ui so the next bench session is push-button.
+
+### 10.A Discovery + AT access (busybox device)
+
+```sh
+lsusb                                   # → 1199:68c0 Sierra Wireless WP7702
+ls -l /dev/ttyUSB*                      # qcserial → ttyUSB0=DIAG ttyUSB1=NMEA ttyUSB2=AT
+                                        #   (+ qmi_wwan cdc-wdm0 for the QMI data path)
+systemctl stop iot-cellular-client      # free the AT port first
+
+# busybox has NO `timeout` and its `stty` rejects combined opts — use read -t:
+at(){ exec 3<>/dev/ttyUSB2; printf '%s\r' "$1" >&3; while read -t 2 -r l <&3; do printf '%s\n' "$l"; done; exec 3>&-; echo "--"; }
+atl(){ exec 3<>/dev/ttyUSB2; printf '%s\r' "$1" >&3; while read -t 180 -r l <&3; do printf '%s\n' "$l"; done; exec 3>&-; }  # for slow AT+COPS=?
+```
+
+### 10.B The diagnostic sequence (and what each gates)
+
+```sh
+at "AT"            # OK — port talks
+at "ATI"           # WP7702, fw SWI9X06Y_02.32.02.00
+at "AT+CPIN?"      # +CPIN: READY   — SIM present/unlocked
+at "AT+CSQ"        # +CSQ: 99,99    — ⚠ no signal (see 10.C)
+at "AT+CEREG?"     # +CEREG: 0,2    — searching (LTE)
+at "AT+CSCA?"      # +CSCA: "+3247…" — ✅ SMSC provisioned (MT-SMS possible)
+```
+
+### 10.C Findings (each → a code change in this session)
+
+1. **RAT lock stranded it.** `AT!SELRAT?` → `06, LTE Only`, but `AT+COPS=?`
+   returned only `("IND airtel",…,0)` — **2G (GSM) is the sole coverage**. An
+   LTE-only modem never leaves "searching". Fix by hand: `AT!ENTERCND="A710"` →
+   `AT!SELRAT=02` (GSM) → `AT+CFUN=0/1`; `CSQ` jumped to `12,99` (−89 dBm).
+   → **Daemon now applies `cell.rat` via `AT!SELRAT` + a CFUN cycle and publishes
+   `cell.rat.current`** (`selrat_index`/`parse_selrat`); device-ui config has a
+   RAT dropdown.
+2. **Registration lives on `+CREG`, not `+CEREG`, on 2G.** Once on GSM, `AT+CEREG?`
+   still read not-registered while `AT+CREG?` → `0,5` (roaming). The daemon polled
+   *only* `AT+CEREG?` → it would report a 2G-registered modem as offline.
+   → **Daemon now polls `+CREG`/`+CGREG`/`+CEREG` and combines via `best_reg()`.**
+3. **`AT+CEER` unsupported** on this firmware (returns `ERROR`).
+   → **Daemon queries it best-effort; `parse_ceer` ignores non-`+CEER:` lines,
+   publishing `cell.reg.reason` only when the modem actually gives one.**
+4. **Storage is `"SM"`, not `"ME"`.** `AT+CPMS?` → `"SM",0,50,…`. My PR-C setup
+   forced `AT+CPMS="ME"` which would misdirect reads.
+   → **Removed the forced CPMS — the modem's default keeps receive/read stores
+   aligned, and `+CMTI` carries the store name + index anyway.**
+
+### 10.D Outcome + the real boundary
+
+Fully validated device-side: enumerate → SIM READY → correct RAT/bands → real
+signal → sees operator → SMSC present → **registered (roaming, 2G)**. The SMS
+itself did **not** arrive (`AT+CPMS?` stayed `"SM",0,50`, `AT+CMGL=4` empty) —
+the earlier `AT+CREG: 0,3` (denied) and the empty inbox point to the **Orange
+Belgium SIM's roaming/MT-SMS not being served on Airtel India**. That is a
+SIM/carrier limitation, not the modem or our code — the `sms_pdu`/`SmsReceiver`
+path is proven by gtests over real PDU vectors. To finish Task H, use a SIM
+permitted on the local network (a local Airtel/Jio SIM, or an IoT SIM with an
+India roaming agreement), then:
+
+```sh
+at "AT+CMGF=0"; at "AT+CNMI=2,1,0,0,0"     # (the daemon does this when sms.enable)
+# text the SIM, watch for +CMTI: "SM",<n>, then:
+at "AT+CMGR=<n>"                           # PDU → decode_sms_deliver
+```
+…or just set `cell.rat=gsm` (or `auto`) + `sms.enable=true` in the device-ui
+**WAN → Cellular** config and start `iot-cellular-client`.

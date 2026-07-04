@@ -54,6 +54,7 @@ return {
     ["cell.gps.tty"]           = admin_str(""),
     ["cell.poll.interval.sec"] = { access = "Admin", type = "integer", default = 30, min = 5, max = 3600 },
     ["cell.gps.enable"]        = { access = "Admin", type = "boolean", default = true },
+    ["cell.rat"]               = { access = "Admin", type = "string", default = "" },  -- ""=leave; auto|gsm|umts|lte|gsm+lte|... (Sierra AT!SELRAT)
     ["sms.enable"]             = { access = "Admin", type = "boolean", default = false },
     ["sms.forward.cloud"]      = { access = "Admin", type = "boolean", default = false },
 
@@ -66,6 +67,8 @@ return {
     ["cell.signal.bars"] = viewer_str(),
     ["cell.ip"]          = viewer_str(),
     ["cell.iccid"]       = viewer_str(),
+    ["cell.rat.current"] = viewer_str(),   -- RAT the modem reports (AT!SELRAT?)
+    ["cell.reg.reason"]  = viewer_str(),   -- network reject cause (AT+CEER), if any
     ["cell.version"]     = viewer_str(),
 
     -- GPS / GNSS (daemon-published)
