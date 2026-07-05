@@ -42,6 +42,14 @@ int HttpSession::handle_input(ACE_HANDLE /*fd*/) {
         return 0;  // timeout — stay registered
     }
 
+    // Data is flowing — refresh activity so a long request BODY (e.g. a multi-MB
+    // OTA .ipk/.tar.gz drag-drop upload, streamed over many 4 KiB recv()s) is
+    // never idle-closed mid-transfer. m_last_active is otherwise only bumped on a
+    // completed response (finish_response), so a slow/large upload that takes
+    // longer than kIdleTimeoutSec between chunk responses would trip the idle
+    // check at the top of this handler and drop the connection mid-body.
+    m_last_active = now;
+
     // Turn this read into plaintext application bytes. On https the bytes
     // off the wire are ciphertext: feed them to the TLS engine, advance the
     // handshake, then decrypt. On plain HTTP the bytes are the request.
