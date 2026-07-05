@@ -89,9 +89,10 @@ Daemons that register a `LogBuffer` (tag → log_key → level_key):
 
 ### 1c. Serving (iot-httpd)
 
-- **`GET /api/v1/log`** (`handler.cpp`) — merges `{log.text, log.cloudd.text,
-  log.lwm2m.text, log.lwm2m.bs.text, log.lwm2m.dm.text}` into one `text/plain`
-  snapshot. No long-poll on this route itself.
+- **`GET /api/v1/log`** (`handler.cpp`) — merges all per-daemon buffers
+  (`log.text`, `log.cloudd.text`, `log.lwm2m{,.bs,.dm}.text`, `log.vehicled.text`,
+  `log.mqttd.text`, `log.containerd.text`) into one `text/plain` snapshot. No
+  long-poll on this route itself.
 - **Long-poll wake** rides the shared **`GET /api/v1/status`** handler, which
   registers `ds->watch("log.version", …)` among its watches. A `log.version` bump
   (or the poll timeout) wakes the status stream and echoes `log.version` back, so
@@ -110,14 +111,12 @@ the **Logs** menu.
 - **Levels:** dropdowns for `log.level` (All) + `log.level.{httpd,lwm2m,vpn,dtls}`,
   written via `POST /api/v1/db/set`; Admin-only.
 
-### 1e. Known gaps (as of this writing)
+### 1e. History
 
-- `log.containerd.text` / `log.level.container` are **used by iot-containerd but not
-  declared** in `iot.lua`'s log section (they work as ad-hoc keys, but aren't in
-  the schema).
-- The `/api/v1/log` merge **omits** `log.vehicled.text`, `log.mqttd.text`, and
-  `log.containerd.text` — those buffers are populated but not shown in the merged
-  view. (Read them directly via `/api/v1/db/get` if needed.)
+Two earlier gaps were closed once this was mapped: `log.level.container` /
+`log.containerd.text` are now declared in `iot.lua`, and the `/api/v1/log` merge
+now includes `log.vehicled.text`, `log.mqttd.text` and `log.containerd.text` (they
+were populated but previously not shown in the merged view).
 
 ---
 
