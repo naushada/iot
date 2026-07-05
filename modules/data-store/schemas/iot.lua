@@ -397,6 +397,12 @@ return {
       type    = "string",
       default = "",
     },
+    -- iot-containerd (on-device container runtime) per-daemon level.
+    ["log.level.container"] = {
+        access  = "Admin",
+      type    = "string",
+      default = "",
+    },
     -- Bumped by every daemon on log flush so the cloud UI can long-poll
     -- a single key instead of round-robining through all log.*.text keys.
     ["log.version"] = {
@@ -408,11 +414,14 @@ return {
     -- Recent log output (plain text, newline-separated). Each daemon
     -- writes to its own key so they don't clobber each other. The cloud
     -- UI log viewer merges all keys. Capped at ~200 lines / ~16 KB each.
-    --   log.text           — iot-httpd
-    --   log.cloudd.text    — iot-cloudd
-    --   log.lwm2m.text     — lwm2m (device/client mode)
-    --   log.lwm2m.bs.text  — lwm2m-bs (cloud bootstrap server)
-    --   log.lwm2m.dm.text  — lwm2m-dm (cloud device management)
+    --   log.text            — iot-httpd
+    --   log.cloudd.text     — iot-cloudd
+    --   log.lwm2m.text      — lwm2m (device/client mode)
+    --   log.lwm2m.bs.text   — lwm2m-bs (cloud bootstrap server)
+    --   log.lwm2m.dm.text   — lwm2m-dm (cloud device management)
+    --   log.vehicled.text   — iot-vehicled (CAN/OBD-II)
+    --   log.mqttd.text      — iot-mqttd (MQTT mirror)
+    --   log.containerd.text — iot-containerd (container runtime)
     ["log.text"] = {
         access  = "Viewer",
       type    = "string",
@@ -444,6 +453,11 @@ return {
       default = "",
     },
     ["log.mqttd.text"] = {
+        access  = "Viewer",
+      type    = "string",
+      default = "",
+    },
+    ["log.containerd.text"] = {
         access  = "Viewer",
       type    = "string",
       default = "",
