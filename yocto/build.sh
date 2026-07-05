@@ -17,6 +17,14 @@
 # App-only targets recompile just the iot recipe (deps restore from sstate, so
 # minutes not hours) — reach for the full image only on OS/kernel/unit changes.
 #
+# Just need the OTA bundle? Don't build it — DOWNLOAD the one CI already
+# published on the matching v* tag (Release asset). No Yocto, no disk churn:
+#   ./build.sh get                      # newest release, default machine
+#   ./build.sh get v1.3.3               # a specific release tag
+#   MACHINE=qemuarm64 ./build.sh get    # another machine's asset
+# Lands in build/<machine>/images/<machine>/ (same path a real build writes),
+# sha256-verified, and prints the paste-ready cloud.firmware.manifest row.
+#
 # Guarantee the image carries the latest commit on IOT_BRANCH (main). The iot
 # recipe is AUTOREV, but a cached git mirror / sstate can serve a stale checkout
 # so a reflash ships old code. Force a fresh re-clone + recompile of just the
@@ -307,6 +315,138 @@ EOF
 # the host (same copy a normal build does), to be run from a SECOND terminal
 # while the shell is still open. (For an orchestrated clean rebuild that copies
 # automatically, prefer `IOT_CLEAN=1 ./build.sh` instead — no shell needed.)
+# ── Download a prebuilt iot-bundle OTA tarball from the GitHub release ─
+# The iot-bundle (one .tar.gz of the whole iot-*.ipk feed for an LwM2M Object 5
+# OTA push) is published by CI (`.github/workflows/ipk-bundle.yml`) on every
+# `v*` tag as a Release asset — so a full local Yocto build is almost never
+# needed just to get the bundle. This pulls that asset (plus its .sha256 and the
+# paste-ready .manifest.json) into the SAME path a real build writes to
+# (build/<machine>/images/<machine>/), verifies the sha256, and prints the
+# manifest row. Defaults to the latest release; pass a tag to pin one:
+#   ./build.sh get                 # newest v* release, default machine
+#   ./build.sh get v1.3.3          # a specific release tag
+#   MACHINE=qemuarm64 ./build.sh get   # a different machine's asset
+# Repo is derived from `origin` (override with IOT_REPO=owner/name). Uses the
+# `gh` CLI when present (handles auth + private repos); falls back to curl for
+# public releases.
+download_bundle() {
+    local want_ver="${1:-}"
+    local machine="${MACHINE:-$DEFAULT_MACHINE}"
+    local out="$OUT_DIR/$machine/images/$machine"
+    mkdir -p "$out"
+
+    # Resolve owner/repo: explicit override, else parse the origin remote
+    # (git@github.com:owner/repo.git or https://github.com/owner/repo.git).
+    local repo="${IOT_REPO:-}"
+    if [ -z "$repo" ]; then
+        local url
+        url="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
+        repo="$(echo "$url" | sed -E 's#^.*github\.com[:/]##; s#\.git$##')"
+    fi
+    if [ -z "$repo" ]; then
+        log_error "Could not determine GitHub repo — set IOT_REPO=owner/name."
+        exit 1
+    fi
+
+    log_section "Fetching iot-bundle for $machine from $repo"
+
+    # sha256 checker differs across platforms (Linux coreutils vs macOS).
+    local sha_cmd=""
+    if command -v sha256sum &>/dev/null; then sha_cmd="sha256sum"
+    elif command -v shasum   &>/dev/null; then sha_cmd="shasum -a 256"; fi
+
+    # Download into a private temp dir so we can identify EXACTLY what was
+    # fetched — $out may already hold other bundle versions from earlier builds,
+    # and picking "the newest file in $out" would misreport `get <older-tag>`.
+    local dl="$out/.iot-bundle-dl.$$"
+    rm -rf "$dl"; mkdir -p "$dl"
+
+    if command -v gh &>/dev/null; then
+        # gh handles "latest" and private repos; a glob pattern matches the
+        # machine-specific asset trio regardless of the embedded version/git-id.
+        # (patterns[] is always non-empty, so it's safe under `set -u` even on
+        # macOS's bash 3.2 — an empty "${arr[@]}" would trip "unbound variable".)
+        local patterns=(
+            --pattern "iot-bundle-*-${machine}.tar.gz"
+            --pattern "iot-bundle-*-${machine}.tar.gz.sha256"
+            --pattern "iot-bundle-*-${machine}.tar.gz.manifest.json"
+        )
+        log_info "Downloading via gh (${want_ver:-latest release})…"
+        if [ -n "$want_ver" ]; then
+            gh release download "$want_ver" --repo "$repo" --dir "$dl" "${patterns[@]}" \
+                || { log_error "gh could not fetch a $machine bundle for '$want_ver'."; rm -rf "$dl"; exit 1; }
+        else
+            gh release download --repo "$repo" --dir "$dl" "${patterns[@]}" \
+                || { log_error "gh could not fetch a $machine bundle from the latest release."; rm -rf "$dl"; exit 1; }
+        fi
+    else
+        # curl fallback (public releases only). Resolve "latest" to a concrete
+        # tag via the releases/latest redirect, then build the asset names —
+        # a tagged release asset is exactly iot-bundle-<tag-without-v>-<machine>.
+        log_info "gh not found — falling back to curl (public releases only)…"
+        local tag="$want_ver"
+        if [ -z "$tag" ]; then
+            tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+                     "https://github.com/$repo/releases/latest" \
+                   | sed -E 's#^.*/tag/##')"
+            [ -n "$tag" ] || { log_error "Could not resolve the latest release tag."; rm -rf "$dl"; exit 1; }
+            log_info "Latest release is $tag"
+        fi
+        local ver="${tag#v}"                     # asset name drops the leading v
+        local base="https://github.com/$repo/releases/download/$tag"
+        local name="iot-bundle-${ver}-${machine}.tar.gz"
+        local a
+        for a in "$name" "$name.sha256" "$name.manifest.json"; do
+            log_info "curl $a"
+            curl -fSL "$base/$a" -o "$dl/$a" \
+                || { log_error "Download failed: $a (does $tag have a $machine bundle?)"; rm -rf "$dl"; exit 1; }
+        done
+    fi
+
+    # Exactly one bundle should be in the temp dir — that's what we just pulled.
+    local tarball
+    tarball="$(ls "$dl"/iot-bundle-*-"${machine}".tar.gz 2>/dev/null | head -1 || true)"
+    if [ -z "$tarball" ]; then
+        log_error "No iot-bundle-*-${machine}.tar.gz was downloaded — nothing to install."
+        rm -rf "$dl"
+        exit 1
+    fi
+
+    # Verify the sha256 against the shipped .sha256 sidecar (still in temp dir).
+    if [ -n "$sha_cmd" ] && [ -f "$tarball.sha256" ]; then
+        local expected actual
+        expected="$(awk '{print $1}' "$tarball.sha256")"
+        actual="$($sha_cmd "$tarball" | awk '{print $1}')"
+        if [ "$expected" != "$actual" ]; then
+            log_error "sha256 MISMATCH — expected $expected, got $actual. Not installing."
+            rm -rf "$dl"
+            exit 1
+        fi
+        log_info "sha256 OK: $actual"
+    else
+        log_info "sha256 not verified (no checker or no .sha256 sidecar)."
+    fi
+
+    # Only now that it's verified, move the trio into the real output dir
+    # (clobbering any same-named prior copy), and drop the temp dir.
+    local final="$out/$(basename "$tarball")"
+    mv -f "$dl"/iot-bundle-*-"${machine}".tar.gz* "$out"/
+    rm -rf "$dl"
+
+    log_info "Bundle: $final"
+    if [ -f "$final.manifest.json" ]; then
+        log_section "Paste this row into cloud.firmware.manifest"
+        cat "$final.manifest.json"
+        echo
+        cat <<EOF
+
+  ── Push this OTA over LwM2M (cloud-ui Software Update) ───────────────
+    scp $final* <cloud>:/firmware/
+    # then paste the manifest row above into cloud.firmware.manifest
+EOF
+    fi
+}
+
 copy_from_shell() {
     local machine="$1"
     local container="iot-shell-${machine//./-}"
@@ -350,6 +490,17 @@ shell_into() {
 
 # ── Main ──────────────────────────────────────────────────────────────
 main() {
+    # Subcommand: download a prebuilt iot-bundle from the GitHub release
+    # (no build, no container runtime needed) — skip the full Yocto build when
+    # you just need the OTA bundle. Handled before detect_runtime so it works on
+    # a host with only gh/curl and no podman/docker.
+    case "${1:-}" in
+        get|pull|download)
+            download_bundle "${2:-}"
+            return
+            ;;
+    esac
+
     CR=$(detect_runtime)
     log_info "Container runtime: $CR"
 
