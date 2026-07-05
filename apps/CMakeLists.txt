@@ -169,6 +169,15 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/containers
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/mqtt
                  ${CMAKE_BINARY_DIR}/iotmqtt)
 
+# ddns module (iot-ddnsd device-side Dynamic DNS updater). Builds iot-ddnsd, the
+# reactor-driven daemon that keeps a public DNS A record on the device's current
+# public IP through a pluggable provider backend, and installs the ddns.lua
+# schema. Reuses the datastore_client target added above. Ships disabled by
+# default. See modules/ddns + apps/docs/tdd-ddns.md.
+set(DDNS_BUILD_DAEMON ON CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/ddns
+                 ${CMAKE_BINARY_DIR}/ddns)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
@@ -304,6 +313,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-can0-up.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-containerd.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-mqttd.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-ddnsd.service
             DESTINATION lib/systemd/system)
 
     # tmpfiles.d fallback for hosts where RuntimeDirectory= doesn't
@@ -328,6 +338,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/wifi-client.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/sensord.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/cellular-client.env
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/ddnsd.env
             DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot)
 
     # Object-resource config templates. Land each .lua as .lua.example

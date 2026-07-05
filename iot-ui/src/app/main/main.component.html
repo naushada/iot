@@ -127,6 +127,11 @@
         <app-mqtt-config></app-mqtt-config>
       </ng-container>
 
+      <!-- Dynamic DNS -->
+      <ng-container *ngIf="selectedMenu==='ddns'">
+        <app-ddns-config></app-ddns-config>
+      </ng-container>
+
       <!-- Routing -->
       <ng-container *ngIf="selectedMenu==='routing'">
         <app-port-forward [view]="selectedSubNav==='dnat' ? 'dnat' : 'ports'" *ngIf="!selectedSubNav || selectedSubNav==='ports' || selectedSubNav==='dnat'"></app-port-forward>

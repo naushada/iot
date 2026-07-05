@@ -40,6 +40,7 @@ SRC_URI = "\
     file://iot-can0-up.service \
     file://iot-containerd.service \
     file://iot-mqttd.service \
+    file://iot-ddnsd.service \
     file://iot-pcap.service \
     file://10-iot-wired.network \
     file://iot-wifi-client.service \
@@ -450,6 +451,7 @@ PACKAGE_BEFORE_PN = "\
     ${PN}-vehicle \
     ${PN}-containerd \
     ${PN}-mqtt \
+    ${PN}-ddns \
     ${PN}-pcap \
     ${PN}-config \
     ${PN}-bcm2837-selftest \
@@ -675,6 +677,26 @@ RRECOMMENDS:${PN}-mqtt = "\
     ${PN}-config \
 "
 
+# ddns — iot-ddnsd device-side Dynamic DNS updater. Keeps a public DNS A record
+# on the device's current public IP through a pluggable provider backend
+# (dyndns2/duckdns/cloudflare/route53). Ships the unit ENABLED but the daemon
+# parks (ddns.state=disabled) until the operator sets ddns.enabled + provider
+# creds via the device-ui. ddns.lua schema + ddnsd.env ship in ${PN}-config.
+# See apps/docs/tdd-ddns.md.
+FILES:${PN}-ddns = "\
+    ${bindir}/iot-ddnsd \
+    ${systemd_system_unitdir}/iot-ddnsd.service \
+"
+# curl: outbound HTTP(S) transport (IP-echo + provider updates), shelled via
+# ACE_Process like the OTA/registry paths — no libcurl link dep. openssl:
+# libcrypto for the Route53 SigV4 HMAC-SHA256 signer. ca-certificates: TLS trust
+# store for the HTTPS calls.
+RDEPENDS:${PN}-ddns = "ace-tao curl openssl ca-certificates"
+RRECOMMENDS:${PN}-ddns = "\
+    ${PN}-ds-server \
+    ${PN}-config \
+"
+
 # pcap — iot-pcap.service: on-demand tcpdump ring-buffer capture of the LwM2M
 # DTLS planes, for field debugging. No iot binary of its own — just the unit;
 # tcpdump (+ libpcap, pulled transitively) is the runtime dep. Ships DISABLED
@@ -762,6 +784,12 @@ SYSTEMD_AUTO_ENABLE:${PN}-containerd = "enable"
 # mqtt mirror enabled by default — it parks (no broker connection) until
 # mqtt.broker.host is configured, so it is a no-op until the operator sets it up.
 SYSTEMD_SERVICE:${PN}-mqtt = "iot-mqttd.service"
+# ddns registered + auto-enabled: the daemon is cheap while parked (a timer that
+# publishes ddns.state=disabled) and comes alive the moment the operator sets
+# ddns.enabled, so no `systemctl enable` step is needed. Also `enable`d in
+# 90-iot.preset so preset-all keeps it on across first boot.
+SYSTEMD_SERVICE:${PN}-ddns = "iot-ddnsd.service"
+SYSTEMD_AUTO_ENABLE:${PN}-ddns = "enable"
 # pcap capture registered but NOT auto-enabled: a continuous packet capture is a
 # debug aid, not a boot service (flash wear + captures user traffic). Operator
 # `systemctl start iot-pcap` while diagnosing. Also `disable`d in 90-iot.preset
