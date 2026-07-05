@@ -77,7 +77,30 @@ do_deploy() {
         fi
     done
 
-    name="iot-bundle-${PV}-${MACHINE}.tar.gz"
+    # Per-commit build id so every build gets a UNIQUE name + manifest version
+    # even at the same PV. Derived from the iot core package's own version, which
+    # is "${PV}+git${SRCPV}" (iot_git.bb, SRCREV=AUTOREV) and thus carries the git
+    # short sha — e.g. iot-cellular_1.3.7+git0+23d18f3ce4-r0 → gitid 23d18f3ce4.
+    # Reading it from the just-built .ipk (rather than shelling git at parse time)
+    # tracks the real artifact and avoids BitBake parse-cache staleness. Without
+    # it, two different builds of "1.3.7" both emit iot-bundle-1.3.7-<machine>.tar.gz,
+    # which collides on the cloud feed (overwrite) and can be skipped as
+    # "same version". Falls back to the plain PV name if it can't be parsed.
+    gitid=""
+    ref="$(ls "${stage}"/iot-*.ipk 2>/dev/null | head -n1)"
+    if [ -n "${ref}" ]; then
+        v="$(basename "${ref}")"; v="${v#*_}"; v="${v%%_*}"   # version field
+        gitid="${v##*+}"; gitid="${gitid%%-*}"                # after last '+', before '-r'
+        case "${gitid}" in *[!0-9a-fA-F]*|"") gitid="" ;; esac  # only a bare hex sha, else fall back
+    fi
+    if [ -n "${gitid}" ]; then
+        ver="${PV}+g${gitid}"                                 # semver build-metadata (safe precedence)
+        name="iot-bundle-${PV}-g${gitid}-${MACHINE}.tar.gz"   # dash form → filename/URL-safe
+    else
+        ver="${PV}"
+        name="iot-bundle-${PV}-${MACHINE}.tar.gz"
+    fi
+
     # Archive root holds the flat .ipk files (extracted straight into the spool
     # by iot-ota-stage). Sorted + no mtime/owner noise → reproducible-ish.
     tar --numeric-owner --owner=0 --group=0 -C "${stage}" -czf "${DEPLOYDIR}/${name}" .
@@ -88,12 +111,14 @@ do_deploy() {
     # Paste-ready row for the cloud's cloud.firmware.manifest ds key. The cloud
     # serves the bundle from /firmware/<name>; the operator copies the tarball
     # into the iot-firmware volume and appends this object to the manifest array.
+    # ipk_url matches the file exactly; version carries the git id so a same-PV
+    # rebuild is seen as new (distinct string) and its sha256 is fresh.
     cat > "${DEPLOYDIR}/${name}.manifest.json" <<EOF
-{ "pkg": "iot-bundle", "version": "${PV}", "arch": "${MACHINE}",
+{ "pkg": "iot-bundle", "version": "${ver}", "arch": "${MACHINE}",
   "ipk_url": "/firmware/${name}", "sha256": "${sha}" }
 EOF
 
-    bbnote "iot-bundle: packed $(ls -1 "${stage}" | wc -l) iot-*.ipk into ${name} (sha256 ${sha})"
+    bbnote "iot-bundle: packed $(ls -1 "${stage}" | wc -l) iot-*.ipk into ${name} (version ${ver}, sha256 ${sha})"
 }
 
 addtask deploy before do_build after do_compile
