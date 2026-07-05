@@ -11,17 +11,27 @@ Companion docs: `apps/docs/ddns-plan.md` (plan + provider survey),
 
 ## Implementation status
 
-- [ ] PR-1 (#513, #514) — `ddns.lua` schema + `modules/ddns/` + `iot-ddnsd`
+- [x] PR-1 (#513, #514) — `ddns.lua` schema + `modules/ddns/` + `iot-ddnsd`
       skeleton (reactor, ds watch, timer, state publish). [DEVICE]
-- [ ] PR-2 (#515) — `PublicIpDetector` (HTTPS echo + fallbacks). [DEVICE]
-- [ ] PR-3 (#516, #517) — `ProviderBackend` iface + **dyndns2** + **DuckDNS**;
-      first live update. [DEVICE]
-- [ ] PR-4 (#520, #521) — systemd/yocto packaging + secrets handling. [PKG]
-- [ ] PR-5 (#518) — **Cloudflare** backend. [DEVICE]
-- [ ] PR-6 (#519) — **Route53** backend (SigV4). [DEVICE]
-- [ ] PR-7 (#522) — device-ui DDNS page. [DEVICE/UI]
-- [ ] PR-8 (#523) — reachability flag (CGNAT awareness). [DEVICE]
-- [ ] HW validation on RPi3B (Wi-Fi/home-NAT) + mangOH (cellular).
+- [x] PR-2 (#515) — `PublicIpDetector` (HTTPS echo + fallbacks). [DEVICE]
+- [x] PR-3 (#516, #517) — `ProviderBackend` iface + **dyndns2** + **DuckDNS**.
+      [DEVICE]
+- [x] PR-4 (#520, #521) — systemd/yocto packaging + secrets handling
+      (unit `Group=iot`; write-only ds keys or credential file). [PKG]
+- [x] PR-5 (#518) — **Cloudflare** backend (record-id cache, JSON). [DEVICE]
+- [x] PR-6 (#519) — **Route53** backend (SigV4; unit-tested vs AWS vector).
+      [DEVICE]
+- [x] PR-7 (#522) — device-ui DDNS page (Angular build verified). [DEVICE/UI]
+- [x] PR-8 (#523) — reachability flag (CGNAT/private heuristic). [DEVICE]
+- [ ] HW validation on RPi3B (Wi-Fi/home-NAT) + mangOH (cellular) — needs
+      hardware + live provider accounts; the code compiles (iot-devbuild
+      podman image) and `ddns_test` passes 9/9.
+
+**Verified locally (podman `iot-devbuild`):** `iot-ddnsd` builds + links; the
+`ddns_core` library (detector, 4 backends, SigV4, http_client) compiles; the
+gtest suite passes (IPv4 validation, url-encode, ip-source, SHA-256, and the
+AWS SigV4 signing-key derivation vector). **Not yet verified:** live DNS updates
+against real provider accounts and on-device HW (flagged for sign-off).
 
 ## 1. Goal
 
