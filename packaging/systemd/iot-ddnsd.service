@@ -1,0 +1,44 @@
+[Unit]
+Description=IoT device-side Dynamic DNS updater (keeps a public A record on the device's current public IP → ds ddns.*)
+Documentation=file:///etc/iot/ddnsd.env
+Documentation=file:///usr/local/share/doc/iot/tdd-ddns.md
+# Needs ds-server up (reads ddns.* config, publishes ddns.state/last.*) and
+# outbound network (HTTPS to the IP-echo + the DNS provider).
+After=network-online.target iot-ds.service
+Wants=network-online.target iot-ds.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/iot/ddnsd.env
+ExecStart=/usr/local/bin/iot-ddnsd $IOT_DDNS_ARGS
+
+# FR-9 (#521) finalizes the secret model. When a credential FILE is used
+# (ddns.token.path) instead of the write-only ds key, load it as a systemd
+# credential so it never sits in the environment or the image:
+#   LoadCredential=ddns_secret:/etc/iot/ddns/token
+# and run in group iot so the read_acl=gid:iot secret keys resolve:
+#   Group=iot
+# (left commented until FR-9 pins the runtime user).
+
+# /run/iot is owned solely by tmpfiles.d (iot.conf, 2775 root:iot) — do NOT use
+# RuntimeDirectory=iot: it resets /run/iot on start/stop and clobbers the
+# group-iot ds socket. The daemon just reads /run/iot/data_store.sock.
+
+Restart=on-failure
+RestartSec=10s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target
