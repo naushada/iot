@@ -14,15 +14,39 @@ option(DDNS_BUILD_DAEMON "Build the iot-ddnsd updater daemon"  OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ── iot-ddnsd daemon (device-side Dynamic DNS updater) ─────────────────────
-# Built in the integrated iot image (apps/CMakeLists sets DDNS_BUILD_DAEMON and
-# has already added datastore_client). Off by default for a plain
-# `cmake modules/ddns` build. See apps/docs/tdd-ddns.md.
+# ── ddns_core: host-testable pure logic (detector, providers, SigV4, http) ──
+# HTTP transport shells out to curl via ACE_Process; SigV4 uses OpenSSL crypto;
+# the Cloudflare backend parses JSON with the in-tree nlohmann single header.
+find_package(OpenSSL REQUIRED)
+
+set(DDNS_JSON_INC ${CMAKE_CURRENT_SOURCE_DIR}/../../apps/3rdparty/json/single_include)
+
+add_library(ddns_core STATIC
+    src/http_client.cpp
+    src/public_ip.cpp
+    src/sigv4.cpp
+    src/provider_dyndns2.cpp
+    src/provider_duckdns.cpp
+    src/provider_cloudflare.cpp
+    src/provider_route53.cpp
+    src/provider_factory.cpp)
+target_include_directories(ddns_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/inc)
+target_include_directories(ddns_core PRIVATE
+    ${DDNS_JSON_INC})
+target_compile_options(ddns_core PRIVATE -Wall -Wextra)
+target_link_libraries(ddns_core PUBLIC OpenSSL::Crypto)
+add_library(ddns::core ALIAS ddns_core)
+
+# ddns_core links ACE (ACE_Process in http_client). In the iot build ACE_ROOT is
+# already known; standalone, fall back to the default install path.
+if(NOT DEFINED ACE_ROOT)
+    set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
+endif()
+target_include_directories(ddns_core PRIVATE ${ACE_ROOT}/include)
+
+# ── iot-ddnsd daemon ────────────────────────────────────────────────────────
 if(DDNS_BUILD_DAEMON)
-    if(NOT DEFINED ACE_ROOT)
-        set(ACE_ROOT /usr/local/ACE_TAO-7.0.0)
-    endif()
-    # data-store client (reuse the parent's target when present).
     if(NOT TARGET datastore_client)
         add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../data-store
                          ${CMAKE_BINARY_DIR}/data-store)
@@ -38,7 +62,7 @@ if(DDNS_BUILD_DAEMON)
         ${ACE_ROOT}/include)
     target_link_directories(iot-ddnsd PRIVATE ${ACE_ROOT}/lib)
     target_link_libraries(iot-ddnsd PRIVATE
-        datastore_client ACE pthread)
+        ddns_core datastore_client ACE pthread)
     target_compile_options(iot-ddnsd PRIVATE -Wall -Wextra)
 
     include(GNUInstallDirs)

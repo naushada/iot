@@ -687,7 +687,11 @@ FILES:${PN}-ddns = "\
     ${bindir}/iot-ddnsd \
     ${systemd_system_unitdir}/iot-ddnsd.service \
 "
-RDEPENDS:${PN}-ddns = "ace-tao"
+# curl: outbound HTTP(S) transport (IP-echo + provider updates), shelled via
+# ACE_Process like the OTA/registry paths — no libcurl link dep. openssl:
+# libcrypto for the Route53 SigV4 HMAC-SHA256 signer. ca-certificates: TLS trust
+# store for the HTTPS calls.
+RDEPENDS:${PN}-ddns = "ace-tao curl openssl ca-certificates"
 RRECOMMENDS:${PN}-ddns = "\
     ${PN}-ds-server \
     ${PN}-config \

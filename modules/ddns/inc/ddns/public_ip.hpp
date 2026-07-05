@@ -27,6 +27,11 @@ enum class IpSource {
 
 IpSource parse_ip_source(const std::string& s);   // "echo"|"dyndns2-auto"|"cloud"
 
+/// Validate + normalize a dotted-quad IPv4 (trims surrounding whitespace an
+/// echo endpoint appends). Returns "" if not a well-formed IPv4. Exposed for
+/// unit testing.
+std::string validate_ipv4(const std::string& raw);
+
 /// Resolves the current public IPv4. Reactor-integrated HTTPS lives behind the
 /// impl; callers get a synchronous best-effort answer per tick.
 struct PublicIpDetector {
