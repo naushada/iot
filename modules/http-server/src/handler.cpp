@@ -14,6 +14,8 @@
 
 #include <cctype>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <condition_variable>
 #include <fstream>
@@ -21,6 +23,8 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+
+#include <sys/wait.h>
 
 namespace http_server {
 
@@ -83,6 +87,81 @@ bool save_accounts(data_store::Client* ds, const json& arr) {
     if (!ds) return false;
     auto sr = ds->set("auth.users.accounts", data_store::Value{arr.dump()});
     return sr.ok;
+}
+
+/// Sanitize a firmware-feed filename: strip any path, restrict to a safe
+/// charset, and require an accepted extension. Returns "" if rejected.
+/// Shared by the firmware upload + fetch handlers. The accepted set matches
+/// /update/upload — .tar covers a macOS-auto-decompressed .tar.gz; .raucb is
+/// the A/B full-image bundle.
+std::string sanitize_feed_name(std::string name) {
+    if (auto p = name.find_last_of('/'); p != std::string::npos) name = name.substr(p + 1);
+    std::string safe;
+    for (char c : name)
+        safe.push_back((std::isalnum(static_cast<unsigned char>(c)) ||
+                        c == '.' || c == '_' || c == '-') ? c : '_');
+    auto ends_with = [&](const char* e) {
+        std::string s(e);
+        return safe.size() >= s.size() &&
+               safe.compare(safe.size() - s.size(), s.size(), s) == 0;
+    };
+    if (safe.empty() || !(ends_with(".ipk") || ends_with(".tar") ||
+                          ends_with(".tar.gz") || ends_with(".tgz") ||
+                          ends_with(".raucb")))
+        return {};
+    return safe;
+}
+
+/// Upsert one row into cloud.firmware.manifest, keyed by ipk_url. Shared by the
+/// firmware upload + fetch handlers.
+void upsert_firmware_manifest(data_store::Client* ds, const std::string& ipk_url,
+                              const std::string& pkg, const std::string& ver,
+                              const std::string& arch, const std::string& sha) {
+    if (!ds) return;
+    json arr = json::array();
+    std::vector<data_store::Client::GetResult> g;
+    if (ds->get({std::string("cloud.firmware.manifest")}, g).ok &&
+        !g.empty() && g[0].has_value)
+        if (auto cur = data_store::to_string(g[0].value))
+            try { auto p = json::parse(*cur); if (p.is_array()) arr = p; }
+            catch (const std::exception&) {}
+    json out = json::array();
+    for (auto& e : arr)
+        if (e.value("ipk_url", "") != ipk_url) out.push_back(e);
+    out.push_back({{"pkg", pkg}, {"version", ver}, {"arch", arch},
+                   {"ipk_url", ipk_url}, {"sha256", sha}});
+    ds->set("cloud.firmware.manifest", data_store::Value{out.dump()});
+}
+
+/// Validate an operator-supplied fetch URL. Admin-supplied but still checked:
+/// scheme must be http/https, and the whole string is restricted so it carries
+/// no whitespace, control char, DEL, or single quote — the only character that
+/// could break out of the single-quoted curl argument. Everything else (&, ?,
+/// =, %, +, [], …) is inert inside single quotes, so query strings survive.
+bool is_safe_fetch_url(const std::string& u) {
+    if (u.rfind("http://", 0) != 0 && u.rfind("https://", 0) != 0) return false;
+    if (u.empty() || u.size() > 2048) return false;
+    for (unsigned char c : u)
+        if (c < 0x21 || c == 0x7f || c == '\'') return false;
+    return true;
+}
+
+/// Download an http(s) URL into `dest` with curl (TLS verified — the cloud
+/// runtime image ships curl + ca-certificates). `url` MUST already be
+/// is_safe_fetch_url()-validated: it is single-quoted into the command, and the
+/// dest is server-controlled, so there is no shell-injection surface. Returns
+/// true on curl exit 0.
+bool fetch_url_to_file(const std::string& url, const std::string& dest) {
+    const std::string cmd =
+        "curl -fL --connect-timeout 20 --max-time 1800 -o '" + dest +
+        "' '" + url + "' >/dev/null 2>&1";
+    int rc = std::system(cmd.c_str());
+    return rc != -1 && WIFEXITED(rc) && WEXITSTATUS(rc) == 0;
+}
+
+/// Publish firmware-fetch progress (an object the cloud-ui observes).
+void set_fetch_status(data_store::Client* ds, const json& st) {
+    if (ds) ds->set("cloud.firmware.fetch.status", data_store::Value{st.dump()});
 }
 
 } // namespace
@@ -721,22 +800,8 @@ void install_handlers(Router& router,
             auto qp = [&](const char* k) -> std::string {
                 auto it = req.query.find(k); return it != req.query.end() ? it->second : std::string();
             };
-            std::string name = qp("name");
-            if (auto p = name.find_last_of('/'); p != std::string::npos) name = name.substr(p + 1);
-            std::string safe;
-            for (char c : name)
-                safe.push_back((std::isalnum(static_cast<unsigned char>(c)) ||
-                                c == '.' || c == '_' || c == '-') ? c : '_');
-            auto ends_with = [&](const char* e) {
-                std::string s(e);
-                return safe.size() >= s.size() &&
-                       safe.compare(safe.size() - s.size(), s.size(), s) == 0;
-            };
-            // Same accepted set as /update/upload — .tar covers a macOS-
-            // auto-decompressed .tar.gz; .raucb is the A/B full-image bundle.
-            if (safe.empty() || !(ends_with(".ipk") || ends_with(".tar") ||
-                                  ends_with(".tar.gz") || ends_with(".tgz") ||
-                                  ends_with(".raucb"))) {
+            const std::string safe = sanitize_feed_name(qp("name"));
+            if (safe.empty()) {
                 r.status = 400; r.body = R"({"ok":false,"err":"name must end in .ipk, .tar, .tar.gz, .tgz or .raucb"})"; return r;
             }
             bool first = true, final = true;
@@ -770,28 +835,99 @@ void install_handlers(Router& router,
                 const std::string ipk_url = "/firmware/" + safe;
                 std::string pkg = qp("pkg"), ver = qp("version"), arch = qp("arch");
                 if (pkg.empty()) pkg = safe;   // fallback so the row is never blank
-                // Upsert into cloud.firmware.manifest, keyed by ipk_url.
-                json arr = json::array();
-                if (ds) {
-                    std::vector<data_store::Client::GetResult> g;
-                    if (ds->get({std::string("cloud.firmware.manifest")}, g).ok &&
-                        !g.empty() && g[0].has_value)
-                        if (auto cur = data_store::to_string(g[0].value))
-                            try { auto p = json::parse(*cur); if (p.is_array()) arr = p; }
-                            catch (const std::exception&) {}
-                }
-                json out = json::array();
-                for (auto& e : arr)
-                    if (e.value("ipk_url", "") != ipk_url) out.push_back(e);
-                out.push_back({{"pkg", pkg}, {"version", ver}, {"arch", arch},
-                               {"ipk_url", ipk_url}, {"sha256", sha}});
-                if (ds) ds->set("cloud.firmware.manifest", data_store::Value{out.dump()});
+                upsert_firmware_manifest(ds, ipk_url, pkg, ver, arch, sha);
                 ACE_DEBUG((LM_INFO,
                            ACE_TEXT("%D httpd:thread:%t %M %N:%l firmware upload complete %C "
                                     "(sha256 %C) → manifest\n"), safe.c_str(), sha.c_str()));
                 r.body = std::string(R"({"ok":true,"sha256":")") + sha + R"("})";
                 return r;
             }
+            r.body = R"({"ok":true})";
+            return r;
+        });
+
+    // ── POST /api/v1/firmware/fetch  {url,name,version,arch,pkg,sha256?} ──
+    // Cloud-side: the operator supplies an EXTERNAL http(s) URL; the cloud
+    // downloads the artifact into the firmware FEED, sha256-verifies it
+    // (optionally against a caller-supplied pin), and upserts
+    // cloud.firmware.manifest — after which the normal Software Update push
+    // flow sends it to devices unchanged. The download runs in a DETACHED
+    // thread (a bundle is tens of MB, far too long to hold a request open);
+    // the handler returns 202 immediately and progress is reported on the
+    // cloud.firmware.fetch.status object the cloud-ui observes. Admin-only;
+    // only active where a firmware feed exists (the cloud) — a device has
+    // none → 400. `ds` is a process-lifetime Client (safe to use from the
+    // detached thread; the ds client lib is documented thread-safe).
+    router.add("POST", "/api/v1/firmware/fetch",
+        [ds, auth, firmware_dir](const HttpParser::Request& req) -> HttpResponse {
+            HttpResponse r;
+            std::string access_level = "Admin";
+            if (auth && auth->enabled()) {
+                std::string token = extract_session_cookie(req.headers, auth->cookie_name());
+                if (!token.empty()) { const auto* s = auth->validate(token); if (s) access_level = s->access; }
+            }
+            if (access_level != "Admin") {
+                r.status = 403; r.body = R"({"ok":false,"err":"admin required"})"; return r;
+            }
+            if (firmware_dir.empty()) {
+                r.status = 400; r.body = R"({"ok":false,"err":"no firmware feed on this host"})"; return r;
+            }
+            const json body = parse_body(req.body);
+            const std::string url  = body.value("url", "");
+            const std::string name = sanitize_feed_name(body.value("name", ""));
+            std::string ver = body.value("version", ""), arch = body.value("arch", "");
+            std::string pkg = body.value("pkg", "");
+            std::string wantSha = body.value("sha256", "");
+            for (auto& c : wantSha)   // case-insensitive compare vs our lower-hex
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (!is_safe_fetch_url(url)) {
+                r.status = 400; r.body = R"({"ok":false,"err":"url must be a plain http(s) URL"})"; return r;
+            }
+            if (name.empty()) {
+                r.status = 400; r.body = R"({"ok":false,"err":"name must end in .ipk, .tar, .tar.gz, .tgz or .raucb"})"; return r;
+            }
+            if (pkg.empty()) pkg = name;   // fallback so the row is never blank
+            const std::string dest = firmware_dir + "/" + name;
+            const std::string tmp  = firmware_dir + "/.fetch." + name + ".part";
+
+            // Mark in-flight now so a fast UI poll sees it even before the
+            // thread is scheduled.
+            set_fetch_status(ds, {{"state","downloading"}, {"url",url}, {"name",name},
+                                  {"pkg",pkg}, {"version",ver}});
+
+            std::thread([ds, url, dest, tmp, name, pkg, ver, arch, wantSha]() {
+                auto fail = [&](const std::string& msg) {
+                    std::remove(tmp.c_str());
+                    set_fetch_status(ds, {{"state","error"}, {"url",url}, {"name",name},
+                                          {"pkg",pkg}, {"version",ver}, {"err",msg}});
+                    ACE_ERROR((LM_ERROR,
+                        ACE_TEXT("%D httpd:thread:%t %M %N:%l firmware fetch FAILED %C: %C\n"),
+                        name.c_str(), msg.c_str()));
+                };
+                if (!fetch_url_to_file(url, tmp)) { fail("download failed"); return; }
+                std::ifstream in(tmp, std::ios::binary);
+                std::string data((std::istreambuf_iterator<char>(in)),
+                                  std::istreambuf_iterator<char>());
+                if (data.empty()) { fail("downloaded file is empty"); return; }
+                const std::string sha = sha256_hex(data);
+                if (!wantSha.empty() && sha != wantSha) {
+                    fail("sha256 mismatch (got " + sha + ")"); return;
+                }
+                set_fetch_status(ds, {{"state","verifying"}, {"url",url}, {"name",name},
+                                      {"pkg",pkg}, {"version",ver}, {"sha256",sha}});
+                std::remove(dest.c_str());
+                if (std::rename(tmp.c_str(), dest.c_str()) != 0) {
+                    fail("cannot move into feed"); return;
+                }
+                upsert_firmware_manifest(ds, "/firmware/" + name, pkg, ver, arch, sha);
+                set_fetch_status(ds, {{"state","done"}, {"url",url}, {"name",name},
+                                      {"pkg",pkg}, {"version",ver}, {"sha256",sha}});
+                ACE_DEBUG((LM_INFO,
+                    ACE_TEXT("%D httpd:thread:%t %M %N:%l firmware fetch complete %C "
+                             "(sha256 %C) → manifest\n"), name.c_str(), sha.c_str()));
+            }).detach();
+
+            r.status = 202;
             r.body = R"({"ok":true})";
             return r;
         });

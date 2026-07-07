@@ -246,6 +246,42 @@ unit gets `SupplementaryGroups=iot`; root `iot-swupdate` installs. Bounded by th
 HTTP parser's 8 MiB body cap (`kMaxBody`) — larger / full-image bundles need the
 streaming upload + A/B image OTA in `apps/docs/tdd-ab-image-ota.md`.
 
+### 3.6 Cloud feed ingest — upload & fetch-from-URL (cloud-side)
+
+Everything above is the **device** consuming a firmware URL. Separately, the
+**cloud** operator has to get an artifact *into* the feed
+(`firmware_dir`, served at `/firmware/`) + `cloud.firmware.manifest` before it
+can be pushed. Two iot-httpd routes do this (both admin-only, both no-op with a
+`400` on a device — `firmware_dir` is empty there):
+
+1. **Upload** — `POST /api/v1/firmware/upload` (chunked). The cloud-ui
+   drag-drops a `.ipk`/bundle straight up into the feed. Server computes the
+   sha256 and upserts the manifest row. (§ handler `firmware/upload`.)
+2. **Fetch-from-URL** — `POST /api/v1/firmware/fetch`
+   `{url,name,version,arch,pkg,sha256?}`. The operator gives an **external**
+   http(s) link (a CI artifact, a release asset, a CDN); the cloud downloads it
+   **server-side** into the feed, sha256-verifies (optionally against the
+   supplied pin), and upserts the manifest — so a large bundle never has to
+   transit the operator's browser. The download runs in a **detached thread**
+   (curl, TLS-verified — the cloud runtime image ships curl + ca-certificates)
+   and the request returns `202` immediately; progress/completion is published
+   on **`cloud.firmware.fetch.status`** (`{state:downloading|verifying|done|
+   error, …}`), which the cloud-ui **Software Update** page observes.
+
+Both paths land the artifact in the **same** feed + manifest, after which the
+existing push flow (`cloud.update.request` → iot-cloudd validate → lwm2m-dm
+Object-5 WRITE `/5/0/1` + EXECUTE `/5/0/2` → device `iot-ota-stage`) is
+**identical** — the device always pulls the firmware from the cloud feed URL
+and sha-verifies it, exactly as before. Fetch-from-URL is purely a **cloud feed
+ingest** convenience; it adds **no device-side change** and never hands the
+device the external URL.
+
+**Security note.** The fetch URL is admin-supplied but still validated
+(`is_safe_fetch_url`: scheme `http(s)://` only, no whitespace/control-char/quote
+so it is safe to single-quote into the curl argv). TLS is verified on the
+external fetch (unlike the device stager's sha-gated `-k`). The optional
+`sha256` pin lets the operator fail-closed on an unexpected artifact.
+
 ## 4. Reboot-vs-restart decision (requirement 5 — decided here)
 
 **Policy = `auto` by default.** After a successful `opkg install`:
