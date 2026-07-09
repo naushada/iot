@@ -43,7 +43,7 @@ Dual rootfs banks + shared persistent data, selected by the bootloader:
 mmcblk0p1  boot   (FAT) — bootloader + per-bank kernel/dtb, boot-select env
 mmcblk0p2  rootA  (ext4, ro) — bank A rootfs
 mmcblk0p3  rootB  (ext4, ro) — bank B rootfs
-mmcblk0p4  data   (ext4, rw) — /var/lib/iot (ds store), /etc/iot overrides, certs
+mmcblk0p4  data   (ext4, rw) — /var/lib/private (ds StateDirectory), persists
 ```
 
 - Only the **inactive** bank is written during an update; the running bank is
@@ -53,6 +53,52 @@ mmcblk0p4  data   (ext4, rw) — /var/lib/iot (ds store), /etc/iot overrides, ce
   state / credentials / the `iot.config.version` migration marker. The §11
   config-migration step (Phase-1 doc) still runs after a bank switch when the
   schema generation changed.
+
+### 2.1 Persisting ds config across a bank swap (the "OTA → offline at 90%" fix)
+
+**Field failure (2026-07):** a full-image OTA left the device with an empty data
+store — WiFi/PSKs gone, so it booted offline, never re-registered, and the cloud
+OTA sat at **90% forever** (the cloud's optimistic phase; 100% only arrives when
+the device re-registers on the new version). Root cause: iot-ds runs
+`DynamicUser=yes` + `StateDirectory=iot`, so its `data_store.lua` (which holds
+**all** operator config) actually lives at **`/var/lib/private/iot/`** — on the
+**rootfs**. The `data` partition existed but was **mounted nowhere**, so a RAUC
+bank swap (fresh rootfs on the inactive bank) started with an empty ds. The
+"persistent data partition" above was aspirational, not wired.
+
+**Fix:** ship `var-lib-private.mount` (recipes-iot/lwm2m) — a systemd mount unit
+that mounts `LABEL=data` at **`/var/lib/private`**, so the DynamicUser state dir
+lands on the persistent partition and survives a bank swap.
+
+- **`/var/lib/private`, never `/var/lib/iot`** — a mount at the latter collides
+  with the StateDirectory=iot symlink and crash-loops iot-ds (238/STATE_DIRECTORY,
+  HW-confirmed, the earlier revert PR).
+- **Self-scoping** via `ConditionPathExists=/dev/disk/by-label/data`: the default
+  single-rootfs image has no `data` partition, so the unit skips instantly (no
+  device-timeout, no boot delay) — safe to ship in every image.
+- **Ordering:** `iot-ds.service` gains `After=var-lib-private.mount` (ordering
+  only, not `Requires=`), so it never opens `data_store.lua` before the partition
+  is mounted, and is unaffected on the single-rootfs image where the mount skips.
+- **Perms:** tmpfiles `z /var/lib/private 0700 root root` fixes the fresh ext4
+  root (0755) to what systemd's DynamicUser machinery expects, before ds starts.
+- **Preset:** `enable var-lib-private.mount` in `90-iot.preset` so first-boot
+  `preset-all` doesn't drop the `WantedBy=local-fs.target` symlink.
+- **Bonus:** `rauc.status` (`statusfile=/var/lib/iot/rauc.status`) now persists
+  too — `/var/lib/iot` → `/var/lib/private/iot`, on the partition.
+
+**Transition (one-time):** existing devices have an empty `data` partition, so
+the first boot after this change re-seeds ds once (re-enter WiFi one final time),
+then it is durable. A **reflash** (creates/formats p4 fresh) is cleanest. To lose
+nothing across the cutover, before OTA-ing to the fixed image copy the live store
+onto the partition on the running device:
+```sh
+mkdir -p /mnt/data && mount /dev/mmcblk0p4 /mnt/data
+cp -a /var/lib/private/iot /mnt/data/     # → /mnt/data/iot/{data_store.lua,.seeded,…}
+sync && umount /mnt/data
+# then OTA; the fixed image mounts LABEL=data at /var/lib/private → config present.
+# (iot-ds's DynamicUser StateDirectory re-chowns /var/lib/private/iot on start,
+#  so copying as root is fine.)
+```
 
 ## 3. Update agent — decision needed
 
