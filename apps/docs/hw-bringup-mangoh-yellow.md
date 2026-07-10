@@ -224,7 +224,10 @@ PR #291) — leave `cell.gps.tty` empty.
 # Tell the daemon the ports + APN (read from ds at start):
 ds-cli set cell.modem.tty '"/dev/ttyUSB2"'     # the AT port from Step 4
 ds-cli set cell.gps.tty   '"/dev/ttyUSB1"'     # NMEA port, OR leave "" for AT GPS
-ds-cli set cell.apn       '"<your-operator-apn>"'
+ds-cli set cell.apn       '"<your-operator-apn>"'   # e.g. "airtelgprs.com"
+# ⭐ FIRST confirm the modem selected the SIM you think it did — the board may be
+#    on its soldered eSIM. `AT!UIMS?` must be 0 (external), not 1 (embedded).
+#    See hw-bringup-wp7702-cellular-wan.md §2.
 
 # One-shot foreground run to watch it talk to the modem:
 sudo cellular-client --modem-tty=/dev/ttyUSB2
@@ -254,10 +257,15 @@ returns the live position via the lwm2m client's Object-6 mirror.
   `CONFIG_STRICT_DEVMEM`.
 - **GPS source:** NMEA tty (`cell.gps.tty` set) **or** AT `+QGPSLOC`
   (`cell.gps.tty` empty). Both are wired; pick by what Step 4 found.
-- **Data path (cellular):** if `mmcli -L` shows the modem, ModemManager can bring
-  up the data context; otherwise use `qmicli`/`mbimcli` or pure-AT
-  (`AT+CGACT`). `cellular-client` only owns status + GPS; the IP data path is
-  the modem stack's job (open question §6.D).
+- **Data path (cellular):** `cellular-client` only owns status + GPS; the IP data
+  path is the modem stack's job (open question §6.D). On the WP7702 the host-side
+  data call on `wwan0` is **refused by firmware** (`AT$QCRMCALL` → `NO CARRIER`);
+  the ECM link (`eth1` ↔ module `ecm0`) is what works. See
+  [`hw-bringup-wp7702-cellular-wan.md`](hw-bringup-wp7702-cellular-wan.md).
+- **⭐ Wrong-SIM trap:** the board may boot on its **soldered eSIM** rather than
+  the card in the slot — every symptom looks healthy while zero bytes flow.
+  Check `AT!UIMS?` (`1` = embedded) and `cm sim info` (`Type: EMBEDDED`) **before**
+  debugging APNs. Fix: `AT!ENTERCND="A710"` then `AT!UIMS=0` + `AT+CFUN=0/1`.
 - **Contingency A — sensors not on the Pi bus:** if `i2cdetect` is empty, the
   onboard sensors are on the WP's private CF3 bus, not the IoT connector. Then
   either (a) wire to the sensor bus test points if the board exposes them, or

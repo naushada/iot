@@ -53,8 +53,12 @@ return {
         access  = "Admin", type = "string",  default = "eth0" },
     ["net.iface.wifi.name"]       = {
         access  = "Admin", type = "string",  default = "wlan0" },
+    -- The WP7702 module owns the data session internally; the host cannot open
+    -- a data call on wwan0 (firmware refuses it). Cellular WAN reaches us over
+    -- the modem's ECM link (cdc_ether), which enumerates as eth1 on the RPi3B —
+    -- eth0 is the onboard smsc95xx. See apps/docs/hw-bringup-wp7702-cellular-wan.md.
     ["net.iface.cellular.name"]   = {
-        access  = "Admin", type = "string",  default = "wwan0" },
+        access  = "Admin", type = "string",  default = "eth1" },
     ["net.forward.ports"]         = {
         access  = "Admin", type = "string",  default = "80,443,5684" },
     ["net.custom.rules"]          = {

@@ -43,6 +43,7 @@ SRC_URI = "\
     file://iot-ddnsd.service \
     file://iot-pcap.service \
     file://10-iot-wired.network \
+    file://05-iot-cellular-ecm.network \
     file://iot-wifi-client.service \
     file://iot-httpd.service \
     file://iot.conf \
@@ -370,6 +371,11 @@ do_install() {
         # unit (no-RTC clock would stay stale → TLS/VPN fails). See the file header.
         install -d ${D}${sysconfdir}/systemd/network
         install -m 0644 ${WORKDIR}/10-iot-wired.network       ${D}${sysconfdir}/systemd/network/
+        # Cellular WAN over the WP7702 ECM link: the module's DHCP hands an address
+        # but no router option, so add the default route via 192.168.2.2 at metric
+        # 300 (below wlan0). Sorts before 10-iot-wired.network to win the cdc_ether
+        # match. See apps/docs/hw-bringup-wp7702-cellular-wan.md.
+        install -m 0644 ${WORKDIR}/05-iot-cellular-ecm.network ${D}${sysconfdir}/systemd/network/
         # TUN driver autoload for openvpn-client.
         install -d ${D}${sysconfdir}/modules-load.d
         install -m 0644 ${WORKDIR}/iot-tun.conf               ${D}${sysconfdir}/modules-load.d/
@@ -543,6 +549,7 @@ FILES:${PN}-net-router = "\
     ${bindir}/net-router \
     ${systemd_system_unitdir}/iot-net-router.service \
     ${sysconfdir}/systemd/network/10-iot-wired.network \
+    ${sysconfdir}/systemd/network/05-iot-cellular-ecm.network \
 "
 RDEPENDS:${PN}-net-router = "\
     ace-tao \
