@@ -55,7 +55,11 @@ bool dispatch_at_line(const std::string& line, CellularState& st) {
         if (!dns.empty()) st.set_dns(dns);
         return true;
     }
-    if (starts_with(line, "+QCCID:") || starts_with(line, "+CCID:")) {
+    // Quectel answers "+QCCID:", the 3GPP form is "+CCID:", and the Sierra WP7702
+    // answers AT+ICCID with a BARE "ICCID: <digits>" — no leading '+'. Missing the
+    // bare form left cell.iccid permanently empty on every WP module.
+    if (starts_with(line, "+QCCID:") || starts_with(line, "+CCID:") ||
+        starts_with(line, "+ICCID:") || starts_with(line, "ICCID:")) {
         st.set_iccid(parse_iccid(line));
         return true;
     }

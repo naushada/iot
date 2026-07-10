@@ -109,6 +109,7 @@ export interface CellStatus {
   signal_dbm?: string;
   signal_bars?: string;  // "0".."5"
   ip?: string;
+  dns?: string;          // carrier resolvers, comma-joined (AT+CGCONTRDP=1)
   iccid?: string;
   rat?: string;          // current radio-access-tech (AT!SELRAT?), e.g. "LTE Only"
   reg_reason?: string;   // network reject cause (AT+CEER), when not registered

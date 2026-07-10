@@ -13,10 +13,25 @@ namespace cellular {
 
 namespace {
     bool starts_with(const std::string& s, const char* p) { return s.rfind(p, 0) == 0; }
-    // Distinct timer act so handle_timeout can tell the periodic poll (act=null)
-    // from the one-shot MO-send data phase (act=&kSendTagStorage).
+    // Distinct timer acts so handle_timeout can tell the periodic poll (act=null)
+    // from the one-shot MO-send data phase and the AT command watchdog.
     const int   kSendTagStorage = 0;
     const void* const kSendAct = &kSendTagStorage;
+    const int   kCmdTagStorage = 0;
+    const void* const kCmdAct = &kCmdTagStorage;
+
+    /// A command is finished when the modem emits one of these. Everything else
+    /// (echo, URCs, `+CSQ:` payloads, the `> ` PDU prompt) is intermediate.
+    bool is_at_terminal(const std::string& l) {
+        return l == "OK" || l == "ERROR" || l == "NO CARRIER" || l == "ABORTED" ||
+               starts_with(l, "+CME ERROR") || starts_with(l, "+CMS ERROR");
+    }
+
+    /// Long enough to cover a 2G AT+CMGS round trip; only a wedged modem hits it.
+    const long kCmdTimeoutSec = 15;
+    /// Backstop: if the modem stops answering, stop queueing new poll batches
+    /// rather than growing without bound.
+    const std::size_t kCmdQueueMax = 64;
 }
 
 void CellularClient::load_config_from_ds() {
@@ -67,11 +82,16 @@ int CellularClient::run() {
         }
     }
 
+    // A previous run may have died between AT+CMGS and its PDU, leaving the modem
+    // parked at the '>' prompt — where it treats every following command as
+    // message text. ESC (0x1B) cancels that. Harmless on a healthy modem.
+    m_at->write_raw("\x1b");
+
     // Identify the modem family up front so the first poll already uses the
     // right ICCID + GNSS commands. The reply (manufacturer / model line) is
     // classified in on_at_line.
-    m_at->write_line("AT+GMI");
-    m_at->write_line("AT+CGMM");
+    cmd("AT+GMI");
+    cmd("AT+CGMM");
 
     m_state.set_state("init");
     publish();
@@ -105,7 +125,67 @@ int CellularClient::run() {
     return 0;
 }
 
+void CellularClient::cmd(const std::string& c) {
+    if (c.empty()) return;
+    m_cmdq.push_back(c);
+    pump_cmdq();
+}
+
+void CellularClient::pump_cmdq() {
+    if (!m_at || m_cmd_inflight || m_cmdq.empty()) return;
+    const std::string next = m_cmdq.front();
+    m_cmdq.pop_front();
+    m_at->write_line(next);
+    m_cmd_inflight = true;
+    m_cmd_timer = ACE_Reactor::instance()->schedule_timer(
+        this, kCmdAct, ACE_Time_Value(kCmdTimeoutSec));
+    // AT+CMGS is the one command with a data phase: the modem answers with a
+    // bare "> " prompt (no CR/LF, so LineAssembler never surfaces it as a line)
+    // and only then accepts the PDU. Arm the data-phase timer HERE, when the
+    // command actually goes on the wire — arming it in start_send() raced the
+    // queue and could fire before AT+CMGS had even been written.
+    if (starts_with(next, "AT+CMGS=")) {
+        ACE_Reactor::instance()->schedule_timer(this, kSendAct, ACE_Time_Value(1));
+    }
+}
+
+void CellularClient::cmd_done() {
+    if (!m_cmd_inflight) return;          // an unsolicited OK — nothing in flight
+    m_cmd_inflight = false;
+    if (m_cmd_timer != -1) {
+        ACE_Reactor::instance()->cancel_timer(m_cmd_timer);
+        m_cmd_timer = -1;
+    }
+    pump_cmdq();
+}
+
 int CellularClient::handle_timeout(const ACE_Time_Value&, const void* act) {
+    if (act == kCmdAct) {
+        // The in-flight command never answered. Drop it and move on, or the
+        // queue stalls forever and cell.* freezes.
+        m_cmd_timer = -1;
+        if (m_cmd_inflight) {
+            m_cmd_inflight = false;
+            ACE_ERROR((LM_WARNING,
+                ACE_TEXT("%D [cell] AT command timed out after %ds; "
+                         "advancing queue (%u pending)\n"),
+                static_cast<int>(kCmdTimeoutSec),
+                static_cast<unsigned>(m_cmdq.size())));
+        }
+        if (m_send_active) {
+            // A send that never produced +CMGS / +CMS ERROR. The modem may be
+            // sitting at the '>' prompt, in which case it would swallow every
+            // subsequent command as message text — ESC (0x1B) cancels it.
+            if (m_at) m_at->write_raw("\x1b");
+            m_send_active = false;
+            m_send_pdu.clear();
+            m_ds.set_volatile(std::string("sms.send.status"),
+                              data_store::Value{std::string("failed: modem timeout")});
+            ACE_ERROR((LM_ERROR, ACE_TEXT("%D [cell] SMS send timed out\n")));
+        }
+        pump_cmdq();
+        return 0;
+    }
     if (act == kSendAct) {
         // MO-send data phase: the modem has had a moment to emit the '>' prompt
         // after AT+CMGS=<len>; now send the PDU + Ctrl-Z (0x1A). The +CMGS: /
@@ -158,18 +238,27 @@ void CellularClient::start_send() {
         return;
     }
     m_ds.set_volatile(std::string("sms.send.status"), data_store::Value{std::string("sending")});
-    m_at->write_line("AT+CMGF=0");                       // ensure PDU mode
-    m_at->write_line("AT+CMGS=" + std::to_string(len));  // → modem emits '>'
-    m_send_pdu = pdu;                                    // data phase on the one-shot timer
-    ACE_Reactor::instance()->schedule_timer(this, kSendAct, ACE_Time_Value(1));
+    m_send_pdu    = pdu;      // data phase is armed by pump_cmdq when AT+CMGS goes out
+    m_send_active = true;     // → +CMGS / +CMS ERROR / watchdog all clear this
+    cmd("AT+CMGF=0");                       // ensure PDU mode
+    cmd("AT+CMGS=" + std::to_string(len));  // → modem emits '>'
     ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS send → %C (%d octets)\n"), to.c_str(), len));
 }
 
 void CellularClient::poll_modem() {
     if (!m_at) return;
+    // The modem is not draining the queue (wedged, or slower than the poll
+    // interval). Queueing another batch would only grow the backlog and make
+    // cell.* increasingly stale; skip this tick instead.
+    if (m_cmdq.size() > kCmdQueueMax) {
+        ACE_ERROR((LM_WARNING,
+            ACE_TEXT("%D [cell] AT queue backlogged (%u) — skipping poll\n"),
+            static_cast<unsigned>(m_cmdq.size())));
+        return;
+    }
     ++m_poll_count;
     if (!m_apn_sent && !m_cfg.apn.empty()) {
-        m_at->write_line("AT+CGDCONT=1,\"IP\",\"" + m_cfg.apn + "\"");
+        cmd("AT+CGDCONT=1,\"IP\",\"" + m_cfg.apn + "\"");
         m_apn_sent = true;
     }
     if (m_cfg.sms_enable && !m_sms_setup) {
@@ -180,9 +269,9 @@ void CellularClient::poll_modem() {
         // keeps the receive/read stores aligned and +CMTI carries the store name
         // + index anyway. The +CMGL/+CMTI/+CMGR replies land in on_at_line → m_sms.
         // See apps/docs/tdd-mangoh-cellular-sms.md.
-        m_at->write_line("AT+CMGF=0");
-        m_at->write_line("AT+CNMI=2,1,0,0,0");
-        m_at->write_line("AT+CMGL=4");
+        cmd("AT+CMGF=0");
+        cmd("AT+CNMI=2,1,0,0,0");
+        cmd("AT+CMGL=4");
         m_sms_setup = true;
         ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS receive enabled (PDU mode)\n")));
     }
@@ -191,51 +280,51 @@ void CellularClient::poll_modem() {
     // takes effect), then always read it back for cell.rat.current. This is the
     // knob that unwedges an LTE-only modem where only 2G is in range.
     if (m_vendor == Vendor::Sierra && !m_rat_done) {
-        m_at->write_line("AT!ENTERCND=\"A710\"");
+        cmd("AT!ENTERCND=\"A710\"");
         const int idx = m_cfg.rat.empty() ? -1 : selrat_index(m_cfg.rat);
         if (idx >= 0) {
             char buf[16];
             std::snprintf(buf, sizeof buf, "AT!SELRAT=%02d", idx);
-            m_at->write_line(buf);
-            m_at->write_line("AT+CFUN=0");
-            m_at->write_line("AT+CFUN=1");
+            cmd(buf);
+            cmd("AT+CFUN=0");
+            cmd("AT+CFUN=1");
             ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] RAT set to %C (!SELRAT=%d)\n"),
                        m_cfg.rat.c_str(), idx));
         } else if (!m_cfg.rat.empty()) {
             ACE_ERROR((LM_WARNING, ACE_TEXT("%D [cell] unknown cell.rat '%C' — "
                        "leaving RAT unchanged\n"), m_cfg.rat.c_str()));
         }
-        m_at->write_line("AT!SELRAT?");   // → parse_selrat → cell.rat.current
+        cmd("AT!SELRAT?");   // → parse_selrat → cell.rat.current
         m_rat_done = true;
     }
 
     // One-time identity read: ATI (manufacturer/model/revision/IMEI in one
     // labelled block) + AT+CNUM (SIM number, often blank). Parsed in on_at_line.
     if (!m_ident_done) {
-        m_at->write_line("ATI");
-        m_at->write_line("AT+CNUM");
-        m_at->write_line("AT+CGDCONT?");   // → cell.apn.current (provisioned data APN)
+        cmd("ATI");
+        cmd("AT+CNUM");
+        cmd("AT+CGDCONT?");   // → cell.apn.current (provisioned data APN)
         m_ident_done = true;
     }
 
-    m_at->write_line("AT+CSQ");
-    m_at->write_line("AT+COPS?");
+    cmd("AT+CSQ");
+    cmd("AT+COPS?");
     // Poll every registration domain — a modem camped on 2G registers via +CREG
     // while +CEREG (LTE) reads not-registered; on_at_line combines them.
-    m_at->write_line("AT+CREG?");
-    m_at->write_line("AT+CGREG?");
-    m_at->write_line("AT+CEREG?");
+    cmd("AT+CREG?");
+    cmd("AT+CGREG?");
+    cmd("AT+CEREG?");
     // When not attached, ask the network reject cause (best-effort; some
     // firmwares answer ERROR, which parse_ceer simply ignores).
     if (m_lastReg == Reg::Denied || m_lastReg == Reg::NotRegistered ||
         m_lastReg == Reg::Searching)
-        m_at->write_line("AT+CEER");
-    m_at->write_line("AT+CGPADDR=1");
+        cmd("AT+CEER");
+    cmd("AT+CGPADDR=1");
     // Dynamic context params → cell.dns. CGPADDR carries only a bare address, so
     // the carrier's resolvers are only obtainable here. Re-read every poll: the
     // bearer re-establishes on its own and the resolvers can change with it.
-    m_at->write_line("AT+CGCONTRDP=1");
-    m_at->write_line(iccid_command(m_vendor));   // QCCID/ICCID/CCID per vendor
+    cmd("AT+CGCONTRDP=1");
+    cmd(iccid_command(m_vendor));   // QCCID/ICCID/CCID per vendor
 
     if (m_cfg.gps_enable) {
         // Kick the GNSS engine (vendor-specific), then keep it alive — Sierra's
@@ -243,14 +332,14 @@ void CellularClient::poll_modem() {
         // (~every 6 polls). Once started, NMEA streams on the GNSS tty, or for
         // Quectel-without-a-NMEA-port we poll +QGPSLOC below.
         if (!m_gps_started || (m_poll_count % 6 == 0)) {
-            for (const auto& cmd : gps_start_commands(m_vendor)) {
-                m_at->write_line(cmd);
+            for (const auto& c : gps_start_commands(m_vendor)) {
+                cmd(c);
             }
             m_gps_started = true;
         }
         if (m_gps_via_at) {
             if (m_vendor == Vendor::Quectel) {
-                m_at->write_line("AT+QGPSLOC=2");   // +QGPSLOC parser handles the reply
+                cmd("AT+QGPSLOC=2");   // +QGPSLOC parser handles the reply
             } else if (m_vendor == Vendor::Sierra) {
                 // Sierra reports a fix only on the NMEA port, not a single-line
                 // AT reply — so AT-only GPS isn't supported. Tell the operator
@@ -264,12 +353,19 @@ void CellularClient::poll_modem() {
 }
 
 void CellularClient::on_at_line(const std::string& line) {
+    handle_at_line(line);
+    // Advance the command queue only after the line has been consumed — a
+    // terminal line can also carry meaning (+CME ERROR feeds sms.send.status).
+    if (is_at_terminal(line)) cmd_done();
+}
+
+void CellularClient::handle_at_line(const std::string& line) {
     // SMS-related lines (URCs, +CMGR/+CMGL headers, and the PDU line that
     // follows) go to the receive state machine instead of the status dispatcher;
     // it returns the follow-up commands to issue and any decoded messages.
     if (m_cfg.sms_enable && m_sms.wants(line)) {
         SmsReceiver::Out out = m_sms.on_line(line);
-        for (const auto& cmd : out.commands) m_at->write_line(cmd);
+        for (const auto& c : out.commands) cmd(c);
         for (const auto& msg : out.messages) {
             m_state.set_sms(msg);
             ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS from %C: %C\n"),
@@ -304,14 +400,20 @@ void CellularClient::on_at_line(const std::string& line) {
     } else if (starts_with(line, "+CGDCONT:")) {
         m_state.set_apn(parse_cgdcont(line));   // → cell.apn.current
     } else if (starts_with(line, "+CMGS:")) {
+        m_send_active = false;
         m_ds.set_volatile(std::string("sms.send.status"),
                           data_store::Value{std::string("sent")});
         ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS sent: %C\n"), line.c_str()));
     } else if (starts_with(line, "+CMS ERROR") || starts_with(line, "+CME ERROR")) {
-        // Only treat as a send failure while a send is in flight (these can also
-        // answer a failed read); harmless to publish the last error otherwise.
-        m_ds.set_volatile(std::string("sms.send.status"),
-                          data_store::Value{std::string("failed: ") + line});
+        // Only a send failure while a send is in flight — these also answer any
+        // failed read (AT+CEER, AT+CGDCONT= on an active context, …), and
+        // clobbering sms.send.status with those made a successful send look bad.
+        if (m_send_active) {
+            m_send_active = false;
+            m_send_pdu.clear();
+            m_ds.set_volatile(std::string("sms.send.status"),
+                              data_store::Value{std::string("failed: ") + line});
+        }
     } else if (!parse_imei(line).empty()) {
         m_state.set_imei(parse_imei(line));    // ATI "IMEI: ..." line
     } else if (!parse_labeled(line, "Model").empty()) {

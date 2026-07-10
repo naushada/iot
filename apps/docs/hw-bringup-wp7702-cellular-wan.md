@@ -258,10 +258,13 @@ qmicli -d /dev/cdc-wdm0 --wds-get-current-settings   # IP / gateway / DNS / MTU
 ip addr add <ip>/<prefix> dev wwan0
 ```
 
-The image ships **no** `qmicli`, `qmi-network`, `uqmi`, `mmcli`, or
-ModemManager. **Adding `libqmi` (from `meta-networking`) is required merely to
-find out whether `wwan0` can ever work.** Until that test runs, treat `wwan0` as
-unsupported on this hardware.
+The image shipped **no** `qmicli`, `qmi-network`, `uqmi`, `mmcli`, or
+ModemManager, and `opkg` has none in its feed. `libqmi` is now in
+`RRECOMMENDS:${PN}-cellular` (it comes from `meta-networking`, already enabled in
+`yocto/kas-iot.yml`), so the next image build carries `qmicli` and the test above
+can finally be run. **Until it is, treat `wwan0` as unsupported on this hardware
+and use the ECM path (§5).** If QMI is refused too, `wwan0` should be documented
+as permanently unsupported here.
 
 ### 4.1 ⚠️ Never `ip addr add` the AT-reported IP onto `wwan0`
 
@@ -367,49 +370,69 @@ Recovery on a running device without the fix: `nft add table inet iot_router`.
   `packaging/etc-iot/cellular-client.env` claiming it "connects the data context"
   is wrong.
 
-**Still open:** nothing *consumes* `cell.dns` yet. While `wlan0` is up the Pi uses
-its DNS, but if WiFi drops the device is routed over cellular with **no resolver**.
-Someone (net-router, most likely) must write `cell.dns` into `resolv.conf` when the
-cellular slot becomes the active WAN.
+**On DNS:** the device runs **systemd-resolved**, and `/etc/resolv.conf` is a
+symlink to its file listing *global fallback* resolvers (1.1.1.1, 8.8.8.8, …).
+Those are reachable through the ECM NAT, so a `wlan0` outage does **not** leave the
+device unable to resolve — verified: with cellular as the only default route the Pi
+fetched `http://example.com`, which required a lookup. Do **not** write
+`/etc/resolv.conf`; it is not ours. Feeding `cell.dns` to the link
+(`resolvectl dns eth1 …`) is still worthwhile — Airtel blocks `1.1.1.1`, and the
+carrier's own resolvers are closer — but it is an optimisation, not a gap.
 
-### 6.4 ⚠️ Defect: `cellular-client`'s one-shot identity reads never publish
+### 6.4 ⭐ Root cause: the WP7702 drops AT commands sent back-to-back — FIXED
 
-Reproduced on HW 2026-07-10. With the daemon running against a WP7702, the
-**every-poll** keys populate correctly:
-
-    cell.state=registered  cell.operator=airtel  cell.tech=2G  cell.reg=home
-    cell.signal.dbm=-95    cell.ip=100.109.114.151
-
-…while every key fed by a **one-shot** command stays empty, forever:
+The symptom: every **one-shot** key stayed empty forever…
 
     cell.apn.current  cell.model  cell.fw  cell.capability
     cell.rat.current  cell.iccid  cell.imei  cell.msisdn
 
-This is not a parse mismatch — the modem's replies match the parsers exactly:
+…while every **every-poll** key populated fine (`cell.state`, `cell.operator`,
+`cell.tech`, `cell.reg`, `cell.signal.dbm`, `cell.ip`).
 
-```
-ATI            → Manufacturer: Sierra Wireless, Incorporated
-                 Model: WP7702
-                 Revision: SWI9X06Y_02.32.02.00 c2e98c jenkins 2019/08/30 07:28:21
-                 IMEI: 352653090190117
-                 IMEI SV:  4
-                 FSN: 4L931585040510
-                 +GCAP: +CGSM,+DS
-AT+CGDCONT?    → +CGDCONT: 1,"IP","airtelgprs.com","0.0.0.0",0,0,0,0
-AT!SELRAT?     → !SELRAT: 02, GSM 2G Only
-AT+CNUM        → +CNUM: ,"+919096383701",145
-```
+It is **not** a parse mismatch. The replies match the parsers exactly, and
+`on_at_line` has a branch for each. The cause is that **the WP7702's AT parser
+silently discards a command that arrives before the previous one has answered**,
+and the discard is *nondeterministic*.
 
-and `on_at_line` (`cellular_client.cpp`) has branches for `!SELRAT:`, `+CGDCONT:`,
-`+CNUM:`, `IMEI:`, `Model:` and `Revision:`. The one-shots are issued once, under
-the `m_ident_done` / `m_rat_done` latches, in the *first* `poll_modem()` — and
-those latches are never reset, so nothing is retried. **Root cause not yet
-established; do not guess.** Instrument `on_at_line` before changing anything.
+Reproduce — write ten commands into `/dev/ttyUSB2` in one burst:
 
-Impact: the device-ui cannot confirm the APN took (`cell.apn.current` blank), and
-shows no model/IMEI/ICCID.
+| Sent | Answered? |
+|---|---|
+| `AT+CGDCONT=1,...` | ✅ |
+| `AT!ENTERCND="A710"` | ❌ |
+| `AT!SELRAT?` | ✅ |
+| `ATI` | ❌ |
+| `AT+CNUM` | ✅ |
+| `AT+CGDCONT?` | ✅ |
+| `AT+CSQ` | ❌ |
+| `AT+COPS?` | ✅ |
+| `AT+CREG?` | ❌ |
+| `AT+CGPADDR=1` | ❌ |
 
-### 6.5 ⚠️ `cell.rat` bounces the bearer on every daemon start
+Three consecutive runs of a 5-command burst answered three *different* subsets
+(`CSQ+ATI+CREG`, then `CSQ+COPS+CGPADDR`, then `CSQ+COPS`). One command at a time,
+all five answer, every time.
+
+`poll_modem()` wrote its whole batch without waiting for `OK`. The polled commands
+survived because they are re-sent every 30 s and eventually get through. The
+one-shots — issued exactly once behind the `m_ident_done` / `m_rat_done` latches —
+were lost forever.
+
+**Fix:** `cellular_client` now owns a serialized AT command queue (`cmd()` /
+`pump_cmdq()` / `cmd_done()`): one command in flight, the next written only after a
+terminal response (`OK`, `ERROR`, `+CME ERROR`, `+CMS ERROR`, `NO CARRIER`,
+`ABORTED`). A 15 s watchdog advances the queue if a command never answers, and
+`poll_modem()` skips a tick if the backlog exceeds 64. **Never call
+`m_at->write_line()` directly** — use `cmd()`.
+
+### 6.5 ⚠️ Second bug: `cell.iccid` could never populate — FIXED
+
+`iccid_command(Vendor::Sierra)` issues `AT+ICCID`, and the WP7702 answers with a
+**bare** `ICCID: 8991000925010294882` — no leading `+`. `dispatch_at_line` matched
+only `+QCCID:` and `+CCID:`, so the line fell through and `cell.iccid` stayed empty
+on every WP module, independently of the burst bug. Now matches all four forms.
+
+### 6.6 ⚠️ `cell.rat` bounces the bearer on every daemon start
 
 If `cell.rat` is non-empty, `poll_modem()` issues `AT!SELRAT=<n>` followed by
 `AT+CFUN=0` / `AT+CFUN=1`. **A `CFUN` cycle drops the data context**, so the
@@ -421,7 +444,47 @@ This device had `cell.rat=auto` left over from an earlier session. Since LTE-M i
 unavailable here (§7), that bought nothing and cost a bearer reset each start.
 **Leave `cell.rat` empty** unless you are deliberately changing RAT.
 
-### 6.6 Wishlist
+### 6.7 ⚠️ MO SMS send: silently hung, and could wedge the modem — FIXED
+
+Sending from the device-ui left `sms.send.status` at **`sending`** forever and no
+message arrived. Three separate faults:
+
+1. `start_send()` wrote `AT+CMGF=0` and `AT+CMGS=<len>` back-to-back — the §6.4
+   burst bug. Whichever got dropped, the PDU was written into a modem that had
+   never issued its `> ` prompt.
+2. The PDU data phase was armed by a **fixed 1 s timer started in `start_send()`**,
+   racing the write of `AT+CMGS` itself. It is now armed in `pump_cmdq()` at the
+   moment `AT+CMGS=` actually goes on the wire. (The `> ` prompt has no CR/LF, so
+   `LineAssembler` never surfaces it as a line — it cannot simply be waited for.)
+3. **There was no timeout.** A send that never answered left `sms.send.status` at
+   `sending` indefinitely, and worse: a modem parked at `> ` treats every following
+   command as *message text*, so the whole daemon goes mute. The command watchdog
+   now sends `ESC` (0x1B) to cancel the prompt and publishes
+   `failed: modem timeout`. `run()` also sends `ESC` at startup so a modem wedged
+   by a previous crash recovers.
+
+Also, `+CME ERROR` / `+CMS ERROR` used to overwrite `sms.send.status` even when no
+send was in flight (e.g. answering `AT+CEER`), making a successful send look failed.
+It is now gated on an in-flight send.
+
+Verified on HW: one command at a time, honouring the prompt, the WP7702 returns
+`+CMGS: 0` / `OK` and the SMS is delivered. SMSC is set (`+CSCA: "+919890051914"`),
+storage `+CPMS: "SM",0,25`, `+CSMS: 0,1,1,1`.
+
+### 6.8 device-ui — Cellular Modem page
+
+`iot-ui/src/app/wan/cellular-status/cellular-status.component.ts` already renders
+every field (State, Operator, Technology, Registration, Signal, RAT, Capability,
+APN, IP Address, DNS, SIM ICCID, IMEI, MSISDN, Model, Firmware). They showed `—`
+only because §6.4/§6.5 stopped the daemon from ever publishing them; the fixes
+fill them. `cell.dns` is a new row, plumbed through `/status`
+(`modules/http-server/src/handler.cpp`) and the `CellStatus` type.
+
+> Note the **IP Address** row shows `cell.ip` = the address of the module's
+> internal `rmnet_data0`, i.e. the carrier-assigned WAN address. It is *not* an
+> address of any interface on the Pi.
+
+### 6.9 Wishlist
 
 The daemon should read `AT!UIMS?` and publish the selected slot + SIM type
 (`EMBEDDED` vs external), so the eSIM trap in §2 is a visible UI field rather
@@ -497,9 +560,17 @@ ifconfig rmnet_data0      # ⭐ RX bytes — the only honest liveness signal
 
 **Traps:**
 
+- ⭐ **Never send AT commands back-to-back.** The WP7702 silently drops a command
+  that arrives before the previous one has answered, nondeterministically (§6.4).
+  Wait for `OK`/`ERROR` between commands — in the daemon, always go through
+  `cmd()`, never `m_at->write_line()`.
+- **A stranded `> ` prompt makes the modem mute.** If `AT+CMGS` was issued and the
+  PDU never followed, the modem treats every subsequent command as message text.
+  Send `ESC` (`printf '\x1b' > /dev/ttyUSB2`) to cancel.
 - **`ping` proves nothing.** ICMP is dropped on these APNs. Use `rmnet_data0`
   RX byte counters, or `nslookup <host> <carrier-dns>`. (Same red herring as the
-  DTLS `cannot add peer` investigation.)
+  DTLS `cannot add peer` investigation.) `1.1.1.1` is blocked by Airtel — a failed
+  TCP test to it means nothing.
 - `+CGACT: 1,1` and a `+CGPADDR` IP do **not** mean data works. RX bytes do.
 - `AT+CEER` and `AT+CGCLASS?` return `ERROR` on this firmware — no help.
 - `+CGPADDR` changes on every context re-activation, not per read. Two different
@@ -513,16 +584,15 @@ ifconfig rmnet_data0      # ⭐ RX bytes — the only honest liveness signal
 
 ## 10. Open questions
 
-1. **Can `wwan0` work at all?** Needs `libqmi` in the image, then
-   `qmicli --wds-start-network` on `/dev/cdc-wdm0`. Until then, unanswered.
-   If QMI is also refused, the ECM path is the *only* option and `wwan0` should
-   be documented as unsupported.
-2. **Why do the one-shot identity keys never publish?** (§6.4) Root cause not
-   established. Blocks `cell.apn.current`, so the UI cannot confirm the APN took.
-3. **Who writes `cell.dns` into `resolv.conf`?** (§6.3) Until something does, a
-   `wlan0` outage leaves the device routed over cellular but unable to resolve.
-4. Should `cellular-client` own the SIM-slot selection (`AT!UIMS`) and expose it
+1. **Can `wwan0` work at all?** `libqmi` is now in `RRECOMMENDS:${PN}-cellular`, so
+   the next image carries `qmicli`. Run the §4 recipe against `/dev/cdc-wdm0`.
+   Still unanswered until then. If QMI is refused too, the ECM path is the *only*
+   option and `wwan0` should be documented as permanently unsupported.
+2. Should `cellular-client` own the SIM-slot selection (`AT!UIMS`) and expose it
    as a ds key, so the eSIM trap is a UI field rather than a field investigation?
+3. Should net-router push `cell.dns` to the link (`resolvectl dns eth1 …`)? Not a
+   correctness gap (§6.3), but Airtel blocks `1.1.1.1` — one of resolved's global
+   fallbacks — so the carrier's resolvers would be closer and more reliable.
 
 **Answered:**
 
@@ -530,3 +600,9 @@ ifconfig rmnet_data0      # ⭐ RX bytes — the only honest liveness signal
   attaches (§7). Stuck at GPRS.
 - ~~Where does the module-side NAT config live?~~ `packaging/mangoh/iot-ecm-nat.sh`,
   installed into the module's flash-backed `/etc/init.d` + `rc5.d` (§5).
+- ~~Why do the one-shot identity keys never publish?~~ The WP7702 drops
+  back-to-back AT commands; the daemon now serializes them (§6.4). `cell.iccid`
+  had a second, independent prefix bug (§6.5).
+- ~~Who writes `cell.dns` into `resolv.conf`?~~ **Nobody should.** systemd-resolved
+  owns that symlink, and its global fallback resolvers already work over the ECM
+  NAT (§6.3).

@@ -1,6 +1,7 @@
 #ifndef __cellular_client_hpp__
 #define __cellular_client_hpp__
 
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -57,11 +58,22 @@ class CellularClient : public ACE_Event_Handler {
     private:
         void load_config_from_ds();
         void on_at_line(const std::string& line);
+        void handle_at_line(const std::string& line);   ///< on_at_line minus queue bookkeeping
         void on_nmea_line(const std::string& line);
         void poll_modem();
         void publish();
         void on_send_request(const data_store::Client::Event& ev);
         void start_send();          // reactor thread: encode + issue AT+CMGS
+
+        /// Queue one AT command. NEVER write to the modem directly: the WP7702's
+        /// AT parser silently DROPS a command that arrives before the previous
+        /// one has answered, and the drop is nondeterministic. A burst of 10
+        /// commands executes a random ~half. Polled commands survive (they are
+        /// re-sent every tick); one-shot reads like ATI / AT+CGDCONT? / AT!SELRAT?
+        /// are lost forever. See apps/docs/hw-bringup-wp7702-cellular-wan.md §6.4.
+        void cmd(const std::string& c);
+        void pump_cmdq();           ///< write the next command if none is in flight
+        void cmd_done();            ///< a terminal response arrived → advance the queue
 
         Config                          m_cfg;
         data_store::Client              m_ds;
@@ -70,6 +82,11 @@ class CellularClient : public ACE_Event_Handler {
         std::unique_ptr<SerialChannel>  m_at;
         std::unique_ptr<SerialChannel>  m_gnss;
         bool                            m_apn_sent = false;
+        // Serialized AT command stream — see cmd(). One command in flight at a
+        // time; the watchdog timer un-wedges the queue if a command never answers.
+        std::deque<std::string>         m_cmdq;
+        bool                            m_cmd_inflight = false;
+        long                            m_cmd_timer = -1;   ///< watchdog timer id, -1 = none
         Reg                             m_lastReg = Reg::Unknown;
         Reg                             m_reg_cs = Reg::Unknown;   ///< +CREG (2G/3G CS)
         Reg                             m_reg_ps = Reg::Unknown;   ///< +CGREG (2G/3G PS)
@@ -85,6 +102,7 @@ class CellularClient : public ACE_Event_Handler {
         std::string                     m_send_token;              ///< baseline of sms.send.request
         bool                            m_send_pending = false;
         std::string                     m_send_pdu;                ///< encoded PDU awaiting the '>' data phase
+        bool                            m_send_active = false;     ///< AT+CMGS issued, awaiting +CMGS/+CMS ERROR
         bool                            m_gps_via_at = false;  ///< GNSS over AT poll (no NMEA tty)
         Vendor                          m_vendor = Vendor::Generic;
         bool                            m_gps_started = false; ///< GNSS engine kicked

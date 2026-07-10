@@ -716,11 +716,24 @@ RDEPENDS:${PN}-pcap = "tcpdump"
 RRECOMMENDS:${PN}-pcap = "\
     ${PN}-config \
 "
-# A real data path also wants a modem manager + tools on the image; left to the
-# integrator per WP firmware (ModemManager / libqmi / usb-modeswitch).
+# libqmi (meta-networking) ships qmicli, the only way to talk QMI on
+# /dev/cdc-wdm0. On the WP7702 the host-side AT data call is refused by firmware
+# (AT$QCRMCALL -> NO CARRIER), so cellular WAN currently reaches us over the
+# module's ECM link rather than wwan0. qmicli is what lets us test whether the
+# QMI data path can work at all:
+#
+#   ip link set wwan0 down && echo Y > /sys/class/net/wwan0/qmi/raw_ip
+#   ip link set wwan0 up
+#   qmicli -d /dev/cdc-wdm0 --wds-start-network="apn=<apn>,ip-type=4" \
+#          --client-no-release-cid
+#   qmicli -d /dev/cdc-wdm0 --wds-get-current-settings   # IP / gateway / DNS
+#
+# RRECOMMENDS (not RDEPENDS): a modem-less board should not drag it in.
+# See apps/docs/hw-bringup-wp7702-cellular-wan.md §4.
 RRECOMMENDS:${PN}-cellular = "\
     ${PN}-ds-server \
     ${PN}-config \
+    libqmi \
 "
 
 # config — schema files, env files, config templates (shared substrate)

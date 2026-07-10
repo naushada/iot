@@ -47,6 +47,27 @@ TEST(DispatchAt, RoutesKnownResponses) {
     EXPECT_EQ(val(kv, "cell.iccid"), "8944500207123456789");
 }
 
+// The Sierra WP7702 answers AT+ICCID with a BARE "ICCID: <digits>" — no leading
+// '+'. Matching only +QCCID:/+CCID: left cell.iccid empty on every WP module.
+TEST(DispatchAt, AcceptsAllIccidPrefixes) {
+    for (const char* line : {"+QCCID: 8991000925010294882",
+                             "+CCID: 8991000925010294882",
+                             "+ICCID: 8991000925010294882",
+                             "ICCID: 8991000925010294882"}) {
+        CellularState st;
+        EXPECT_TRUE(dispatch_at_line(line, st)) << line;
+        EXPECT_EQ(val(st.to_kv(), "cell.iccid"), "8991000925010294882") << line;
+    }
+}
+
+// The carrier resolvers land in cell.dns (AT+CGCONTRDP=1).
+TEST(DispatchAt, PublishesCarrierDns) {
+    CellularState st;
+    EXPECT_TRUE(dispatch_at_line(
+        "+CGCONTRDP: 1,5,airtelgprs.com,100.75.219.215,,117.96.122.74,59.144.127.117", st));
+    EXPECT_EQ(val(st.to_kv(), "cell.dns"), "117.96.122.74,59.144.127.117");
+}
+
 TEST(DispatchNmea, MergesGgaAndRmc) {
     CellularState st;
     GpsFix acc;
