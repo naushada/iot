@@ -44,7 +44,7 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
              (drop)="onDrop($event)" (click)="fileInput.click()">
           <input #fileInput type="file" accept=".ipk,.tar,.tar.gz,.tgz" hidden (change)="onPick($event)" />
           <clr-icon shape="upload-cloud" size="28"></clr-icon>
-          <span *ngIf="!uploading && !pendingFile">Drag &amp; drop an <code>.ipk</code> or <code>.tar.gz</code> bundle, or click to browse</span>
+          <span *ngIf="!uploading && !pendingFile">Drag &amp; drop an <code>.ipk</code> or <code>.tar</code>/<code>.tar.gz</code> bundle, or click to browse</span>
           <span *ngIf="!uploading && pendingFile">{{ pendingFile?.name }} ({{ ((pendingFile?.size ?? 0)/1048576) | number:'1.0-1' }} MB) — confirm details and upload</span>
           <span *ngIf="uploading">Uploading {{ uploadName }} — {{ uploadPct }}%…</span>
         </div>
