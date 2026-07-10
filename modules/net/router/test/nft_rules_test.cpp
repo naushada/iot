@@ -75,11 +75,15 @@ TEST(ParseCustomRules, NonArrayTopLevelReportsError) {
 
 /* ─────────────────────── build_nft_ruleset ───────────────────────── */
 
-TEST(BuildNft, AlwaysStartsWithFlush) {
+// `nft -f` is atomic: flushing a table that does not exist yet rejects the whole
+// ruleset, so the create-if-absent `add table` must come first.
+TEST(BuildNft, AlwaysStartsWithAddTableThenFlush) {
     State s;
     s.tun_dev = "tun0";
     auto r = build_nft_ruleset(s);
-    EXPECT_EQ(0u, r.find("flush table inet iot_router"));
+    EXPECT_EQ(0u, r.find("add table inet iot_router"));
+    EXPECT_LT(r.find("add table inet iot_router"), r.find("flush table inet iot_router"));
+    EXPECT_LT(r.find("flush table inet iot_router"), r.find("table inet iot_router {"));
 }
 
 TEST(BuildNft, EmitsDnatPerForwardPortForBothTcpAndUdp) {
