@@ -922,7 +922,7 @@ void install_handlers(Router& router,
                 // Cellular modem (mangOH WP) + GPS
                 "cell.state", "cell.operator", "cell.tech", "cell.reg",
                 "cell.signal.dbm", "cell.signal.bars", "cell.ip", "cell.iccid",
-                "cell.rat.current", "cell.reg.reason",
+                "cell.rat.current", "cell.reg.reason", "cell.dns",
                 "cell.imei", "cell.msisdn", "cell.model", "cell.fw",
                 "cell.capability", "cell.apn.current", "sms.send.status",
                 "gps.fix", "gps.lat", "gps.lon", "gps.alt", "gps.speed",
@@ -1087,6 +1087,7 @@ void install_handlers(Router& router,
                 else if (k == "cell.signal.dbm")   cell["signal_dbm"] = sv();
                 else if (k == "cell.signal.bars")  cell["signal_bars"] = sv();
                 else if (k == "cell.ip")           cell["ip"] = sv();
+                else if (k == "cell.dns")          cell["dns"] = sv();
                 else if (k == "cell.iccid")        cell["iccid"] = sv();
                 else if (k == "cell.rat.current")  cell["rat"] = sv();
                 else if (k == "cell.reg.reason")   cell["reg_reason"] = sv();

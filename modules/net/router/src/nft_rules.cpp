@@ -79,9 +79,15 @@ parse_custom_rules(const std::string& json, std::string* parse_error) {
 
 std::string build_nft_ruleset(const State& s) {
     std::ostringstream ss;
-    // Flush our scoped table first so re-apply is idempotent. We never
-    // touch other writers' tables (NetworkManager, docker, fail2ban) —
-    // each scopes by its own table name.
+    // `add table` is create-if-absent and must precede the flush: `nft -f` is
+    // atomic, so flushing a table that does not exist yet (first boot, or after
+    // anything clears nft) rejects the WHOLE ruleset — the table then never gets
+    // created and the daemon fails on every tick, forever.
+    //
+    // Flush our scoped table so re-apply is idempotent. We never touch other
+    // writers' tables (NetworkManager, docker, fail2ban) — each scopes by its
+    // own table name.
+    ss << "add table inet iot_router\n";
     ss << "flush table inet iot_router\n";
     ss << "table inet iot_router {\n";
 

@@ -2,9 +2,16 @@
 Description=IoT cellular-client (mangOH Yellow WP modem WAN + GPS → ds cell.*/gps.*)
 Documentation=file:///etc/iot/cellular-client.env
 # Needs ds-server up (publishes cell.*/gps.* on connect). net-router already
-# routes the cellular slot (net.iface.cellular.name default "wwan0").
+# routes the cellular slot (net.iface.cellular.name default "eth1" — the WP7702's
+# ECM link; the host cannot open a data call on wwan0).
 After=network-online.target iot-ds.service
 Wants=iot-ds.service
+# The unit is enabled by preset on every image, but a board with no WP module has
+# no /dev/ttyUSB* — without this the daemon would Restart-loop forever on a modem-
+# less unit. The condition makes systemd skip it cleanly instead (inactive, not
+# failed), so the operator does not have to hand-enable it on cellular hardware
+# and the device-ui APN field is live wherever a modem is actually present.
+ConditionPathExistsGlob=/dev/ttyUSB*
 StartLimitBurst=5
 StartLimitIntervalSec=60s
 

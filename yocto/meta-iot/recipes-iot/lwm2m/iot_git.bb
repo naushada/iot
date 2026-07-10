@@ -43,6 +43,7 @@ SRC_URI = "\
     file://iot-ddnsd.service \
     file://iot-pcap.service \
     file://10-iot-wired.network \
+    file://05-iot-cellular-ecm.network \
     file://iot-wifi-client.service \
     file://iot-httpd.service \
     file://iot.conf \
@@ -370,6 +371,11 @@ do_install() {
         # unit (no-RTC clock would stay stale → TLS/VPN fails). See the file header.
         install -d ${D}${sysconfdir}/systemd/network
         install -m 0644 ${WORKDIR}/10-iot-wired.network       ${D}${sysconfdir}/systemd/network/
+        # Cellular WAN over the WP7702 ECM link: the module's DHCP hands an address
+        # but no router option, so add the default route via 192.168.2.2 at metric
+        # 300 (below wlan0). Sorts before 10-iot-wired.network to win the cdc_ether
+        # match. See apps/docs/hw-bringup-wp7702-cellular-wan.md.
+        install -m 0644 ${WORKDIR}/05-iot-cellular-ecm.network ${D}${sysconfdir}/systemd/network/
         # TUN driver autoload for openvpn-client.
         install -d ${D}${sysconfdir}/modules-load.d
         install -m 0644 ${WORKDIR}/iot-tun.conf               ${D}${sysconfdir}/modules-load.d/
@@ -543,6 +549,7 @@ FILES:${PN}-net-router = "\
     ${bindir}/net-router \
     ${systemd_system_unitdir}/iot-net-router.service \
     ${sysconfdir}/systemd/network/10-iot-wired.network \
+    ${sysconfdir}/systemd/network/05-iot-cellular-ecm.network \
 "
 RDEPENDS:${PN}-net-router = "\
     ace-tao \
@@ -709,11 +716,24 @@ RDEPENDS:${PN}-pcap = "tcpdump"
 RRECOMMENDS:${PN}-pcap = "\
     ${PN}-config \
 "
-# A real data path also wants a modem manager + tools on the image; left to the
-# integrator per WP firmware (ModemManager / libqmi / usb-modeswitch).
+# libqmi (meta-networking) ships qmicli, the only way to talk QMI on
+# /dev/cdc-wdm0. On the WP7702 the host-side AT data call is refused by firmware
+# (AT$QCRMCALL -> NO CARRIER), so cellular WAN currently reaches us over the
+# module's ECM link rather than wwan0. qmicli is what lets us test whether the
+# QMI data path can work at all:
+#
+#   ip link set wwan0 down && echo Y > /sys/class/net/wwan0/qmi/raw_ip
+#   ip link set wwan0 up
+#   qmicli -d /dev/cdc-wdm0 --wds-start-network="apn=<apn>,ip-type=4" \
+#          --client-no-release-cid
+#   qmicli -d /dev/cdc-wdm0 --wds-get-current-settings   # IP / gateway / DNS
+#
+# RRECOMMENDS (not RDEPENDS): a modem-less board should not drag it in.
+# See apps/docs/hw-bringup-wp7702-cellular-wan.md §4.
 RRECOMMENDS:${PN}-cellular = "\
     ${PN}-ds-server \
     ${PN}-config \
+    libqmi \
 "
 
 # config — schema files, env files, config templates (shared substrate)
@@ -764,11 +784,14 @@ SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service iot-ds-see
 # operator `systemctl enable --now iot-sensord` on sensor-equipped hardware.
 SYSTEMD_SERVICE:${PN}-sensord = "iot-sensord.service"
 SYSTEMD_AUTO_ENABLE:${PN}-sensord = "disable"
-# cellular-client registered but NOT auto-enabled: needs the WP module + serial
-# ports, so it would Restart-loop on a board without it. Operator enables it on
-# cellular-equipped hardware.
+# cellular-client is auto-enabled, but its unit carries
+# ConditionPathExistsGlob=/dev/ttyUSB* — on a board with no WP module systemd
+# skips it (inactive, not failed) instead of Restart-looping. Enabling it by
+# default is what makes the device-ui APN field (cell.apn → AT+CGDCONT) actually
+# reach the modem on cellular hardware without a hand `systemctl enable`.
+# Keep in sync with 90-iot.preset, or first-boot `preset-all` re-disables it.
 SYSTEMD_SERVICE:${PN}-cellular = "iot-cellular-client.service"
-SYSTEMD_AUTO_ENABLE:${PN}-cellular = "disable"
+SYSTEMD_AUTO_ENABLE:${PN}-cellular = "enable"
 # vehicle (iot-vehicled + can0 bring-up) registered but NOT auto-enabled: needs a
 # CAN controller, so it would Restart-loop on a board without one. Operator
 # enables it on vehicle/CAN-equipped hardware (Wants= pulls in iot-can0-up).

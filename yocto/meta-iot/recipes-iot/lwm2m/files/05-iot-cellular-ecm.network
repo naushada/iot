@@ -1,0 +1,46 @@
+# IoT cellular WAN over the WP7702's ECM link.
+#
+# The WP7702 is not a bare modem: it is a Linux module that owns the cellular
+# data session on its own internal rmnet_data0. This host CANNOT open a data
+# call on wwan0 — the firmware refuses it (AT$QCRMCALL -> NO CARRIER,
+# AT!SCACT -> "no network service"). The supported host path is the ECM link:
+# the modem's cdc_ether interface here <-> the module's ecm0 (192.168.2.2),
+# with the module NATing out to rmnet_data0. The module-side rules live in
+# packaging/mangoh/iot-ecm-nat.sh and must be installed on the module.
+#
+# Why the static route: the module's DHCP server hands out an address
+# (192.168.2.3/24) but NO router option, so networkd installs no default route
+# and net-router — which only re-metrics an EXISTING default route — has
+# nothing to work with. 192.168.2.2 is the fixed Sierra ECM convention
+# (module .2, host .3), so it is safe to hard-code.
+#
+# Metric 300 keeps cellular BELOW wlan0 (metric 10/200): it is a fallback WAN.
+# net-router's priority list (net.iface.priority = "eth,wifi,cellular") elects
+# it only when the higher slots are down.
+#
+# This file sorts before 10-iot-wired.network so it wins the match for the
+# modem's cdc_ether link. The onboard eth0 (smsc95xx) does not match Driver=
+# cdc_ether and still falls through to 10-iot-wired.network.
+#
+# NOTE: DNS is deliberately NOT taken from this link. The module's DHCP offers
+# no DNS, and the carrier resolvers are only reachable through the NAT. Wiring
+# them in is cellular-client's job (publish cell.dns from AT+CGCONTRDP=1).
+#
+# See apps/docs/hw-bringup-wp7702-cellular-wan.md.
+
+[Match]
+Driver=cdc_ether
+
+[Network]
+DHCP=ipv4
+
+[DHCPv4]
+UseDNS=no
+RouteMetric=300
+
+[Route]
+Gateway=192.168.2.2
+Metric=300
+
+[Link]
+RequiredForOnline=no

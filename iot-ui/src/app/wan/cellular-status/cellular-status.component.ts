@@ -124,6 +124,7 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
       { key: 'Capability',   value: this.c.capability || '—',  dsKey: 'cell.capability' },
       { key: 'APN',          value: this.c.apn || '—',         dsKey: 'cell.apn.current' },
       { key: 'IP Address',   value: this.c.ip || '—',          dsKey: 'cell.ip' },
+      { key: 'DNS',          value: this.c.dns || '—',         dsKey: 'cell.dns' },
       { key: 'SIM ICCID',    value: this.c.iccid || '—',       dsKey: 'cell.iccid' },
       { key: 'IMEI',         value: this.c.imei || '—',        dsKey: 'cell.imei' },
       { key: 'MSISDN',       value: this.c.msisdn || '—',      dsKey: 'cell.msisdn' },

@@ -51,8 +51,10 @@ std::vector<std::uint16_t> parse_forward_ports(const std::string& csv);
 std::vector<CustomRule>
 parse_custom_rules(const std::string& json, std::string* parse_error = nullptr);
 
-/// Render the full nft script text. Idempotent: always starts with
-/// `flush table inet iot_router` so re-applying never doubles.
+/// Render the full nft script text. Idempotent: starts with a create-if-absent
+/// `add table inet iot_router` followed by `flush table inet iot_router`, so
+/// re-applying never doubles and a missing table does not reject the ruleset
+/// (`nft -f` is atomic).
 std::string build_nft_ruleset(const State& s);
 
 } // namespace net_router::nft

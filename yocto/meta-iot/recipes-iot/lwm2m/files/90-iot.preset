@@ -33,6 +33,10 @@ enable iot-transfer.path
 # container feature works out of the box; idle until an Admin issues a pull/run.
 enable iot-containerd.service
 enable iot-ddnsd.service
+# iot-cellular-client: WP modem status/GPS/SMS + APN provisioning (cell.apn ->
+# AT+CGDCONT). Safe to enable everywhere: the unit's ConditionPathExistsGlob=
+# /dev/ttyUSB* makes systemd skip it on a board with no modem.
+enable iot-cellular-client.service
 # iot-pcap: on-demand tcpdump capture for field debugging. Explicitly DISABLED —
 # a continuous packet capture is a debug aid, not a boot service (flash wear +
 # captures user traffic). Operator `systemctl start iot-pcap` while diagnosing.

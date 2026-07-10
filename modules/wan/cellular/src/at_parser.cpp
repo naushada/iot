@@ -39,6 +39,15 @@ std::string strip_quotes(std::string s) {
     return s;
 }
 
+/// Drop leading/trailing spaces and tabs. split_csv() keeps whatever padding a
+/// modem puts around its fields; +CGCONTRDP is one that does.
+std::string trim_spaces(const std::string& s) {
+    std::size_t a = 0, b = s.size();
+    while (a < b && (s[a] == ' ' || s[a] == '\t')) ++a;
+    while (b > a && (s[b-1] == ' ' || s[b-1] == '\t')) --b;
+    return s.substr(a, b - a);
+}
+
 /// Map a 3GPP <act> access-technology code to a coarse generation label.
 const char* act_to_tech(int act) {
     switch (act) {
@@ -155,6 +164,45 @@ std::string parse_cgpaddr(const std::string& line) {
         if (ip != "0.0.0.0" && !ip.empty()) return ip;
     }
     return {};
+}
+
+namespace {
+    /// Strict dotted-quad check. Rejects the unspecified address, and rejects the
+    /// 8-group form 3GPP uses for "<local_addr> and <subnet_mask>" as well as the
+    /// 16-group dotted form it uses for IPv6 — we only publish IPv4 resolvers.
+    bool is_ipv4_dotted_quad(const std::string& s) {
+        if (s.empty() || s == "0.0.0.0") return false;
+        int groups = 0;
+        std::size_t i = 0;
+        while (i <= s.size()) {
+            std::size_t dot = s.find('.', i);
+            const std::string g = s.substr(i, dot == std::string::npos ? std::string::npos : dot - i);
+            if (g.empty() || g.size() > 3) return false;
+            for (char c : g) if (!std::isdigit(static_cast<unsigned char>(c))) return false;
+            if (std::atoi(g.c_str()) > 255) return false;
+            ++groups;
+            if (dot == std::string::npos) break;
+            i = dot + 1;
+        }
+        return groups == 4;
+    }
+}
+
+std::string parse_cgcontrdp_dns(const std::string& line) {
+    const std::string body = after_colon(line);
+    if (body.empty()) return {};
+    // 3GPP 27.007: +CGCONTRDP: <cid>,<bearer_id>,<apn>,<local_addr and subnet_mask>
+    //              ,<gw_addr>,<DNS_prim>,<DNS_sec>[,...]
+    // The secondary resolver is optional, and either may be absent/empty.
+    const auto parts = split_csv(body);
+    std::string out;
+    for (std::size_t i = 5; i <= 6 && i < parts.size(); ++i) {
+        const std::string dns = strip_quotes(trim_spaces(parts[i]));
+        if (!is_ipv4_dotted_quad(dns)) continue;
+        if (!out.empty()) out.push_back(',');
+        out += dns;
+    }
+    return out;
 }
 
 namespace {

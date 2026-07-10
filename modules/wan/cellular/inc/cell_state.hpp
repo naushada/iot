@@ -50,6 +50,9 @@ class CellularState {
         void set_capability(const std::string& cap);
         /// Provisioned data-context APN (from AT+CGDCONT?).
         void set_apn(const std::string& apn);
+        /// Carrier DNS resolvers for the data context (from AT+CGCONTRDP=1), as a
+        /// comma-joined list. Mirrors the `vpn.assigned.dns` convention.
+        void set_dns(const std::string& dns);
         void set_gps(const GpsFix& fix);
         /// Record a received SMS: updates sms.last.* and bumps sms.count.
         void set_sms(const SmsMessage& msg);
@@ -61,7 +64,7 @@ class CellularState {
     private:
         mutable std::mutex m_mtx;
         std::string m_state;
-        std::string m_operator, m_tech, m_reg, m_ip, m_iccid, m_rat, m_regReason;
+        std::string m_operator, m_tech, m_reg, m_ip, m_iccid, m_rat, m_regReason, m_dns;
         std::string m_imei, m_msisdn, m_model, m_fw, m_capability, m_apn;
         int  m_dbm = 0, m_bars = 0;
         bool m_haveSignal = false, m_haveCell = false;

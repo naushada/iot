@@ -96,7 +96,21 @@ std::string model_capability(const std::string& model);
 std::string parse_cgdcont(const std::string& line);
 
 /// `+CGPADDR: <cid>,"<ip>"` (or unquoted) → the IPv4/IPv6 string, or "".
+///
+/// NOTE on the WP7702: this is the address of the MODULE's internal rmnet_data0,
+/// not of any host interface. Never assign it to wwan0 — see
+/// apps/docs/hw-bringup-wp7702-cellular-wan.md.
 std::string parse_cgpaddr(const std::string& line);
+
+/// The carrier's DNS resolvers from a `+CGCONTRDP: <cid>,<bearer_id>,<apn>,
+/// <local_addr and subnet_mask>,<gw_addr>,<DNS_prim>[,<DNS_sec>]` line, as a
+/// comma-joined list (mirroring the `vpn.assigned.dns` convention) → e.g.
+/// "117.96.122.74,59.144.127.117". Only IPv4 dotted-quads are emitted; absent,
+/// empty, 0.0.0.0 and IPv6 resolvers are skipped. "" if none are usable.
+///
+/// Some firmwares echo a STALE apn in field 2 while the address/DNS fields are
+/// correct, so never read the APN from here — use `parse_cgdcont`.
+std::string parse_cgcontrdp_dns(const std::string& line);
 
 /// ICCID from `+QCCID:` / `+CCID:` / `+ICCID:` / a bare digit line → "".
 std::string parse_iccid(const std::string& line);
