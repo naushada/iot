@@ -143,6 +143,16 @@ AT+CFUN=1             # radio on — re-reads the SIM
 | DNS | `10.140.0.20` / `10.140.1.20` | `117.96.122.74` / `59.144.127.117` |
 | Downlink | **RX 0 bytes ever** | RX climbing; DNS + traffic OK |
 
+Modem/SIM identity once on the external SIM (for the record):
+
+| | |
+|---|---|
+| Model / firmware | `WP7702` / `SWI9X06Y_02.32.02.00` (2019/08/30) |
+| IMEI | `352653090190117` (`IMEI SV: 4`, `FSN: 4L931585040510`) |
+| MSISDN | `+919096383701` (`AT+CNUM`) |
+| Carrier config | `SIERRA_001.027_000` (`AT!IMPREF?`) |
+| Serving cell | GSM DCS1800, `+CSQ` 9–13 ⇒ roughly −95…−87 dBm |
+
 ---
 
 ## 3. APNs
@@ -340,22 +350,82 @@ Confirmed by hand — `nft add table inet iot_router` made the very next tick lo
 
 Recovery on a running device without the fix: `nft add table inet iot_router`.
 
-### 6.2 Gaps in `cellular-client`
+### 6.3 `cellular-client`: enabled by default, and it publishes `cell.dns` — SHIPPED
 
-- The unit **`iot-cellular-client` is `disabled`** and `cell.apn` is **empty**,
-  so an APN typed into the iot-UI today writes a ds key that nothing reads. If
-  enabling it, also add it to `90-iot.preset`, or first-boot `preset-all` will
-  re-disable it.
-- The daemon issues `AT+CGDCONT` and polls status. It **never starts a data
-  call** — no `CGACT`, no QMI, no DHCP. The comment in
+- `iot-cellular-client` used to be `disabled`, so an APN typed into the iot-UI
+  wrote a ds key that nothing read. It is now auto-enabled **and** listed in
+  `90-iot.preset` (without the preset line, first-boot `preset-all` re-disables
+  it — see `reference_systemd_preset_gotcha`). To stay safe on modem-less boards
+  the unit carries `ConditionPathExistsGlob=/dev/ttyUSB*`, so systemd skips it
+  (inactive, not failed) instead of `Restart=on-failure` looping.
+- `AT+CGCONTRDP=1` is now issued every poll and `parse_cgcontrdp_dns()` publishes
+  the carrier resolvers to **`cell.dns`** (comma-joined, mirroring
+  `vpn.assigned.dns`; IPv4 only). `parse_cgpaddr()` carries a bare address and no
+  DNS/gateway/mask, so this was the only way to get them.
+- The daemon still **never starts a data call** — no `CGACT`, no QMI, no DHCP. It
+  provisions the context (`AT+CGDCONT`) and reports status. The comment in
   `packaging/etc-iot/cellular-client.env` claiming it "connects the data context"
   is wrong.
-- There is **no `parse_cgcontrdp()`**. `parse_cgpaddr()` in
-  `modules/wan/cellular/src/at_parser.cpp` yields a bare IP with no DNS, gateway,
-  netmask, or MTU. Publishing `cell.dns` needs a new `AT+CGCONTRDP=1` query;
-  mirror the existing comma-joined `vpn.assigned.dns` convention.
-- The daemon should learn `AT!UIMS?` and publish the selected slot + SIM type, so
-  the eSIM trap is visible in the UI instead of costing a day.
+
+**Still open:** nothing *consumes* `cell.dns` yet. While `wlan0` is up the Pi uses
+its DNS, but if WiFi drops the device is routed over cellular with **no resolver**.
+Someone (net-router, most likely) must write `cell.dns` into `resolv.conf` when the
+cellular slot becomes the active WAN.
+
+### 6.4 ⚠️ Defect: `cellular-client`'s one-shot identity reads never publish
+
+Reproduced on HW 2026-07-10. With the daemon running against a WP7702, the
+**every-poll** keys populate correctly:
+
+    cell.state=registered  cell.operator=airtel  cell.tech=2G  cell.reg=home
+    cell.signal.dbm=-95    cell.ip=100.109.114.151
+
+…while every key fed by a **one-shot** command stays empty, forever:
+
+    cell.apn.current  cell.model  cell.fw  cell.capability
+    cell.rat.current  cell.iccid  cell.imei  cell.msisdn
+
+This is not a parse mismatch — the modem's replies match the parsers exactly:
+
+```
+ATI            → Manufacturer: Sierra Wireless, Incorporated
+                 Model: WP7702
+                 Revision: SWI9X06Y_02.32.02.00 c2e98c jenkins 2019/08/30 07:28:21
+                 IMEI: 352653090190117
+                 IMEI SV:  4
+                 FSN: 4L931585040510
+                 +GCAP: +CGSM,+DS
+AT+CGDCONT?    → +CGDCONT: 1,"IP","airtelgprs.com","0.0.0.0",0,0,0,0
+AT!SELRAT?     → !SELRAT: 02, GSM 2G Only
+AT+CNUM        → +CNUM: ,"+919096383701",145
+```
+
+and `on_at_line` (`cellular_client.cpp`) has branches for `!SELRAT:`, `+CGDCONT:`,
+`+CNUM:`, `IMEI:`, `Model:` and `Revision:`. The one-shots are issued once, under
+the `m_ident_done` / `m_rat_done` latches, in the *first* `poll_modem()` — and
+those latches are never reset, so nothing is retried. **Root cause not yet
+established; do not guess.** Instrument `on_at_line` before changing anything.
+
+Impact: the device-ui cannot confirm the APN took (`cell.apn.current` blank), and
+shows no model/IMEI/ICCID.
+
+### 6.5 ⚠️ `cell.rat` bounces the bearer on every daemon start
+
+If `cell.rat` is non-empty, `poll_modem()` issues `AT!SELRAT=<n>` followed by
+`AT+CFUN=0` / `AT+CFUN=1`. **A `CFUN` cycle drops the data context**, so the
+bearer re-establishes with a *new* IP on every `systemctl restart
+iot-cellular-client`. Observed: `cell.ip` walked `100.87.86.56` →
+`100.107.236.103` → `100.109.114.151` across restarts.
+
+This device had `cell.rat=auto` left over from an earlier session. Since LTE-M is
+unavailable here (§7), that bought nothing and cost a bearer reset each start.
+**Leave `cell.rat` empty** unless you are deliberately changing RAT.
+
+### 6.6 Wishlist
+
+The daemon should read `AT!UIMS?` and publish the selected slot + SIM type
+(`EMBEDDED` vs external), so the eSIM trap in §2 is a visible UI field rather
+than a day of field investigation.
 
 ---
 
@@ -447,8 +517,16 @@ ifconfig rmnet_data0      # ⭐ RX bytes — the only honest liveness signal
    `qmicli --wds-start-network` on `/dev/cdc-wdm0`. Until then, unanswered.
    If QMI is also refused, the ECM path is the *only* option and `wwan0` should
    be documented as unsupported.
-2. **Does Airtel provision LTE-M/NB-IoT on this SIM?** Test `AT!SELRAT=00`.
-   Determines whether this rig is stuck at GPRS speeds.
-3. **Where does the module-side NAT config live** so it survives a module reboot?
+2. **Why do the one-shot identity keys never publish?** (§6.4) Root cause not
+   established. Blocks `cell.apn.current`, so the UI cannot confirm the APN took.
+3. **Who writes `cell.dns` into `resolv.conf`?** (§6.3) Until something does, a
+   `wlan0` outage leaves the device routed over cellular but unable to resolve.
 4. Should `cellular-client` own the SIM-slot selection (`AT!UIMS`) and expose it
    as a ds key, so the eSIM trap is a UI field rather than a field investigation?
+
+**Answered:**
+
+- ~~Does Airtel provision LTE-M/NB-IoT on this SIM?~~ **No** — `!SELRAT=06` never
+  attaches (§7). Stuck at GPRS.
+- ~~Where does the module-side NAT config live?~~ `packaging/mangoh/iot-ecm-nat.sh`,
+  installed into the module's flash-backed `/etc/init.d` + `rc5.d` (§5).

@@ -231,6 +231,10 @@ void CellularClient::poll_modem() {
         m_lastReg == Reg::Searching)
         m_at->write_line("AT+CEER");
     m_at->write_line("AT+CGPADDR=1");
+    // Dynamic context params → cell.dns. CGPADDR carries only a bare address, so
+    // the carrier's resolvers are only obtainable here. Re-read every poll: the
+    // bearer re-establishes on its own and the resolvers can change with it.
+    m_at->write_line("AT+CGCONTRDP=1");
     m_at->write_line(iccid_command(m_vendor));   // QCCID/ICCID/CCID per vendor
 
     if (m_cfg.gps_enable) {

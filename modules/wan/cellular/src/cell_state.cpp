@@ -84,6 +84,12 @@ void CellularState::set_apn(const std::string& apn) {
     m_apn = apn; m_haveCell = true; ++m_cellVersion;
 }
 
+void CellularState::set_dns(const std::string& dns) {
+    std::lock_guard<std::mutex> lk(m_mtx);
+    if (dns.empty() || dns == m_dns) return;
+    m_dns = dns; m_haveCell = true; ++m_cellVersion;
+}
+
 void CellularState::set_ip(const std::string& ip) {
     std::lock_guard<std::mutex> lk(m_mtx);
     m_ip = ip; m_haveCell = true; ++m_cellVersion;
@@ -119,6 +125,7 @@ std::vector<KV> CellularState::to_kv() const {
         if (!m_rat.empty())      kv.push_back({"cell.rat.current", m_rat});
         if (!m_regReason.empty())kv.push_back({"cell.reg.reason", m_regReason});
         if (!m_ip.empty())       kv.push_back({"cell.ip", m_ip});
+        if (!m_dns.empty())      kv.push_back({"cell.dns", m_dns});
         if (!m_iccid.empty())    kv.push_back({"cell.iccid", m_iccid});
         if (!m_imei.empty())     kv.push_back({"cell.imei", m_imei});
         if (!m_msisdn.empty())   kv.push_back({"cell.msisdn", m_msisdn});

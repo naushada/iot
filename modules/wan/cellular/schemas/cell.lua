@@ -27,7 +27,13 @@
 --                      "unknown"
 --   cell.signal.dbm  - RSSI in dBm
 --   cell.signal.bars - 0..5 signal bars (UI)
---   cell.ip          - IP assigned to the data context (wwan0)
+--   cell.ip          - IP assigned to the data context. On a WP7702 this is the
+--                      address of the MODULE's internal rmnet_data0, NOT of any
+--                      host interface -- informational only. Never assign it to
+--                      wwan0: see apps/docs/hw-bringup-wp7702-cellular-wan.md.
+--   cell.dns         - carrier DNS resolvers for the data context, comma-joined
+--                      (AT+CGCONTRDP=1), e.g. "117.96.122.74,59.144.127.117".
+--                      Mirrors the vpn.assigned.dns convention. IPv4 only.
 --   cell.iccid       - SIM ICCID
 --   cell.version     - bump-on-change counter for the device-ui long-poll
 --   gps.fix          - "none"/"2d"/"3d"
@@ -40,7 +46,12 @@
 --   gps.version      - bump-on-change counter
 --
 -- The lwm2m client mirrors gps.* into LwM2M Object 6 (Location); net-router
--- already routes the cellular slot (net.iface.cellular.name default "wwan0").
+-- already routes the cellular slot (net.iface.cellular.name default "eth1" --
+-- the WP7702's ECM link, since the host cannot open a data call on wwan0).
+--
+-- This daemon does NOT bring up the data path. It provisions the PDP context
+-- (AT+CGDCONT) and reports status; the bearer itself is owned by the modem
+-- stack. See apps/docs/hw-bringup-wp7702-cellular-wan.md.
 
 local function viewer_str()  return { access = "Viewer", type = "string",  default = "" } end
 local function admin_str(d)  return { access = "Admin",  type = "string",  default = d } end
@@ -66,6 +77,7 @@ return {
     ["cell.signal.dbm"]  = viewer_str(),
     ["cell.signal.bars"] = viewer_str(),
     ["cell.ip"]          = viewer_str(),
+    ["cell.dns"]         = viewer_str(),   -- carrier resolvers, comma-joined (AT+CGCONTRDP=1)
     ["cell.iccid"]       = viewer_str(),
     ["cell.imei"]        = viewer_str(),   -- modem IMEI (ATI)
     ["cell.msisdn"]      = viewer_str(),   -- SIM number (AT+CNUM; often blank)

@@ -771,11 +771,14 @@ SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service iot-ds-see
 # operator `systemctl enable --now iot-sensord` on sensor-equipped hardware.
 SYSTEMD_SERVICE:${PN}-sensord = "iot-sensord.service"
 SYSTEMD_AUTO_ENABLE:${PN}-sensord = "disable"
-# cellular-client registered but NOT auto-enabled: needs the WP module + serial
-# ports, so it would Restart-loop on a board without it. Operator enables it on
-# cellular-equipped hardware.
+# cellular-client is auto-enabled, but its unit carries
+# ConditionPathExistsGlob=/dev/ttyUSB* — on a board with no WP module systemd
+# skips it (inactive, not failed) instead of Restart-looping. Enabling it by
+# default is what makes the device-ui APN field (cell.apn → AT+CGDCONT) actually
+# reach the modem on cellular hardware without a hand `systemctl enable`.
+# Keep in sync with 90-iot.preset, or first-boot `preset-all` re-disables it.
 SYSTEMD_SERVICE:${PN}-cellular = "iot-cellular-client.service"
-SYSTEMD_AUTO_ENABLE:${PN}-cellular = "disable"
+SYSTEMD_AUTO_ENABLE:${PN}-cellular = "enable"
 # vehicle (iot-vehicled + can0 bring-up) registered but NOT auto-enabled: needs a
 # CAN controller, so it would Restart-loop on a board without one. Operator
 # enables it on vehicle/CAN-equipped hardware (Wants= pulls in iot-can0-up).

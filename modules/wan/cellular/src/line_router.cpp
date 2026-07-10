@@ -50,6 +50,11 @@ bool dispatch_at_line(const std::string& line, CellularState& st) {
         if (!ip.empty()) st.set_ip(ip);
         return true;
     }
+    if (starts_with(line, "+CGCONTRDP:")) {
+        const std::string dns = parse_cgcontrdp_dns(line);
+        if (!dns.empty()) st.set_dns(dns);
+        return true;
+    }
     if (starts_with(line, "+QCCID:") || starts_with(line, "+CCID:")) {
         st.set_iccid(parse_iccid(line));
         return true;

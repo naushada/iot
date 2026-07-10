@@ -107,6 +107,46 @@ TEST(AtCgpaddr, ExtractsIp) {
     EXPECT_EQ(parse_cgpaddr("+CGPADDR: 1"), "");
 }
 
+TEST(AtCgcontrdp, ExtractsBothResolvers) {
+    // Real WP7702 line (Airtel, airtelgprs.com). Note the empty <gw_addr> field.
+    EXPECT_EQ(parse_cgcontrdp_dns(
+                  "+CGCONTRDP: 1,5,airtelgprs.com,100.75.219.215,,117.96.122.74,59.144.127.117"),
+              "117.96.122.74,59.144.127.117");
+}
+
+TEST(AtCgcontrdp, ExtractsPrimaryWhenSecondaryAbsent) {
+    EXPECT_EQ(parse_cgcontrdp_dns("+CGCONTRDP: 1,5,internet,10.0.0.2,10.0.0.1,8.8.8.8"),
+              "8.8.8.8");
+    // Secondary present but empty.
+    EXPECT_EQ(parse_cgcontrdp_dns("+CGCONTRDP: 1,5,internet,10.0.0.2,10.0.0.1,8.8.8.8,"),
+              "8.8.8.8");
+}
+
+TEST(AtCgcontrdp, HandlesQuotingAndPadding) {
+    EXPECT_EQ(parse_cgcontrdp_dns(
+                  "+CGCONTRDP: 1,5,\"internet\",\"10.0.0.2\",\"10.0.0.1\", \"1.1.1.1\" , \"1.0.0.1\""),
+              "1.1.1.1,1.0.0.1");
+}
+
+TEST(AtCgcontrdp, SkipsUnusableResolvers) {
+    // 0.0.0.0 and malformed groups are dropped, not published.
+    EXPECT_EQ(parse_cgcontrdp_dns("+CGCONTRDP: 1,5,internet,10.0.0.2,10.0.0.1,0.0.0.0,8.8.4.4"),
+              "8.8.4.4");
+    EXPECT_EQ(parse_cgcontrdp_dns("+CGCONTRDP: 1,5,internet,10.0.0.2,10.0.0.1,999.1.1.1"), "");
+    EXPECT_EQ(parse_cgcontrdp_dns("+CGCONTRDP: 1,5,internet,10.0.0.2,10.0.0.1,10.0.0"), "");
+    // IPv6 resolvers arrive as a 16-group dotted form — skipped, IPv4 only.
+    EXPECT_EQ(parse_cgcontrdp_dns(
+                  "+CGCONTRDP: 1,5,internet,10.0.0.2,10.0.0.1,"
+                  "32.1.72.96.72.96.0.0.0.0.0.0.0.0.136.136"),
+              "");
+}
+
+TEST(AtCgcontrdp, ToleratesShortAndEmptyLines) {
+    EXPECT_EQ(parse_cgcontrdp_dns("+CGCONTRDP: 1,5,internet,10.0.0.2,10.0.0.1"), "");
+    EXPECT_EQ(parse_cgcontrdp_dns("+CGCONTRDP:"), "");
+    EXPECT_EQ(parse_cgcontrdp_dns("OK"), "");
+}
+
 TEST(AtIccid, AcceptsLongDigits) {
     EXPECT_EQ(parse_iccid("+QCCID: 8944500207123456789"), "8944500207123456789");
     EXPECT_EQ(parse_iccid("+CCID: 8901234567890123456F"), "8901234567890123456F");
