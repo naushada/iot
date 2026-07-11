@@ -40,7 +40,7 @@ export class MainComponent {
     { id: 'mqtt',      label: 'MQTT',      svg: 'assets/icons/mqtt.svg', children: [] as {id:string,label:string}[] },
     { id: 'ddns',      label: 'DDNS',      svg: 'assets/icons/ddns.svg', children: [] as {id:string,label:string}[] },
     { id: 'routing',   label: 'Routing',   svg: 'assets/icons/routing.svg',
-      children: [{id:'ports',label:'Port Forward'},{id:'dnat',label:'DNAT Target'},{id:'rules',label:'Firewall Rules'}] },
+      children: [{id:'routes',label:'Routes'},{id:'ports',label:'Port Forward'},{id:'dnat',label:'DNAT Target'},{id:'rules',label:'Firewall Rules'}] },
     { id: 'lwm2m',     label: 'LwM2M',     svg: 'assets/icons/lwm2m.svg',
       children: [{id:'server',label:'Server'},{id:'security',label:'Security'}] },
     { id: 'services',  label: 'Services',  svg: 'assets/icons/services.svg',

@@ -155,6 +155,15 @@ TEST(AtIccid, AcceptsLongDigits) {
     EXPECT_EQ(parse_iccid("ERROR"), "");
 }
 
+TEST(Cpms, ParsesReceiveStoreUsage) {
+    EXPECT_EQ(parse_cpms("+CPMS: \"SM\",2,30,\"SM\",2,30,\"SM\",2,30"), "2/30");
+    EXPECT_EQ(parse_cpms("+CPMS: \"ME\",0,255,\"ME\",0,255,\"ME\",0,255"), "0/255");
+    EXPECT_EQ(parse_cpms("+CPMS: \"SM\", 10, 10, \"SM\", 10, 10"), "10/10"); // full store
+    EXPECT_EQ(parse_cpms("+CSQ: 12,99"), "");     // not a CPMS line
+    EXPECT_EQ(parse_cpms("+CPMS: \"SM\""), "");   // truncated
+    EXPECT_EQ(parse_cpms("ERROR"), "");
+}
+
 TEST(Vendor, ClassifiesFromManufacturer) {
     EXPECT_EQ(parse_vendor("Sierra Wireless, Incorporated"), Vendor::Sierra);
     EXPECT_EQ(parse_vendor("Quectel"), Vendor::Quectel);

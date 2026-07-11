@@ -74,6 +74,9 @@ return {
     ["cell.operator"]    = viewer_str(),
     ["cell.tech"]        = viewer_str(),
     ["cell.reg"]         = viewer_str(),
+    ["cell.reg.cs"]      = viewer_str(),   -- +CREG (2G/3G CS — MT-SMS rides here on 2G)
+    ["cell.reg.ps"]      = viewer_str(),   -- +CGREG (2G/3G PS)
+    ["cell.reg.eps"]     = viewer_str(),   -- +CEREG (LTE EPS)
     ["cell.signal.dbm"]  = viewer_str(),
     ["cell.signal.bars"] = viewer_str(),
     ["cell.ip"]          = viewer_str(),
@@ -88,6 +91,12 @@ return {
     ["cell.rat.current"] = viewer_str(),   -- RAT the modem reports (AT!SELRAT?)
     ["cell.reg.reason"]  = viewer_str(),   -- network reject cause (AT+CEER), if any
     ["cell.version"]     = viewer_str(),
+
+    -- Module restart request (device-ui button): bump this monotonic token
+    -- and the daemon cycles the radio (AT+CFUN=0/1) + re-applies APN/SMS/RAT
+    -- setup. Progress is visible in the existing cell.state lifecycle
+    -- (init -> searching -> registered -> connected).
+    ["cell.reset.request"] = { access = "Admin", type = "string", default = "" },
 
     -- MO SMS send envelope: set sms.send.to + sms.send.text, then bump
     -- sms.send.request (monotonic token) to send. The daemon publishes progress
@@ -117,6 +126,9 @@ return {
     -- {ts,from,text}; bounded to the last 20. Rendered as the device-ui
     -- WAN -> Cellular "Received SMS" table. Seeded from ds on daemon restart.
     ["sms.inbox"]       = viewer_str(),
+    -- SIM message-store usage "used/total" (AT+CPMS?) — a full store
+    -- silently blocks MT-SMS delivery.
+    ["sms.storage"]     = viewer_str(),
     ["sms.version"]     = viewer_str(),
   },
 }

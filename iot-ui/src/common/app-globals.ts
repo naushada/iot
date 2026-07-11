@@ -98,6 +98,27 @@ export interface RoutingStatus {
   state?: string;
   rules_applied?: number;
   last_apply_unix?: number;
+  // Live routing snapshot (net-router → net.routes / net.ifaces / net.dns)
+  routes?: RouteEntry[];
+  ifaces?: IfaceEntry[];
+  dns?: string;          // comma-joined resolvers from /etc/resolv.conf
+}
+
+export interface RouteEntry {
+  dst?: string;      // "default" or CIDR
+  gateway?: string;
+  dev?: string;
+  proto?: string;    // dhcp / kernel / static / ...
+  scope?: string;
+  prefsrc?: string;
+  metric?: string;
+}
+
+export interface IfaceEntry {
+  name?: string;
+  state?: string;    // UP / DOWN / UNKNOWN
+  mac?: string;
+  ip?: string;       // first IPv4 with prefix, e.g. "192.168.1.20/24"
 }
 
 // Cellular modem status (mangOH WP), from cell.* (string-typed in the schema).
@@ -106,6 +127,9 @@ export interface CellStatus {
   operator?: string;
   tech?: string;         // 2G / 3G / 4G
   reg?: string;          // home / roaming / searching / denied / not-registered / unknown
+  reg_cs?: string;       // +CREG (2G/3G CS domain — MT-SMS rides here on 2G)
+  reg_ps?: string;       // +CGREG (2G/3G PS domain)
+  reg_eps?: string;      // +CEREG (LTE EPS domain)
   signal_dbm?: string;
   signal_bars?: string;  // "0".."5"
   ip?: string;
@@ -125,6 +149,7 @@ export interface CellStatus {
   sms_text?: string;
   sms_ts?: string;
   sms_count?: string;
+  sms_storage?: string;  // SIM message-store usage "used/total" (AT+CPMS?)
   // Received-SMS history (newest first), from sms.inbox — rendered as a table.
   sms_inbox?: SmsInboxEntry[];
 }

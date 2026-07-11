@@ -136,6 +136,17 @@ int CellularClient::run() {
     m_ds.watch(std::vector<std::string>{"sms.send.request"},
                [this](const data_store::Client::Event& ev) { on_send_request(ev); }, &wh);
 
+    // Module restart request (device-ui button): same baseline-then-watch
+    // token idiom as the MO-send envelope.
+    {
+        std::vector<data_store::Client::GetResult> got;
+        if (m_ds.get({std::string("cell.reset.request")}, got).ok && !got.empty() && got[0].has_value)
+            if (auto s = data_store::to_string(got[0].value)) m_reset_token = *s;
+    }
+    data_store::Client::WatchHandle wr = data_store::Client::kInvalidHandle;
+    m_ds.watch(std::vector<std::string>{"cell.reset.request"},
+               [this](const data_store::Client::Event& ev) { on_reset_request(ev); }, &wr);
+
     // First poll after 1s, then every interval. The reactor dispatches the
     // serial handles + this timer on one thread — no polling loop.
     ACE_Reactor::instance()->schedule_timer(
@@ -242,11 +253,47 @@ void CellularClient::on_send_request(const data_store::Client::Event& ev) {
     ACE_Reactor::instance()->notify(this);                 // → handle_exception
 }
 
+void CellularClient::on_reset_request(const data_store::Client::Event& ev) {
+    if (ev.key != "cell.reset.request") return;
+    const std::string val = data_store::to_string(ev.value).value_or(std::string());
+    {
+        std::lock_guard<std::mutex> lk(m_send_mtx);
+        if (val.empty() || val == m_reset_token) return;   // unchanged / cleared
+        m_reset_token = val;
+        m_reset_pending = true;
+    }
+    ACE_Reactor::instance()->notify(this);                 // → handle_exception
+}
+
 int CellularClient::handle_exception(ACE_HANDLE) {
-    bool pending;
-    { std::lock_guard<std::mutex> lk(m_send_mtx); pending = m_send_pending; m_send_pending = false; }
-    if (pending) start_send();
+    bool send_pending, reset_pending;
+    {
+        std::lock_guard<std::mutex> lk(m_send_mtx);
+        send_pending  = m_send_pending;  m_send_pending  = false;
+        reset_pending = m_reset_pending; m_reset_pending = false;
+    }
+    if (send_pending)  start_send();
+    if (reset_pending) start_reset();
     return 0;
+}
+
+void CellularClient::start_reset() {
+    if (!m_at) return;
+    ACE_DEBUG((LM_INFO,
+        ACE_TEXT("%D [cell] module restart requested — cycling radio (CFUN 0/1)\n")));
+    cmd("AT+CFUN=0");
+    cmd("AT+CFUN=1");
+    // The radio cycle drops the data context, clears CNMI (SMS URC routing)
+    // and re-opens the network search — re-arm every one-time setup so the
+    // next polls re-apply APN / SMS / RAT / GNSS from scratch.
+    m_apn_sent    = false;
+    m_sms_setup   = false;
+    m_rat_done    = false;
+    m_gps_started = false;
+    m_haveIp      = false;
+    m_lastReg = m_reg_cs = m_reg_ps = m_reg_eps = Reg::Unknown;
+    m_state.set_state("init");
+    publish();
 }
 
 void CellularClient::start_send() {
@@ -303,6 +350,14 @@ void CellularClient::poll_modem() {
         cmd("AT+CMGF=0");
         cmd("AT+CNMI=2,1,0,0,0");
         cmd("AT+CMGL=4");
+        // The queue is serialized, so this runs after the drain completes:
+        // delete all READ messages (delflag=1 spares unread) — the drain
+        // itself never deletes, and a SIM store that fills up silently
+        // blocks MT-SMS delivery. Live +CMTI receives delete per-index.
+        cmd("AT+CMGD=1,1");
+        // Store usage → sms.storage ("used/total"): makes a full store
+        // visible instead of just "SMS stopped arriving".
+        cmd("AT+CPMS?");
         m_sms_setup = true;
         ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS receive enabled (PDU mode)\n")));
     }
@@ -419,8 +474,12 @@ void CellularClient::handle_at_line(const std::string& line) {
         else                                   m_reg_eps = r;
         m_lastReg = best_reg(m_reg_cs, m_reg_ps, m_reg_eps);
         m_state.set_reg(m_lastReg);
+        m_state.set_reg_domains(reg_str(m_reg_cs), reg_str(m_reg_ps),
+                                reg_str(m_reg_eps));
         if (m_lastReg == Reg::Home || m_lastReg == Reg::Roaming)
             m_state.set_reg_reason("");        // registered → clear any stale cause
+    } else if (starts_with(line, "+CPMS:")) {
+        m_state.set_sms_storage(parse_cpms(line));   // → sms.storage
     } else if (starts_with(line, "!SELRAT:")) {
         m_state.set_rat(parse_selrat(line));   // → cell.rat.current
     } else if (starts_with(line, "+CEER:")) {
@@ -482,6 +541,7 @@ void CellularClient::publish_absent() {
         "cell.signal.bars", "cell.ip", "cell.dns", "cell.rat.current",
         "cell.reg.reason", "cell.iccid", "cell.imei", "cell.msisdn",
         "cell.model", "cell.fw", "cell.capability", "cell.apn.current",
+        "cell.reg.cs", "cell.reg.ps", "cell.reg.eps",
     };
     std::vector<data_store::KV> batch;
     for (const char* k : kLiveKeys)

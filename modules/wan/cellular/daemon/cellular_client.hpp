@@ -65,6 +65,8 @@ class CellularClient : public ACE_Event_Handler {
         void publish_absent();   ///< clear live cell.* when the modem is gone
         void on_send_request(const data_store::Client::Event& ev);
         void start_send();          // reactor thread: encode + issue AT+CMGS
+        void on_reset_request(const data_store::Client::Event& ev);
+        void start_reset();         // reactor thread: CFUN radio cycle + re-arm setup
 
         /// Queue one AT command. NEVER write to the modem directly: the WP7702's
         /// AT parser silently DROPS a command that arrives before the previous
@@ -103,6 +105,12 @@ class CellularClient : public ACE_Event_Handler {
         std::mutex                      m_send_mtx;
         std::string                     m_send_token;              ///< baseline of sms.send.request
         bool                            m_send_pending = false;
+        // Module restart (cell.reset.request envelope, same token idiom).
+        // AT+CFUN=0/1 radio cycle — NOT AT!RESET: a full module reboot drops
+        // the USB ttys for ~30s and the 10s/5-burst restart policy could
+        // start-limit the daemon out.
+        std::string                     m_reset_token;             ///< baseline of cell.reset.request
+        bool                            m_reset_pending = false;
         std::string                     m_send_pdu;                ///< encoded PDU awaiting the '>' data phase
         bool                            m_send_active = false;     ///< AT+CMGS issued, awaiting +CMGS/+CMS ERROR
         bool                            m_gps_via_at = false;  ///< GNSS over AT poll (no NMEA tty)

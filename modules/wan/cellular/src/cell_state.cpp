@@ -42,6 +42,15 @@ void CellularState::set_reg(Reg r) {
     m_reg = reg_str(r); m_haveCell = true; ++m_cellVersion;
 }
 
+void CellularState::set_reg_domains(const std::string& cs,
+                                    const std::string& ps,
+                                    const std::string& eps) {
+    std::lock_guard<std::mutex> lk(m_mtx);
+    if (cs == m_regCs && ps == m_regPs && eps == m_regEps) return;
+    m_regCs = cs; m_regPs = ps; m_regEps = eps;
+    m_haveCell = true; ++m_cellVersion;
+}
+
 void CellularState::set_rat(const std::string& rat) {
     std::lock_guard<std::mutex> lk(m_mtx);
     if (rat.empty() || rat == m_rat) return;
@@ -122,6 +131,12 @@ void CellularState::set_sms(const SmsMessage& msg) {
     ++m_smsCount; m_haveSms = true; ++m_smsVersion;
 }
 
+void CellularState::set_sms_storage(const std::string& usage) {
+    std::lock_guard<std::mutex> lk(m_mtx);
+    if (usage.empty() || usage == m_smsStorage) return;
+    m_smsStorage = usage; m_haveCell = true; ++m_cellVersion;
+}
+
 void CellularState::seed_inbox(const std::string& inbox_json, std::uint64_t count) {
     std::lock_guard<std::mutex> lk(m_mtx);
     m_smsCount = count;
@@ -143,8 +158,10 @@ void CellularState::seed_inbox(const std::string& inbox_json, std::uint64_t coun
     if (!m_smsInbox.empty()) {
         const auto& f = m_smsInbox.front();
         m_smsSender = f.sender; m_smsText = f.text; m_smsTs = f.scts;
-        m_haveSms = true;
     }
+    // A corrupt inbox must still keep the running count alive — otherwise
+    // a bad persisted value silently zeroes sms.count on restart.
+    if (!m_smsInbox.empty() || m_smsCount > 0) m_haveSms = true;
 }
 
 std::vector<KV> CellularState::to_kv() const {
@@ -155,6 +172,10 @@ std::vector<KV> CellularState::to_kv() const {
         if (!m_operator.empty()) kv.push_back({"cell.operator", m_operator});
         if (!m_tech.empty())     kv.push_back({"cell.tech", m_tech});
         if (!m_reg.empty())      kv.push_back({"cell.reg", m_reg});
+        if (!m_regCs.empty())    kv.push_back({"cell.reg.cs", m_regCs});
+        if (!m_regPs.empty())    kv.push_back({"cell.reg.ps", m_regPs});
+        if (!m_regEps.empty())   kv.push_back({"cell.reg.eps", m_regEps});
+        if (!m_smsStorage.empty()) kv.push_back({"sms.storage", m_smsStorage});
         if (!m_rat.empty())      kv.push_back({"cell.rat.current", m_rat});
         if (!m_regReason.empty())kv.push_back({"cell.reg.reason", m_regReason});
         if (!m_ip.empty())       kv.push_back({"cell.ip", m_ip});

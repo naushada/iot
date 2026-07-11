@@ -35,9 +35,12 @@ export class DataStoreService {
     'net.iface.wifi.name', 'net.iface.cellular.name', 'net.poll.interval.sec',
     'net.state', 'net.rules.applied.count', 'net.last.apply.unix',
     'net.iface.active',
-    // Cellular client config (mangOH WP modem)
+    // Cellular client config (mangOH WP modem). cell.rat + sms.enable were
+    // missing here once: on a fresh page load the Cellular Config form found
+    // no cached value and silently fell back to its defaults (Receive SMS
+    // unchecked, RAT "Leave unchanged") even though ds held the saved values.
     'cell.apn', 'cell.modem.tty', 'cell.gps.tty',
-    'cell.poll.interval.sec', 'cell.gps.enable',
+    'cell.poll.interval.sec', 'cell.gps.enable', 'cell.rat', 'sms.enable',
     // LwM2M client
     'iot.serial', 'iot.dev.mode', 'iot.bs.uri', 'iot.server.uri', 'iot.dm.uri',
     'iot.binding', 'iot.lifetime',

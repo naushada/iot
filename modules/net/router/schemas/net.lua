@@ -82,5 +82,16 @@ return {
         access  = "Viewer", type = "integer", min = 0 },
     ["net.last.apply.unix"]       = {
         access  = "Viewer", type = "integer", min = 0 },
+    -- Live routing snapshot for the device-ui Routing → Routes tab
+    -- (published volatile every poll tick; see src/route_info.hpp).
+    --   net.routes - JSON array [{dst,gateway,dev,proto,scope,prefsrc,metric}]
+    --   net.ifaces - JSON array [{name,state,mac,ip}]
+    --   net.dns    - comma-joined resolvers from /etc/resolv.conf
+    ["net.routes"]                = {
+        access  = "Viewer", type = "string", default = "[]" },
+    ["net.ifaces"]                = {
+        access  = "Viewer", type = "string", default = "[]" },
+    ["net.dns"]                   = {
+        access  = "Viewer", type = "string", default = "" },
   },
 }
