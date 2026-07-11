@@ -270,7 +270,98 @@ sequenceDiagram
 
 ---
 
-## 5. Schema summary
+## 5. Device-UI access over the VPN (path-scoped reverse proxy)
+
+The operator opens a device's **own web UI** from the cloud Endpoints page
+("Launch UI"). The live mechanism is a **same-origin path-scoped reverse proxy**
+(`modules/http-server/src/handler_proxy.cpp`, design:
+`apps/docs/tdd-device-ui-path-proxy.md`): the cloud `iot-httpd` serves
+`/dev/<endpoint>/…` and forwards each request over the OpenVPN tun to the
+device's `iot-httpd`. It replaced the per-device published-port + nftables DNAT
+approach (`iot-cloudd` still installs the `ip iot_cloud_dnat` DNAT table —
+`cloud:<proxy_port> → dev_tun_ip:<ui_port>` — as the direct-port route, shown in
+the Endpoints row expander).
+
+Three rewrites make the device SPA (built with `base href "/"`, relative asset
+URLs) work under the prefix with **no per-device rebuild**: request-path strip,
+`base href` inject, and `Set-Cookie Path` scoping (per-device cookie isolation).
+`iot-httpd` shares `iot-cloudd`'s network namespace so `tun0` routes are visible
+to its upstream connect.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as Browser (operator)
+  participant HC as cloud iot-httpd (handler_proxy)
+  participant CDS as cloud ds-server
+  participant CD as iot-cloudd
+  participant OS as openvpn server (tun0)
+  participant OC as device openvpn-client
+  participant HD as device iot-httpd (:8080)
+
+  rect rgb(240,245,250)
+    Note over OC,CD: pre-condition — tunnel up + registry knows the device IP
+    OC->>OS: TCP :1194 TLS handshake (client cert from LwM2M Object 2048)
+    OS-->>OC: assign tunnel IP (e.g. 10.9.0.2), keepalive ping 10
+    CD->>OS: mgmt 127.0.0.1 "status" (poll_vpn_client_ips)
+    OS-->>CD: ROUTING TABLE vip,CN,real-addr (stale Last Ref > 30s dropped)
+    CD->>CDS: sync_endpoints_to_ds → cloud.endpoints[ep].dev_tun_ip = 10.9.0.2
+    Note over B: Endpoints page shows "Launch UI" only when dev_tun_ip is set,<br/>launchUrl(ep) = /dev/ + encodeURIComponent(ep) + /
+  end
+
+  B->>HC: GET /dev/{ep}/  (same cloud origin, cloud session cookie rides along)
+  HC->>HC: auth gate — extract_session_cookie + validate
+  alt no / invalid cloud session
+    HC-->>B: 302 Location /webui/  (bounce to cloud login)
+  end
+  HC->>HC: split /dev/{epseg}/{tail}, url_decode(epseg) → ep,<br/>prefix = /dev/{epseg}/
+  HC->>CDS: get cloud.endpoints → resolve_dev_tun_ip(ep)
+  alt no dev_tun_ip (tunnel down)
+    HC-->>B: 502 "device tunnel is down (no route to ep)"
+  end
+  HC->>CDS: get cloud.proxy.device.ui.port (default 8080)
+  HC->>HC: build upstream request — "{method} {tail} HTTP/1.1",<br/>Host: dev_tun_ip, drop hop-by-hop headers,<br/>strip_cookie(cloud session — token never leaves the cloud),<br/>Connection: close (+ Content-Length for body)
+  HC->>OS: ACE_SOCK_Connector connect dev_tun_ip:8080 (5s timeout)<br/>— routed via tun0 (shared netns with iot-cloudd)
+  OS->>OC: encrypted tunnel frame (TCP :1194)
+  OC->>HD: 10.9.0.2:8080 — plain HTTP on the device loopback side
+  HD-->>OC: response (index.html / asset / API JSON)
+  OC-->>OS: back through the tunnel
+  OS-->>HC: bytes until EOF (recv timeout 75s > device long-poll)
+  alt connect/timeout failure
+    HC-->>B: 504 "device UI did not respond"
+  end
+  HC->>HC: rewrite response —<br/>1. Set-Cookie: Path=/ → Path=/dev/{epseg}/ (device cookie isolated per device)<br/>2. Location: /x → /dev/{epseg}/x (server-relative redirects)<br/>3. HTML only: base href "/" → "/dev/{epseg}/" (relative assets resolve back)
+  HC-->>B: status + rewritten headers/body
+
+  Note over B,HD: SPA boots under the prefix — every asset fetch, device login<br/>(POST /dev/{ep}/api/v1/auth/login → device session cookie scoped to /dev/{ep}/)<br/>and the device /status long-poll repeat steps 8-22 per request<br/>(store-and-forward: no WebSocket/SSE through this proxy)
+```
+
+Minute details worth knowing:
+
+- **SSRF-safe by construction:** the upstream target is only ever a
+  `dev_tun_ip` looked up from `cloud.endpoints` (written by `iot-cloudd` from
+  the OpenVPN management plane) on a fixed port — the URL path cannot steer the
+  proxy to an arbitrary host.
+- **Two cookie jars, cleanly separated:** the operator's **cloud** session
+  cookie is validated at the gate and then **stripped** before forwarding
+  (`strip_cookie`), so it never reaches the device; the **device's** session
+  cookie comes back with `Path=/dev/<epseg>/`, so N devices can be logged in
+  simultaneously from one browser without collisions.
+- **Reachability = tunnel, not registration:** Launch UI follows `dev_tun_ip`
+  only. The proxy works while the tunnel is up even if the device's LwM2M
+  registration has lapsed (registration is shown separately in the State
+  column).
+- **Store-and-forward:** `upstream_exchange` buffers the full upstream response
+  until EOF (`Connection: close` per request). That is why the device-ui
+  **Terminal** feature runs on long-poll — WebSocket/SSE cannot pass this
+  proxy.
+- The `75 s` upstream recv timeout is deliberately longer than the device's
+  `/api/v1/status?timeout=30` long-poll, so a held poll completes through the
+  proxy instead of 504ing.
+
+---
+
+## 6. Schema summary
 
 ### Device ds keys (`modules/vehicle/schemas/vehicle.lua`, `.../cell.lua`)
 
@@ -299,7 +390,7 @@ sequenceDiagram
 
 ---
 
-## 6. Prerequisites (end-to-end)
+## 7. Prerequisites (end-to-end)
 
 **Device**
 - `ds-server` running (daemons exit if `connect` fails).
