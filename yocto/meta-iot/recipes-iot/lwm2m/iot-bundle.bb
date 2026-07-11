@@ -11,7 +11,7 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 # Keep the leading semver in sync with the repo-root /VERSION (same source of
 # truth as iot_git.bb's PV and the baked-in iot.version).
-PV = "1.4.0"
+PV = "1.5.0"
 
 # No source to fetch/compile — this recipe only repackages the already-built
 # feed in do_deploy. nopackages skips the empty packaging tasks; deploy gives
