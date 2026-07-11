@@ -69,6 +69,12 @@ public:
     void set_iface_active_ip(const std::string& s);
     void set_rules_applied_count(std::uint32_t n);
     void set_last_apply_unix(std::uint32_t t);
+    // Live routing snapshot (device-ui Routing → Routes tab). Volatile:
+    // pure telemetry, republished every tick — persisting it would flush
+    // the store file for no benefit.
+    void set_routes(const std::string& json_array);
+    void set_ifaces(const std::string& json_array);
+    void set_dns(const std::string& csv);
 
     void on_change(ChangeCallback cb);
 

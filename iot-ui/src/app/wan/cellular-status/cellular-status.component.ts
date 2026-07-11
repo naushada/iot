@@ -12,7 +12,14 @@ import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
   selector: 'app-cellular-status',
   template: `
     <div class="page">
-      <h3>Cellular Modem</h3>
+      <div class="head">
+        <h3>Cellular Modem</h3>
+        <button *ngIf="isAdmin" class="btn btn-sm btn-warning-outline"
+                [disabled]="restarting || isOffline"
+                (click)="restartModule()">
+          {{ restarting ? 'Restarting…' : 'Restart Module' }}
+        </button>
+      </div>
       <p class="hint" *ngIf="!hasData">
         No cellular telemetry yet — the cellular-client service publishes this
         once a WP modem is attached and enabled.
@@ -82,6 +89,9 @@ import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
   `,
   styles: [`
     .page { padding: 24px; }
+    .head { display: flex; align-items: center; justify-content: space-between;
+            margin: 0 0 20px 0; max-width: 720px; }
+    .head h3 { margin: 0; }
     h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
     .hint { color: #888; font-size: 13px; margin: 0 0 16px 0; }
     .offline { display: flex; align-items: center; gap: 6px; margin: 0 0 16px 0;
@@ -113,9 +123,28 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
   smsTo = '';
   smsText = '';
   sending = false;
+  restarting = false;
   private sub = new Subscription();
 
   get isAdmin(): boolean { return this.session.isAdmin; }
+
+  restartModule(): void {
+    if (!this.isAdmin) return;
+    this.restarting = true;
+    // Same token idiom as Send SMS: the daemon watches cell.reset.request and
+    // cycles the radio (AT+CFUN=0/1) + re-applies APN/SMS/RAT. Progress shows
+    // in the State badge (init → searching → registered → connected).
+    this.ds.write([
+      { key: 'cell.reset.request', value: String(Date.now()) },
+    ]).subscribe({
+      next: (r) => {
+        this.restarting = false;
+        if (r.ok) this.toast.success('Module restart requested — watch the State badge');
+        else this.toast.error('Restart request failed');
+      },
+      error: () => { this.restarting = false; this.toast.error('Restart request failed'); },
+    });
+  }
 
   sendSms(): void {
     if (!this.isAdmin || !this.smsTo || !this.smsText) return;
@@ -156,6 +185,9 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
       { key: 'Operator',     value: this.c.operator || '—',    dsKey: 'cell.operator' },
       { key: 'Technology',   value: this.c.tech || '—',        dsKey: 'cell.tech' },
       { key: 'Registration', value: this.c.reg || '—',         dsKey: 'cell.reg' },
+      { key: 'Reg (CS / SMS)', value: this.c.reg_cs || '—',    dsKey: 'cell.reg.cs' },
+      { key: 'Reg (PS / Data)', value: this.c.reg_ps || '—',   dsKey: 'cell.reg.ps' },
+      { key: 'Reg (LTE)',    value: this.c.reg_eps || '—',     dsKey: 'cell.reg.eps' },
       { key: 'Signal',       value: this.signalText, isSignal: true, dsKey: 'cell.signal.dbm' },
       { key: 'RAT',          value: this.c.rat || '—',         dsKey: 'cell.rat.current' },
       { key: 'Capability',   value: this.c.capability || '—',  dsKey: 'cell.capability' },
@@ -175,6 +207,10 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
     // Received-SMS total — the messages themselves render in the table below.
     if (this.c.sms_count && this.c.sms_count !== '0') {
       rows.push({ key: 'SMS Received', value: this.c.sms_count, dsKey: 'sms.count' });
+    }
+    // SIM message-store usage — a full store silently blocks MT-SMS delivery.
+    if (this.c.sms_storage) {
+      rows.push({ key: 'SIM SMS Storage', value: this.c.sms_storage, dsKey: 'sms.storage' });
     }
     return rows;
   }

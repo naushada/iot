@@ -345,4 +345,30 @@ std::string parse_iccid(const std::string& line) {
     return digits.size() >= 18 ? digits : std::string{};
 }
 
+std::string parse_cpms(const std::string& line) {
+    if (!contains(lower(line), "+cpms:")) return {};
+    // `+CPMS: "SM",2,30,"SM",2,30,"SM",2,30` — the first <used>,<total>
+    // pair (fields 1 and 2) describes the receive/read store.
+    const std::string body = after_colon(line);
+    std::vector<std::string> fields;
+    std::string cur;
+    for (char c : body) {
+        if (c == ',') { fields.push_back(cur); cur.clear(); }
+        else          { cur.push_back(c); }
+    }
+    fields.push_back(cur);
+    if (fields.size() < 3) return {};
+    auto num = [](const std::string& f) -> std::string {
+        std::string d;
+        for (char c : f)
+            if (std::isdigit(static_cast<unsigned char>(c))) d.push_back(c);
+            else if (c != ' ' && c != '\t' && c != '\r') return std::string{};
+        return d;
+    };
+    const std::string used  = num(fields[1]);
+    const std::string total = num(fields[2]);
+    if (used.empty() || total.empty()) return {};
+    return used + "/" + total;
+}
+
 } // namespace cellular

@@ -115,6 +115,12 @@ std::string parse_cgcontrdp_dns(const std::string& line);
 /// ICCID from `+QCCID:` / `+CCID:` / `+ICCID:` / a bare digit line → "".
 std::string parse_iccid(const std::string& line);
 
+/// SIM message-store usage from a `+CPMS: "SM",2,30,"SM",2,30,"SM",2,30`
+/// readback → "2/30" (first store = the receive/read store). A full store
+/// silently blocks MT-SMS delivery, so the usage is worth surfacing.
+/// "" if the line is not a parseable +CPMS reply.
+std::string parse_cpms(const std::string& line);
+
 /// Modem firmware family — the AT command set differs per vendor. Detected
 /// from `AT+GMI` (manufacturer) or `AT+CGMM` (model).
 enum class Vendor {

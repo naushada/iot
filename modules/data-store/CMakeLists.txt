@@ -117,6 +117,7 @@ if(BUILD_DATA_STORE_TESTS)
         test/callback_test.cpp
         test/schema_test.cpp
         test/service_gate_test.cpp
+        test/client_reconnect_test.cpp
         test/dep_watch_test.cpp
         test/log_buffer_test.cpp
         test/stats_publisher_test.cpp

@@ -34,6 +34,9 @@ constexpr const char* kIfaceActive         = "net.iface.active";
 constexpr const char* kIfaceActiveIp        = "net.iface.active.ip";
 constexpr const char* kRulesAppliedCount   = "net.rules.applied.count";
 constexpr const char* kLastApplyUnix       = "net.last.apply.unix";
+constexpr const char* kRoutes              = "net.routes";
+constexpr const char* kIfaces              = "net.ifaces";
+constexpr const char* kDns                 = "net.dns";
 
 } // namespace
 
@@ -236,6 +239,18 @@ void DsBridge::set_rules_applied_count(std::uint32_t n) {
 void DsBridge::set_last_apply_unix(std::uint32_t t) {
     if (!m_ok) return;
     m_impl->client.set(kLastApplyUnix, t);
+}
+void DsBridge::set_routes(const std::string& json_array) {
+    if (!m_ok) return;
+    m_impl->client.set_volatile(kRoutes, json_array);
+}
+void DsBridge::set_ifaces(const std::string& json_array) {
+    if (!m_ok) return;
+    m_impl->client.set_volatile(kIfaces, json_array);
+}
+void DsBridge::set_dns(const std::string& csv) {
+    if (!m_ok) return;
+    m_impl->client.set_volatile(kDns, csv);
 }
 
 data_store::Client* DsBridge::client() {

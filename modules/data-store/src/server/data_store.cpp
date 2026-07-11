@@ -12,10 +12,14 @@ void DataStore::load_from(std::unordered_map<std::string, Value> data) {
 }
 
 void DataStore::flush_locked_release(
-        std::unordered_map<std::string, Value> snapshot) {
+        std::unordered_map<std::string, Value> snapshot,
+        std::uint64_t                          gen) {
     if (!m_persistor) return;
+    std::lock_guard<std::mutex> g(m_flush_mtx);
+    if (gen <= m_flushed_gen) return;   // a newer snapshot already hit disk
     try {
         m_persistor->save(snapshot);
+        m_flushed_gen = gen;
     } catch (const std::exception& e) {
         ACE_ERROR((LM_ERROR,
                    ACE_TEXT("%D dsserver:thread:%t %M %N:%l persist failed: %C\n"),
@@ -41,6 +45,7 @@ std::optional<Value> DataStore::get(const std::string& key) const {
 SetResult DataStore::set(const std::string& key, Value value) {
     SetResult out;
     std::unordered_map<std::string, Value> snapshot;
+    std::uint64_t gen = 0;
     {
         std::lock_guard<std::mutex> g(m_mtx);
 
@@ -71,9 +76,9 @@ SetResult DataStore::set(const std::string& key, Value value) {
             for (Session* s : wit->second) out.watchers.push_back(s);
         }
 
-        if (m_persistor) snapshot = m_data;
+        if (m_persistor) { snapshot = m_data; gen = ++m_snap_gen; }
     }
-    flush_locked_release(std::move(snapshot));
+    flush_locked_release(std::move(snapshot), gen);
     return out;
 }
 
@@ -126,12 +131,13 @@ bool DataStore::is_rate_limited(const std::string& key) {
 bool DataStore::remove(const std::string& key) {
     bool existed = false;
     std::unordered_map<std::string, Value> snapshot;
+    std::uint64_t gen = 0;
     {
         std::lock_guard<std::mutex> g(m_mtx);
         existed = m_data.erase(key) > 0;
-        if (existed && m_persistor) snapshot = m_data;
+        if (existed && m_persistor) { snapshot = m_data; gen = ++m_snap_gen; }
     }
-    if (existed) flush_locked_release(std::move(snapshot));
+    if (existed) flush_locked_release(std::move(snapshot), gen);
     return existed;
 }
 

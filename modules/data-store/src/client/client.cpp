@@ -19,6 +19,8 @@
 
 #include <ace/LSOCK_Connector.h>
 #include <ace/LSOCK_Stream.h>
+#include <ace/Log_Msg.h>
+#include <ace/OS_NS_unistd.h>
 #include <ace/Time_Value.h>
 #include <ace/UNIX_Addr.h>
 
@@ -74,9 +76,14 @@ class Client::Impl {
 public:
     ACE_LSOCK_Stream     stream;
     std::atomic<bool>    connected{false};
+    std::string          path;      // socket path, kept for reconnects
 
     std::thread          listener;
     std::atomic<bool>    stop_listener{false};
+
+    // Guards the stream handle across writer threads vs the listener
+    // thread closing/reopening it on reconnect.
+    std::mutex           send_mtx;
 
     // corr_key → pending promise (fulfilled by the listener thread).
     std::mutex                                                  pending_mtx;
@@ -96,11 +103,14 @@ public:
     Status round_trip(proto::Op op, std::string_view body,
                       PendingValue& out, std::int32_t timeout_ms);
     void   run_listener();
+    void   drop_connection();
+    bool   try_reconnect();
     void   fail_all_pending(const std::string& why);
 };
 
 Status Client::Impl::send_frame(const std::string& frame) {
     if (frame.empty()) return {};
+    std::lock_guard<std::mutex> g(send_mtx);
     ssize_t n = stream.send_n(frame.data(), frame.size());
     if (n < 0 || static_cast<std::size_t>(n) != frame.size()) {
         return sys_err("send_n");
@@ -156,13 +166,26 @@ void Client::Impl::run_listener() {
     char        chunk[1024];
 
     while (!stop_listener.load()) {
+        if (!connected.load()) {
+            // Server went away (restart of iot-ds). Keep retrying the
+            // connect; on success re-register every watched key — the
+            // new server instance has no memory of our subscriptions.
+            // Without this every long-lived daemon goes permanently
+            // deaf after a ds restart (set() fails, watches dead).
+            ACE_OS::sleep(ACE_Time_Value(0, 500 * 1000));
+            if (stop_listener.load()) break;
+            if (!try_reconnect()) continue;
+            buf.clear();
+        }
+
         ACE_Time_Value timeout(0, 200 * 1000);
         ssize_t n = stream.recv(chunk, sizeof(chunk), &timeout);
         if (n < 0) {
             if (errno == ETIME || errno == ETIMEDOUT || errno == EAGAIN) continue;
-            break;
+            drop_connection();
+            continue;
         }
-        if (n == 0) break;     // EOF
+        if (n == 0) { drop_connection(); continue; }   // EOF — server gone
 
         buf.append(chunk, static_cast<std::size_t>(n));
 
@@ -173,8 +196,10 @@ void Client::Impl::run_listener() {
             try {
                 if (!proto::try_decode_frame(buf, h, payload)) break;
             } catch (const std::exception&) {
-                // Corrupt header → drop connection.
-                stop_listener.store(true);
+                // Corrupt header → drop the connection and resync via
+                // a fresh one.
+                drop_connection();
+                buf.clear();
                 break;
             }
 
@@ -253,12 +278,69 @@ void Client::Impl::run_listener() {
         }
     }
 
+    connected.store(false);
     fail_all_pending("listener exited");
 
     {
         std::lock_guard<std::mutex> g(events_mtx);
         events_cv.notify_all();
     }
+}
+
+void Client::Impl::drop_connection() {
+    if (!connected.exchange(false)) return;
+    {
+        std::lock_guard<std::mutex> g(send_mtx);
+        stream.close();
+    }
+    fail_all_pending("connection lost");
+    {
+        std::lock_guard<std::mutex> g(events_mtx);
+        events_cv.notify_all();
+    }
+    ACE_ERROR((LM_ERROR, ACE_TEXT("%D dsclient %N:%l data-store connection ")
+               ACE_TEXT("lost — reconnecting\n")));
+}
+
+bool Client::Impl::try_reconnect() {
+    ACE_UNIX_Addr        addr(path.c_str());
+    ACE_LSOCK_Connector  connector;
+    ACE_Time_Value       timeout(2, 0);
+    {
+        std::lock_guard<std::mutex> g(send_mtx);
+        if (connector.connect(stream, addr, &timeout) == -1) {
+            stream.close();
+            return false;
+        }
+    }
+    connected.store(true);
+
+    // Re-register every watched key. Fire-and-forget: we ARE the
+    // listener thread, so a round_trip() would deadlock waiting on a
+    // response only we can read. The ack lands in the recv loop and is
+    // dropped as an unmatched reqID, which is harmless.
+    std::vector<std::string> keys;
+    {
+        std::lock_guard<std::mutex> g(watches_mtx);
+        keys.reserve(key_refcount.size());
+        for (const auto& [k, cnt] : key_refcount) { (void)cnt; keys.push_back(k); }
+    }
+    if (!keys.empty()) {
+        json req;
+        req["keys"] = keys;
+        const std::string body = req.dump();
+        std::string frame;
+        proto::encode_frame_command(proto::Op::RegisterWatch,
+                                    g_next_reqid.fetch_add(1),
+                                    std::string_view(body.data(), body.size()),
+                                    frame);
+        auto ss = send_frame(frame);
+        if (!ss.ok) { drop_connection(); return false; }
+    }
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D dsclient %N:%l data-store reconnected ")
+               ACE_TEXT("(re-watching %d key(s))\n"),
+               static_cast<int>(keys.size())));
+    return true;
 }
 
 void Client::Impl::fail_all_pending(const std::string& why) {
@@ -295,6 +377,7 @@ Status Client::connect(std::string path) {
     if (connector.connect(m_impl->stream, addr, &timeout) == -1) {
         return sys_err("ACE_LSOCK_Connector::connect(" + path + ")");
     }
+    m_impl->path = path;
     m_impl->connected.store(true);
     m_impl->stop_listener.store(false);
     m_impl->listener = std::thread([impl = m_impl.get()]() {
@@ -517,21 +600,25 @@ Status Client::recv_event(Event& out, std::int32_t timeout_ms) {
 
 void Client::close() {
     if (!m_impl) return;
-    if (m_impl->connected.exchange(false)) {
-        m_impl->stop_listener.store(true);
+    // The listener may be mid-reconnect with `connected == false`, so
+    // the thread must be stopped and joined regardless of that flag.
+    m_impl->stop_listener.store(true);
+    m_impl->connected.store(false);
+    {
+        std::lock_guard<std::mutex> g(m_impl->send_mtx);
         ::shutdown(m_impl->stream.get_handle(), SHUT_RDWR);
-        if (m_impl->listener.joinable()) m_impl->listener.join();
-        m_impl->stream.close();
-        m_impl->fail_all_pending("client closed");
-        {
-            std::lock_guard<std::mutex> g(m_impl->events_mtx);
-            m_impl->events_cv.notify_all();
-        }
-        {
-            std::lock_guard<std::mutex> g(m_impl->watches_mtx);
-            m_impl->watches.clear();
-            m_impl->key_refcount.clear();
-        }
+    }
+    if (m_impl->listener.joinable()) m_impl->listener.join();
+    m_impl->stream.close();
+    m_impl->fail_all_pending("client closed");
+    {
+        std::lock_guard<std::mutex> g(m_impl->events_mtx);
+        m_impl->events_cv.notify_all();
+    }
+    {
+        std::lock_guard<std::mutex> g(m_impl->watches_mtx);
+        m_impl->watches.clear();
+        m_impl->key_refcount.clear();
     }
 }
 

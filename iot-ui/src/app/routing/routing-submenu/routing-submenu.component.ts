@@ -4,6 +4,7 @@ import { Component, Output, EventEmitter } from '@angular/core';
   selector: 'app-routing-submenu',
   template: `
     <nav class="subnav">
+      <a class="subnav-item" [class.active]="active==='routes'" (click)="s('routes')">Routes</a>
       <a class="subnav-item" [class.active]="active==='ports'" (click)="s('ports')">Port Forward</a>
       <a class="subnav-item" [class.active]="active==='dnat'" (click)="s('dnat')">DNAT Target</a>
       <a class="subnav-item" [class.active]="active==='rules'" (click)="s('rules')">Firewall Rules</a>

@@ -83,9 +83,19 @@ public:
 
 private:
     void flush_locked_release(
-        std::unordered_map<std::string, Value> snapshot);
+        std::unordered_map<std::string, Value> snapshot,
+        std::uint64_t                          gen);
 
     mutable std::mutex                                              m_mtx;
+    // Persist serialisation: worker threads flush with m_mtx released,
+    // so concurrent saves must be ordered — they otherwise truncate +
+    // rename the same .tmp file (rename → ENOENT) and an older
+    // snapshot can land on disk last. m_snap_gen is bumped under m_mtx
+    // when a snapshot is taken; m_flushed_gen (under m_flush_mtx)
+    // tracks the newest generation persisted.
+    std::mutex                                                      m_flush_mtx;
+    std::uint64_t                                                   m_snap_gen = 0;
+    std::uint64_t                                                   m_flushed_gen = 0;
     std::unordered_map<std::string, Value>                          m_data;
     std::unordered_map<std::string, Value>                          m_volatile;  // L17b: in-memory overlay
     std::unordered_map<std::string, std::unordered_set<Session*>>   m_watchers;

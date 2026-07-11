@@ -1055,8 +1055,11 @@ void install_handlers(Router& router,
                 "net.iface.active", "net.state", "net.tun.ip",
                 "net.rules.applied.count", "net.last.apply.unix",
                 "net.iface.priority",
+                // Live routing snapshot (net-router → Routing → Routes tab)
+                "net.routes", "net.ifaces", "net.dns",
                 // Cellular modem (mangOH WP) + GPS
                 "cell.state", "cell.operator", "cell.tech", "cell.reg",
+                "cell.reg.cs", "cell.reg.ps", "cell.reg.eps",
                 "cell.signal.dbm", "cell.signal.bars", "cell.ip", "cell.iccid",
                 "cell.rat.current", "cell.reg.reason", "cell.dns",
                 "cell.imei", "cell.msisdn", "cell.model", "cell.fw",
@@ -1065,7 +1068,7 @@ void install_handlers(Router& router,
                 "gps.course", "gps.sats", "gps.utc",
                 // Received SMS (cellular-client → sms.*)
                 "sms.last.sender", "sms.last.text", "sms.last.ts", "sms.count",
-                "sms.inbox",
+                "sms.inbox", "sms.storage",
                 // mangOH onboard sensors
                 "iot.sensor.temp", "iot.sensor.humidity", "iot.sensor.pressure",
                 "iot.sensor.lux", "iot.sensor.accel", "iot.sensor.gyro",
@@ -1215,12 +1218,25 @@ void install_handlers(Router& router,
                 else if (k == "net.state")                   routing["state"] = sv();
                 else if (k == "net.rules.applied.count")     routing["rules_applied"] = iv();
                 else if (k == "net.last.apply.unix")         routing["last_apply_unix"] = iv();
+                else if (k == "net.dns")                     routing["dns"] = sv();
+                else if (k == "net.routes") {
+                    // Already a JSON array — embed parsed (sms.inbox idiom).
+                    try { routing["routes"] = json::parse(sv()); }
+                    catch (...) { routing["routes"] = json::array(); }
+                }
+                else if (k == "net.ifaces") {
+                    try { routing["ifaces"] = json::parse(sv()); }
+                    catch (...) { routing["ifaces"] = json::array(); }
+                }
 
                 // Cellular modem (cellular-client → cell.*)
                 else if (k == "cell.state")        cell["state"] = sv();
                 else if (k == "cell.operator")     cell["operator"] = sv();
                 else if (k == "cell.tech")         cell["tech"] = sv();
                 else if (k == "cell.reg")          cell["reg"] = sv();
+                else if (k == "cell.reg.cs")       cell["reg_cs"] = sv();
+                else if (k == "cell.reg.ps")       cell["reg_ps"] = sv();
+                else if (k == "cell.reg.eps")      cell["reg_eps"] = sv();
                 else if (k == "cell.signal.dbm")   cell["signal_dbm"] = sv();
                 else if (k == "cell.signal.bars")  cell["signal_bars"] = sv();
                 else if (k == "cell.ip")           cell["ip"] = sv();
@@ -1240,6 +1256,7 @@ void install_handlers(Router& router,
                 else if (k == "sms.last.text")     cell["sms_text"] = sv();
                 else if (k == "sms.last.ts")       cell["sms_ts"] = sv();
                 else if (k == "sms.count")         cell["sms_count"] = sv();
+                else if (k == "sms.storage")       cell["sms_storage"] = sv();
                 else if (k == "sms.inbox") {
                     // Already a JSON array (newest first) — embed it parsed so the
                     // device-ui gets an array, not a string. Tolerate a bad value.

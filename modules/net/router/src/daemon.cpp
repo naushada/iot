@@ -12,6 +12,7 @@
 #include "ip_route.hpp"
 #include "lifecycle.hpp"
 #include "nft_rules.hpp"
+#include "route_info.hpp"
 #include "shell.hpp"
 
 #include "data_store/service_gate.hpp"
@@ -237,6 +238,13 @@ Status run_daemon(const std::string& socketPath,
         const auto ifaces = iface::probe_all(names, shell_runner);
         auto in = snapshot_inputs(ds, ifaces);
         lc.step(in);
+
+        // Live routing snapshot for the device-ui Routing → Routes tab.
+        // Volatile sets; the ds server drops unchanged values, so a
+        // stable table costs nothing downstream.
+        ds.set_routes(route_info::routes_json(shell_runner));
+        ds.set_ifaces(route_info::ifaces_json(shell_runner));
+        ds.set_dns(route_info::dns_csv());
 
         // Sleep interval: override (CLI) > ds key > 5s. Re-read every
         // tick so an operator's `ds-cli set net.poll.interval.sec` lands
