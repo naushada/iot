@@ -309,6 +309,12 @@ bool reconcile_registrations(data_store::Client& ds,
     std::unordered_map<std::string, std::string>  ispIps;    // ep → DTLS peer (public/ISP)
     std::unordered_map<std::string, std::uint32_t> lifetimes; // ep → lifetime(s)
     std::unordered_map<std::string, std::string>  locations;  // ep → /rd/<id>
+    // Object-5 OTA readback per endpoint, polled by lwm2m-dm (/5/0/3 state,
+    // /5/0/5 result, /5/0/26 vendor reason) and stamped with the campaign id
+    // it was pushed under — the failure feedback the version-baseline
+    // completion heuristic can't provide.
+    struct UpdReport { std::string cid; int state = 0; int result = 0; std::string reason; };
+    std::unordered_map<std::string, UpdReport> updReports;   // ep → readback
     try {
         auto arr = nlohmann::json::parse(js);
         if (arr.is_array()) {
@@ -327,6 +333,14 @@ bool reconcile_registrations(data_store::Client& ds,
                     lifetimes[ep] = lt;
                 if (auto loc = e.value("location", std::string()); !loc.empty())
                     locations[ep] = std::move(loc);
+                if (auto uc = e.value("update_cid", std::string()); !uc.empty()) {
+                    UpdReport r;
+                    r.cid    = std::move(uc);
+                    r.state  = e.value("update_state", 0);
+                    r.result = e.value("update_result", 0);
+                    r.reason = e.value("update_reason", std::string());
+                    updReports[ep] = std::move(r);
+                }
                 online[std::move(ep)] = e.value("last_seen_unix",
                                                 std::int64_t{0});
             }
@@ -377,14 +391,22 @@ bool reconcile_registrations(data_store::Client& ds,
 
     // ── OTA job completion (fixes the "stuck at 90%" bar) ──────────────
     // The cloud sets an OTA job to state 3 ("updating" → 90%) when it pushes
-    // Object 5, but it never reads the device's /5/0/5 Update Result back — and
-    // iot-swupdate restarts the lwm2m client (the reporter) right after writing
-    // success, so a /5/0/5 observe would race the kill anyway. The reliable
-    // completion signal is /3/0/3 (installed version), which the device re-reports
-    // on its post-update re-Register. So: mark a job done (state 0 / result 1 →
-    // 100%) once the endpoint's installed version moves OFF the baseline captured
-    // at push time. Baseline-change (not version-string match) is what makes this
-    // robust to the "1.1.0+<gitsha>" scheme where only the +sha bumps per build.
+    // Object 5, but iot-swupdate restarts the lwm2m client (the reporter) right
+    // after writing success, so a /5/0/5 observe would race the kill. The
+    // reliable SUCCESS signal is /3/0/3 (installed version), which the device
+    // re-reports on its post-update re-Register: mark a job done (state 0 /
+    // result 1 → 100%) once the endpoint's installed version moves OFF the
+    // baseline captured at push time. Baseline-change (not version-string
+    // match) is what makes this robust to the "1.1.0+<gitsha>" scheme where
+    // only the +sha bumps per build.
+    //
+    // FAILURE has no version move — the device screams result=9 into its own
+    // ds and the row used to sit "downloading" forever. lwm2m-dm now polls the
+    // device's /5/0/3 state, /5/0/5 result and /5/0/26 vendor reason and
+    // publishes them (cid-stamped) in cloud.lwm2m.registrations; a terminal
+    // device result whose cid matches the job goes straight into the row,
+    // reason included. The cid match (not a timestamp guess) is what stops a
+    // stale result from a PREVIOUS campaign failing a fresh push.
     try {
         auto st = nlohmann::json::parse(ds_str(ds, "cloud.update.status", "[]"));
         if (st.is_array()) {
@@ -394,6 +416,31 @@ bool reconcile_registrations(data_store::Client& ds,
                 if (row.value("result", 0) != 0) continue;       // already terminal
                 if (row.value("state", 0) < 1) continue;          // not in-flight
                 const auto serial = row.value("serial", std::string());
+
+                // Device-reported outcome (cid-matched). "ts" doubles as the
+                // cid on rows written before the explicit "cid" field existed.
+                auto uit = updReports.find(serial);
+                if (uit != updReports.end() &&
+                    uit->second.cid == std::to_string(
+                        row.value("cid", row.value("ts", 0)))) {
+                    if (uit->second.result != 0) {           // terminal on-device
+                        row["state"]  = 0;
+                        row["result"] = uit->second.result;
+                        if (!uit->second.reason.empty())
+                            row["reason"] = uit->second.reason;
+                        st_changed = true;
+                        continue;
+                    }
+                    // In-flight: mirror the device's real phase (1 downloading /
+                    // 2 downloaded / 3 updating) so the progress bar tracks the
+                    // device instead of sitting at the push-time value.
+                    const int dst = uit->second.state;
+                    if (dst >= 1 && dst <= 3 && row.value("state", 1) != dst) {
+                        row["state"] = dst;
+                        st_changed = true;
+                    }
+                }
+
                 const auto* info  = reg.lookup_by_ep(serial);
                 if (!info || info->installed_version.empty()) continue;
                 const auto baseline = row.value("baseline", std::string());
@@ -1418,7 +1465,7 @@ int main(int argc, char** argv) {
                                 const auto* cur = ep_reg.lookup_by_ep(serial);
                                 status.push_back({{"serial", serial}, {"state", 1},
                                     {"result", 0}, {"version", ver}, {"pkg", pkg},
-                                    {"ts", cid},
+                                    {"ts", cid}, {"cid", cid},
                                     {"baseline", cur ? cur->installed_version
                                                      : std::string()}});
                             }

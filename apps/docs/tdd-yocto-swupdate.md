@@ -228,10 +228,40 @@ Result codes (`iot.update.result`): `0` initial, `1` success, `2` rolled-back
 (A/B), `5` integrity, `8` uri, `9` install/migration error, `10` skipped
 (offered not newer — downgrade refused).
 
+Next to every terminal result the stager/installer also writes
+**`iot.update.reason`** — the human cause (`"no .ipk in bundle"`,
+`"sha256 mismatch (want … got …)"`, `"opkg install failed: <last log line>"`) —
+cleared at campaign start and on success. The device-ui shows it under the
+Result badge, and the lwm2m client serves it on **`/5/0/26`** (a vendor
+resource outside OMA Object 5's RIDs 0-13; foreign servers never ask for it).
+
 ds writes use `ds-cli --socket=/run/iot/data_store.sock` (root) — identical to
 today's script, and ds (`/var/lib/iot`) is persistent so the result survives a
 reboot and the relaunched lwm2m client mirrors it back onto Object 5
-(`/5/0/3`, `/5/0/5`, `/5/0/7`).
+(`/5/0/3`, `/5/0/5`, `/5/0/7`, `/5/0/26`).
+
+### 3.4b Cloud failure feedback (why a row never sticks at "downloading")
+
+Cloud-side **success** is inferred from the `/3/0/3` baseline move (the device
+restarts its reporter mid-apply, so a result observe would race the kill). But
+a **failed** campaign moves no version — before this path existed, the
+`cloud.update.status` row sat "downloading" forever while the device had long
+since written `result=9` into its own ds (observed live: the 1.5.0 push that
+staged a GitHub *source* tarball → `no .ipk in bundle` × 5 retries, cloud UI
+stuck at 30%).
+
+The feedback loop: lwm2m-dm's 30 s poll also Reads `/5/0/3` (state), `/5/0/5`
+(result) and `/5/0/26` (reason) per registered endpoint and publishes them in
+`cloud.lwm2m.registrations` as `update_state`/`update_result`/`update_reason`,
+stamped with `update_cid` — the campaign id it last pushed to that endpoint.
+iot-cloudd's reconcile then folds a **terminal** device result into the
+matching (cid-equal) in-flight `cloud.update.status` row, reason included; a
+non-terminal device state (1/2/3) advances the row's phase so the progress bar
+tracks the device. Stale-attribution is prevented twice: lwm2m-dm drops its
+cached readback at push time (refilled only by post-push polls), and the
+stager resets `result`/`reason` at campaign start — so a result from campaign
+N can never fail campaign N+1. The cloud-ui renders `reason` under the Result
+badge.
 
 ### 3.5 Local upload (drag-and-drop) — second source
 

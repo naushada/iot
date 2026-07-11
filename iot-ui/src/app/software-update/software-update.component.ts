@@ -50,7 +50,12 @@ import { ToastService } from '../../common/toast.service';
             <clr-dg-cell>Result
               <app-ds-hint *dsDebug key="iot.update.result"></app-ds-hint></clr-dg-cell>
             <clr-dg-cell><app-status-badge [label]="resultLabel"
-              [state]="result===1 ? 'connected' : (result>=5 ? 'exited' : 'idle')"></app-status-badge></clr-dg-cell>
+              [state]="result===1 ? 'connected' : (result>=5 ? 'exited' : 'idle')"></app-status-badge>
+              <!-- Cause written by iot-ota-stage / iot-swupdate next to the
+                   result code, e.g. "no .ipk in bundle". -->
+              <div class="reason" *ngIf="reason"
+                   [class.err-reason]="result>=5 && result<10">{{ reason }}</div>
+            </clr-dg-cell>
           </clr-dg-row>
           <clr-dg-row *ngIf="bank && !banks.length">
             <clr-dg-cell>Running Bank <span class="hint">(A/B image)</span>
@@ -153,6 +158,8 @@ import { ToastService } from '../../common/toast.service';
     h3 { color: #333; margin: 0 0 16px 0; font-size: 16px; font-weight: 600; }
     h4 { color: #555; margin: 18px 0 10px 0; font-size: 13px; font-weight: 600; }
     .hint { color: #888; font-size: 12px; margin-top: 8px; }
+    .reason { color: #888; font-size: 11px; margin-top: 2px; max-width: 320px; }
+    .err-reason { color: #c92100; }
     .btn-cell { display: flex; align-items: flex-end; }
     .btn-cell .btn-primary { white-space: nowrap; }
     .dropzone { display: flex; align-items: center; gap: 12px; padding: 18px;
@@ -173,6 +180,7 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   version = '';       // iot.version — the running/installed release (footer value)
   state = 0;
   result = 0;
+  reason = '';        // iot.update.reason — human cause behind a terminal result
   pkg = '';           // iot.update.package — artifact being applied (name + version)
   progress = 0;       // iot.update.progress — download % (0 when size unknown)
   bank = '';          // iot.boot.bank — running A/B rootfs bank (empty = single-rootfs)
@@ -198,9 +206,11 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   get resultLabel(): string {
     if (this.result === 0) return '—';
     if (this.result === 1) return 'success';
+    if (this.result === 2) return 'rolled back';
     if (this.result === 5) return 'integrity error';
     if (this.result === 8) return 'uri error';
     if (this.result === 9) return 'install error';
+    if (this.result === 10) return 'skipped';
     return 'error ' + this.result;
   }
 
@@ -226,6 +236,9 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     }));
     this.sub.add(this.ds.observe('iot.update.result').subscribe(v => {
       this.result = Number(v) || 0;
+    }));
+    this.sub.add(this.ds.observe('iot.update.reason').subscribe(v => {
+      this.reason = String(v ?? '');
     }));
     this.sub.add(this.ds.observe('iot.update.package').subscribe(v => {
       this.pkg = String(v ?? '');

@@ -40,6 +40,9 @@ LOG="$SPOOL/last.log"
 set_state()   { $DSCLI set iot.update.state   "$1" >/dev/null 2>&1 || true; }
 set_result()  { $DSCLI set iot.update.result  "$1" >/dev/null 2>&1 || true; }
 set_version() { $DSCLI set iot.update.version "\"$1\"" >/dev/null 2>&1 || true; }
+# Strip quotes/backslashes — the value rides inside a quoted JSON string and a
+# raw opkg/rauc error line with `"` would break the parse (reason silently lost).
+set_reason()  { $DSCLI set iot.update.reason  "\"$(printf '%s' "$1" | tr -d '"\\')\"" >/dev/null 2>&1 || true; }
 log() { logger -t iot-swupdate "$*" 2>/dev/null; echo "iot-swupdate: $*"; }
 
 # Parse "major.minor.patch" (ignoring any +build / -pre suffix) into one
@@ -165,6 +168,7 @@ if [ -n "$VER" ]; then
     if [ -n "$CUR" ] && [ "$(semv "$VER")" -lt "$(semv "$CUR")" ]; then
         log "refusing downgrade: offered=$VER < installed=$CUR; skipping"
         set_version "$CUR"   # report what is actually installed, not the offer
+        set_reason "downgrade refused (offered $VER < installed $CUR)"
         set_result 10        # 10 = skipped (offered not newer) — NOT an error
         set_state 0
         rm -rf "$WORK"
@@ -184,14 +188,17 @@ RAUCB="$(ls "$WORK"/*.raucb 2>/dev/null | head -1)"
 if [ -n "$RAUCB" ]; then
     if ! command -v rauc >/dev/null 2>&1; then
         log "rauc not installed — cannot apply $(basename "$RAUCB") (needs the A/B image)"
+        set_reason "rauc not installed (needs the A/B image)"
         set_result 9; set_state 0; rm -rf "$WORK"; exit 1
     fi
     log "rauc install $RAUCB"
     if ! rauc install "$RAUCB" >"$LOG" 2>&1; then
         log "$(tail -5 "$LOG" 2>/dev/null)"
+        set_reason "rauc install failed: $(tail -1 "$LOG" 2>/dev/null | cut -c1-160)"
         set_result 9; set_state 0; rm -rf "$WORK"; exit 1
     fi
     [ -n "$VER" ] && set_version "$VER"
+    set_reason ""
     set_result 1; set_state 0
     rm -rf "$WORK"
     log "A/B bundle staged to the inactive bank; rebooting to activate"
@@ -202,6 +209,7 @@ fi
 log "opkg install $WORK/*.ipk"
 if ! opkg install --force-reinstall --force-downgrade "$WORK"/*.ipk >"$LOG" 2>&1; then
     log "$(tail -5 "$LOG" 2>/dev/null)"
+    set_reason "opkg install failed: $(tail -1 "$LOG" 2>/dev/null | cut -c1-160)"
     set_result 9; set_state 0
     rm -rf "$WORK"
     exit 1
@@ -218,12 +226,14 @@ INSTALLED="$(awk '/Installing|Upgrading/{print $2}' "$LOG" 2>/dev/null)"
 log "running config migrations"
 if ! run_migrations; then
     log "migration failed; NOT restarting app daemons (operator intervention)"
+    set_reason "config/schema migration failed"
     set_result 9; set_state 0
     rm -rf "$WORK"
     exit 1
 fi
 
 # ── success ────────────────────────────────────────────────────────
+set_reason ""
 set_result 1; set_state 0
 log "update applied (version=${VER:-unknown})"
 

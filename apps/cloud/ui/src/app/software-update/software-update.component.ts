@@ -7,7 +7,7 @@ import { ToastService } from '../../common/toast.service';
 
 interface FwPkg { pkg: string; version: string; arch: string; ipk_url: string; sha256: string; }
 interface Ep { endpoint: string; tun_ip: string; proxy_port: number; registered: boolean; installed_version?: string; }
-interface UpdStatus { serial: string; state: number; result: number; version: string; pkg?: string; ts: number; }
+interface UpdStatus { serial: string; state: number; result: number; version: string; pkg?: string; ts: number; reason?: string; }
 
 @Component({
   selector: 'app-software-update',
@@ -158,6 +158,10 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
             <clr-dg-cell>
               <app-status-badge [label]="resultLabel(s.result)"
                 [state]="s.result===1 ? 'connected' : (s.result>=5 ? 'exited' : 'idle')"></app-status-badge>
+              <!-- Device-reported cause (iot.update.reason via /5/0/26), so a
+                   failed campaign says WHY ("no .ipk in bundle"), not just 9. -->
+              <div class="reason" *ngIf="s.reason"
+                   [class.err-hint]="s.result>=5 && s.result<10">{{ s.reason }}</div>
             </clr-dg-cell>
             <clr-dg-cell>{{ s.version || '—' }}</clr-dg-cell>
             <clr-dg-cell>
@@ -184,6 +188,7 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
     h4 { color: #555; margin: 18px 0 10px 0; font-size: 13px; font-weight: 600; }
     .hint { color: #888; font-size: 12px; margin-top: 8px; }
     .err-hint { color: #c92100; }
+    .reason { color: #888; font-size: 11px; margin-top: 2px; max-width: 260px; }
     .btn-cell { display: flex; align-items: flex-end; }
     .btn-cell .btn-primary { white-space: nowrap; }
     .pbar { display: inline-block; width: 90px; height: 8px; background: #e0e6e9;

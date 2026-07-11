@@ -251,6 +251,16 @@ return {
         type    = "integer",
         default = 0,
     },
+    -- Human-readable cause for a terminal iot.update.result (e.g. "no .ipk in
+    -- bundle", "sha256 mismatch"), written by iot-ota-stage / iot-swupdate next
+    -- to the result code and cleared at campaign start. Read by device-ui and
+    -- served to the cloud on /5/0/26 (vendor resource) so the cloud Update
+    -- Status row can say WHY a campaign failed, not just that it did.
+    ["iot.update.reason"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "",
+    },
     -- Download progress 0..100, written by iot-ota-stage during the download
     -- (bytes-on-disk / Content-Length). Stays 0 when the size is unknown (the
     -- device-ui then shows an indeterminate bar). 100 = fully downloaded.

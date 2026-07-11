@@ -483,6 +483,20 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
     // without a capture. Values land in a nested map[endpoint][field].
     auto epVeh = std::make_shared<std::unordered_map<std::string,
                           std::unordered_map<std::string, std::string>>>();
+    // OTA campaign readback (Object 5): device-side update State /5/0/3,
+    // Update Result /5/0/5 and vendor Update Reason /5/0/26, on the same
+    // token-tagged server-Read scheme. This is the FAILURE feedback path —
+    // success is inferred from the /3/0/3 baseline move, but a failed campaign
+    // changes no version, so only these reads carry "result=9 + why" back.
+    // epUpdCid records WHICH campaign (cloud.update.pending cid) was last
+    // pushed to the endpoint: the caches are dropped at push time and refilled
+    // only by post-push polls (the stager resets result/reason at start), so
+    // iot-cloudd can attribute a reported failure to the right job and never
+    // to a stale pre-push result.
+    auto epUpdState  = std::make_shared<std::unordered_map<std::string, std::string>>();
+    auto epUpdResult = std::make_shared<std::unordered_map<std::string, std::string>>();
+    auto epUpdReason = std::make_shared<std::unordered_map<std::string, std::string>>();
+    auto epUpdCid    = std::make_shared<std::unordered_map<std::string, std::string>>();
     static const struct { std::uint8_t tag; int rid; const char* field; } kVehReads[] = {
         {0x0A, 0,  "speed"},    {0x0B, 1, "rpm"},      {0x0C, 2, "coolant"},
         {0x0D, 10, "link"},     {0x0E, 3, "throttle"}, {0x0F, 4, "load"},
@@ -505,7 +519,8 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         };
         publish_regs = std::make_shared<std::function<void()>>(
             [registry, dsClient, lastSeen, now_unix, epVersions, epLanIps,
-             epGpsLat, epGpsLon, epVeh, verMtx]() {
+             epGpsLat, epGpsLon, epVeh, epUpdState, epUpdResult, epUpdReason,
+             epUpdCid, verMtx]() {
                 if (!dsClient) return;
                 const std::int64_t nowUnix = now_unix();
                 nlohmann::json arr = nlohmann::json::array();
@@ -535,6 +550,23 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                         auto lit = epLanIps->find(ep);
                         if (lit != epLanIps->end() && !lit->second.empty())
                             row["lan_ip"] = lit->second;
+                        // Object-5 OTA readback, published only for the campaign
+                        // we actually pushed (update_cid stamps which one) —
+                        // iot-cloudd folds a device-reported terminal result +
+                        // reason into the matching cloud.update.status row.
+                        auto cit = epUpdCid->find(ep);
+                        if (cit != epUpdCid->end() && !cit->second.empty()) {
+                            row["update_cid"] = cit->second;
+                            auto sit = epUpdState->find(ep);
+                            if (sit != epUpdState->end() && !sit->second.empty())
+                                row["update_state"] = std::atoi(sit->second.c_str());
+                            auto rit = epUpdResult->find(ep);
+                            if (rit != epUpdResult->end() && !rit->second.empty())
+                                row["update_result"] = std::atoi(rit->second.c_str());
+                            auto nit = epUpdReason->find(ep);
+                            if (nit != epUpdReason->end() && !nit->second.empty())
+                                row["update_reason"] = nit->second;
+                        }
                     }
                     // Device public/ISP IP = the DTLS registration peer address
                     // (the NAT public IP the device's DIRECT Register/Update
@@ -600,14 +632,17 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
         for (auto& [type, ctx] : services) {
             (void)type;
             ctx->coapAdapter()->dmResponseHandler(
-                [epVersions, epLanIps, epGpsLat, epGpsLon, epVeh, seqToEp, verMtx, publish_regs]
+                [epVersions, epLanIps, epGpsLat, epGpsLon, epVeh, epUpdState,
+                 epUpdResult, epUpdReason, seqToEp, verMtx, publish_regs]
                 (const CoAPAdapter::CoAPMessage& m) {
                     const auto& tok = m.tokens;
                     // Token tag selects which read reply this is: 0x06 /3/0/3 (fw
                     // version), 0x07 /4/0/4 (LAN IP), 0x08 /6/0/0 (GPS lat),
                     // 0x09 /6/0/1 (GPS lon), 0x0A..0x13 Object-33000 vehicle
-                    // signals (kVehReads). All stamp a 24-bit seq → endpoint.
-                    if (tok.size() < 4 || tok[0] < 0x06 || tok[0] > 0x13) return;
+                    // signals (kVehReads), 0x14 /5/0/3 (update state), 0x15
+                    // /5/0/5 (update result), 0x16 /5/0/26 (update reason).
+                    // All stamp a 24-bit seq → endpoint.
+                    if (tok.size() < 4 || tok[0] < 0x06 || tok[0] > 0x16) return;
                     const std::uint8_t  kind = tok[0];
                     const std::uint32_t seq =
                         (static_cast<std::uint32_t>(tok[1]) << 16) |
@@ -620,7 +655,7 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                         if (it == seqToEp->end()) return;
                         const std::string ep = it->second;
                         seqToEp->erase(it);
-                        if (kind >= 0x0A) {
+                        if (kind >= 0x0A && kind <= 0x13) {
                             // Object-33000 vehicle signal → nested map[ep][field].
                             const char* field = nullptr;
                             for (const auto& vr : kVehReads)
@@ -635,10 +670,13 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                         } else {
                             std::unordered_map<std::string, std::string>* target = nullptr;
                             switch (kind) {
-                                case 0x06: target = epVersions.get(); break;
-                                case 0x07: target = epLanIps.get();   break;
-                                case 0x08: target = epGpsLat.get();   break;
-                                case 0x09: target = epGpsLon.get();   break;
+                                case 0x06: target = epVersions.get();  break;
+                                case 0x07: target = epLanIps.get();    break;
+                                case 0x08: target = epGpsLat.get();    break;
+                                case 0x09: target = epGpsLon.get();    break;
+                                case 0x14: target = epUpdState.get();  break;
+                                case 0x15: target = epUpdResult.get(); break;
+                                case 0x16: target = epUpdReason.get(); break;
                                 default:   return;
                             }
                             if (!m.payload.empty() && (*target)[ep] != m.payload) {
@@ -683,7 +721,9 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
 
     app->udpAdapter()->on_tick_server([registry, wapp_srv, last_poll,
                                        publish_regs, dsCertPush, otaSent,
-                                       seqToEp, verMtx, verSeq, epVersions]() {
+                                       seqToEp, verMtx, verSeq, epVersions,
+                                       epUpdState, epUpdResult, epUpdReason,
+                                       epUpdCid]() {
         // Local constexpr inside the lambda body — gcc 11 wouldn't let
         // us reference an outer-scope constexpr without an explicit
         // capture even though it's a constant expression.
@@ -911,6 +951,36 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                             /*accept*/ -1);
                         ctx->send_async(vreq2, reg.peerHost, reg.peerPort);
                     }
+
+                    // Object-5 OTA readback: /5/0/3 State (0x14), /5/0/5 Update
+                    // Result (0x15), /5/0/26 vendor Update Reason (0x16). This
+                    // is the failure feedback the completion-by-version-change
+                    // heuristic can't provide: a failed campaign moves no
+                    // version, so without these reads the cloud row would sit
+                    // at "downloading" forever while the device long since
+                    // reported result=9. iot-cloudd folds them into
+                    // cloud.update.status (cid-matched, see publish_regs).
+                    static const struct { std::uint8_t tag; int rid; } kUpdReads[] = {
+                        {0x14, 3}, {0x15, 5}, {0x16, 26},
+                    };
+                    for (const auto& ur : kUpdReads) {
+                        std::uint32_t useq;
+                        {
+                            std::lock_guard<std::mutex> lk(*verMtx);
+                            useq = (++(*verSeq)) & 0x00FFFFFFu;
+                            (*seqToEp)[useq] = reg.endpoint;
+                        }
+                        std::string utok2;
+                        utok2.push_back(static_cast<char>(ur.tag));
+                        utok2.push_back(static_cast<char>((useq >> 16) & 0xFF));
+                        utok2.push_back(static_cast<char>((useq >> 8)  & 0xFF));
+                        utok2.push_back(static_cast<char>( useq        & 0xFF));
+                        auto ureq = ::lwm2m::dmsrv::build_read(
+                            next_msgid(), utok2,
+                            /*oid*/ 5, /*iid*/ 0, /*rid*/ ur.rid,
+                            /*accept*/ -1);
+                        ctx->send_async(ureq, reg.peerHost, reg.peerPort);
+                    }
                 }
 
                 // OTA: push a pending firmware update over Object 5 (Package
@@ -995,6 +1065,21 @@ ServerPlumbing wire_server(std::shared_ptr<App>& app,
                                         next_msgid(), utok, 5, 0, 2, "");
                                     ctx->send_async(ex, reg.peerHost, reg.peerPort);
                                     (*otaSent)[reg.endpoint] = cid;
+                                    // Drop the cached Object-5 readback and stamp
+                                    // the campaign id: the caches refill only from
+                                    // POST-push polls (the stager resets result/
+                                    // reason at start), so a stale failure from a
+                                    // previous campaign is never attributed to
+                                    // this one. Republished below so the stale
+                                    // fields leave cloud.lwm2m.registrations too.
+                                    {
+                                        std::lock_guard<std::mutex> lk(*verMtx);
+                                        epUpdState->erase(reg.endpoint);
+                                        epUpdResult->erase(reg.endpoint);
+                                        epUpdReason->erase(reg.endpoint);
+                                        (*epUpdCid)[reg.endpoint] = cid;
+                                    }
+                                    if (publish_regs) (*publish_regs)();
                                     ACE_DEBUG((LM_INFO,
                                         ACE_TEXT("%D lwm2m:thread:%t %M %N:%l pushed OTA "
                                                  "update to %C ver=%C peer=%C:%u\n"),
@@ -1273,6 +1358,12 @@ ClientPlumbing wire_client(std::shared_ptr<App>& app,
     fwHooks.read_version = [dsc]() -> std::string {
         std::vector<data_store::Client::GetResult> got;
         if (dsc && dsc->get({"iot.update.version"}, got).ok && !got.empty() && got[0].has_value)
+            if (auto s = data_store::to_string(got[0].value)) return *s;
+        return {};
+    };
+    fwHooks.read_reason = [dsc]() -> std::string {
+        std::vector<data_store::Client::GetResult> got;
+        if (dsc && dsc->get({"iot.update.reason"}, got).ok && !got.empty() && got[0].has_value)
             if (auto s = data_store::to_string(got[0].value)) return *s;
         return {};
     };

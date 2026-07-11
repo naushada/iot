@@ -39,8 +39,12 @@ set_state()    { $DSCLI set iot.update.state    "$1" >/dev/null 2>&1 || true; }
 set_result()   { $DSCLI set iot.update.result   "$1" >/dev/null 2>&1 || true; }
 set_progress() { $DSCLI set iot.update.progress "$1" >/dev/null 2>&1 || true; }
 set_package()  { $DSCLI set iot.update.package  "$1" >/dev/null 2>&1 || true; }
+# Quotes/backslashes are stripped: the value is passed to ds-cli inside a
+# quoted JSON string, and an opkg/curl error line with an embedded `"` would
+# otherwise break the parse and silently drop the reason.
+set_reason()   { $DSCLI set iot.update.reason   "\"$(printf '%s' "$1" | tr -d '"\\')\"" >/dev/null 2>&1 || true; }
 log() { logger -t iot-ota-stage "$*" 2>/dev/null; echo "iot-ota-stage: $*"; }
-fail() { log "FAILED ($1): $2"; set_result "$1"; set_state 0; exit 1; }
+fail() { log "FAILED ($1): $2"; set_reason "$2"; set_result "$1"; set_state 0; exit 1; }
 
 [ -n "$URL" ] || fail 8 "no URL"
 
@@ -84,6 +88,12 @@ DL="$SPOOL/$NAME"
 # "iot-bundle-1.1.0-raspberrypi3-64.tar.gz (1.1.0)").
 set_package "${NAME}${VER:+ ($VER)}"
 set_progress 0
+# A fresh campaign starts clean: clear the previous run's terminal result +
+# reason so the cloud's Object-5 poll can't attribute a STALE failure to this
+# campaign (lwm2m-dm drops its cached readback when it pushes; the first
+# post-push poll must see this campaign's values, not last week's result=9).
+set_result 0
+set_reason ""
 
 set_state 1   # downloading
 log "downloading $URL -> $DL"
