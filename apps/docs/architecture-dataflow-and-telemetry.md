@@ -361,7 +361,143 @@ Minute details worth knowing:
 
 ---
 
-## 6. Schema summary
+## 6. VPN plane: certificate delivery + tunnel bring-up (server ⇄ client)
+
+Two flows, in order. **First** the cloud mints and delivers the cert family
+(CA cert + client cert + client key) to the device over LwM2M **Object 2048** —
+the device generates nothing. **Then** the device's `openvpn-client` dials the
+cloud's OpenVPN server, and the server hands it the tunnel network config
+(IP, netmask, gateway, DNS, keepalive) in the TLS-protected **PUSH_REPLY**,
+which the `openvpn` process itself installs on `tun0`.
+
+### 6.1 PKI: how the CA cert, client cert and private key reach the device
+
+Minting: `CertAuthority` (`modules/server/openvpn/cert_authority.cpp`) runs
+entirely on `iot-cloudd` — `ensure()` creates/restores the CA
+(`/etc/iot/vpn/ca/ca.key` never leaves the cloud), `mint_client(cn)` runs
+`openssl genrsa → req (CSR) → ca` (CA-sign, 10 y) with `cn =
+rpi{serial}@cloud.local`. Delivery: `apps/src/lwm2m_dm_server.cpp
+build_cert_push` + the chunk codec `apps/inc/lwm2m_cert_chunk.hpp`; install:
+`apps/src/lwm2m_object_cert.cpp`.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant OP as operator (Endpoints page)
+  participant CD as iot-cloudd (CertAuthority)
+  participant CDS as cloud ds-server
+  participant DM as lwm2m-dm (30s tick)
+  participant LC as device lwm2m client (Object 2048)
+  participant FS as device /etc/iot/vpn
+  participant OC as openvpn-client supervisor
+
+  OP->>CDS: set cloud.provision.request = {serial}
+  CDS-->>CD: NotifyEvent
+  CD->>CD: ensure() — CA key+cert (restored from ds if present),<br/>mint_client(rpi{serial}@cloud.local) — genrsa → CSR → CA-sign (10y)
+  CD->>CDS: cloud.endpoint.credentials += {vpn.client.cert, vpn.client.key}<br/>cloud.vpn.ca.crt.pem (write-only, gid cloud-svc)
+
+  loop every DM tick while endpoint registered AND not in cloud.vpn.connected
+    DM->>CDS: get cloud.endpoint.credentials + cloud.dm.uri +<br/>cloud.vpn.listen.port + cloud.vpn.proto
+    DM->>DM: build_cert_push — per artifact (ca / cert / key)<br/>certchunk::encode — deflate if PEM > 1024 B,<br/>split into chunks of ≤ 1019 B data + 5 B header<br/>(flags bit0=zipped, seq u16, total u16) —<br/>a whole PEM never fits one DTLS record (tinydtls max 1400)
+    DM->>LC: WRITE /2048/0/1 chunk 1..N (opaque, CA cert)
+    DM->>LC: WRITE /2048/1/1 chunk 1..N (client cert)
+    DM->>LC: WRITE /2048/2/1 chunk 1..N (client PRIVATE key — over DTLS-PSK)
+    DM->>LC: WRITE /2048/0/5,6,7 (text) — vpn host (from cloud.dm.uri),<br/>port (cloud.vpn.listen.port), proto (tcp-server → tcp-client)
+    DM->>LC: EXECUTE /2048/0/3 (Apply)
+    LC->>LC: Reassembler.feed per chunk (idempotent — re-pushed<br/>chunks self-heal), on last chunk inflate → staged PEM
+    alt family incomplete (a chunk still missing)
+      LC-->>DM: Apply → deferred (logged), next tick re-pushes
+    else family + endpoint unchanged vs what is on disk
+      LC-->>DM: Apply → skipped (no openvpn bounce on a no-op re-push)
+    else fresh family
+      LC->>FS: write ca.crt 0644, client.crt 0644, client.key 0640 group iot<br/>(dir 2750 engineer:iot — DynamicUser openvpn-client reads via<br/>SupplementaryGroups=iot, only lwm2m client writes)
+      LC->>CDS: set vpn.remote.host / vpn.remote.port / vpn.remote.proto<br/>(device ds — tunnel target now fully cloud-provisioned)
+      LC->>OC: gate-flip services.openvpn.client.enable false → true
+      Note over OC: supervisor respawns openvpn with the new certs (§6.2)
+    end
+  end
+  Note over DM,OC: stop signal = cloud.vpn.connected lists this endpoint<br/>(iot-cloudd reads it from the OpenVPN mgmt plane) — proves the cert<br/>WORKS, not just landed. A re-mint drops the tunnel → push resumes.
+```
+
+> **Security shape:** the client private key is cloud-generated and exists in
+> three places — cloud ds (write-only ACL), the DTLS-PSK-encrypted LwM2M wire,
+> and device disk (`0640` group `iot`). The CA **key** is cloud-only; devices
+> only ever receive the CA **cert**. Revocation = `openssl ca -revoke` → CRL →
+> `cloud.vpn.crl.pem`, enforced by the server's `crl-verify`.
+
+### 6.2 Tunnel bring-up: what the server sends and how tun0 gets configured
+
+Server config (`modules/server/openvpn/openvpn_server.cpp
+build_server_config`): `mode server`, `tls-server`, `topology subnet`,
+`server 10.9.0.0 255.255.255.0` (the ifconfig-pool), optional per-client
+`client-config-dir` (`ifconfig-push` static IPs, multi-tenant), `push
+"dhcp-option DNS …"`, `crl-verify`, `dh none` (ECDH), `keepalive 10 60`,
+`management 127.0.0.1 {mgmt_port}`. Client config
+(`modules/openvpn/client/src/process.cpp build_openvpn_config`): `client`,
+`dev tun0`, `proto tcp-client`, `remote {host} {port}`, `nobind`,
+`resolv-retry infinite`, `persist-tun`, `persist-key`, `ca/cert/key
+/etc/iot/vpn/*`, `management 127.0.0.1 {port}`, **`management-hold`**.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant SUP as openvpn-client supervisor (daemon)
+  participant DDS as device ds-server
+  participant OV as openvpn process (device)
+  participant TUN as tun0 (device kernel)
+  participant OS as openvpn server (cloud :1194)
+  participant CD as iot-cloudd
+
+  SUP->>DDS: gates — services.openvpn.client.enable,<br/>dep health net.router, target iface up (Gate.evaluate)
+  SUP->>DDS: snapshot vpn.remote.host/port/proto, vpn.mgmt.port, cipher
+  SUP->>SUP: build_openvpn_config → mkstemps /tmp/openvpn-XXXXXX.conf,<br/>spawn openvpn (held — mgmt socket open, NOT dialing yet)
+  SUP->>OV: mgmt attach 127.0.0.1 — "state on" + "state 1" (query current —<br/>fixes the missed-CONNECTED race), "log on" (PUSH_REPLY rides the log),<br/>"hold release"
+  SUP->>DDS: vpn.state = connecting
+
+  OV->>OS: TCP connect :1194, TLS handshake —<br/>client presents client.crt, verifies server against ca.crt
+  OS->>OS: verify client cert against CA + crl-verify (revoked → reject),<br/>cert CN rpi{serial}@cloud.local identifies the device
+  OV->>OS: PUSH_REQUEST
+  OS-->>OV: PUSH_REPLY — route-gateway 10.9.0.1,<br/>ifconfig 10.9.0.2 255.255.255.0 (topology subnet auto-push,<br/>or the CCD ifconfig-push static), dhcp-option DNS {x},<br/>ping 10, ping-restart 60 (from server keepalive 10 60)
+  OV->>TUN: openvpn itself installs — open /dev/net/tun ioctl TUNSETIFF →<br/>tun0 up, addr 10.9.0.2/24, route 10.9.0.0/24 dev tun0<br/>via route-gateway (NO redirect-gateway — only tunnel subnet routed)
+  OV-->>SUP: mgmt ">STATE ... CONNECTED,SUCCESS,10.9.0.2"
+  SUP->>DDS: vpn.state = connected, vpn.assigned.ip = 10.9.0.2
+  OV-->>SUP: mgmt ">LOG PUSH: Received control message PUSH_REPLY,..."
+  SUP->>DDS: parse ifconfig / route-gateway / dhcp-option DNS →<br/>vpn.assigned.netmask / .gateway / .dns (device-ui VPN page shows these)
+
+  Note over OV,OS: keepalive ping every 10s each way, peer declared dead<br/>after 60s (server reaps a hard-off client in ~120s)
+  CD->>OS: mgmt "status" poll — ROUTING TABLE vip,CN,real-addr
+  CD->>CD: cloud.vpn.connected += endpoint, dev_tun_ip = 10.9.0.2<br/>(stops the §6.1 cert re-push, enables §5 Launch UI + DNAT)
+
+  Note over SUP,OV: reconnects — openvpn re-dials on its own (resolv-retry,<br/>persist-tun/persist-key keep tun0 + keys), each cycle re-emits >HOLD:<br/>and the supervisor re-releases it. Any vpn.* ds change = hot-reload:<br/>tear down + respawn with a freshly rendered config.
+```
+
+Minute details worth knowing:
+
+- **State names on the wire → `vpn.state`:** the mgmt `>STATE:` codes are
+  normalised (`Lifecycle::normalise_state`) — `CONNECTING/TCP_CONNECT →
+  connecting`, `RESOLVE → resolving`, `WAIT/GET_CONFIG → wait`, `AUTH → auth`,
+  `ASSIGN_IP/ADD_ROUTES → connecting`, `CONNECTED → connected`, `EXITING →
+  exited`.
+- **Why `management-hold` + `state 1`:** openvpn is spawned *held* so the
+  supervisor can attach and enable notifications **before** the first dial —
+  otherwise the CONNECTED transition and PUSH_REPLY fire before anyone is
+  subscribed and `vpn.state` stalls at "connecting" forever (a real field bug).
+  `state 1` additionally queries the *current* state on (re)attach.
+- **PUSH_REPLY arrives via the log**, not a mgmt `>PUSH_REPLY` event (most
+  openvpn builds don't emit one) — hence `log on` and the
+  `PUSH: Received control message` parse.
+- **The assigned IP has two sources:** field 4 of the `CONNECTED` state line
+  and the `ifconfig` push option — both feed `vpn.assigned.ip`.
+- **No default-route hijack:** nothing pushes `redirect-gateway`, so only
+  `10.9.0.0/24` rides the tunnel. LwM2M/DTLS (`:5683`) and the OTA download
+  stay on the WAN — the VPN is for operator access (device-UI proxy, DNAT),
+  not the telemetry plane.
+- **LwM2M reacts to the tunnel:** the lwm2m client watches `vpn.state` and
+  re-Registers on a reconnect — fast recovery after a cloud restart.
+
+---
+
+## 7. Schema summary
 
 ### Device ds keys (`modules/vehicle/schemas/vehicle.lua`, `.../cell.lua`)
 
@@ -390,7 +526,7 @@ Minute details worth knowing:
 
 ---
 
-## 7. Prerequisites (end-to-end)
+## 8. Prerequisites (end-to-end)
 
 **Device**
 - `ds-server` running (daemons exit if `connect` fails).
