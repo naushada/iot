@@ -1,6 +1,7 @@
 #ifndef __dtls_adapter_hpp__
 #define __dtls_adapter_hpp__
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 #include <sstream>
@@ -425,6 +426,27 @@ class DTLSAdapter {
             return(m_clients);
         }
 
+        /// Server-role stale-peer reaper. A DTLS handshake that half-completes
+        /// (a flight lost mid-handshake, common on the direct public-IP bootstrap
+        /// path) leaves a server peer stuck in a non-CONNECTED state. tinydtls
+        /// then rejects EVERY fresh ClientHello from that endpoint with a fatal
+        /// UNEXPECTED_MESSAGE alert (dtls.c DTLS_HT_CLIENT_HELLO guard: a
+        /// ClientHello is only accepted when the peer is CONNECTED or
+        /// WAIT_CLIENTHELLO) instead of restarting the handshake — so the device
+        /// never receives a HelloVerifyRequest, loops "BS DTLS not up" forever,
+        /// and only a full context recreate (container restart) clears it. Since
+        /// tinydtls has no per-peer timestamp and never times peers out, we track
+        /// first-seen-not-yet-connected per source endpoint here and reset (which
+        /// UNLINKS, via dtls_destroy_peer) any peer still half-open past the
+        /// timeout, so its next ClientHello starts a clean handshake. Driven
+        /// opportunistically from rx() — during a wedge the stuck client keeps
+        /// retransmitting, so rx() keeps firing. See
+        /// apps/docs/hw-bringup-wp7702-cellular-wan.md and the BS-wedge memory.
+        void note_peer_activity(const session_t& s);   ///< rx(): record/refresh tracking
+        void note_peer_connected(const session_t& s);  ///< event cb: handshake done → untrack
+        void note_peer_gone(const session_t& s);       ///< event cb: closed/alert → untrack
+        void reap_stale_peers();                       ///< reset peers stuck half-open past timeout
+
     private:
         //std::unique_ptr<dtls_context_t, decltype(&dtls_free_context)> dtls_ctx;
         dtls_context_t *m_dtls_ctx;
@@ -441,6 +463,15 @@ class DTLSAdapter {
         std::string m_activeIdentity;
         std::string m_bootstrapIdentity;   ///< BS identity (first credential added)
         std::vector<ClientDetails> m_clients;
+
+        /// Half-open peer tracking for reap_stale_peers() (server role only).
+        /// Keyed by "ip:port"; value carries the first-seen time and a copy of the
+        /// session so the reaper can look the peer up (dtls_get_peer) without
+        /// walking tinydtls' internal peer hash (whose layout forks on
+        /// DTLS_PEERS_NOHASH). Entries are removed on CONNECTED / close / reap.
+        struct HalfOpenPeer { std::uint64_t sinceMs; session_t session; };
+        std::unordered_map<std::string, HalfOpenPeer> m_halfOpen;
+        std::uint64_t m_lastReapMs = 0;    ///< throttle the sweep (see kReapIntervalMs)
 };
 
 

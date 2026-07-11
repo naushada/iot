@@ -10,9 +10,34 @@
 #include "dtls_adapter.hpp"
 
 #include <ace/Log_Msg.h>
+#include <ace/OS_NS_sys_time.h>   // ACE_OS::gettimeofday for the reaper clock
 #include <cctype>
+#include <cstdint>  // std::uint64_t (reaper timestamps)
 #include <cstdio>   // keylog dump (fopen/fprintf) — see dtlsGetPskInfoCb
 #include <cstdlib>  // getenv($IOT_DTLS_KEYLOG)
+
+namespace {
+    /// Wall-clock milliseconds via ACE (project rule: ACE over raw POSIX).
+    std::uint64_t dtls_now_ms() {
+        ACE_Time_Value tv = ACE_OS::gettimeofday();
+        return static_cast<std::uint64_t>(tv.sec()) * 1000ull
+             + static_cast<std::uint64_t>(tv.usec()) / 1000ull;
+    }
+    /// "ip:port" for a session (IPv4 — session() only ever builds sockaddr_in).
+    std::string dtls_session_key(const session_t& s) {
+        struct in_addr a; a.s_addr = s.addr.sin.sin_addr.s_addr;
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%s:%u", inet_ntoa(a),
+                      static_cast<unsigned>(ntohs(s.addr.sin.sin_port)));
+        return std::string(buf);
+    }
+    /// A server DTLS handshake reaches CONNECTED within a few seconds even over a
+    /// lossy 2G link. One still half-open past this is wedged (see the reaper
+    /// doc in dtls_adapter.hpp) — reset it so the client's next ClientHello is
+    /// accepted instead of alert-10'd.
+    constexpr std::uint64_t kHalfOpenTimeoutMs = 30000;   // 30 s
+    constexpr std::uint64_t kReapIntervalMs    = 5000;    // sweep at most every 5 s
+}
 
 log_t dtls_level_from_string(const std::string& s) {
     std::string up;
@@ -79,6 +104,9 @@ std::int32_t dtlsEventCb(dtls_context_t *ctx, session_t *session, dtls_alert_lev
             case DTLS_EVENT_CONNECTED:
             {
                 dtls_info("Peer is connected\n");
+                // Handshake completed — this endpoint is no longer half-open, so
+                // the server-role reaper must stop tracking it.
+                if(!inst.isClient() && session) inst.note_peer_connected(*session);
                 if(inst.isClient()) {
                     inst.clientState("connected");
                 } else {
@@ -149,6 +177,9 @@ std::int32_t dtlsEventCb(dtls_context_t *ctx, session_t *session, dtls_alert_lev
     } else {
         /// This is an alert message.
         dtls_debug("DTLS Alert Message level: %d  code: %d\n", level, code);
+        // Any alert (close_notify or a fatal) tears the peer down — stop tracking
+        // it so a fresh handshake from the same endpoint is treated as new.
+        if(!inst.isClient() && session) inst.note_peer_gone(*session);
         switch(code) {
             case DTLS_ALERT_CLOSE_NOTIFY:
             {
@@ -369,6 +400,50 @@ void DTLSAdapter::reset_and_connect(const std::string& ip, const std::uint16_t& 
     }
 }
 
+void DTLSAdapter::note_peer_activity(const session_t& s) {
+    if (isClient()) return;                      // server-role safeguard only
+    const std::string key = dtls_session_key(s);
+    // Insert-if-absent: keep the ORIGINAL first-seen so age accrues across the
+    // client's retransmits. A CONNECTED peer that later re-appears here is
+    // harmless — reap_stale_peers() re-checks the live state before resetting.
+    if (m_halfOpen.find(key) == m_halfOpen.end())
+        m_halfOpen.emplace(key, HalfOpenPeer{ dtls_now_ms(), s });
+}
+
+void DTLSAdapter::note_peer_connected(const session_t& s) {
+    m_halfOpen.erase(dtls_session_key(s));       // handshake completed — not stale
+}
+
+void DTLSAdapter::note_peer_gone(const session_t& s) {
+    m_halfOpen.erase(dtls_session_key(s));       // peer closed/invalidated — untrack
+}
+
+void DTLSAdapter::reap_stale_peers() {
+    if (isClient() || !dtls_ctx()) return;
+    const std::uint64_t now = dtls_now_ms();
+    if (now - m_lastReapMs < kReapIntervalMs) return;   // throttle the sweep
+    m_lastReapMs = now;
+
+    for (auto it = m_halfOpen.begin(); it != m_halfOpen.end(); ) {
+        if (now - it->second.sinceMs < kHalfOpenTimeoutMs) { ++it; continue; }
+        // Past the timeout. Only reset if a peer is genuinely still lingering in
+        // a non-CONNECTED state — the live state check protects a healthy peer
+        // that merely re-appeared in the map after connecting.
+        dtls_peer_t* peer = dtls_get_peer(dtls_ctx(), &it->second.session);
+        if (peer && dtls_peer_state(peer) != DTLS_STATE_CONNECTED) {
+            ACE_ERROR((LM_WARNING,
+                ACE_TEXT("%D lwm2m:thread:%t %M %N:%l reaping stale half-open DTLS "
+                         "peer %C (state=%d, %ums old) — freeing it so the next "
+                         "ClientHello starts a fresh handshake\n"),
+                it->first.c_str(),
+                static_cast<int>(dtls_peer_state(peer)),
+                static_cast<unsigned>(now - it->second.sinceMs)));
+            dtls_reset_peer(dtls_ctx(), peer);   // dtls_destroy_peer(...,1): unlinks it
+        }
+        it = m_halfOpen.erase(it);
+    }
+}
+
 std::int32_t DTLSAdapter::rx(std::int32_t fd) {
     std::int32_t ret = -1;
     std::vector<std::uint8_t> buf(DTLS_MAX_BUF);
@@ -392,7 +467,11 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
 
         if(len <= DTLS_MAX_BUF) {
             dtls_debug_dump("bytes from peer:", buf.data(), len);
-            /// @brief This function deciphers the raw data received from peer and 
+            // Track this endpoint for the server-role half-open reaper BEFORE
+            // handling — a wedged handshake keeps arriving here and never fires
+            // the CONNECTED event that would untrack it.
+            note_peer_activity(session);
+            /// @brief This function deciphers the raw data received from peer and
             ///        invokes registered callback (dtlsReadCb) to deliver deciphered message.
             auto ret = dtls_handle_message(dtls_ctx(), &session, (unsigned char *)&buf.at(0), len);
             
@@ -410,6 +489,10 @@ std::int32_t DTLSAdapter::rx(std::int32_t fd) {
                                (std::uint8_t *)&rsp.at(0), rsp.size());
                 }
             }
+            // Opportunistic sweep (server role, self-throttled): reset any peer
+            // wedged half-open so this endpoint's next ClientHello is accepted.
+            // Runs here because a wedged handshake keeps landing in rx().
+            reap_stale_peers();
             return(ret);
         } else {
             dtls_debug_dump("bytes from peer: ", buf.data(), buf.size());
