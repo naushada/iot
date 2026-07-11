@@ -4,7 +4,7 @@
 #   p1 boot   (FAT)  bootloader + per-bank kernel/dtb + boot-select env
 #   p2 rootA  (ext4) rootfs bank A   ─┐ only the INACTIVE bank is written on update
 #   p3 rootB  (ext4) rootfs bank B   ─┘ (atomic + power-fail-safe; active keeps running)
-#   p4 data   (ext4) persistent: /var/lib/iot (ds store), certs, /etc/iot overrides
+#   p4 data   (ext4) persistent: mounted at /var/lib/private (ds StateDirectory)
 #
 # Enabled by an A/B build: WKS_FILE="iot-ab.wks.in" (set in entrypoint.sh /
 # kas-ab.yml when IOT_AB=1). Needs RPI_USE_U_BOOT=1 — u-boot's boot.cmd
@@ -25,11 +25,15 @@
 # precheck (which only sees the rootfs fstab), so it ships silently — HW-hit
 # repeatedly during bring-up. The mmcblk0p1 /boot mount comes from base-files.
 #
-# The data partition (p4) in particular is created but deliberately NOT mounted:
-# mounting it at /var/lib/iot breaks iot-ds (DynamicUser + StateDirectory=iot →
-# exit 238/STATE_DIRECTORY, HW-confirmed), so ds state lives on the rootfs for
-# now. A/B state-persistence (mount LABEL=data at /var/lib/private) is deferred
-# until validated on HW.
+# The data partition (p4, LABEL=data) is mounted at /var/lib/private — NOT via
+# fstab (kept clean) but by the shipped `var-lib-private.mount` systemd unit
+# (recipes-iot/lwm2m). That is where iot-ds's DynamicUser StateDirectory=iot
+# state (data_store.lua = all operator config) actually lands, so mounting the
+# persistent partition there is what makes config (wifi.networks, PSKs, endpoint
+# creds) SURVIVE a RAUC A/B bank swap. It must be /var/lib/private, NOT
+# /var/lib/iot — a mount at the latter collides with the StateDirectory symlink
+# and crash-loops iot-ds (exit 238/STATE_DIRECTORY, HW-confirmed). The `part`
+# mountpoint below is cosmetic (--no-fstab-update ⇒ wic writes no fstab entry).
 
 # Bank size (1024M) must exceed the standalone rootfs ext4 RAUC carries in the
 # .raucb — that image is inflated by IMAGE_ROOTFS_EXTRA_SPACE (512M of on-target
@@ -39,6 +43,6 @@
 part /boot --source bootimg-partition --fstype=vfat --label boot --active --align 4096 --size 100M --no-fstab-update
 part /     --source rootfs --fstype=ext4 --label rootA --align 4096 --size 1024M --no-fstab-update
 part /     --source rootfs --fstype=ext4 --label rootB --align 4096 --size 1024M --no-fstab-update
-part /var/lib/iot --fstype=ext4 --label data --align 4096 --size 256M --no-fstab-update
+part /var/lib/private --fstype=ext4 --label data --align 4096 --size 256M --no-fstab-update
 
 bootloader --ptable msdos

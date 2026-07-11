@@ -27,6 +27,7 @@ SRC_URI = "\
     git://github.com/naushada/iot.git;protocol=https;branch=${IOT_BRANCH} \
     file://0001-cmake-use-yocto-sysroot-paths.patch \
     file://iot-ds.service \
+    file://var-lib-private.mount \
     file://iot-lwm2m-client.service \
     file://iot-lwm2m-server.service \
     file://iot-openvpn-client.service \
@@ -321,6 +322,10 @@ do_install() {
     if ${@bb.utils.contains('PACKAGECONFIG', 'systemd', 'true', 'false', d)}; then
         install -d ${D}${systemd_system_unitdir}
         install -m 0644 ${WORKDIR}/iot-ds.service            ${D}${systemd_system_unitdir}/
+        # A/B persistence: mount the "data" partition at /var/lib/private so the
+        # DynamicUser ds StateDirectory (data_store.lua) survives a bank swap.
+        # Self-scoping (ConditionPathExists) — inert on the single-rootfs image.
+        install -m 0644 ${WORKDIR}/var-lib-private.mount     ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-lwm2m-client.service   ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-lwm2m-server.service   ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-openvpn-client.service ${D}${systemd_system_unitdir}/
@@ -478,6 +483,7 @@ FILES:${PN} = "\
 FILES:${PN}-ds-server = "\
     ${bindir}/ds-server \
     ${systemd_system_unitdir}/iot-ds.service \
+    ${systemd_system_unitdir}/var-lib-private.mount \
 "
 RDEPENDS:${PN}-ds-server = "\
     ace-tao \
@@ -763,7 +769,9 @@ ALLOW_EMPTY:${PN}-bcm2837-selftest = "1"
 INSANE_SKIP:${PN}-bcm2837-selftest = "already-stripped"
 
 # ── systemd ─────────────────────────────────────────────────────────
-SYSTEMD_SERVICE:${PN}-ds-server = "iot-ds.service"
+# var-lib-private.mount is enabled (WantedBy=local-fs.target) so it is pulled
+# into boot; it self-skips on the single-rootfs image (ConditionPathExists).
+SYSTEMD_SERVICE:${PN}-ds-server = "iot-ds.service var-lib-private.mount"
 # iot-ota-stage.path + iot-swupdate.path are enabled (they watch the OTA spool
 # triggers); their .service units are activated by the path units, not enabled
 # directly (they have no [Install]).

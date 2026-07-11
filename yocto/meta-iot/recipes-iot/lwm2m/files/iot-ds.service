@@ -2,6 +2,13 @@
 Description=IoT data-store daemon (ds-server, EMP over unix socket)
 Documentation=https://github.com/naushada/iot
 After=local-fs.target
+# On the A/B image, var-lib-private.mount puts /var/lib/private (where our
+# DynamicUser StateDirectory=iot state — data_store.lua — actually lands) on the
+# persistent "data" partition so config survives a bank swap. Order after it so
+# ds never opens data_store.lua on the rootfs before the partition is mounted.
+# Ordering-only (NOT Requires=): on the default single-rootfs image that mount
+# condition-skips instantly, so this After= is a no-op there and never blocks ds.
+After=var-lib-private.mount
 StartLimitBurst=3
 StartLimitIntervalSec=30s
 

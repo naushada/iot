@@ -11,12 +11,12 @@ tmpfs                /var/volatile        tmpfs      defaults              0  0
 
 /dev/mmcblk0p1  /boot   vfat    defaults         0       0
 
-# NOTE: the A/B data partition (p4, label "data") is intentionally NOT mounted
-# at /var/lib/iot. iot-ds runs DynamicUser=yes + StateDirectory=iot, so systemd
-# manages /var/lib/iot as a symlink into /var/lib/private/iot — a real mount
-# point there makes StateDirectory setup fail (exit 238/STATE_DIRECTORY), so
-# iot-ds crash-loops and the whole stack is dead (HW-confirmed 2025/2026). ds
-# state therefore lives on the rootfs. Persisting it across an A/B bank swap is
-# a separate task: mount LABEL=data at /var/lib/private (so DynamicUser's
-# /var/lib/private/iot lands on the partition) — deferred until validated on HW.
-# See apps/docs / the data-mount revert PR.
+# NOTE: the A/B data partition (p4, label "data") is NOT mounted from here on
+# purpose — this fstab stays identical for the single-rootfs and A/B images. It
+# is mounted at /var/lib/private by the shipped `var-lib-private.mount` systemd
+# unit (recipes-iot/lwm2m), which self-skips (ConditionPathExists) on the
+# single-rootfs image that has no such partition. That persists iot-ds's
+# DynamicUser StateDirectory state (data_store.lua = wifi.networks, PSKs, …)
+# across a RAUC A/B bank swap. It is /var/lib/private, NEVER /var/lib/iot: a
+# mount at the latter collides with StateDirectory=iot and crash-loops iot-ds
+# (exit 238/STATE_DIRECTORY, HW-confirmed). See apps/docs/tdd-ab-image-ota.md.

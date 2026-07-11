@@ -1,0 +1,35 @@
+[Unit]
+Description=Persist /var/lib/private on the A/B "data" partition (LABEL=data)
+Documentation=https://github.com/naushada/iot
+# WHY: iot-ds (and every DynamicUser+StateDirectory service) keeps its persistent
+# state under /var/lib/private/<svc> — for ds that is /var/lib/private/iot/
+# data_store.lua, which holds ALL operator config (wifi.networks, PSKs, endpoint
+# creds, …). That directory normally lives on the rootfs, so a full-image / RAUC
+# A/B OTA (which writes a fresh rootfs to the inactive bank and boots it) starts
+# with an EMPTY data store → the device loses its WiFi/PSKs, boots offline, never
+# re-registers, and the cloud OTA sits at "90%" forever. Mounting the persistent
+# "data" partition (wks p4) at /var/lib/private makes that state survive a bank
+# swap. Mount at /var/lib/private, NEVER /var/lib/iot — a mount at the latter
+# collides with iot-ds's StateDirectory=iot symlink and crash-loops the stack
+# (exit 238/STATE_DIRECTORY, HW-confirmed).
+#
+# SELF-SCOPING: only the A/B image (iot-ab.wks.in) has a partition labelled
+# "data". On the default single-rootfs image /dev/disk/by-label/data is absent,
+# the condition below fails, and this unit is skipped INSTANTLY (a failed
+# condition is not an error and does not wait on the absent backing device) — no
+# boot delay, fully inert. So it is safe to ship in every image. systemd's mount
+# default-dependencies order it after the backing device and before
+# local-fs.target automatically; iot-ds adds an explicit After= on it.
+ConditionPathExists=/dev/disk/by-label/data
+
+[Mount]
+What=/dev/disk/by-label/data
+Where=/var/lib/private
+Type=ext4
+Options=defaults,noatime
+# Bound the wait if the labelled device is slow/absent on an A/B build, so a
+# degraded data partition can't stall the boot indefinitely.
+TimeoutSec=20
+
+[Install]
+WantedBy=local-fs.target

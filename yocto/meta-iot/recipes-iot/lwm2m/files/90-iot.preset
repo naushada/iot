@@ -12,6 +12,12 @@
 # SYSTEMD_AUTO_ENABLE:* assignments in iot_git.bb.
 enable iot-ds.service
 enable iot-ds-seed.service
+# A/B data-partition mount for /var/lib/private (persists ds state across a bank
+# swap). Inert on the single-rootfs image (ConditionPathExists skips it). Must be
+# preset-enabled or first-boot preset-all resets it to disable → the WantedBy=
+# local-fs.target symlink is dropped → the partition is never mounted → ds config
+# is lost on the next OTA (the exact bug this fixes).
+enable var-lib-private.mount
 enable iot-httpd.service
 enable iot-hostname.service
 enable iot-wifi-client.service
