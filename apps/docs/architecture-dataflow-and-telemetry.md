@@ -66,12 +66,12 @@ sequenceDiagram
 
   Note over App,DS: subscribe a data-point
   App->>DS: Op::RegisterWatch {"keys":["sms.send.request"]}
-  DS->>DS: check_read_acl; m_watchers[key] += Session*
+  DS->>DS: check_read_acl, m_watchers[key] += Session*
   DS-->>App: Response(Ok)  → WatchHandle
 
   Note over App,DS: publish a data-point
   App->>DS: Op::Set {"keys":[{"cell.state":"registered"},{"cell.version":"7"}]}
-  DS->>DS: validate_set (schema); DataStore::set → SetResult{prev,changed,watchers}
+  DS->>DS: validate_set (schema), DataStore::set → SetResult{prev,changed,watchers}
   DS-->>App: Response(Ok)  %% ack to writer first
   alt value actually changed (REQ-DS-006)
     DS-->>W: NotifyEvent push {k:"cell.version", v:"7", prev:"6"}
@@ -171,7 +171,7 @@ sequenceDiagram
     ECU-->>VD: 0x7E8 response
     VD->>DS: set_volatile vehicle.speed/rpm/coolant/...
   end
-  Note over LC,DS: client reads vehicle.* → Object 33000 rids; gps.* → Object 6
+  Note over LC,DS: client reads vehicle.* → Object 33000 rids, gps.* → Object 6
   loop DM telemetry tick (token-tagged Reads)
     DM->>LC: CoAP Read /6/0/0, /6/0/1  (DTLS :5683)
     LC-->>DM: lat, lon
