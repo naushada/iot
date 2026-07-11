@@ -497,7 +497,135 @@ Minute details worth knowing:
 
 ---
 
-## 7. Schema summary
+## 7. LwM2M plane: bootstrap & DM registration
+
+The control plane is **direct device→cloud DTLS over UDP** (no VPN): bootstrap
+on `:5684`, device management on `:5683`. The device is flashed with only its
+serial + BS PSK; everything else — the DM account (URI, identity, key),
+registration lifetime, binding — is **delivered by the Bootstrap Server** and
+committed atomically. Code: client `apps/src/lwm2m_bootstrap_client.cpp` +
+`lwm2m_registration_client.cpp`, server `apps/src/lwm2m_bootstrap_server.cpp` +
+`lwm2m_registration_server.cpp` (run in `role=server` as the `lwm2m-bs` /
+`lwm2m-dm` containers), account synthesis `modules/server/lwm2m/` +
+`cloud_credentials.cpp`.
+
+### 7.1 Bootstrap (`/bs`): from factory identity to a DM account
+
+Identities are **derived, never stored**: the BS DTLS identity is
+`sha256(serial)[:32]` (computed identically on both ends), the DM identity is
+`rpi{serial}@cloud.local` (formatted by the cloud). The device ships with just
+`iot.serial` (auto-filled on RPi) + `iot.bs.psk.key` (commissioned via
+device-ui, or flash-time HKDF-personalised — zero-touch tier).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant LC as lwm2m client (device)
+  participant DDS as device ds-server
+  participant BS as lwm2m-bs (:5684)
+  participant CDS as cloud ds-server
+
+  LC->>DDS: startup — get iot.serial (= endpoint), iot.bs.uri,<br/>iot.bs.psk.key (+ iot.bs.psk.override for 3rd-party BS)
+  LC->>LC: derive BS DTLS identity = sha256(serial)[:32]<br/>(override on → operator-pinned iot.bs.psk.identity instead)
+  LC->>DDS: iot.conn.state = bootstrapping
+  LC->>BS: DTLS-PSK handshake — ClientHello ... identity in ClientKeyExchange
+  BS->>CDS: PSK resolver (live, per-handshake) — match sha256(serial) against<br/>cloud.endpoint.credentials, fallback identity / dm.psk.id forms,<br/>else HKDF tier — derive(master, "iot-bs-psk:v1:" + serial)
+  BS-->>LC: handshake complete (session keys established)
+
+  LC->>BS: POST /bs?ep={serial}  (CON, Bootstrap-Request)
+  BS-->>LC: 2.04 Changed  (state → WaitForBSWrites)
+  BS->>BS: provisioning_resolver(ep) — synthesise AccountProvisioning from<br/>cloud.bs.* + cloud.dm.* + the endpoint's credentials row<br/>(stored row wins, else HKDF-derive — stateless DM)
+  BS->>LC: PUT /0/0 (TLV, Security iid 0 = the BS account)<br/>RID0 bs uri, RID1 bootstrap=true, RID2 mode=PSK,<br/>RID3 sha256(ep)[:32], RID5 bs key, RID10 ssid=0
+  LC-->>BS: 2.04 (staged, not yet live)
+  BS->>LC: PUT /0/1 (TLV, Security iid 1 = the DM account)<br/>RID0 coaps://{cloud.dm.uri}:5683, RID1 false, RID2 PSK,<br/>RID3 rpi{serial}@cloud.local, RID5 dm key, RID10 ssid=1
+  LC-->>BS: 2.04 (staged)
+  BS->>LC: PUT /1/1 (TLV, Server object)<br/>RID0 ssid=1, RID1 lifetime (cloud.dm.lifetime, default 90 s),<br/>RID7 binding "U"
+  LC-->>BS: 2.04 (staged)
+  BS->>LC: POST /bs (no payload — Bootstrap-Finish)
+  LC->>LC: apply_commit() — ATOMIC — purge/delete staged removals,<br/>install Security + Server instances into the live ObjectStore,<br/>add_credential(dm identity, key) into the DTLS store
+  LC-->>BS: 2.04 Changed
+
+  Note over LC,DDS: on_done — persist iot.dm.psk.identity/key (write-only) +<br/>iot.dm.uri, DERIVE vpn.remote.host from the DM URI host<br/>(VPN concentrator co-located — zero device VPN config),<br/>set registration lifetime from the committed Server object
+  LC->>LC: switch peer to DM host:5683, active_identity(dm),<br/>reset_and_connect(toBootstrapIdentity=FALSE) — tear down the<br/>stale peer so a PLAINTEXT ClientHello opens the DM handshake<br/>(keeping the DM identity — restoring the BS one here caused the<br/>"stuck at 90% + offline" regression)
+  LC->>DDS: iot.conn.state = dm-connecting
+```
+
+### 7.2 DM registration (`/rd`): register, heartbeat, recover
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant LC as lwm2m client (device)
+  participant DDS as device ds-server
+  participant DM as lwm2m-dm (:5683)
+  participant CDS as cloud ds-server
+  participant CD as iot-cloudd
+
+  LC->>DM: DTLS-PSK handshake — identity rpi{serial}@cloud.local
+  DM->>CDS: PSK resolver — dm.psk.id match in cloud.endpoint.credentials,<br/>else HKDF derive("iot-dm-psk:v1:" + serial) — provisioned-after-start<br/>devices authenticate with NO server restart
+  DM-->>LC: session up
+  LC->>DDS: iot.conn.state = dm-connected
+
+  LC->>DM: POST /rd?ep={serial}&lt=90&lwm2m=1.1&b=U  (CON)<br/>payload = CoRE link-format of the ObjectStore<br/>("</1/1>,</3/0>,</4/0>,</5/0>,</6/0>,</2048/0>,...")
+  DM->>DM: ClientRegistry add — endpoint, lifetime, binding, version,<br/>peer addr (the NAT public ip:port = isp_ip), objects
+  DM-->>LC: 2.01 Created, Location-Path /rd/{id}
+  LC->>DDS: iot.conn.state = registered
+  DM->>CDS: publish_regs → cloud.lwm2m.registrations<br/>[{endpoint, registered, last_seen_unix, lifetime, location, ...}]
+  CDS-->>CD: NotifyEvent → reconcile_registrations —<br/>cloud.endpoints[ep] flips online (Endpoints page)
+
+  loop heartbeat — every lifetime − 30 s (updateMarginSeconds)
+    LC->>DM: POST /rd/{id}?lt=90  (Update — doubles as the NAT-conntrack<br/>keepalive: lifetime is sized to UDP NAT timeouts, NOT a day)
+    DM-->>LC: 2.04 Changed (last_seen refreshed)
+  end
+
+  alt lifetime lapses with no Update (device dark)
+    DM->>DM: registry expire (per-tick) → RegistrationOutcome Removed
+    DM->>CDS: republish (endpoint absent) → cloud.endpoints offline
+  else re-register triggers (self-healing)
+    Note over LC: vpn.state flip (tunnel reconnect ⇒ cloud likely restarted),<br/>Update ack timeout, endpoint/serial change — each forces a fresh<br/>Register (and a Failed handshake falls back to re-bootstrap:<br/>reset_and_connect back to the BS restores the BS identity)
+  end
+
+  opt clean shutdown
+    LC->>DM: DELETE /rd/{id} (Deregister)
+    DM-->>LC: 2.02 Deleted → registry Removed → cloud.endpoints offline
+  end
+```
+
+Minute details worth knowing:
+
+- **`iot.conn.state` machine** (`compute_conn_state`, published on change each
+  tick): `bootstrapping → bootstrapped → dm-connecting → dm-connected →
+  registered`, plus `failed` / `idle`. "-connecting" = DTLS handshake in
+  flight, "-connected" = channel up, protocol exchange underway. The device-ui
+  and cloud dashboard read exactly this key.
+- **Staging is all-or-nothing:** Bootstrap-Writes land in a `StagingBuffer`
+  (the live store is untouched); only Bootstrap-Finish `apply_commit()`s —
+  a half-delivered bootstrap can't leave a device with a broken mix.
+- **Bootstrap-Delete** (`DELETE /` purge or `DELETE /{oid}/{iid}`) is honored
+  in staging too — the BS wipes stale accounts before writing fresh ones.
+- **Lifetime 90 s is deliberate:** the Update at `lifetime − 30 s` (fixed
+  `updateMarginSeconds`) keeps the home-router UDP conntrack mapping alive
+  (assured-UDP timeout ≈ 120 s) so the cloud can still reach the device for
+  OTA pushes and server-Reads. See the NAT-keepalive table in
+  `apps/cloud/CLAUDE.md`.
+- **The DM peer address is the device's public IP** — `ClientRegistry`
+  captures the Register's DTLS source (`isp_ip` in the Endpoints table),
+  VPN-independent.
+- **Two hard-won wedge fixes live in this path:** (1) on the DM switch,
+  `reset_and_connect` must keep the **DM** identity (`toBootstrapIdentity=
+  false`) — restoring the BS identity left devices unregistered after OTA;
+  (2) a cloud restart leaves the device's tinydtls peer CONNECTED while the
+  server forgot it — the forced fresh handshake (plaintext ClientHello) on
+  the DM switch plus the `vpn.state`-triggered re-Register recover it without
+  a manual client restart.
+- **Re-bootstrap uses the BS identity again:** any fall-back to `/bs` calls
+  `reset_and_connect(bsHost, bsPort)` with the default identity restore —
+  a device must never offer its DM identity to the BS (the historical
+  `bootstrapping`-forever wedge).
+
+---
+
+## 8. Schema summary
 
 ### Device ds keys (`modules/vehicle/schemas/vehicle.lua`, `.../cell.lua`)
 
@@ -526,7 +654,7 @@ Minute details worth knowing:
 
 ---
 
-## 8. Prerequisites (end-to-end)
+## 9. Prerequisites (end-to-end)
 
 **Device**
 - `ds-server` running (daemons exit if `connect` fails).
