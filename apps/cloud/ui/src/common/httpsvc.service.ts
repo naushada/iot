@@ -161,4 +161,17 @@ export class HttpsvcService {
       { headers: new HttpHeaders({ 'Content-Type': 'application/octet-stream' }),
         withCredentials: true });
   }
+
+  // Fetch firmware from an EXTERNAL http(s) URL into the cloud feed. The
+  // download runs server-side in a background thread and returns 202
+  // immediately; progress is reported on cloud.firmware.fetch.status (observe
+  // it). On completion the artifact is in the feed + cloud.firmware.manifest,
+  // ready to push like an uploaded package.
+  fetchFirmware(body: { url: string; name: string; version: string; arch: string;
+                        pkg: string; sha256?: string }):
+                Observable<{ ok: boolean; err?: string }> {
+    return this.http.post<{ ok: boolean; err?: string }>(
+      `${this.api}/api/v1/firmware/fetch`, body,
+      { headers: this.jsonHeaders(), withCredentials: true });
+  }
 }

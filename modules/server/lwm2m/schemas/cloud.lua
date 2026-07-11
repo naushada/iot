@@ -229,6 +229,18 @@ return {
         type    = "string",
         default = "",
     },
+    -- Fetch-from-URL progress (written by iot-httpd, observed by cloud-ui).
+    -- The operator gives an EXTERNAL http(s) URL on the Software Update page;
+    -- iot-httpd downloads it into the feed in a background thread, sha256-
+    -- verifies + upserts cloud.firmware.manifest, and reports here. JSON obj:
+    --   { "state":"downloading|verifying|done|error", "url":"...",
+    --     "name":"iot-bundle-1.3.5-...tar.gz", "pkg":"iot-bundle",
+    --     "version":"1.3.5", "sha256":"<hex>", "err":"<msg on error>" }
+    ["cloud.firmware.fetch.status"] = {
+        access  = "Admin",
+        type    = "string",
+        default = "{}",
+    },
     -- Update request from cloud-ui (carrier — iot-cloudd clears to ""):
     --   { "serials":["100000abcd",...], "pkg":"iot", "version":"0.2.0",
     --     "url":"/firmware/iot_0.2.0_aarch64.ipk", "sha256":"<hex>" }

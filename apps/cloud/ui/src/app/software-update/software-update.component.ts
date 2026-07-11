@@ -68,6 +68,49 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
           </div>
         </div>
 
+        <!-- Fetch from URL: download to the cloud feed first, then push below -->
+        <h4>Fetch From URL</h4>
+        <p class="hint">Give a link to an <code>.ipk</code> or <code>.tar.gz</code> bundle; the cloud
+          downloads &amp; sha256-verifies it into the feed, then push it to devices below.</p>
+        <div class="form-grid" style="align-items:end;">
+          <clr-input-container>
+            <label>Source URL</label>
+            <input clrInput [(ngModel)]="fetchUrl" (blur)="onFetchUrlChange()"
+                   placeholder="https://host/iot-bundle-1.3.5-raspberrypi3-64.tar.gz" />
+          </clr-input-container>
+          <clr-input-container>
+            <label>Feed filename</label>
+            <input clrInput [(ngModel)]="fetchName" placeholder="iot-bundle-1.3.5-raspberrypi3-64.tar.gz" />
+          </clr-input-container>
+          <clr-input-container>
+            <label>Package</label>
+            <input clrInput [(ngModel)]="fPkg" placeholder="iot-bundle" />
+          </clr-input-container>
+          <clr-input-container>
+            <label>Version</label>
+            <input clrInput [(ngModel)]="fVersion" placeholder="1.3.5" />
+          </clr-input-container>
+          <clr-input-container>
+            <label>Arch</label>
+            <input clrInput [(ngModel)]="fArch" placeholder="raspberrypi3-64" />
+          </clr-input-container>
+          <clr-input-container>
+            <label>Expected sha256 (optional)</label>
+            <input clrInput [(ngModel)]="fSha" placeholder="pin to verify — blank accepts as-is" />
+          </clr-input-container>
+          <div class="btn-cell">
+            <button class="btn btn-primary" (click)="fetchFromUrl()"
+                    [disabled]="fetching || !fetchUrl || !fetchName">
+              {{ fetching ? 'Fetching…' : 'Fetch to feed' }}
+            </button>
+          </div>
+          <div></div>
+        </div>
+        <p class="hint" *ngIf="fetchStatus" [class.err-hint]="fetchStatus.state==='error'">
+          {{ fetchStatus.name }} — {{ fetchStatus.state }}<span *ngIf="fetchStatus.err">: {{ fetchStatus.err }}</span>
+          <span *ngIf="fetchStatus.sha256"> (sha256 {{ fetchStatus.sha256 | slice:0:12 }}…)</span>
+        </p>
+
         <!-- Target devices (multi-select) -->
         <h4>Target Devices</h4>
         <clr-datagrid [(clrDgSelected)]="selected">
@@ -140,6 +183,7 @@ interface UpdStatus { serial: string; state: number; result: number; version: st
     h3 { color: #333; margin: 0 0 16px 0; font-size: 16px; font-weight: 600; }
     h4 { color: #555; margin: 18px 0 10px 0; font-size: 13px; font-weight: 600; }
     .hint { color: #888; font-size: 12px; margin-top: 8px; }
+    .err-hint { color: #c92100; }
     .btn-cell { display: flex; align-items: flex-end; }
     .btn-cell .btn-primary { white-space: nowrap; }
     .pbar { display: inline-block; width: 90px; height: 8px; background: #e0e6e9;
@@ -172,6 +216,15 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
   upPkg = '';
   upVersion = '';
   upArch = '';
+  // Fetch-from-URL (download to the cloud feed, then push like an upload)
+  fetchUrl = '';
+  fetchName = '';
+  fPkg = '';
+  fVersion = '';
+  fArch = '';
+  fSha = '';
+  fetching = false;
+  fetchStatus: { state?: string; name?: string; err?: string; sha256?: string } | null = null;
   private static readonly CHUNK = 4 * 1024 * 1024;
   private active = true;
   private sub = new Subscription();
@@ -190,6 +243,25 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
     this.sub.add(this.ds.observe('cloud.update.status').subscribe((v) => {
       try { const a = JSON.parse(String(v ?? '[]')); this.status = Array.isArray(a) ? a : []; }
       catch { this.status = []; }
+    }));
+    // Fetch-from-URL progress (iot-httpd downloads in the background). The key
+    // is shared + observe() replays the last (possibly stale 'done') value on
+    // load, so only react while a fetch WE started is in flight.
+    this.sub.add(this.ds.observe('cloud.firmware.fetch.status').subscribe((v) => {
+      if (!this.fetching) return;
+      try {
+        const s = JSON.parse(String(v ?? '{}'));
+        if (s && s.state) this.fetchStatus = s;
+        if (s?.state === 'done') {
+          this.fetching = false;
+          this.toast.success('Added ' + (s.name || 'firmware') + ' to the feed');
+          this.loadManifest();   // dropdown picks up the new row
+          this.fetchUrl = this.fetchName = this.fPkg = this.fVersion = this.fArch = this.fSha = '';
+        } else if (s?.state === 'error') {
+          this.fetching = false;
+          this.toast.error('Fetch failed: ' + (s.err || 'unknown'));
+        }
+      } catch { /* ignore */ }
     }));
   }
 
@@ -363,6 +435,51 @@ export class SoftwareUpdateComponent implements OnInit, OnDestroy {
       }));
     };
     sendFrom(0);
+  }
+
+  // ── Fetch from URL (cloud downloads into the feed, then push as usual) ──
+  // Pre-fill the feed filename + pkg/version/arch from the URL's last path
+  // segment (operator can edit). Mirrors stageFile()'s filename parsing.
+  onFetchUrlChange(): void {
+    const u = this.fetchUrl.trim();
+    if (!u) return;
+    const path = u.split('?')[0].split('#')[0];
+    let base = path.substring(path.lastIndexOf('/') + 1);
+    try { base = decodeURIComponent(base); } catch { /* keep raw */ }
+    if (!base || !/\.(ipk|tar\.gz|tgz|tar|raucb)$/i.test(base)) return;
+    if (!this.fetchName) this.fetchName = base;
+    const stem = base.replace(/\.(tar\.gz|tgz|tar|ipk|raucb)$/i, '');
+    // .ipk = name_version_arch ; bundle = pkg-version-arch (version starts w/ a digit)
+    let m = stem.match(/^(.+)_([^_]+)_([^_]+)$/);
+    if (!m) m = stem.match(/^(.+)-(\d[\w.+]*)-([\w.+-]+)$/);
+    if (m) {
+      if (!this.fPkg) this.fPkg = m[1];
+      if (!this.fVersion) this.fVersion = m[2];
+      if (!this.fArch) this.fArch = m[3];
+    } else if (!this.fPkg) { this.fPkg = stem; }
+  }
+
+  fetchFromUrl(): void {
+    if (this.fetching) return;
+    if (!this.fetchUrl.trim() || !this.fetchName.trim()) {
+      this.toast.error('Enter a source URL and a feed filename'); return;
+    }
+    this.fetching = true;
+    this.fetchStatus = { state: 'downloading', name: this.fetchName.trim() };
+    this.http.fetchFirmware({
+      url: this.fetchUrl.trim(), name: this.fetchName.trim(),
+      version: this.fVersion.trim(), arch: this.fArch.trim(),
+      pkg: this.fPkg.trim(), sha256: this.fSha.trim() || undefined,
+    }).subscribe({
+      // 202 Accepted: the download continues server-side; progress + completion
+      // arrive via observe('cloud.firmware.fetch.status') above. Only a
+      // validation reject (bad url/name) lands here / in error.
+      next: (r) => {
+        if (!r.ok) { this.fetching = false; this.fetchStatus = null; this.toast.error(r.err || 'Fetch rejected'); return; }
+        this.toast.success('Fetching ' + this.fetchName.trim() + ' to the feed…');
+      },
+      error: (e) => { this.fetching = false; this.fetchStatus = null; this.toast.error(e?.error?.err || 'Fetch failed'); }
+    });
   }
 
   ngOnDestroy(): void { this.active = false; this.sub.unsubscribe(); }
