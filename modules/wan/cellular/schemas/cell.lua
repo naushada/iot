@@ -113,6 +113,10 @@ return {
     ["sms.last.text"]   = viewer_str(),
     ["sms.last.ts"]     = viewer_str(),
     ["sms.count"]       = viewer_str(),
+    -- Received-SMS history as a JSON array (newest first), each element
+    -- {ts,from,text}; bounded to the last 20. Rendered as the device-ui
+    -- WAN -> Cellular "Received SMS" table. Seeded from ds on daemon restart.
+    ["sms.inbox"]       = viewer_str(),
     ["sms.version"]     = viewer_str(),
   },
 }

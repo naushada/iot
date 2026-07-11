@@ -1,10 +1,16 @@
 #include "cell_state.hpp"
 
+#include <cstddef>
 #include <cstdio>
+
+#include <nlohmann/json.hpp>
 
 namespace cellular {
 
 namespace {
+    /// Cap on the received-SMS history kept in memory / published to sms.inbox.
+    constexpr std::size_t kSmsInboxMax = 20;
+
     std::string fmt(double v, int decimals) {
         char buf[40];
         std::snprintf(buf, sizeof(buf), "%.*f", decimals, v);
@@ -111,7 +117,34 @@ void CellularState::set_sms(const SmsMessage& msg) {
     m_smsSender = msg.sender;
     m_smsText   = msg.text;
     m_smsTs     = msg.scts;
+    m_smsInbox.push_front(msg);                              // newest first
+    while (m_smsInbox.size() > kSmsInboxMax) m_smsInbox.pop_back();
     ++m_smsCount; m_haveSms = true; ++m_smsVersion;
+}
+
+void CellularState::seed_inbox(const std::string& inbox_json, std::uint64_t count) {
+    std::lock_guard<std::mutex> lk(m_mtx);
+    m_smsCount = count;
+    try {
+        const auto arr = nlohmann::json::parse(inbox_json);
+        if (arr.is_array()) {
+            for (const auto& e : arr) {
+                if (m_smsInbox.size() >= kSmsInboxMax) break;
+                SmsMessage m;
+                m.sender = e.value("from", std::string());
+                m.text   = e.value("text", std::string());
+                m.scts   = e.value("ts",   std::string());
+                m_smsInbox.push_back(m);                     // array is already newest-first
+            }
+        }
+    } catch (...) {
+        // empty / corrupt persisted value → just start with an empty history
+    }
+    if (!m_smsInbox.empty()) {
+        const auto& f = m_smsInbox.front();
+        m_smsSender = f.sender; m_smsText = f.text; m_smsTs = f.scts;
+        m_haveSms = true;
+    }
 }
 
 std::vector<KV> CellularState::to_kv() const {
@@ -157,6 +190,12 @@ std::vector<KV> CellularState::to_kv() const {
         kv.push_back({"sms.last.text",   m_smsText});
         if (!m_smsTs.empty()) kv.push_back({"sms.last.ts", m_smsTs});
         kv.push_back({"sms.count",   std::to_string(m_smsCount)});
+        // Full received-SMS history as a JSON array (newest first) for the
+        // device-ui table. nlohmann handles escaping of arbitrary SMS text.
+        nlohmann::json inbox = nlohmann::json::array();
+        for (const auto& m : m_smsInbox)
+            inbox.push_back({{"ts", m.scts}, {"from", m.sender}, {"text", m.text}});
+        kv.push_back({"sms.inbox", inbox.dump()});
         kv.push_back({"sms.version", std::to_string(m_smsVersion)});
     }
     return kv;

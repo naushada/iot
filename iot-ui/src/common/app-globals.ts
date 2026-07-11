@@ -125,6 +125,14 @@ export interface CellStatus {
   sms_text?: string;
   sms_ts?: string;
   sms_count?: string;
+  // Received-SMS history (newest first), from sms.inbox — rendered as a table.
+  sms_inbox?: SmsInboxEntry[];
+}
+
+export interface SmsInboxEntry {
+  ts?: string;    // service-centre timestamp "20YY-MM-DDTHH:MM:SS"
+  from?: string;  // originating address (+E.164 or alpha tag)
+  text?: string;  // decoded body
 }
 
 // GPS / GNSS fix, from gps.* (decimal-string fields).

@@ -23,7 +23,13 @@ add_library(cellular_core STATIC
     src/line_router.cpp
     src/sms_pdu.cpp
     src/sms_receiver.cpp)
-target_include_directories(cellular_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc)
+# nlohmann::json — vendored under apps/3rdparty/json/ (also a Yocto DEPENDS).
+# Used by cell_state to build/parse the sms.inbox JSON array.
+set(NLOHMANN_JSON_INCLUDE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../apps/3rdparty/json/single_include)
+target_include_directories(cellular_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/inc
+    ${NLOHMANN_JSON_INCLUDE})
 target_compile_options(cellular_core PRIVATE -Wall -Wextra)
 add_library(cellular::core ALIAS cellular_core)
 

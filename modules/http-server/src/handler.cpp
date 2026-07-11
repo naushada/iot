@@ -929,6 +929,7 @@ void install_handlers(Router& router,
                 "gps.course", "gps.sats", "gps.utc",
                 // Received SMS (cellular-client → sms.*)
                 "sms.last.sender", "sms.last.text", "sms.last.ts", "sms.count",
+                "sms.inbox",
                 // mangOH onboard sensors
                 "iot.sensor.temp", "iot.sensor.humidity", "iot.sensor.pressure",
                 "iot.sensor.lux", "iot.sensor.accel", "iot.sensor.gyro",
@@ -1103,6 +1104,12 @@ void install_handlers(Router& router,
                 else if (k == "sms.last.text")     cell["sms_text"] = sv();
                 else if (k == "sms.last.ts")       cell["sms_ts"] = sv();
                 else if (k == "sms.count")         cell["sms_count"] = sv();
+                else if (k == "sms.inbox") {
+                    // Already a JSON array (newest first) — embed it parsed so the
+                    // device-ui gets an array, not a string. Tolerate a bad value.
+                    try { cell["sms_inbox"] = json::parse(sv()); }
+                    catch (...) { cell["sms_inbox"] = json::array(); }
+                }
 
                 // GPS / GNSS (cellular-client → gps.*)
                 else if (k == "gps.fix")    gps["fix"] = sv();

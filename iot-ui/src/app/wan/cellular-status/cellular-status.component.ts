@@ -3,7 +3,7 @@ import { Subscription } from 'rxjs';
 import { DataStoreService } from '../../../common/datastore.service';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
-import { CellStatus } from '../../../common/app-globals';
+import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
 
 /// Cellular modem (mangOH Yellow WP) status. Reads cell.* off the shared
 /// /status stream — published by the cellular-client daemon. Property/Value
@@ -41,6 +41,25 @@ import { CellStatus } from '../../../common/app-globals';
         <clr-dg-footer>{{ rows.length }} properties</clr-dg-footer>
       </clr-datagrid>
 
+      <div class="inbox">
+        <h4>Received SMS</h4>
+        <clr-datagrid>
+          <clr-dg-column [style.width.px]="170">Time</clr-dg-column>
+          <clr-dg-column [style.width.px]="150">Sender</clr-dg-column>
+          <clr-dg-column>Message</clr-dg-column>
+
+          <clr-dg-placeholder>No SMS received yet.</clr-dg-placeholder>
+
+          <clr-dg-row *clrDgItems="let m of smsInbox">
+            <clr-dg-cell>{{ m.ts || '—' }}</clr-dg-cell>
+            <clr-dg-cell>{{ m.from || '—' }}</clr-dg-cell>
+            <clr-dg-cell class="msg-cell">{{ m.text || '—' }}</clr-dg-cell>
+          </clr-dg-row>
+
+          <clr-dg-footer>{{ smsInbox.length }} message{{ smsInbox.length === 1 ? '' : 's' }}</clr-dg-footer>
+        </clr-datagrid>
+      </div>
+
       <div class="send" *ngIf="isAdmin">
         <h4>Send SMS</h4>
         <div class="row">
@@ -69,6 +88,9 @@ import { CellStatus } from '../../../common/app-globals';
     .bar:nth-child(5) { height: 14px; }
     .bar.on { background: #2e7d32; }
     .sig-text { vertical-align: middle; }
+    .inbox { margin-top: 24px; max-width: 720px; }
+    .inbox h4 { font-size: 14px; font-weight: 600; color: #333; margin: 0 0 10px 0; }
+    .msg-cell { white-space: pre-wrap; word-break: break-word; }
     .send { margin-top: 24px; max-width: 640px; }
     .send h4 { font-size: 14px; font-weight: 600; color: #333; margin: 0 0 10px 0; }
     .send .row { display: flex; gap: 8px; align-items: center; }
@@ -135,16 +157,15 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
     if (this.c.reg_reason) {
       rows.push({ key: 'Reject Reason', value: this.c.reg_reason, dsKey: 'cell.reg.reason' });
     }
-    // Received SMS — only shown once at least one message has arrived.
+    // Received-SMS total — the messages themselves render in the table below.
     if (this.c.sms_count && this.c.sms_count !== '0') {
-      rows.push(
-        { key: 'SMS Received', value: this.c.sms_count,             dsKey: 'sms.count' },
-        { key: 'Last SMS From', value: this.c.sms_sender || '—',    dsKey: 'sms.last.sender' },
-        { key: 'Last SMS At',   value: this.c.sms_ts || '—',        dsKey: 'sms.last.ts' },
-        { key: 'Last SMS Text', value: this.c.sms_text || '—',      dsKey: 'sms.last.text' },
-      );
+      rows.push({ key: 'SMS Received', value: this.c.sms_count, dsKey: 'sms.count' });
     }
     return rows;
+  }
+
+  get smsInbox(): SmsInboxEntry[] {
+    return Array.isArray(this.c.sms_inbox) ? this.c.sms_inbox : [];
   }
 
   constructor(private ds: DataStoreService,
