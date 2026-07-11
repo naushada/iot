@@ -81,6 +81,7 @@ int SerialChannel::handle_input(ACE_HANDLE) {
 
 int SerialChannel::handle_close(ACE_HANDLE, ACE_Reactor_Mask) {
     m_tty.close();
+    if (m_on_closed) m_on_closed();   // modem gone → let the daemon clear cell.*
     return 0;
 }
 

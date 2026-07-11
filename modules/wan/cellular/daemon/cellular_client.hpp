@@ -62,6 +62,7 @@ class CellularClient : public ACE_Event_Handler {
         void on_nmea_line(const std::string& line);
         void poll_modem();
         void publish();
+        void publish_absent();   ///< clear live cell.* when the modem is gone
         void on_send_request(const data_store::Client::Event& ev);
         void start_send();          // reactor thread: encode + issue AT+CMGS
 
@@ -82,6 +83,7 @@ class CellularClient : public ACE_Event_Handler {
         std::unique_ptr<SerialChannel>  m_at;
         std::unique_ptr<SerialChannel>  m_gnss;
         bool                            m_apn_sent = false;
+        bool                            m_modem_lost = false;   ///< AT tty torn down → exit non-zero
         // Serialized AT command stream — see cmd(). One command in flight at a
         // time; the watchdog timer un-wedges the queue if a command never answers.
         std::deque<std::string>         m_cmdq;

@@ -17,6 +17,11 @@ import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
         No cellular telemetry yet — the cellular-client service publishes this
         once a WP modem is attached and enabled.
       </p>
+      <div class="offline" *ngIf="isOffline">
+        <clr-icon shape="disconnect"></clr-icon>
+        Modem not detected — it may be powered off or unplugged. The values below
+        are the last known readings.
+      </div>
       <clr-datagrid>
         <clr-dg-column>Property</clr-dg-column>
         <clr-dg-column>Value</clr-dg-column>
@@ -79,6 +84,10 @@ import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
     .page { padding: 24px; }
     h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
     .hint { color: #888; font-size: 13px; margin: 0 0 16px 0; }
+    .offline { display: flex; align-items: center; gap: 6px; margin: 0 0 16px 0;
+               padding: 8px 12px; border-radius: 4px; font-size: 13px;
+               color: #944; background: #fdf3f3; border: 1px solid #f0d0d0; }
+    .offline clr-icon { flex: none; }
     .bars { display: inline-flex; align-items: flex-end; gap: 2px; margin-right: 8px; height: 14px; }
     .bar { width: 4px; background: #d0d5dd; border-radius: 1px; }
     .bar:nth-child(1) { height: 4px; }
@@ -127,6 +136,12 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
   }
 
   get hasData(): boolean { return !!(this.c.state || this.c.operator || this.c.signal_dbm); }
+  // The daemon publishes cell.state="absent" (and clears the live fields) when the
+  // modem tty tears down. "" is a cold start that never saw a modem.
+  get isOffline(): boolean {
+    const s = (this.c.state || '').toLowerCase();
+    return s === 'absent' || s === 'sim-missing';
+  }
   get barsNum(): number { const n = parseInt(this.c.signal_bars || '', 10); return isNaN(n) ? 0 : n; }
 
   get signalText(): string {

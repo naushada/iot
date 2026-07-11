@@ -84,11 +84,21 @@ int CellularClient::run() {
 
     m_at.reset(new SerialChannel([this](const std::string& l){ on_at_line(l); }));
     if (m_at->open(m_cfg.modem_tty, ACE_Reactor::instance()) == -1) {
-        m_state.set_state("absent");
-        publish();
+        publish_absent();   // clear any stale cell.* from a prior modem session
         ACE_ERROR_RETURN((LM_ERROR,
             ACE_TEXT("%D [cell] AT tty %C unavailable\n"), m_cfg.modem_tty.c_str()), 2);
     }
+    // Modem unplugged / powered off → the AT tty tears down. Clear the now-stale
+    // cell.* the daemon published while the modem was up (otherwise the device-ui
+    // keeps showing the last operator/signal/ICCID as if live), then stop so
+    // systemd re-evaluates ConditionPathExistsGlob=/dev/ttyUSB* on restart.
+    m_at->on_closed([this]() {
+        ACE_ERROR((LM_WARNING, ACE_TEXT("%D [cell] modem tty closed (unplugged?) "
+                   "— clearing cell.* and exiting\n")));
+        publish_absent();
+        m_modem_lost = true;                              // → run() returns non-zero
+        ACE_Reactor::instance()->end_reactor_event_loop();
+    });
 
     if (m_cfg.gps_enable && !m_cfg.gps_tty.empty()) {
         m_gnss.reset(new SerialChannel([this](const std::string& l){ on_nmea_line(l); }));
@@ -140,7 +150,10 @@ int CellularClient::run() {
         m_cfg.interval_sec));
 
     ACE_Reactor::instance()->run_reactor_event_loop();
-    return 0;
+    // Non-zero on modem loss so systemd (Restart=on-failure) retries and
+    // re-evaluates ConditionPathExistsGlob: re-opens if the modem came back,
+    // stays cleanly inactive (cell.state="absent") if it is really gone.
+    return m_modem_lost ? 3 : 0;
 }
 
 void CellularClient::cmd(const std::string& c) {
@@ -458,6 +471,24 @@ void CellularClient::handle_at_line(const std::string& line) {
 
 void CellularClient::on_nmea_line(const std::string& line) {
     dispatch_nmea_line(line, m_gps, m_state);
+}
+
+void CellularClient::publish_absent() {
+    // Explicitly blank the live cell.* keys — CellularState::to_kv only emits
+    // non-empty fields, so it can't clear them; write the empties straight to ds.
+    // sms.* and gps.* are left as last-known (they aren't "modem present" signals).
+    static const char* kLiveKeys[] = {
+        "cell.operator", "cell.tech", "cell.reg", "cell.signal.dbm",
+        "cell.signal.bars", "cell.ip", "cell.dns", "cell.rat.current",
+        "cell.reg.reason", "cell.iccid", "cell.imei", "cell.msisdn",
+        "cell.model", "cell.fw", "cell.capability", "cell.apn.current",
+    };
+    std::vector<data_store::KV> batch;
+    for (const char* k : kLiveKeys)
+        batch.emplace_back(std::string(k), data_store::Value{std::string()});
+    batch.emplace_back(std::string("cell.state"), data_store::Value{std::string("absent")});
+    if (!m_ds.set(batch).ok)
+        ACE_ERROR((LM_ERROR, ACE_TEXT("%D [cell] ds set(clear cell.*) failed\n")));
 }
 
 void CellularClient::publish() {
