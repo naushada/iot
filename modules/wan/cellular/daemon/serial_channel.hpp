@@ -34,6 +34,11 @@ class SerialChannel : public ACE_Event_Handler {
         int open(const std::string& tty_path, ACE_Reactor* reactor);
         void close();
 
+        /// Invoked once when the tty is torn down by the reactor — i.e. the modem
+        /// was unplugged / powered off (recv EOF/error → handle_close). Lets the
+        /// daemon clear the now-stale cell.* it published while the modem was up.
+        void on_closed(std::function<void()> cb) { m_on_closed = std::move(cb); }
+
         /// Send `cmd` followed by a carriage return. Returns bytes sent or -1.
         int write_line(const std::string& cmd);
 
@@ -47,10 +52,11 @@ class SerialChannel : public ACE_Event_Handler {
         int handle_close(ACE_HANDLE, ACE_Reactor_Mask) override;
 
     private:
-        ACE_TTY_IO     m_tty;
-        LineFn         m_on_line;
-        LineAssembler  m_asm;
-        int            m_baud;
+        ACE_TTY_IO            m_tty;
+        LineFn                m_on_line;
+        std::function<void()> m_on_closed;
+        LineAssembler         m_asm;
+        int                   m_baud;
 };
 
 } // namespace cellular
