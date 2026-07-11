@@ -625,7 +625,131 @@ Minute details worth knowing:
 
 ---
 
-## 8. Schema summary
+## 8. OTA update: end to end (feed → push → stage → install → feedback)
+
+Full design: `apps/docs/tdd-yocto-swupdate.md` (.ipk / bundle path) and
+`apps/docs/tdd-ab-image-ota.md` (A/B full-image). The chain is deliberately
+split into four processes with different privileges: the **unprivileged**
+lwm2m client only *queues a request file*; two **root** oneshot units
+(`iot-ota-stage` → `iot-swupdate`) do the download and the install, decoupled
+by systemd `.path` (inotify) triggers so an OTA that replaces the running
+binaries can't kill its own installer.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant OP as operator (cloud-ui Software Update)
+  participant HC as cloud iot-httpd
+  participant CDS as cloud ds-server
+  participant CD as iot-cloudd
+  participant DM as lwm2m-dm
+  participant LC as lwm2m client (device, engineer)
+  participant ST as iot-ota-stage (root oneshot)
+  participant SW as iot-swupdate (root oneshot)
+  participant DDS as device ds-server
+
+  rect rgb(240,245,250)
+    Note over OP,CDS: publish to the feed — two ingest paths
+    OP->>HC: upload bundle / "fetch from URL" (background download,<br/>progress via a ds key the UI observes)
+    HC->>HC: store /var/lib/iot/firmware/{name}, sha256sum it<br/>(extension allow-list — .ipk .tar .tar.gz .tgz .raucb)
+    HC->>CDS: upsert cloud.firmware.manifest row<br/>{pkg, version, arch, ipk_url, sha256}
+  end
+
+  OP->>CDS: set cloud.update.request {serials[], url, sha256, version, pkg}
+  CDS-->>CD: NotifyEvent
+  CD->>CD: validate url against the manifest (fills sha/ver/pkg),<br/>resolve relative url — cloud.firmware.base.url, else<br/>http://{host of cloud.dm.uri} — then append ?sha256=...&version=...,<br/>cid = ++cloud.update.seq (persisted — survives restarts)
+  CD->>CDS: cloud.update.pending = [{endpoint, cid, url, sha256, version}]<br/>cloud.update.status = [{serial, state 1, result 0, cid,<br/>baseline = installed_version snapshot}]
+
+  DM->>CDS: tick (30 s) — get cloud.update.pending
+  DM->>DM: gates — job for this endpoint, cid not already sent<br/>(at-most-once PER CAMPAIGN), downgrade guard: never push<br/>ver ≤ last-read /3/0/3 semver, unknown installed → DEFER
+  DM->>LC: WRITE /5/0/1 (Package URI, text) then EXECUTE /5/0/2 (DTLS)
+  DM->>DM: drop cached Object-5 readback, stamp update_cid = cid
+
+  LC->>LC: RID 2 execute → ota_launch_apply(uri) — engineer CANNOT<br/>systemd-run a root unit (polkit denies), so — write<br/>/run/iot/update/stage.req.tmp + atomic rename (spool 2775 root:iot,<br/>client has SupplementaryGroups=iot)
+  Note over ST: iot-ota-stage.path (inotify on stage.req) starts the service
+  ST->>ST: consume stage.req (rm — re-arms the .path),<br/>parse ?sha256 / version / reboot from the URI
+  ST->>DDS: iot.update.package = "{name} ({ver})", progress 0,<br/>result 0 + reason "" (fresh campaign starts clean), state 1
+  ST->>ST: HEAD Content-Length → background poller publishes<br/>bytes-on-disk / total as progress 0..99 every 1 s
+  ST->>HC: curl -C - (resume) with retry/backoff, up to<br/>iot.update.retries (5) attempts — rides the PUBLIC WAN, not the VPN
+  alt download exhausts retries / empty file
+    ST->>DDS: reason + result 8, state 0 — exit
+  end
+  ST->>DDS: progress 100
+  ST->>ST: sha256sum vs ?sha256=
+  alt sha mismatch
+    ST->>DDS: reason "sha256 mismatch (want .. got ..)" + result 5 — exit
+  end
+  ST->>ST: purge stale spool artifacts (a leftover older .ipk set<br/>poisons opkg with cross-version conflicts), extract bundle<br/>(gzip -t content-detect, busybox gzip|tar)
+  alt no .ipk in the extracted bundle
+    ST->>DDS: reason "no .ipk in bundle" + result 9 — exit<br/>(the 1.5.0 source-tarball incident)
+  end
+  ST->>DDS: state 2 (downloaded)
+  ST->>ST: write update.meta (version/sha/reboot), touch trigger "update"
+
+  Note over SW: iot-swupdate.path (inotify on the trigger) starts the service
+  SW->>SW: re-exec from a tmpfs self-copy (survives opkg replacing<br/>this very script), flock (serialize), snapshot *.ipk + meta<br/>into .work-$$, rm trigger (re-arm)
+  alt offered semver < running iot.version
+    SW->>DDS: reason "downgrade refused (...)" + result 10 (skipped), state 0
+  end
+  SW->>DDS: state 3 (updating)
+  SW->>SW: opkg install --force-reinstall --force-downgrade .work/*.ipk
+  alt opkg fails
+    SW->>DDS: reason "opkg install failed: {last log line}" + result 9
+  end
+  SW->>SW: migrations — restart iot-ds (loads new schemas), run<br/>/usr/share/iot/migrations newer than iot.config.version
+  SW->>DDS: iot.update.version = {ver}, reason "", result 1, state 0
+  alt kernel / base-files / systemd / bootloader in the install set
+    SW->>SW: systemctl reboot
+  else userspace only
+    SW->>SW: daemon-reload + try-restart iot daemons<br/>(including the lwm2m client — the reporter dies here)
+  end
+
+  rect rgb(240,245,250)
+    Note over LC,CD: completion feedback — two independent signals
+    LC->>DM: restarted client re-Registers, DM Reads /3/0/3 →<br/>installed_version moves OFF the row's baseline
+    CD->>CDS: reconcile — row state 0, result 1 (SUCCESS — robust to<br/>the +gitsha versioning, no result observe needed)
+    DM->>LC: 30 s poll Reads /5/0/3 + /5/0/5 + /5/0/26 (reason)
+    DM->>CDS: update_state/result/reason + update_cid in registrations
+    CD->>CDS: cid-matched terminal result → row failed + REASON<br/>(FAILURE — a failed install moves no version, this poll is<br/>the only signal, see tdd-yocto-swupdate §3.4b)
+  end
+```
+
+Minute details worth knowing:
+
+- **Three downgrade gates, deliberately redundant:** cloud push gate (semver vs
+  last-read `/3/0/3`, unknown → defer — a blind push right after Register once
+  wedged opkg on cross-version deps), device `iot-swupdate` gate (result 10
+  "skipped"), and opkg's own `--force-downgrade` is only reachable through the
+  first two.
+- **The campaign id (`cid`)** is a persisted monotonic counter, not a clock:
+  re-pushing even the *same* version re-sends (fresh cid), double-pushes in
+  the same second stay distinct, and the Object-5 failure readback is
+  attributed to exactly the campaign that was pushed (`update_cid` match).
+- **Progress is byte-accurate on the device, phase-based on the cloud:** the
+  stager's poller publishes real bytes/total to `iot.update.progress`
+  (device-ui); the cloud bar maps Object-5 state → 30/65/90 %.
+- **The download rides the WAN, not the VPN** — the manifest URL resolves
+  against the cloud's *public* base, so a device with a down tunnel still
+  updates (and the feed is https:443 — an empty `base.url` once produced a
+  dead `http://…:80` URL).
+- **Everything in `/run/iot/update` is tmpfs** — a reboot wipes half-staged
+  campaigns; the spool's `2775 root:iot` mode is restored by both scripts
+  because a root `mkdir` under umask once locked the engineer client out of
+  writing the *next* `stage.req` (EACCES → campaign hangs).
+- **A/B variant:** a `.raucb` in the spool takes the rauc branch instead of
+  opkg — `rauc install` writes the **inactive** bank, reboot activates it, the
+  bootloader's boot-attempts counter rolls back unless `iot-ota-confirm`
+  health-checks and marks the boot good (`iot.boot.bank/banks/confirmed`,
+  shown on the device-ui Software page). Atomic and power-fail-safe, unlike
+  the in-place opkg path.
+- **`iot.update.request` is the third entry point:** device-ui (or a direct
+  Object-5 write) can set a URL locally — same stager path, no cloud campaign
+  row. Drag-and-drop upload on the device-ui skips the stager entirely and
+  drops the artifact straight into the spool.
+
+---
+
+## 9. Schema summary
 
 ### Device ds keys (`modules/vehicle/schemas/vehicle.lua`, `.../cell.lua`)
 
@@ -654,7 +778,7 @@ Minute details worth knowing:
 
 ---
 
-## 9. Prerequisites (end-to-end)
+## 10. Prerequisites (end-to-end)
 
 **Device**
 - `ds-server` running (daemons exit if `connect` fails).
