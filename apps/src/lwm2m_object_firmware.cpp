@@ -118,6 +118,19 @@ int install_firmware_apply(ObjectStore& store,
         };
         inst.resources[7] = std::move(r);
     }
+    // RID 26 — Update Reason (vendor ext, live from ds via hook): the human
+    // cause behind a terminal RID 5 result ("no .ipk in bundle", "sha256
+    // mismatch"). Our lwm2m-dm polls it so the cloud can show WHY, not just
+    // a bare result code; foreign servers never ask for it.
+    {
+        Resource r;
+        r.rid = kFirmwareRidReason; r.name = "Update Reason";
+        r.type = ResourceType::String; r.ops = Operations::R;
+        r.read = [hp]() {
+            return hp->read_reason ? hp->read_reason() : std::string();
+        };
+        inst.resources[kFirmwareRidReason] = std::move(r);
+    }
 
     // RID 6/8/9 — PkgName / Protocol Support / Delivery Method, read-only
     // defaults from firmwareObject/0.lua (fall back if the file is absent).

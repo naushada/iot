@@ -23,6 +23,12 @@
  *   RID 5  Update Result Integer  R   0 Initial,1 Success,5 Integrity,8 URI,9 Install
  *   RID 7  PkgVersion    String   R   installed package version
  *   RID 6/8/9            ...      R   PkgName / Protocol / Delivery (from lua)
+ *   RID 26 Update Reason String   R   VENDOR extension: human cause for a
+ *                                     terminal Result (iot.update.reason, e.g.
+ *                                     "no .ipk in bundle") — polled by our own
+ *                                     lwm2m-dm so the cloud UI can say WHY a
+ *                                     campaign failed. Outside OMA Object 5
+ *                                     (RIDs 0-13); a foreign server ignores it.
  *
  * State/Result/Version are read live from the data store (the detached
  * updater writes iot.update.state/result/version), so a server READ after the
@@ -33,6 +39,8 @@
 namespace lwm2m { namespace objects {
 
 constexpr std::uint32_t kFirmwareObjectOid = 5;
+/// Vendor resource: human-readable cause for a terminal /5/0/5 result.
+constexpr std::uint32_t kFirmwareRidReason = 26;
 
 struct FwHooks {
     /// Launch the detached apply for `uri`. Return 0 on launch (→ 2.04
@@ -45,6 +53,7 @@ struct FwHooks {
     std::function<long long()>   read_state;     ///< /5/0/3 (iot.update.state)
     std::function<long long()>   read_result;    ///< /5/0/5 (iot.update.result)
     std::function<std::string()> read_version;   ///< /5/0/7 (iot.update.version)
+    std::function<std::string()> read_reason;    ///< /5/0/26 (iot.update.reason)
 };
 
 /// Install OID 5/0 with RID 1 (W) + RID 2 (E) wired and RID 3/5/7 live.
