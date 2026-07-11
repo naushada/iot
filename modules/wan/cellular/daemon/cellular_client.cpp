@@ -61,6 +61,24 @@ int CellularClient::run() {
         ACE_ERROR_RETURN((LM_ERROR, ACE_TEXT("%D [cell] ds connect failed\n")), 1);
     }
     load_config_from_ds();
+
+    // Restore the received-SMS history so the device-ui table (WAN → Cellular)
+    // survives a daemon restart — otherwise the first new SMS after a restart
+    // would republish a one-element inbox and clobber the persisted history.
+    {
+        std::string inbox;
+        std::uint64_t count = 0;
+        std::vector<data_store::Client::GetResult> got;
+        if (m_ds.get({std::string("sms.inbox")}, got).ok && !got.empty() && got[0].has_value)
+            if (auto s = data_store::to_string(got[0].value)) inbox = *s;
+        got.clear();
+        if (m_ds.get({std::string("sms.count")}, got).ok && !got.empty() && got[0].has_value)
+            if (auto s = data_store::to_string(got[0].value)) {
+                try { count = std::stoull(*s); } catch (...) { count = 0; }
+            }
+        if (!inbox.empty()) m_state.seed_inbox(inbox, count);
+    }
+
     // No dedicated NMEA tty → read GNSS over the AT channel (AT+QGPSLOC).
     m_gps_via_at = m_cfg.gps_enable && m_cfg.gps_tty.empty();
 

@@ -2,6 +2,7 @@
 #define __cellular_cell_state_hpp__
 
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -54,8 +55,13 @@ class CellularState {
         /// comma-joined list. Mirrors the `vpn.assigned.dns` convention.
         void set_dns(const std::string& dns);
         void set_gps(const GpsFix& fix);
-        /// Record a received SMS: updates sms.last.* and bumps sms.count.
+        /// Record a received SMS: prepends to the inbox (bounded), updates
+        /// sms.last.*, and bumps sms.count.
         void set_sms(const SmsMessage& msg);
+        /// Restore the received-SMS history at startup from the persisted
+        /// sms.inbox JSON array (newest first) + sms.count, so a daemon restart
+        /// does not drop the table the device-ui shows. No-op on empty/corrupt.
+        void seed_inbox(const std::string& inbox_json, std::uint64_t count);
 
         /// `cell.*` + `gps.*` batch (only populated fields are emitted), plus a
         /// per-domain version counter for the device-ui long-poll.
@@ -71,6 +77,7 @@ class CellularState {
         GpsFix m_gps;
         bool m_haveGps = false;
         std::string m_smsSender, m_smsText, m_smsTs;
+        std::deque<SmsMessage> m_smsInbox;   ///< received-SMS history, newest first (bounded)
         std::uint64_t m_smsCount = 0;
         bool m_haveSms = false;
         std::uint64_t m_cellVersion = 0, m_gpsVersion = 0, m_smsVersion = 0;
