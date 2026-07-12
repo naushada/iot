@@ -90,6 +90,51 @@ import { ToastService } from '../../../common/toast.service';
           <div></div>
         </div>
 
+        <h4>SMS Device Control</h4>
+        <p class="hint">
+          Lets an operator control this device by texting it — the last channel
+          left when the device has no IP path. Commands are authenticated with a
+          device login: <code>IOT LOGIN &lt;user&gt; &lt;password&gt;</code>, then
+          <code>IOT STATUS</code> / <code>IOT WIFI "&lt;ssid&gt;" "&lt;psk&gt;"</code> /
+          <code>IOT APN &lt;apn&gt;</code> / <code>IOT RADIO RESTART</code> /
+          <code>IOT REBOOT</code> / <code>IOT FACTORY-RESET</code>.
+          <strong>The password crosses the carrier in plaintext</strong> — prefer a
+          dedicated Admin account, and set an allowlist so unknown senders are
+          ignored without a reply.
+        </p>
+        <div class="form-grid">
+          <clr-checkbox-container>
+            <label>SMS Control</label>
+            <clr-checkbox-wrapper>
+              <input type="checkbox" clrCheckbox [disabled]="!isAdmin"
+                     formControlName="smsctlEnabled" />
+              <label>Accept IOT commands</label>
+            </clr-checkbox-wrapper>
+            <clr-control-helper *dsDebug><app-ds-hint key="smsctl.enabled"></app-ds-hint></clr-control-helper>
+          </clr-checkbox-container>
+          <clr-input-container>
+            <label>Allowed Numbers</label>
+            <input clrInput [disabled]="!isAdmin" formControlName="smsctlAllowed"
+                   placeholder="+919096383701,+4915112345678" />
+            <clr-control-helper>Comma-separated. Empty = any sender may attempt login.</clr-control-helper>
+            <clr-control-helper *dsDebug><app-ds-hint key="smsctl.allowed.numbers"></app-ds-hint></clr-control-helper>
+          </clr-input-container>
+          <clr-input-container>
+            <label>Session TTL (s)</label>
+            <input clrInput [disabled]="!isAdmin" type="number" min="60" max="86400"
+                   formControlName="smsctlTtl" />
+            <clr-control-helper>How long a login stays valid.</clr-control-helper>
+            <clr-control-helper *dsDebug><app-ds-hint key="smsctl.session.ttl.sec"></app-ds-hint></clr-control-helper>
+          </clr-input-container>
+          <clr-input-container>
+            <label>Lockout After</label>
+            <input clrInput [disabled]="!isAdmin" type="number" min="1" max="20"
+                   formControlName="smsctlFailures" />
+            <clr-control-helper>Failed logins per number before lockout.</clr-control-helper>
+            <clr-control-helper *dsDebug><app-ds-hint key="smsctl.lockout.failures"></app-ds-hint></clr-control-helper>
+          </clr-input-container>
+        </div>
+
         <div style="margin-top:24px;">
           <button type="submit" class="btn btn-primary" [disabled]="saving || !isAdmin">
             {{ saving ? 'Saving…' : 'Save' }}
@@ -101,6 +146,7 @@ import { ToastService } from '../../../common/toast.service';
   styles: [`
     .page { padding: 24px; }
     h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 12px 0; }
+    h4 { font-size: 14px; font-weight: 600; color: #333; margin: 28px 0 6px 0; }
     .hint { color: #888; font-size: 13px; margin: 0 0 20px 0; }
     code { background: #eef2f7; padding: 0 4px; border-radius: 3px; }
   `]
@@ -113,6 +159,8 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
   private readonly KEYS = [
     'cell.apn', 'cell.modem.tty', 'cell.gps.tty',
     'cell.poll.interval.sec', 'cell.gps.enable', 'cell.rat', 'sms.enable',
+    'smsctl.enabled', 'smsctl.allowed.numbers', 'smsctl.session.ttl.sec',
+    'smsctl.lockout.failures',
   ];
 
   get isAdmin(): boolean { return this.session.isAdmin; }
@@ -129,6 +177,10 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
       gpsEnable: [true],
       rat:       [''],
       smsEnable: [false],
+      smsctlEnabled:  [false],
+      smsctlAllowed:  [''],
+      smsctlTtl:      [600],
+      smsctlFailures: [5],
     });
   }
 
@@ -152,6 +204,10 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
       gpsEnable: d['cell.gps.enable']        ?? this.form.value.gpsEnable,
       rat:       d['cell.rat']               ?? this.form.value.rat,
       smsEnable: d['sms.enable']             ?? this.form.value.smsEnable,
+      smsctlEnabled:  d['smsctl.enabled']           ?? this.form.value.smsctlEnabled,
+      smsctlAllowed:  d['smsctl.allowed.numbers']   ?? this.form.value.smsctlAllowed,
+      smsctlTtl:      d['smsctl.session.ttl.sec']   ?? this.form.value.smsctlTtl,
+      smsctlFailures: d['smsctl.lockout.failures']  ?? this.form.value.smsctlFailures,
     });
   }
 
@@ -167,10 +223,14 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
       { key: 'cell.gps.enable',        value: !!v.gpsEnable },
       { key: 'cell.rat',               value: v.rat ?? '' },
       { key: 'sms.enable',             value: !!v.smsEnable },
+      { key: 'smsctl.enabled',           value: !!v.smsctlEnabled },
+      { key: 'smsctl.allowed.numbers',   value: v.smsctlAllowed ?? '' },
+      { key: 'smsctl.session.ttl.sec',   value: Number(v.smsctlTtl) || 600 },
+      { key: 'smsctl.lockout.failures',  value: Number(v.smsctlFailures) || 5 },
     ]).subscribe({
       next: (r) => {
         this.saving = false;
-        if (r.ok) { this.toast.success('Cellular config saved — restart cellular-client to apply'); this.form.markAsPristine(); }
+        if (r.ok) { this.toast.success('Saved — SMS control applies immediately; cell.* needs a cellular-client restart (or use Restart Module)'); this.form.markAsPristine(); }
         else this.toast.error('Save failed');
       },
       error: () => { this.saving = false; this.toast.error('Save failed'); },

@@ -279,6 +279,10 @@ int CellularClient::handle_exception(ACE_HANDLE) {
 
 void CellularClient::start_reset() {
     if (!m_at) return;
+    // Re-read config first: the operator (device-ui, or an `IOT APN …` SMS) may
+    // have changed cell.apn / cell.rat since startup, and the whole point of the
+    // cycle is to apply it — m_apn_sent/m_rat_done are re-armed below.
+    load_config_from_ds();
     ACE_DEBUG((LM_INFO,
         ACE_TEXT("%D [cell] module restart requested — cycling radio (CFUN 0/1)\n")));
     cmd("AT+CFUN=0");

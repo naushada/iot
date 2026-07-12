@@ -299,6 +299,14 @@ Supervisor::Supervisor(DsBridge& ds, SupervisorOptions opt)
             m_ds.set_last_error(err);
         },
     }) {
+    // wifi.networks hot-apply: wpa_supplicant only reads its config at spawn,
+    // so a credential change must re-spawn the workers. The callback runs on the
+    // DsBridge listener thread → it only flags; the run loop does the work.
+    m_ds.on_change([this](DsBridge::Key k) {
+        if (k == DsBridge::Key::Networks)
+            m_networks_dirty.store(true, std::memory_order_release);
+    });
+
     // L16/D6 — services.wifi.client.enable gate. Constructed lazily
     // here against the DsBridge-owned Client. The watcher thread is
     // intentionally minimal: it just notes that a transition has
@@ -431,6 +439,31 @@ int Supervisor::run() {
             if (!m_dep->wait()) return 0;
             if (!initialize()) return 1;
             m_svc->publish_state("running");
+            continue;
+        }
+
+        // wifi.networks changed (device-ui, ds-cli, or an `IOT WIFI …` SMS):
+        // wpa_supplicant read its config at spawn, so the new credentials only
+        // land if we re-spawn. Reap + reinitialize() — which re-reads
+        // wifi.networks, rewrites the wpa_supplicant.conf and respawns — within
+        // one 200ms tick. This is what makes a mistyped-PSK fix apply itself
+        // instead of waiting for an operator to restart the service.
+        if (m_networks_dirty.exchange(false, std::memory_order_acq_rel)) {
+            ACE_DEBUG((LM_INFO,
+                       ACE_TEXT("%D [wifi:%t] %M %N:%l wifi.networks changed; "
+                                "re-applying (respawning wpa_supplicant)\n")));
+            m_dhcp.terminate();
+            m_wpa.terminate();
+            m_ctrl.close();
+            m_ds.set_pid_wpa(0u);
+            m_ds.set_pid_dhcp(0u);
+            m_ds.set_assoc_state("disconnected");
+            // A bad wifi.networks makes initialize() publish state=conflict +
+            // wifi.last.error and return false. Do NOT kill the daemon over an
+            // operator typo: stay up, keep the error visible, and re-apply as
+            // soon as they correct the value.
+            if (!initialize()) continue;
+            if (m_svc) m_svc->publish_state("running");
             continue;
         }
 

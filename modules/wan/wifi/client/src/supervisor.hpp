@@ -193,6 +193,15 @@ private:
     /// svc-enable and NM-conflict.
     std::unique_ptr<data_store::DepWatch>    m_dep;
 
+    /// wifi.networks hot-apply. wpa_supplicant reads its config once, at
+    /// spawn, so new credentials only take effect when the workers are
+    /// re-spawned. The DsBridge listener thread sets this flag on a
+    /// wifi.networks change; the run loop reaps + reinitialize()s within one
+    /// 200ms tick (same idiom as a service-disable). Without this an operator
+    /// who fixes a mistyped PSK — from the device-ui, or by SMS when WiFi is
+    /// the very thing that is broken — sees nothing happen until a restart.
+    std::atomic<bool>                        m_networks_dirty{false};
+
     /// One-shot startup: probe NM conflict, spawn wpa_supplicant,
     /// connect ctrl, ATTACH. Returns false on any fatal init
     /// failure (NM conflict, spawn fail, ctrl connect fail) — the

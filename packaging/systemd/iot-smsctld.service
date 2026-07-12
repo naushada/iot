@@ -1,0 +1,46 @@
+[Unit]
+Description=IoT SMS device control (authenticated IOT commands over MT-SMS → ds smsctl.*)
+Documentation=file:///etc/iot/smsctld.env
+Documentation=file:///usr/local/share/doc/iot/tdd-smsctl.md
+# Needs ds-server up: the daemon reads smsctl.* config + the sms.* envelopes that
+# cellular-client publishes, and replies through sms.send.*. It never opens the
+# modem itself, so there is NO dependency on iot-cellular-client — it simply
+# stays idle (no inbound SMS) on a board with no modem.
+After=network-online.target iot-ds.service
+Wants=iot-ds.service
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+# Group iot grants access to the group-iot ds socket (/run/iot/data_store.sock,
+# 2775 root:iot) AND write access to /run/iot itself, where the daemon arms the
+# privileged trigger files (reboot.request / factory-reset.request /
+# wifi-reload.request) that the ROOT .path units act on. The daemon therefore
+# needs no privilege of its own — same bridge iot-httpd uses.
+Group=iot
+EnvironmentFile=/etc/iot/smsctld.env
+ExecStart=/usr/local/bin/iot-smsctld $IOT_SMSCTL_ARGS
+
+# /run/iot is owned solely by tmpfiles.d (iot.conf, 2775 root:iot) — do NOT use
+# RuntimeDirectory=iot: it resets /run/iot on start/stop and clobbers the
+# group-iot ds socket, breaking every other daemon.
+
+Restart=on-failure
+RestartSec=10s
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+# NOT ProtectSystem=strict: the daemon must create trigger files under /run/iot.
+# (/run stays writable under ProtectSystem=full; strict would need ReadWritePaths.)
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -178,6 +178,14 @@ set(DDNS_BUILD_DAEMON ON CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/ddns
                  ${CMAKE_BINARY_DIR}/ddns)
 
+# smsctl — iot-smsctld: authenticated device control over SMS. Forced ON so the
+# image build produces the binary (it MUST then be packaged in iot_git.bb, or
+# do_package_qa fails on installed-but-not-shipped). Inert until
+# smsctl.enabled=true. See modules/smsctl + apps/docs/tdd-smsctl.md.
+set(SMSCTL_BUILD_DAEMON ON CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../modules/smsctl
+                 ${CMAKE_BINARY_DIR}/smsctl)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../modules/data-store/inc)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinydtls)
@@ -314,6 +322,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-containerd.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-mqttd.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-ddnsd.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-smsctld.service
             DESTINATION lib/systemd/system)
 
     # tmpfiles.d fallback for hosts where RuntimeDirectory= doesn't
@@ -339,6 +348,7 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/sensord.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/cellular-client.env
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/ddnsd.env
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/etc-iot/smsctld.env
             DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/iot)
 
     # Object-resource config templates. Land each .lua as .lua.example

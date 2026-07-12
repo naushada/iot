@@ -39,6 +39,11 @@ enable iot-transfer.path
 # container feature works out of the box; idle until an Admin issues a pull/run.
 enable iot-containerd.service
 enable iot-ddnsd.service
+# iot-smsctld: authenticated device control over SMS (the last-resort channel
+# when the device has no IP path). Enabled so it is listening the day an
+# operator needs it — but the daemon is INERT until smsctl.enabled=true, so
+# enabling the unit changes nothing on its own.
+enable iot-smsctld.service
 # iot-cellular-client: WP modem status/GPS/SMS + APN provisioning (cell.apn ->
 # AT+CGDCONT). Safe to enable everywhere: the unit's ConditionPathExistsGlob=
 # /dev/ttyUSB* makes systemd skip it on a board with no modem.
