@@ -406,3 +406,67 @@ confirmation remains. **First reflash** the RPi with an image built from current
   (`8991…`=India, `8933…`=France). If it is genuinely Airtel, the `+33` sender is
   likely a gateway-rewritten originating address and the `+32` SMSC is a stale NV
   value — fix with `AT+CSCA="+91<AirtelSMSC>"`.
+
+---
+
+## 11. Modem absence + the volatile-telemetry rule (2026-07-12, PR #549)
+
+**The bug.** With the WP7702 **switched off**, the device-ui still showed
+`operator=Airtel`, `signal=-89 dBm`, `ip=100.86.74.178`, `state=connected`. It
+was not a rendering fault: ds genuinely held those values — 24 stale `cell.*`
+rows were sitting in `/var/lib/iot/data_store.lua` on the hardware, including
+`cell.state = "connected"`.
+
+Two faults compounded:
+
+1. **`cell.*` live telemetry was written with a persistent `set()`**, so it was
+   serialised to disk and survived a reboot.
+2. **The unit carried `ConditionPathExistsGlob=/dev/ttyUSB*`**, so on a boot with
+   no modem the daemon was *skipped and never ran* — `publish_absent()` never
+   fired, and nothing ever cleared those rows. The unit's entire journal was one
+   line: `skipped because of an unmet condition check`.
+
+Either fault alone is survivable. Together they let the UI confidently report a
+modem that was physically powered off.
+
+### ⭐ The rule this establishes
+
+> **Live telemetry is published `set_volatile`, never `set`.**
+> A persistent status key can outlive the daemon that observes it — and a status
+> key that outlives its producer *lies*. Config is persistent (an operator set
+> it); telemetry is volatile (a daemon observed it, and its truth expires with
+> that daemon).
+
+Applied here:
+
+| keys | persistence | why |
+|---|---|---|
+| `cell.*`, `gps.*` | **volatile** | live telemetry — must evaporate with the daemon / ds-server |
+| `sms.inbox`, `sms.count`, `sms.last.*` | persistent | received-SMS history is a **record**, not telemetry; `seed_inbox()` deliberately restores it across a restart |
+| `cell.apn`, `cell.rat`, `cell.modem.tty`, `sms.enable`, `smsctl.*` | persistent | operator config |
+
+`publish_absent()` is the one deliberate exception: it writes the cleared live
+keys **persistently**. An upgraded device still carries the stale on-disk rows an
+older build wrote, and only a persistent write clears that layer — a volatile
+write would sit on top of it and the phantom would return on the next ds restart.
+
+### Absence is a first-class state
+
+`ConditionPathExistsGlob` is **removed** from the unit. The daemon now:
+
+- starts regardless of whether a modem is present;
+- publishes `cell.state=absent` (live keys cleared) when the AT tty is missing;
+- **re-attaches by itself** via a 10 s presence probe when the modem is switched
+  on later — no `systemctl restart`, no operator action;
+- no longer exits on modem loss. Exiting was precisely what let the stale keys
+  survive: on a modem-less board systemd could not restart it (the Condition),
+  so nobody was left to tell the truth.
+
+`open_modem()` re-arms every one-time step (APN / SMS / RAT / identity / GNSS) so
+a power-cycled modem re-initialises from scratch. The `SerialChannel` is reaped
+from the probe timer, never from inside its own `handle_close`.
+
+**HW check:** modem off → `cell.state=absent`, property table empty, unit
+**active** (not skipped). Switch the modem on → within ~10 s
+`journalctl -u iot-cellular-client` logs *"modem back on /dev/ttyUSB2 —
+re-attached"* and the tile repopulates.

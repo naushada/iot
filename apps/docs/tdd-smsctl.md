@@ -88,6 +88,35 @@ IOT WIFI "<ssid with spaces>" "<psk with spaces>"
 - Replies: `OK <CMD>[: <detail>]` or `ERR <CMD>: <reason>`, ASCII, ≤160
   chars (one GSM-7 SMS; the reply is truncated with `…` if longer).
 
+### Reply contract — exactly one SMS per command, success **or** failure
+
+Every command that is parsed from an allowed sender is answered. Auth failures
+are answered too: an operator who mistypes a password must be told, not left
+guessing whether the device is even alive.
+
+| inbound | reply |
+|---|---|
+| `IOT LOGIN <user> <right-pw>` | `OK LOGIN: admin, 10 min` |
+| `IOT LOGIN <user> <wrong-pw>` | `ERR LOGIN: invalid credentials` |
+| …after `smsctl.lockout.failures` tries | `ERR LOGIN: locked out (15 min)` |
+| `IOT LOGIN admin` (bad arity) | `ERR: usage: IOT LOGIN <user> <password>` |
+| any command with no live session | `ERR <CMD>: login required (IOT LOGIN <user> <password>)` |
+| mutating command as a Viewer | `ERR <CMD>: admin access required` |
+| `IOT <junk>` | `ERR: unknown command` |
+| anything that succeeds | `OK <CMD>[: <detail>]` |
+
+**Four deliberate silences** — each is a safety property, not an oversight:
+
+1. text without the `IOT ` prefix (human messages, carrier spam) → **zero MO
+   traffic**, and no reply loop;
+2. a sender not on `smsctl.allowed.numbers` → silent, so the device is not an
+   oracle for "is smsctl on here?" and spam cannot burn SMS credit;
+3. an alphanumeric sender (`AZ-AIRTEL-S`) → it physically cannot receive SMS;
+4. `smsctl.enabled=false` → the daemon is parked.
+
+Never echo an argument back into a reply: a parse error must not quote the
+password it just failed to parse.
+
 | Command | Access | Session | Effect |
 |---|---|---|---|
 | `LOGIN` | — | starts one | verify sha256 → session (TTL) |
@@ -270,6 +299,13 @@ numbers, session TTL, in the 4-column `.form-grid`; a status line
 (`smsctl.last.cmd` / `.result` / `.ts`). Add every `smsctl.*` config key to
 `DataStoreService.ALL_KEYS` — omitting them is exactly the bug that made the
 "Receive SMS" checkbox forget its value across a reload (fixed in #532).
+
+**Gated on a real modem (#549).** The whole card — including *Allowed Numbers* —
+is disabled behind an explanatory banner until `cell.state` reaches
+`registered` / `connected`. SMS control's only inbound channel is MT-SMS, which
+needs network registration, so offering the fields on a device with no modem (or
+one that never registered) invites an operator to "enable" a feature that
+silently cannot work.
 
 ## Phasing (merge order)
 
