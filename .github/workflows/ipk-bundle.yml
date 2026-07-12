@@ -37,6 +37,7 @@ env:
 jobs:
   build-bundle:
     runs-on: ubuntu-22.04
+    timeout-minutes: 350
     # Default GITHUB_TOKEN is read-only on this repo, so action-gh-release 403'd
     # at "Attach to release" (the bundle built fine, only the publish failed).
     # contents:write lets it create the v* release + upload the .tar.gz asset.

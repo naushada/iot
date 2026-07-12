@@ -28,6 +28,7 @@ env:
 jobs:
   build-bundle:
     runs-on: ubuntu-22.04
+    timeout-minutes: 350
     # contents:write so action-gh-release can publish the v* release asset
     # (default GITHUB_TOKEN is read-only on this repo → 403 otherwise).
     permissions:

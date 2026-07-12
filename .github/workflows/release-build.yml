@@ -14,6 +14,18 @@ name: Release build (full image + OTA bundle)
 #
 # Heavy containerized Yocto build → relies on the published sstate cache image
 # (IOT_USE_CACHE=1). Secrets: DOCKERHUB_USERNAME / DOCKERHUB_TOKEN.
+#
+# 2026-07-12 — WHY THE FULL IMAGE IS NOW OPT-IN:
+# The sstate cache image was never actually published (the cache-publish
+# workflow demanded a larger runner nobody had), so IOT_USE_CACHE=1 silently
+# missed and every build ran FROM SCRATCH. A from-scratch full image does not
+# fit the 6h hosted-runner cap — so this workflow spent ~6h on a job that could
+# only ever time out, on every single release push, while the OTA bundle (the
+# artifact we actually flash) built fine alongside it.
+# Now: a release-branch push builds ONLY the OTA bundle. Ask for the full image
+# explicitly (workflow_dispatch → full_image=true), once a cache floor exists or
+# on a larger runner. Publish the floor with cache-publish.yml (target=iot-bundle
+# is enough for the OTA path and runs on a standard runner).
 
 on:
   push:
@@ -23,6 +35,13 @@ on:
       machine:
         description: Target MACHINE
         default: raspberrypi3-64
+        required: false
+      full_image:
+        description: >-
+          Also build the FULL bootable image (.wic.bz2). Needs a published sstate
+          cache floor or a larger runner — from scratch it exceeds the 6h cap.
+        type: boolean
+        default: false
         required: false
       ab:
         description: "RAUC A/B image (u-boot + 4-partition wic). Off = single-rootfs."
@@ -45,6 +64,11 @@ jobs:
   full-image:
     name: Full image (iot-image → .wic.bz2)
     runs-on: ubuntu-22.04
+    # Opt-in only: from scratch this cannot finish inside the 6h cap, and until
+    # a cache floor is published every run IS from scratch. A release-branch push
+    # therefore builds the OTA bundle only.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_image }}
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - name: Free up disk space
@@ -79,6 +103,7 @@ jobs:
   iot-bundle:
     name: OTA bundle (iot-bundle → .tar.gz)
     runs-on: ubuntu-22.04
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - name: Free up disk space

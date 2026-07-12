@@ -13,6 +13,19 @@ name: Publish Yocto builder cache image
 # This workflow runs that build on a LARGER runner (more cores → bitbake
 # parallelism finishes well under 6h), then publishes.
 #
+# 2026-07-12: the cache was NEVER actually published — `docker pull
+# naushada/iot-yocto-builder:cache` 404s — because this workflow demanded a
+# larger runner that the account does not have. So EVERY Yocto build
+# (release-build / ipk-bundle / rauc-bundle / release-image) silently fell back
+# to a from-scratch build, which is the real reason CI takes >6h and the full
+# image times out. Fix: `target` input, defaulting to the OTA bundle
+# (iot-bundle). Its dependency closure is a fraction of the full image — no
+# kernel, no rootfs assembly — so it DOES finish from scratch on the standard
+# 2-core runner, and the sstate floor it publishes is exactly what the OTA
+# builds need. Publish that once and the OTA path drops from hours to minutes.
+# Pass target=iot-image (on a larger runner) when you also want the full-image
+# floor.
+#
 # Manual only. Secrets: DOCKERHUB_USERNAME / DOCKERHUB_TOKEN (push the cache).
 
 on:
@@ -20,11 +33,17 @@ on:
     inputs:
       runner:
         description: >-
-          Runner label. Use a LARGER runner (e.g. an 8/16-core label configured
-          on the account) so the from-scratch full build fits in the 6h job cap.
-          The default 2-core ubuntu-22.04 will likely time out.
+          Runner label. ubuntu-22.04 is fine for target=iot-bundle. Only
+          target=iot-image needs a LARGER runner (8/16-core) to fit the 6h cap.
         default: ubuntu-22.04
         required: true
+      target:
+        description: >-
+          Bitbake target whose sstate floor to publish. iot-bundle (default) is
+          the OTA closure and builds from scratch on a standard runner;
+          iot-image is the full bootable image (needs a larger runner).
+        default: iot-bundle
+        required: false
       machine:
         description: Target MACHINE (its sstate floor also covers the OTA bundle)
         default: raspberrypi3-64
@@ -56,10 +75,10 @@ jobs:
       # Build the full image WITHOUT IOT_USE_CACHE — we are creating the cache,
       # so this run populates the iot-yocto-sstate / -downloads volumes from
       # scratch. build.sh falls back to a local base-image build automatically.
-      - name: Build full image from scratch (populate sstate + downloads)
+      - name: Build from scratch (populate sstate + downloads)
         working-directory: yocto
         env:
-          TARGET: iot-image
+          TARGET: ${{ github.event.inputs.target || 'iot-bundle' }}
           IOT_BRANCH: ${{ github.event.inputs.branch || 'main' }}
           IOT_FRESH: "1"
         run: ./build.sh "${{ github.event.inputs.machine || 'raspberrypi3-64' }}"
