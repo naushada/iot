@@ -297,3 +297,54 @@ TEST(StatsTimer, close_before_open_safe) {
     pub.close();   // must not hang or crash
     SUCCEED();
 }
+
+// The sampler must read the daemon's OWN cgroup, not the host root. It used to
+// read the root — correct in the cloud (one daemon per container, so the root IS
+// that daemon's cgroup) but WRONG on a systemd device, where every daemon lives
+// in /system.slice/<unit>. They therefore all sampled the same host-wide counter
+// and each reported TOTAL SYSTEM CPU as its own: on HW every Services row showed
+// ~9% while /proc said the daemons were at 0.00% — 9% was simply the whole box.
+TEST(StatsCgroup, CpuComesFromTheUnitsOwnCgroupNotTheHostRoot) {
+    const auto root = make_tmpdir();
+    ASSERT_FALSE(root.empty());
+    mkdir_p(root + "/system.slice");
+    mkdir_p(root + "/system.slice/iot-x.service");
+
+    write_file(root + "/cgroup.controllers", "cpu memory pids\n");        // → v2
+    write_file(root + "/cpu.stat", "usage_usec 999999999\n");             // host: busy
+    write_file(root + "/system.slice/iot-x.service/cpu.stat",
+               "usage_usec 12345\n");                                     // unit: idle
+    write_file(root + "/system.slice/iot-x.service/memory.current", "4096\n");
+    write_file(root + "/system.slice/iot-x.service/pids.current", "3\n");
+    // /proc/self/cgroup — what systemd puts this process in.
+    write_file(root + "/cgroup", "0::/system.slice/iot-x.service\n");
+
+    ds::StatsRoots r;
+    r.cgroup_root = root;
+    r.proc_self   = root;
+
+    unsigned long long usec = 0;
+    ASSERT_TRUE(sd::read_cpu_usec(r, ds::CgVersion::v2, usec));
+    EXPECT_EQ(usec, 12345ULL) << "reported the HOST's CPU as the unit's";
+    EXPECT_EQ(sd::read_mem_kb(r, ds::CgVersion::v2), 4);
+    EXPECT_EQ(sd::read_pids(r, ds::CgVersion::v2), 3);
+}
+
+// A container's /proc/self/cgroup reads "0::/" — there the root IS the daemon's
+// cgroup, so the cloud behaviour must stay byte-identical.
+TEST(StatsCgroup, ContainerRootCgroupStillReadsTheRoot) {
+    const auto root = make_tmpdir();
+    ASSERT_FALSE(root.empty());
+    write_file(root + "/cgroup.controllers", "cpu memory pids\n");
+    write_file(root + "/cpu.stat", "usage_usec 777\n");
+    write_file(root + "/cgroup", "0::/\n");
+
+    ds::StatsRoots r;
+    r.cgroup_root = root;
+    r.proc_self   = root;
+
+    unsigned long long usec = 0;
+    ASSERT_TRUE(sd::read_cpu_usec(r, ds::CgVersion::v2, usec));
+    EXPECT_EQ(usec, 777ULL);
+}
+
