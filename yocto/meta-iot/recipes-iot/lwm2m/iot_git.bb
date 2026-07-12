@@ -67,6 +67,8 @@ SRC_URI = "\
     file://iot-ota-confirm.service \
     file://iot-reboot.path \
     file://iot-reboot.service \
+    file://iot-service-restart.path \
+    file://iot-service-restart.service \
     file://iot-factory-reset \
     file://iot-factory-reset.path \
     file://iot-factory-reset.service \
@@ -342,6 +344,8 @@ do_install() {
         # wipe+reboot. See modules/http-server (POST /api/v1/system/*).
         install -m 0644 ${WORKDIR}/iot-reboot.path            ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-reboot.service         ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-service-restart.path    ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-service-restart.service ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-factory-reset.path     ${D}${systemd_system_unitdir}/
         install -m 0644 ${WORKDIR}/iot-factory-reset.service  ${D}${systemd_system_unitdir}/
         # device-ui Advanced -> Transfer: engineer .path/.service wipe customer
@@ -605,6 +609,8 @@ FILES:${PN}-httpd = "\
     ${systemd_system_unitdir}/iot-ds-seed.service \
     ${systemd_system_unitdir}/iot-reboot.path \
     ${systemd_system_unitdir}/iot-reboot.service \
+    ${systemd_system_unitdir}/iot-service-restart.path \
+    ${systemd_system_unitdir}/iot-service-restart.service \
     ${systemd_system_unitdir}/iot-factory-reset.path \
     ${systemd_system_unitdir}/iot-factory-reset.service \
     ${systemd_system_unitdir}/iot-transfer.path \
@@ -810,7 +816,7 @@ SYSTEMD_SERVICE:${PN}-wifi-client = "iot-wifi-client.service"
 # iot-reboot.path + iot-factory-reset.path are enabled (they watch the triggers
 # iot-httpd drops in /run/iot for device-ui Advanced -> Reboot/Factory Reset);
 # their .service units are path-activated, not enabled directly (no [Install]).
-SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service iot-ds-seed.service iot-reboot.path iot-factory-reset.path iot-transfer.path"
+SYSTEMD_SERVICE:${PN}-httpd = "iot-httpd.service iot-hostname.service iot-ds-seed.service iot-reboot.path iot-factory-reset.path iot-transfer.path iot-service-restart.path"
 # iot-sensord registered but NOT auto-enabled: it needs the mangOH Yellow board
 # + CAP_SYS_RAWIO, so on a board without it the daemon would Restart-loop. The
 # operator `systemctl enable --now iot-sensord` on sensor-equipped hardware.

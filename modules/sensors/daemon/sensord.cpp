@@ -9,6 +9,7 @@
 #include <ace/Time_Value.h>
 
 #include "data_store/client.hpp"
+#include "data_store/stats_publisher.hpp"
 #include "i2c_dev.hpp"         // I2cDevTransport (preferred: /dev/i2c-N)
 #include "mmio.hpp"            // BCM2837::map_i2c / map_gpio (BSC fallback)
 #include "sensor_reader.hpp"
@@ -67,6 +68,16 @@ int run(const Options& opt) {
         ACE_ERROR_RETURN((LM_ERROR,
             ACE_TEXT("%D [sensord] data-store connect failed\n")), 1);
     }
+
+    // Services page: lifecycle + L22 resource telemetry. Unlike the reactor
+    // daemons, sensord's run_loop() is a blocking sample/sleep loop that never
+    // pumps the reactor — so the stats timer needs its OWN reactor thread
+    // (run_reactor_thread=true), same as net-router.
+    cli.set(std::string("services.sensors.state"),
+            data_store::Value{std::string("running")});
+    static data_store::StatsPublisher stats("services.sensors",
+        [&cli](const std::vector<data_store::KV>& kv) { cli.set(kv); });
+    stats.open(data_store::StatsPublisher::STATS_FLUSH_SEC, true);
 
     // Preferred transport: the kernel i2c-dev node (/dev/i2c-N). It needs only
     // r/w on the device (group i2c) — no CAP_SYS_RAWIO / /dev/mem — and gives a

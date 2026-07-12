@@ -10,6 +10,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "data_store/stats_publisher.hpp"
+
 #include "smsctl/parser.hpp"
 
 namespace smsctl {
@@ -362,6 +364,14 @@ int SmsCtlClient::run() {
         m_sessions.config().lockout_failures,
         m_sessions.config().lockout_sec,
         static_cast<unsigned>(m_sessions.config().allowed_numbers.size())));
+
+    // Services page: lifecycle + L22 resource telemetry. The reactor is pumped
+    // below, so the stats timer rides it (run_reactor_thread=false).
+    m_ds.set(std::string("services.smsctl.state"),
+             data_store::Value{std::string("running")});
+    static data_store::StatsPublisher stats("services.smsctl",
+        [this](const std::vector<data_store::KV>& kv) { m_ds.set(kv); });
+    stats.open(data_store::StatsPublisher::STATS_FLUSH_SEC, false);
 
     ACE_Reactor::instance()->run_reactor_event_loop();
     return 0;

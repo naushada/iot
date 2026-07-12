@@ -14,15 +14,19 @@
 
 #include <cctype>
 #include <chrono>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <condition_variable>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <thread>
+#include <vector>
 
 #include <sys/wait.h>
 
@@ -1036,7 +1040,7 @@ void install_handlers(Router& router,
                 // Fall through to build the full status snapshot
             }
             std::vector<data_store::Client::GetResult> got;
-            auto rs = ds->get({
+            std::vector<std::string> keys = {
                 // LwM2M
                 "iot.server.uri", "iot.dm.uri", "iot.endpoint", "iot.conn.state",
                 // OTA software update
@@ -1072,47 +1076,12 @@ void install_handlers(Router& router,
                 // mangOH onboard sensors
                 "iot.sensor.temp", "iot.sensor.humidity", "iot.sensor.pressure",
                 "iot.sensor.lux", "iot.sensor.accel", "iot.sensor.gyro",
-                // Services
-                "services.ds.state", "services.ds.uptime.sec",
-                "services.net.router.enable", "services.net.router.state",
-                "services.openvpn.client.enable",
-                "services.openvpn.client.state",
-                "services.lwm2m.client.enable",
-                "services.lwm2m.client.state",
-                "services.lwm2m.server.enable",
-                "services.lwm2m.server.state",
-                "services.wifi.client.enable", "services.wifi.client.state",
-                "services.vehicle.enable", "services.vehicle.state",
-                "services.mqtt.enable", "services.mqtt.state",
-                "services.container.enable", "services.container.state",
-                // L22 — per-container resource telemetry.
-                "services.ds.cpu.permille", "services.ds.cpu.count",
-                "services.ds.mem.rss.kb",
-                "services.ds.fd.count", "services.ds.threads",
-                "services.net.router.cpu.permille", "services.net.router.cpu.count",
-                "services.net.router.mem.rss.kb",
-                "services.net.router.fd.count", "services.net.router.threads",
-                "services.openvpn.client.cpu.permille", "services.openvpn.client.cpu.count",
-                "services.openvpn.client.mem.rss.kb",
-                "services.openvpn.client.fd.count", "services.openvpn.client.threads",
-                "services.lwm2m.client.cpu.permille", "services.lwm2m.client.cpu.count",
-                "services.lwm2m.client.mem.rss.kb",
-                "services.lwm2m.client.fd.count", "services.lwm2m.client.threads",
-                "services.lwm2m.server.cpu.permille", "services.lwm2m.server.cpu.count",
-                "services.lwm2m.server.mem.rss.kb",
-                "services.lwm2m.server.fd.count", "services.lwm2m.server.threads",
-                "services.wifi.client.cpu.permille", "services.wifi.client.cpu.count",
-                "services.wifi.client.mem.rss.kb",
-                "services.wifi.client.fd.count", "services.wifi.client.threads",
-                "services.vehicle.cpu.permille", "services.vehicle.cpu.count",
-                "services.vehicle.mem.rss.kb",
-                "services.vehicle.fd.count", "services.vehicle.threads",
-                "services.mqtt.cpu.permille", "services.mqtt.cpu.count",
-                "services.mqtt.mem.rss.kb",
-                "services.mqtt.fd.count", "services.mqtt.threads",
-                "services.container.cpu.permille", "services.container.cpu.count",
-                "services.container.mem.rss.kb",
-                "services.container.fd.count", "services.container.threads",
+                // Device services: NOT enumerated here. The key list is derived
+                // from the ds SCHEMA at first use (every services.* key that is
+                // not services.cloud.*), so a new daemon appears on the Services
+                // page by declaring its keys in services.lua — no edit here, and
+                // no more silently-missing daemons because someone forgot to add
+                // 5 metric keys to this literal.
                 // ── Cloud service states/enables + telemetry (cloud UI
                 // Services page reads these via the shared status poll) ──
                 "services.cloud.iot.cloudd.enable", "services.cloud.iot.cloudd.state",
@@ -1137,7 +1106,32 @@ void install_handlers(Router& router,
                 // Domain bump keys — echoed back so the SPA can observe them.
                 "services.stats.version", "log.version",
                 "cloud.update.status",
-            }, got);
+            };
+            // Append every device-side services.* key the ds schema declares
+            // (services.cloud.* keeps its explicit flat passthrough above). The
+            // schema is static for the life of the process, so resolve once.
+            static const std::vector<std::string> kDeviceServiceKeys =
+                [ds]() -> std::vector<std::string> {
+                    std::vector<std::string> out;
+                    std::string dump;
+                    if (!ds || !ds->schema_dump(dump).ok) return out;
+                    try {
+                        const auto doc = json::parse(dump);
+                        if (!doc.contains("keys") || !doc["keys"].is_object())
+                            return out;
+                        for (const auto& [key, meta] : doc["keys"].items()) {
+                            (void)meta;
+                            if (key.rfind("services.", 0) != 0)       continue;
+                            if (key.rfind("services.cloud.", 0) == 0) continue;
+                            if (key == "services.stats.version")      continue;
+                            out.push_back(key);
+                        }
+                    } catch (const std::exception&) { /* leave empty */ }
+                    return out;
+                }();
+            keys.insert(keys.end(), kDeviceServiceKeys.begin(),
+                        kDeviceServiceKeys.end());
+            auto rs = ds->get(keys, got);
             json resp;
             resp["ok"] = true;
             if (!rs.ok) {
@@ -1282,82 +1276,63 @@ void install_handlers(Router& router,
                 else if (k == "iot.sensor.accel")    sensor["accel"] = sv();
                 else if (k == "iot.sensor.gyro")     sensor["gyro"] = sv();
 
-                // ds-server keys feed BOTH the nested `services` block (device-ui
-                // reads s.services.ds) AND the flat `cloud` passthrough (cloud-ui
-                // reads the flat d['services.ds.state']). The services.ds.* keys
-                // are matched by these explicit branches BEFORE the generic
-                // services.cloud.* passthrough below, so without dual-emitting into
-                // `cloud` here the cloud Services page never streams ds-server live
-                // off /status — it then relies only on the one-shot prefetch, loses
-                // the race, and shows a stale "stopped" + "—" telemetry.
-                else if (k == "services.ds.state")                { services["ds"]["state"] = sv(); cloud[k] = sv(); }
-                else if (k == "services.ds.uptime.sec")           services["ds"]["uptime_sec"] = iv();
-                else if (k == "services.net.router.enable")       services["net_router"]["enable"] = bv(true);
-                else if (k == "services.net.router.state")        services["net_router"]["state"] = sv();
-                else if (k == "services.openvpn.client.enable")   services["openvpn_client"]["enable"] = bv(true);
-                else if (k == "services.openvpn.client.state")    services["openvpn_client"]["state"] = sv();
-                else if (k == "services.lwm2m.client.enable")     services["lwm2m_client"]["enable"] = bv(true);
-                else if (k == "services.lwm2m.client.state")      services["lwm2m_client"]["state"] = sv();
-                else if (k == "services.lwm2m.server.enable")     services["lwm2m_server"]["enable"] = bv(true);
-                else if (k == "services.lwm2m.server.state")      services["lwm2m_server"]["state"] = sv();
-                else if (k == "services.wifi.client.enable")      services["wifi_client"]["enable"] = bv(true);
-                else if (k == "services.wifi.client.state")       services["wifi_client"]["state"] = sv();
-                // Optional producer daemons (iot-vehicled / iot-mqttd). Short keys
-                // match the device-ui Services rows ('vehicle' / 'mqtt'). No
-                // StatsPublisher telemetry → the page shows "—" for cpu/mem.
-                else if (k == "services.vehicle.enable")          services["vehicle"]["enable"] = bv(true);
-                else if (k == "services.vehicle.state")           services["vehicle"]["state"] = sv();
-                else if (k == "services.mqtt.enable")             services["mqtt"]["enable"] = bv(true);
-                else if (k == "services.mqtt.state")              services["mqtt"]["state"] = sv();
-                else if (k == "services.container.enable")        services["container"]["enable"] = bv(true);
-                else if (k == "services.container.state")         services["container"]["state"] = sv();
+                // ── services.* → the nested `services` block ────────────────
+                // GENERIC: any key `services.<name>.<field>` lands in
+                // services[<slug>][<json field>], where <slug> is <name> with
+                // dots turned into underscores (net.router → net_router).
+                //
+                // This replaced ~75 hand-written branches — one per (daemon,
+                // metric) pair — which is why the Services page only ever showed
+                // the handful of daemons somebody had remembered to wire up.
+                // A new daemon now needs NOTHING here: it just declares
+                // services.<name>.{enable,state} in services.lua and publishes
+                // via StatsPublisher.
+                //
+                // services.cloud.* is NOT handled here — it keeps its flat
+                // passthrough below, which is what the cloud UI reads.
+                else if (k.rfind("services.", 0) == 0 &&
+                         k.rfind("services.cloud.", 0) != 0 &&
+                         k != "services.stats.version") {
+                    // Split off the trailing field, longest suffix first (the
+                    // multi-dot metrics must beat the single-dot ones).
+                    static const std::vector<std::pair<const char*, const char*>>
+                        kFields = {
+                            {".cpu.permille", "cpu_permille"},
+                            {".cpu.count",    "cpu_count"},
+                            {".mem.rss.kb",   "mem_kb"},
+                            {".fd.count",     "fd_count"},
+                            {".uptime.sec",   "uptime_sec"},
+                            {".threads",      "threads"},
+                            {".enable",       "enable"},
+                            {".state",        "state"},
+                        };
+                    for (const auto& [suffix, field] : kFields) {
+                        const std::size_t slen = std::strlen(suffix);
+                        if (k.size() <= 9 + slen) continue;   // "services." + suffix
+                        if (k.compare(k.size() - slen, slen, suffix) != 0) continue;
 
-                // L22 — resource telemetry per service.
-                else if (k == "services.ds.cpu.permille")             { services["ds"]["cpu_permille"] = iv(); cloud[k] = iv(); }
-                else if (k == "services.ds.cpu.count")                { services["ds"]["cpu_count"] = iv(); cloud[k] = iv(); }
-                else if (k == "services.ds.mem.rss.kb")               { services["ds"]["mem_kb"] = iv(); cloud[k] = iv(); }
-                else if (k == "services.ds.fd.count")                 { services["ds"]["fd_count"] = iv(); cloud[k] = iv(); }
-                else if (k == "services.ds.threads")                  { services["ds"]["threads"] = iv(); cloud[k] = iv(); }
-                else if (k == "services.net.router.cpu.permille")     services["net_router"]["cpu_permille"] = iv();
-                else if (k == "services.net.router.cpu.count")        services["net_router"]["cpu_count"] = iv();
-                else if (k == "services.net.router.mem.rss.kb")       services["net_router"]["mem_kb"] = iv();
-                else if (k == "services.net.router.fd.count")         services["net_router"]["fd_count"] = iv();
-                else if (k == "services.net.router.threads")          services["net_router"]["threads"] = iv();
-                else if (k == "services.openvpn.client.cpu.permille") services["openvpn_client"]["cpu_permille"] = iv();
-                else if (k == "services.openvpn.client.cpu.count")    services["openvpn_client"]["cpu_count"] = iv();
-                else if (k == "services.openvpn.client.mem.rss.kb")   services["openvpn_client"]["mem_kb"] = iv();
-                else if (k == "services.openvpn.client.fd.count")     services["openvpn_client"]["fd_count"] = iv();
-                else if (k == "services.openvpn.client.threads")      services["openvpn_client"]["threads"] = iv();
-                else if (k == "services.lwm2m.client.cpu.permille")   services["lwm2m_client"]["cpu_permille"] = iv();
-                else if (k == "services.lwm2m.client.cpu.count")      services["lwm2m_client"]["cpu_count"] = iv();
-                else if (k == "services.lwm2m.client.mem.rss.kb")     services["lwm2m_client"]["mem_kb"] = iv();
-                else if (k == "services.lwm2m.client.fd.count")       services["lwm2m_client"]["fd_count"] = iv();
-                else if (k == "services.lwm2m.client.threads")        services["lwm2m_client"]["threads"] = iv();
-                else if (k == "services.lwm2m.server.cpu.permille")   services["lwm2m_server"]["cpu_permille"] = iv();
-                else if (k == "services.lwm2m.server.cpu.count")      services["lwm2m_server"]["cpu_count"] = iv();
-                else if (k == "services.lwm2m.server.mem.rss.kb")     services["lwm2m_server"]["mem_kb"] = iv();
-                else if (k == "services.lwm2m.server.fd.count")       services["lwm2m_server"]["fd_count"] = iv();
-                else if (k == "services.lwm2m.server.threads")        services["lwm2m_server"]["threads"] = iv();
-                else if (k == "services.wifi.client.cpu.permille")    services["wifi_client"]["cpu_permille"] = iv();
-                else if (k == "services.wifi.client.cpu.count")       services["wifi_client"]["cpu_count"] = iv();
-                else if (k == "services.wifi.client.mem.rss.kb")      services["wifi_client"]["mem_kb"] = iv();
-                else if (k == "services.wifi.client.fd.count")        services["wifi_client"]["fd_count"] = iv();
-                else if (k == "services.wifi.client.threads")         services["wifi_client"]["threads"] = iv();
-                else if (k == "services.vehicle.cpu.permille")        services["vehicle"]["cpu_permille"] = iv();
-                else if (k == "services.vehicle.cpu.count")           services["vehicle"]["cpu_count"] = iv();
-                else if (k == "services.vehicle.mem.rss.kb")          services["vehicle"]["mem_kb"] = iv();
-                else if (k == "services.vehicle.fd.count")            services["vehicle"]["fd_count"] = iv();
-                else if (k == "services.vehicle.threads")             services["vehicle"]["threads"] = iv();
-                else if (k == "services.mqtt.cpu.permille")           services["mqtt"]["cpu_permille"] = iv();
-                else if (k == "services.mqtt.cpu.count")              services["mqtt"]["cpu_count"] = iv();
-                else if (k == "services.mqtt.mem.rss.kb")             services["mqtt"]["mem_kb"] = iv();
-                else if (k == "services.mqtt.fd.count")               services["mqtt"]["fd_count"] = iv();
-                else if (k == "services.mqtt.threads")                services["mqtt"]["threads"] = iv();
-                else if (k == "services.container.cpu.permille")      services["container"]["cpu_permille"] = iv();
-                else if (k == "services.container.cpu.count")         services["container"]["cpu_count"] = iv();
-                else if (k == "services.container.mem.rss.kb")        services["container"]["mem_kb"] = iv();
-                else if (k == "services.container.fd.count")          services["container"]["fd_count"] = iv();
-                else if (k == "services.container.threads")           services["container"]["threads"] = iv();
+                        // services.net.router.state → name "net.router" → slug
+                        // "net_router" (the key the device-ui rows are keyed by).
+                        std::string slug = k.substr(9, k.size() - 9 - slen);
+                        for (char& c : slug) if (c == '.') c = '_';
+
+                        const std::string f(field);
+                        if      (f == "state")  services[slug][f] = sv();
+                        else if (f == "enable") services[slug][f] = bv(true);
+                        else                    services[slug][f] = iv();
+
+                        // ds-server keys ALSO feed the flat `cloud` passthrough:
+                        // the cloud Services page reads d['services.ds.state']
+                        // rather than the nested block. Without this dual-emit it
+                        // never streams ds-server live off /status — it falls back
+                        // to the one-shot prefetch and shows a stale "stopped".
+                        if (k.rfind("services.ds.", 0) == 0) {
+                            if      (f == "state")  cloud[k] = sv();
+                            else if (f != "enable") cloud[k] = iv();
+                        }
+                        break;
+                    }
+                }
 
                 // Cloud Service rows + bump keys: pass through verbatim under
                 // their ds key, typed by suffix (state→string, enable→bool,
@@ -1447,16 +1422,60 @@ void install_handlers(Router& router,
                 r.body = R"({"ok":false,"err":"missing 'service' field"})";
                 return r;
             }
-            // Map short names to enable-key prefixes
-            std::string enable_key;
-            if (svc == "net.router")        enable_key = "services.net.router.enable";
-            else if (svc == "openvpn.client") enable_key = "services.openvpn.client.enable";
-            else if (svc == "lwm2m.client")   enable_key = "services.lwm2m.client.enable";
-            else if (svc == "lwm2m.server")   enable_key = "services.lwm2m.server.enable";
-            else if (svc == "wifi.client")    enable_key = "services.wifi.client.enable";
-            else if (svc == "ds") {
+            if (svc == "ds") {
                 r.status = 400;
                 r.body = R"json({"ok":false,"err":"cannot restart ds-server"})json";
+                return r;
+            }
+
+            // Two kinds of daemon:
+            //
+            // (a) GATED — implements a ServiceGate, i.e. it watches
+            //     services.<x>.enable and parks/unparks on it. Restart = flip
+            //     the key off→on; the daemon reaps its workers and re-inits.
+            //
+            // (b) UNGATED — every other daemon. Flipping the enable key does
+            //     nothing at all (nobody is watching it), which is why the
+            //     Services page's Restart button used to 400 for containers /
+            //     mqtt / vehicle. For these we arm /run/iot/service-restart.request
+            //     with the SLUG and let the root iot-service-restart.path unit
+            //     `systemctl restart` the corresponding unit — the same
+            //     privilege bridge reboot/factory-reset already use. The slug is
+            //     validated here AND re-validated in the unit; a unit name is
+            //     never taken from the request.
+            static const std::map<std::string, std::string> kGated = {
+                {"net.router",     "services.net.router.enable"},
+                {"openvpn.client", "services.openvpn.client.enable"},
+                {"lwm2m.client",   "services.lwm2m.client.enable"},
+                {"lwm2m.server",   "services.lwm2m.server.enable"},
+                {"wifi.client",    "services.wifi.client.enable"},
+            };
+            // Keep in sync with the case list in iot-service-restart.service.
+            static const std::set<std::string> kUngated = {
+                "cellular", "container", "mqtt", "vehicle",
+                "sensors", "ddns", "smsctl", "httpd",
+            };
+
+            std::string enable_key;
+            if (auto it = kGated.find(svc); it != kGated.end()) {
+                enable_key = it->second;
+            } else if (kUngated.count(svc)) {
+                std::ofstream trig("/run/iot/service-restart.request",
+                                   std::ios::trunc);
+                if (!trig) {
+                    r.status = 500;
+                    r.body = R"({"ok":false,"err":"cannot arm restart - perms or non-Yocto host"})";
+                    return r;
+                }
+                trig << svc << "\n";
+                ACE_DEBUG((LM_INFO,
+                           ACE_TEXT("%D httpd:thread:%t %M %N:%l service restart "
+                                    "requested for '%C' (armed iot-service-restart.path)\n"),
+                           svc.c_str()));
+                json resp;
+                resp["ok"]      = true;
+                resp["service"] = svc;
+                r.body = resp.dump();
                 return r;
             } else {
                 r.status = 400;
