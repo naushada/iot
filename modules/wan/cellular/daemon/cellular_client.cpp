@@ -21,6 +21,11 @@ namespace {
     const void* const kSendAct = &kSendTagStorage;
     const int   kCmdTagStorage = 0;
     const void* const kCmdAct = &kCmdTagStorage;
+    // Modem-presence probe: fires while the AT tty is absent, so a modem that is
+    // switched on later re-attaches by itself (no systemd restart, no operator).
+    const int   kProbeTagStorage = 0;
+    const void* const kProbeAct = &kProbeTagStorage;
+    const long  kProbeIntervalSec = 10;
 
     /// A command is finished when the modem emits one of these. Everything else
     /// (echo, URCs, `+CSQ:` payloads, the `> ` PDU prompt) is intermediate.
@@ -84,47 +89,24 @@ int CellularClient::run() {
     // No dedicated NMEA tty → read GNSS over the AT channel (AT+QGPSLOC).
     m_gps_via_at = m_cfg.gps_enable && m_cfg.gps_tty.empty();
 
-    m_at.reset(new SerialChannel([this](const std::string& l){ on_at_line(l); }));
-    if (m_at->open(m_cfg.modem_tty, ACE_Reactor::instance()) == -1) {
-        publish_absent();   // clear any stale cell.* from a prior modem session
-        ACE_ERROR_RETURN((LM_ERROR,
-            ACE_TEXT("%D [cell] AT tty %C unavailable\n"), m_cfg.modem_tty.c_str()), 2);
-    }
-    // Modem unplugged / powered off → the AT tty tears down. Clear the now-stale
-    // cell.* the daemon published while the modem was up (otherwise the device-ui
-    // keeps showing the last operator/signal/ICCID as if live), then stop so
-    // systemd re-evaluates ConditionPathExistsGlob=/dev/ttyUSB* on restart.
-    m_at->on_closed([this]() {
-        ACE_ERROR((LM_WARNING, ACE_TEXT("%D [cell] modem tty closed (unplugged?) "
-                   "— clearing cell.* and exiting\n")));
+    // The modem may be absent at boot (switched off, unplugged, or a board with
+    // no WP module at all). That is NOT a fatal error: publish the truth
+    // (cell.state=absent, live keys cleared) and keep running — the probe timer
+    // below re-attaches the moment the tty appears, with no operator action.
+    //
+    // This used to exit(2), and the unit carried
+    // ConditionPathExistsGlob=/dev/ttyUSB*, so on a modem-less boot the daemon
+    // never ran at all — and therefore never cleared cell.*. The device-ui then
+    // rendered the LAST session's persisted operator/signal/IP as though the
+    // modem were live. See publish()/publish_absent(): live telemetry is now
+    // volatile so it can never outlive the daemon again.
+    if (!open_modem()) {
         publish_absent();
-        m_modem_lost = true;                              // → run() returns non-zero
-        ACE_Reactor::instance()->end_reactor_event_loop();
-    });
-
-    if (m_cfg.gps_enable && !m_cfg.gps_tty.empty()) {
-        m_gnss.reset(new SerialChannel([this](const std::string& l){ on_nmea_line(l); }));
-        if (m_gnss->open(m_cfg.gps_tty, ACE_Reactor::instance()) == -1) {
-            ACE_ERROR((LM_WARNING,
-                ACE_TEXT("%D [cell] GNSS tty %C unavailable (continuing)\n"),
-                m_cfg.gps_tty.c_str()));
-            m_gnss.reset();
-        }
+        ACE_DEBUG((LM_WARNING,
+            ACE_TEXT("%D [cell] AT tty %C not present — waiting for the modem "
+                     "(probing every %ds)\n"),
+            m_cfg.modem_tty.c_str(), static_cast<int>(kProbeIntervalSec)));
     }
-
-    // A previous run may have died between AT+CMGS and its PDU, leaving the modem
-    // parked at the '>' prompt — where it treats every following command as
-    // message text. ESC (0x1B) cancels that. Harmless on a healthy modem.
-    m_at->write_raw("\x1b");
-
-    // Identify the modem family up front so the first poll already uses the
-    // right ICCID + GNSS commands. The reply (manufacturer / model line) is
-    // classified in on_at_line.
-    cmd("AT+GMI");
-    cmd("AT+CGMM");
-
-    m_state.set_state("init");
-    publish();
 
     // MO SMS send: baseline the request token (so a stale value doesn't fire on
     // boot) then watch it. The callback runs on the ds listener thread → it only
@@ -151,9 +133,17 @@ int CellularClient::run() {
 
     // First poll after 1s, then every interval. The reactor dispatches the
     // serial handles + this timer on one thread — no polling loop.
+    // poll_modem() no-ops while the modem is absent (m_at == nullptr).
     ACE_Reactor::instance()->schedule_timer(
         this, nullptr, ACE_Time_Value(1),
         ACE_Time_Value(static_cast<time_t>(m_cfg.interval_sec)));
+
+    // Modem-presence probe: reaps a dead channel and re-attaches a modem that
+    // was switched on after us. Cheap (one open() attempt) and it is what lets a
+    // power-cycled WP7702 recover with no operator action.
+    ACE_Reactor::instance()->schedule_timer(
+        this, kProbeAct, ACE_Time_Value(kProbeIntervalSec),
+        ACE_Time_Value(kProbeIntervalSec));
 
     ACE_DEBUG((LM_INFO,
         ACE_TEXT("%D [cell] up: AT=%C GNSS=%C apn=%C every %us\n"),
@@ -171,10 +161,12 @@ int CellularClient::run() {
     stats.open(data_store::StatsPublisher::STATS_FLUSH_SEC, false);
 
     ACE_Reactor::instance()->run_reactor_event_loop();
-    // Non-zero on modem loss so systemd (Restart=on-failure) retries and
-    // re-evaluates ConditionPathExistsGlob: re-opens if the modem came back,
-    // stays cleanly inactive (cell.state="absent") if it is really gone.
-    return m_modem_lost ? 3 : 0;
+    // The daemon no longer exits when the modem disappears — it publishes
+    // cell.state="absent" and waits for it to come back (see open_modem() +
+    // the probe timer). Exiting was what left the device-ui showing a phantom
+    // "connected" modem: systemd could not restart us on a modem-less board
+    // (ConditionPathExistsGlob), so nobody ever cleared the persisted cell.*.
+    return 0;
 }
 
 void CellularClient::cmd(const std::string& c) {
@@ -212,6 +204,21 @@ void CellularClient::cmd_done() {
 }
 
 int CellularClient::handle_timeout(const ACE_Time_Value&, const void* act) {
+    if (act == kProbeAct) {
+        // Reap a channel whose tty died (deferred out of handle_close, which we
+        // must not delete the handler from), then try to re-attach.
+        if (m_tty_lost) {
+            m_at.reset();
+            m_gnss.reset();
+            m_tty_lost = false;
+        }
+        if (!m_at && open_modem()) {
+            ACE_DEBUG((LM_INFO,
+                ACE_TEXT("%D [cell] modem back on %C — re-attached\n"),
+                m_cfg.modem_tty.c_str()));
+        }
+        return 0;
+    }
     if (act == kCmdAct) {
         // The in-flight command never answered. Drop it and move on, or the
         // queue stalls forever and cell.* freezes.
@@ -335,6 +342,62 @@ void CellularClient::start_send() {
     cmd("AT+CMGF=0");                       // ensure PDU mode
     cmd("AT+CMGS=" + std::to_string(len));  // → modem emits '>'
     ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS send → %C (%d octets)\n"), to.c_str(), len));
+}
+
+bool CellularClient::open_modem() {
+    auto at = std::unique_ptr<SerialChannel>(
+        new SerialChannel([this](const std::string& l){ on_at_line(l); }));
+    if (at->open(m_cfg.modem_tty, ACE_Reactor::instance()) == -1)
+        return false;                       // not there (yet) — caller keeps probing
+
+    m_at = std::move(at);
+
+    // Modem unplugged / powered off → the AT tty tears down. Clear the now-stale
+    // cell.* (otherwise the device-ui keeps showing the last operator/signal/ICCID
+    // as if live) and mark the channel dead. We must NOT delete the SerialChannel
+    // from inside its own handle_close — the probe timer reaps it on the next tick
+    // and then re-attaches when the modem comes back.
+    m_at->on_closed([this]() {
+        ACE_ERROR((LM_WARNING,
+            ACE_TEXT("%D [cell] modem tty closed (switched off / unplugged?) "
+                     "— clearing cell.* and waiting for it to come back\n")));
+        publish_absent();
+        m_tty_lost = true;
+    });
+
+    if (m_cfg.gps_enable && !m_cfg.gps_tty.empty()) {
+        m_gnss.reset(new SerialChannel([this](const std::string& l){ on_nmea_line(l); }));
+        if (m_gnss->open(m_cfg.gps_tty, ACE_Reactor::instance()) == -1) {
+            ACE_ERROR((LM_WARNING,
+                ACE_TEXT("%D [cell] GNSS tty %C unavailable (continuing)\n"),
+                m_cfg.gps_tty.c_str()));
+            m_gnss.reset();
+        }
+    }
+
+    // Re-arm every one-time step: a modem that just re-appeared (or was power
+    // cycled) needs APN / SMS / RAT / identity / GNSS applied again from scratch.
+    m_cmdq.clear();
+    m_cmd_inflight = false;
+    m_apn_sent = m_sms_setup = m_rat_done = m_ident_done = m_gps_started = false;
+    m_vendor   = Vendor::Generic;
+    m_haveIp   = false;
+    m_lastReg  = m_reg_cs = m_reg_ps = m_reg_eps = Reg::Unknown;
+
+    // A previous run may have died between AT+CMGS and its PDU, leaving the modem
+    // parked at the '>' prompt — where it treats every following command as
+    // message text. ESC (0x1B) cancels that. Harmless on a healthy modem.
+    m_at->write_raw("\x1b");
+
+    // Identify the modem family up front so the first poll already uses the
+    // right ICCID + GNSS commands. The reply (manufacturer / model line) is
+    // classified in on_at_line.
+    cmd("AT+GMI");
+    cmd("AT+CGMM");
+
+    m_state.set_state("init");
+    publish();
+    return true;
 }
 
 void CellularClient::poll_modem() {
@@ -561,6 +624,11 @@ void CellularClient::publish_absent() {
     for (const char* k : kLiveKeys)
         batch.emplace_back(std::string(k), data_store::Value{std::string()});
     batch.emplace_back(std::string("cell.state"), data_store::Value{std::string("absent")});
+    // PERSISTENT on purpose, even though publish() is volatile: an upgraded
+    // device still carries the stale cell.* rows an older build wrote into
+    // data_store.lua, and only a persistent write clears that on-disk layer (a
+    // volatile write would sit on top of it and the phantom "connected" modem
+    // would come back on the next ds restart). Idempotent afterwards.
     if (!m_ds.set(batch).ok)
         ACE_ERROR((LM_ERROR, ACE_TEXT("%D [cell] ds set(clear cell.*) failed\n")));
 }
@@ -574,12 +642,31 @@ void CellularClient::publish() {
     else if (m_lastReg == Reg::Denied)                    tok = "failed";
     m_state.set_state(tok);
 
-    std::vector<data_store::KV> batch;
+    // cell.* / gps.* are LIVE TELEMETRY and are published VOLATILE — they must
+    // not outlive the daemon that observes them. They used to be persistent, so
+    // they were written to data_store.lua and survived a reboot: with the modem
+    // switched off the daemon never ran, nothing cleared them, and the device-ui
+    // happily rendered the previous session's operator/signal/IP as if the modem
+    // were still connected. A volatile key cannot lie like that — it evaporates
+    // with the ds-server, and the daemon republishes the truth (including
+    // "absent") on every start.
+    //
+    // sms.* is the exception and stays PERSISTENT: the received-SMS history is a
+    // record, not telemetry, and seed_inbox() deliberately restores it across a
+    // daemon restart.
+    std::vector<data_store::KV> volatile_batch;   // cell.* / gps.*
+    std::vector<data_store::KV> persistent_batch; // sms.*
     for (const auto& e : m_state.to_kv()) {
-        batch.emplace_back(e.key, data_store::Value{e.value});
+        if (e.key.rfind("sms.", 0) == 0)
+            persistent_batch.emplace_back(e.key, data_store::Value{e.value});
+        else
+            volatile_batch.emplace_back(e.key, data_store::Value{e.value});
     }
-    if (!batch.empty() && !m_ds.set(batch).ok) {
+    if (!volatile_batch.empty() && !m_ds.set_volatile(volatile_batch).ok) {
         ACE_ERROR((LM_ERROR, ACE_TEXT("%D [cell] ds set(cell.*/gps.*) failed\n")));
+    }
+    if (!persistent_batch.empty() && !m_ds.set(persistent_batch).ok) {
+        ACE_ERROR((LM_ERROR, ACE_TEXT("%D [cell] ds set(sms.*) failed\n")));
     }
 }
 

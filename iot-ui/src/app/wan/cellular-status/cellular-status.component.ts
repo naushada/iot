@@ -29,7 +29,7 @@ import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
         Modem not detected — it may be powered off or unplugged. The values below
         are the last known readings.
       </div>
-      <clr-datagrid>
+      <clr-datagrid class="panel">
         <clr-dg-column>Property</clr-dg-column>
         <clr-dg-column>Value</clr-dg-column>
 
@@ -107,10 +107,14 @@ import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
     .bar:nth-child(5) { height: 14px; }
     .bar.on { background: #2e7d32; }
     .sig-text { vertical-align: middle; }
+    /* One shared width for every block on the page. The property table was
+       full-width while the SMS table was 720px and the Send card 640px, so the
+       three never lined up. */
+    .panel { max-width: 720px; }
     .inbox { margin-top: 24px; max-width: 720px; }
     .inbox h4 { font-size: 14px; font-weight: 600; color: #333; margin: 0 0 10px 0; }
     .msg-cell { white-space: pre-wrap; word-break: break-word; }
-    .send { margin-top: 24px; max-width: 640px; }
+    .send { margin-top: 24px; max-width: 720px; }
     .send h4 { font-size: 14px; font-weight: 600; color: #333; margin: 0 0 10px 0; }
     .send .row { display: flex; gap: 8px; align-items: center; }
     .send .msg { flex: 1; }

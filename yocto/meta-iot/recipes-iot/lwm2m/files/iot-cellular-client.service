@@ -6,12 +6,17 @@ Documentation=file:///etc/iot/cellular-client.env
 # ECM link; the host cannot open a data call on wwan0).
 After=network-online.target iot-ds.service
 Wants=iot-ds.service
+# NO ConditionPathExistsGlob=/dev/ttyUSB*. It used to gate this unit, so on a
+# board whose modem is switched off (or absent) the daemon never ran — and
+# therefore never published cell.state=absent. The device-ui then rendered the
+# LAST session's persisted operator/signal/IP as though the modem were live.
+# The daemon now starts regardless, publishes the truth, and re-attaches by
+# itself when the modem appears (10s presence probe).
 # The unit is enabled by preset on every image, but a board with no WP module has
 # no /dev/ttyUSB* — without this the daemon would Restart-loop forever on a modem-
 # less unit. The condition makes systemd skip it cleanly instead (inactive, not
 # failed), so the operator does not have to hand-enable it on cellular hardware
 # and the device-ui APN field is live wherever a modem is actually present.
-ConditionPathExistsGlob=/dev/ttyUSB*
 StartLimitBurst=5
 StartLimitIntervalSec=60s
 
