@@ -199,6 +199,28 @@ CACHE_IMAGE=docker.io/<you>/iot-yocto-builder:cache ./build.sh publish        # 
 CACHE_IMAGE=docker.io/<you>/iot-yocto-builder:cache IOT_USE_CACHE=1 ./build.sh # elsewhere → only meta-iot rebuilds
 ```
 
+> ⚠️ **CI depends on that cache image existing — check it before blaming the
+> build.** Every Yocto workflow sets `IOT_USE_CACHE=1` and expects to pull
+> `docker.io/naushada/iot-yocto-builder:cache`. When that image is **missing**,
+> `build.sh` silently falls back to a from-scratch build (a deliberate fallback,
+> PR #317) — which is exactly why CI took >6h for months: the cache had never
+> actually been published. Verify with:
+>
+> ```sh
+> podman pull docker.io/naushada/iot-yocto-builder:cache   # "access denied" = it does not exist
+> ```
+>
+> Republish the floor (one manual run, standard 2-core runner is enough):
+>
+> ```sh
+> gh workflow run cache-publish.yml -f target=iot-bundle -f runner=ubuntu-22.04
+> ```
+>
+> `target=iot-bundle` is the OTA closure — no kernel, no rootfs assembly — so it
+> *does* build from scratch inside the 6h cap. Use `target=iot-image` (on a
+> larger runner) only if you also want a full-image floor. After it publishes,
+> OTA/release builds drop from hours to minutes.
+
 See [`yocto/meta-iot/README.md`](yocto/meta-iot/README.md) for the full
 build-steps walkthrough.
 
@@ -451,9 +473,16 @@ a local Yocto build to update a fielded device — download the bundle artifact 
 apply it from the device UI **Software Update** page (no reflash, no ssh).
 
 Cutting a release (`release/vX.Y.Z` branch push) runs
-`.github/workflows/release-build.yml`, which produces two artifacts: the
-`iot-bundle-<machine>` (the OTA bundle — what you want here) and the heavier
-`iot-image-<machine>` (`.wic.bz2`, only for flashing a blank SD card).
+`.github/workflows/release-build.yml`, which produces the **`iot-bundle-<machine>`**
+artifact — the OTA bundle, which is what you want here.
+
+> **The full `.wic.bz2` image is opt-in** (since 2026-07-12, PR #547). A
+> release-branch push builds the bundle only. A from-scratch full image cannot
+> finish inside GitHub's 6h job cap, and until a cache floor is published every
+> build *is* from scratch — so the image job used to burn ~6h on a guaranteed
+> timeout on every release. Need the SD image? Dispatch it explicitly:
+> `gh workflow run release-build.yml --ref release/vX.Y.Z -f full_image=true`
+> (and see the cache note in §1 first, or it will time out again).
 
 ```sh
 # 1. find the release-build run for the version you want
@@ -477,6 +506,7 @@ Then apply it:
 - **Local device UI** (no cloud): open `https://<device-ip>:8080` (admin/admin) →
   **Software Update** → upload `iot-bundle-…tar.gz` → Apply. The device
   sha256-verifies, `opkg install`s every `.ipk`, and restarts the daemons.
+- **Local, from the terminal** (no browser, no cloud) — see §6b below.
 - **Fleet, from the cloud UI**: drop the tarball into the cloud firmware feed and
   push over LwM2M Object 5 to a multi-selected list of devices — see
   [`apps/docs/tdd-ab-image-ota.md`](apps/docs/tdd-ab-image-ota.md) §10 for the
@@ -484,6 +514,89 @@ Then apply it:
   `https://`, the manifest `sha256` must be a single line, the stager runs as
   root). The cloud only pushes a job an operator queues, and consumes it on
   delivery (one-shot — it will not re-push on a later registration or restart).
+
+### 6b. Flash a running device locally, from the terminal (no cloud, no browser)
+
+Use this when the cloud is unreachable (or the device's LwM2M link is wedged) but
+you can still reach the device on the LAN.
+
+**The mechanism.** `iot-swupdate.path` is a systemd inotify watch on a single
+**marker file**, `/run/iot/update/update`. Everything else — the device-ui
+uploader, the cloud OTA stager — is just a different way of dropping a bundle
+into the spool `/run/iot/update/` and then creating that marker. So the shortest
+local path is to do it yourself, over ssh:
+
+```sh
+DEV=192.168.1.20
+BUNDLE=./ota/iot-bundle-1.5.1-raspberrypi3-64.tar.gz
+
+# 1. stage the bundle in the spool (any .ipk / .tar / .tar.gz / .tgz / .raucb)
+scp "$BUNDLE" root@$DEV:/run/iot/update/
+
+# 2. (optional) declare the version + reboot policy
+ssh root@$DEV 'printf "version=1.5.1\nreboot=auto\n" > /run/iot/update/update.meta'
+
+# 3. trip the inotify trigger — THIS is what starts the install
+ssh root@$DEV 'touch /run/iot/update/update'
+```
+
+`iot-swupdate` then: expands the tarball into its `.ipk`s → `opkg install`s them
+→ restarts `ds-server` and runs any pending schema migrations → **reboots if a
+base/kernel/boot package landed**, otherwise just restarts the iot daemons. It
+removes the marker itself, which re-arms the `.path` unit for the next update.
+
+Watch it, and verify — do **not** trust the absence of errors:
+
+```sh
+ssh root@$DEV 'journalctl -u iot-swupdate -f'          # follow the install
+
+ssh root@$DEV 'cat /VERSION; ds-cli get iot.update.state iot.update.result iot.update.reason'
+#   iot.update.state  = 0   idle (3 = updating)
+#   iot.update.result = 1   success   (9 = install/migration error, 10 = downgrade refused)
+```
+
+`update.meta` is an optional sidecar with two keys:
+
+| key | values | meaning |
+|---|---|---|
+| `version` | e.g. `1.5.1` | feeds the **downgrade guard** — a bundle older than the running semver is refused (`result=10`), which is a *skip*, not a failure. Same-version reinstalls are allowed. |
+| `reboot` | `auto` (default) / `always` / `never` | `auto` reboots only when a base/kernel/boot package landed. |
+
+Omit it entirely and you get `version=` unknown (no downgrade guard) and
+`reboot=auto`.
+
+**No ssh? Use the REST endpoint instead.** `POST /api/v1/update/upload?name=<file>`
+writes into the same spool and trips the same marker. It is Admin-gated and the
+body is capped at **8 MiB**, so a large bundle must be chunked: `offset=0`
+truncates and starts, `offset>0` appends, `final=1` trips the installer (omit all
+three for a single-shot small `.ipk`).
+
+```sh
+DEV=192.168.1.20:8080
+curl -s -c /tmp/iot.jar -X POST "http://$DEV/api/v1/auth/login" \
+     -H 'Content-Type: application/json' -d '{"id":"admin","password":"admin"}'
+curl -s -b /tmp/iot.jar -X POST \
+     "http://$DEV/api/v1/update/upload?name=iot-daemon.ipk" \
+     -H 'Content-Type: application/octet-stream' --data-binary @iot-daemon.ipk
+```
+
+(The device-ui **Software Update** page is this same call, with the chunking done
+for you — the easiest option when a browser is available. `http.listen.scheme`
+tells you whether the device is on `http` or `https`; it ships as `http` on 8080.)
+
+**Choosing a path:**
+
+| situation | use |
+|---|---|
+| iterating on one daemon, local `.ipk` feed from `./build.sh` | `opkg` over ssh (§5) |
+| a whole-userspace release bundle, cloud unreachable | **scp + touch**, above |
+| whole-*image* update on an A/B device (`rootA`/`rootB`, `rauc status` works) | stage the `.raucb` the same way — the installer takes the RAUC path, writes the passive bank and flips the boot slot. A failed boot rolls back; the `.ipk` path cannot. See [`apps/docs/tdd-ab-image-ota.md`](apps/docs/tdd-ab-image-ota.md) |
+| blank SD card, or the partition layout/bootloader changed | physical reflash (§2) |
+
+> **Why not just scp the compiled binaries?** They will not load. The device runs
+> ACE 7.0.0 + glibc 2.39 from its Yocto sysroot; binaries built in any stock
+> distro container link a different `libACE.so` soname (and usually an older
+> glibc). Ship the Yocto-built `.ipk`/bundle — it is the only matching ABI.
 
 Notes:
 - CI artifacts are retained **90 days**, then expire — re-dispatch
