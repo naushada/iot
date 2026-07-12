@@ -650,6 +650,18 @@ FILES:${PN}-cellular = "\
     ${systemd_system_unitdir}/iot-cellular-client.service \
 "
 RDEPENDS:${PN}-cellular = "ace-tao"
+# libqmi (qmicli / qmi-network) — the ONLY way to find out whether wwan0 can
+# carry data on this hardware. The kernel side is already there (qmi_wwan is
+# bound, /dev/cdc-wdm0 exists), but the image shipped no QMI userspace at all,
+# so `qmicli --wds-start-network` could never even be attempted and wwan0 sat
+# DOWN with no address while data rode the module's ECM link (eth1). The AT
+# route is a dead end — the WP7702 firmware answers $QCRMCALL with NO CARRIER.
+#
+# RRECOMMENDS, not RDEPENDS: a board with no WP module has no use for it, and it
+# must not be able to fail the cellular package's install. Comes from
+# meta-networking, already enabled in yocto/kas-iot.yml.
+# See apps/docs/hw-bringup-wp7702-cellular-wan.md §4.
+RRECOMMENDS:${PN}-cellular = "libqmi"
 
 # vehicle — iot-vehicled CAN/OBD-II (ISO 15765-4) telemetry producer.
 # Publishes vehicle.* to ds; the lwm2m client mirrors them into a Vehicle
