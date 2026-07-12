@@ -226,3 +226,45 @@ TEST(ClientReconnect, watch_refires_after_server_restart) {
     EXPECT_GT(events.load(), before)
         << "watch was not re-registered on the new server instance";
 }
+
+/// REQ-DS-CLI-RECONNECT-003 — a watch whose RegisterWatch could not reach the
+/// server must still be honoured once the client re-attaches.
+///
+/// The failure this pins down was found on hardware: cellular-client registers
+/// three watches at startup, one RegisterWatch did not make it, and the client
+/// ERASED that key from its refcount. try_reconnect() re-registers from exactly
+/// that refcount, so the key could never come back — the daemon logged
+/// "re-watching 2 key(s)" for the rest of its life and silently ignored
+/// sms.clear.request forever. Callers do not check watch()'s Status, so nothing
+/// surfaced. A failed registration must leave the subscription intact.
+TEST(ClientReconnect, watch_registered_while_server_down_heals_on_reconnect) {
+    ReconnectFixture fx;
+    if (!fx.ok()) GTEST_SKIP() << "ds-server binary/schema not found";
+
+    fx.kill_server();
+
+    // Register the watch with NO server listening: the wire RegisterWatch cannot
+    // land, so this reports an error — and the subscription must survive it.
+    std::atomic<int> events{0};
+    ds::Client::WatchHandle wh = ds::Client::kInvalidHandle;
+    const auto ws = fx.client().watch(
+        std::vector<std::string>{kKey},
+        [&events](const ds::Client::Event&) { ++events; },
+        &wh);
+    EXPECT_FALSE(ws.ok) << "watch() on a dead socket must report the failure";
+
+    ASSERT_TRUE(fx.spawn_server());
+    ASSERT_TRUE(fx.wait_set_ok(kKey, "stopped"))
+        << "client never re-attached to the new server";
+
+    ds::Client writer;
+    ASSERT_TRUE(writer.connect(fx.sock()).ok);
+    ASSERT_TRUE(writer.set(kKey, ds::Value{std::string("running")}).ok);
+    for (int i = 0; i < 100 && events.load() < 1; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    writer.close();
+
+    EXPECT_GE(events.load(), 1)
+        << "a watch that failed to register was dropped for good instead of "
+           "being re-registered on reconnect";
+}
