@@ -61,6 +61,12 @@ return {
   keys = {
     -- read (operator-set)
     ["cell.apn"]               = admin_str(""),
+    -- Which PDP context is OURS. The modem carries several — a WP7702 ships the
+    -- eSIM's own profile on a cid of its choosing — so this says which one the
+    -- daemon provisions (AT+CGDCONT=<cid>) and reads back (AT+CGCONTRDP=<cid>,
+    -- the source of cell.ip/cell.dns). It does NOT force the network's default
+    -- bearer; see cell.apn.profiles for what the modem actually holds.
+    ["cell.apn.cid"]           = { access = "Admin", type = "integer", default = 1, min = 1, max = 16 },
     ["cell.modem.tty"]         = admin_str("/dev/ttyUSB2"),
     ["cell.gps.tty"]           = admin_str(""),
     ["cell.poll.interval.sec"] = { access = "Admin", type = "integer", default = 30, min = 5, max = 3600 },
@@ -87,7 +93,10 @@ return {
     ["cell.model"]       = viewer_str(),   -- modem model (ATI), e.g. WP7702
     ["cell.fw"]          = viewer_str(),   -- modem firmware revision (ATI)
     ["cell.capability"]  = viewer_str(),   -- RAT capability, e.g. "LTE-M / NB-IoT / GSM"
-    ["cell.apn.current"] = viewer_str(),   -- provisioned data APN read back (AT+CGDCONT?)
+    ["cell.apn.current"] = viewer_str(),   -- APN of cell.apn.cid, read back (AT+CGDCONT?)
+    -- Every provisioned PDP context as a JSON array (device-ui table):
+    -- [{"cid":1,"type":"IP","apn":"airtelgprs.com"},{"cid":2,...}]
+    ["cell.apn.profiles"] = viewer_str(),
     ["cell.rat.current"] = viewer_str(),   -- RAT the modem reports (AT!SELRAT?)
     ["cell.reg.reason"]  = viewer_str(),   -- network reject cause (AT+CEER), if any
     ["cell.version"]     = viewer_str(),

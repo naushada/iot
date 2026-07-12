@@ -86,8 +86,15 @@ import { ToastService } from '../../../common/toast.service';
             </clr-checkbox-wrapper>
             <clr-control-helper *dsDebug><app-ds-hint key="sms.enable"></app-ds-hint></clr-control-helper>
           </clr-checkbox-container>
-          <!-- pad to fill the 4-column row (Project Rule 5) -->
-          <div></div>
+          <clr-input-container>
+            <label>Data Context (cid)</label>
+            <input clrInput [disabled]="!isAdmin" type="number" min="1" max="16"
+                   formControlName="apnCid" />
+            <clr-control-helper>
+              Which PDP context we provision — see Data Contexts on the status page.
+            </clr-control-helper>
+            <clr-control-helper *dsDebug><app-ds-hint key="cell.apn.cid"></app-ds-hint></clr-control-helper>
+          </clr-input-container>
         </div>
 
         <h4>SMS Device Control</h4>
@@ -173,7 +180,7 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
   cellState = '';
   private sub = new Subscription();
   private readonly KEYS = [
-    'cell.apn', 'cell.modem.tty', 'cell.gps.tty',
+    'cell.apn', 'cell.apn.cid', 'cell.modem.tty', 'cell.gps.tty',
     'cell.poll.interval.sec', 'cell.gps.enable', 'cell.rat', 'sms.enable',
     'smsctl.enabled', 'smsctl.allowed.numbers', 'smsctl.session.ttl.sec',
     'smsctl.lockout.failures',
@@ -196,6 +203,7 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
               private ds: DataStoreService) {
     this.form = fb.group({
       apn:       [''],
+      apnCid:    [1],
       modemTty:  ['/dev/ttyUSB2'],
       gpsTty:    [''],
       pollSec:   [30],
@@ -253,6 +261,7 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
     const cur = this.form.getRawValue();
     this.form.patchValue({
       apn:       d['cell.apn']               ?? cur.apn,
+      apnCid:    d['cell.apn.cid']           ?? cur.apnCid,
       modemTty:  d['cell.modem.tty']         ?? cur.modemTty,
       gpsTty:    d['cell.gps.tty']           ?? cur.gpsTty,
       pollSec:   d['cell.poll.interval.sec'] ?? cur.pollSec,
@@ -274,6 +283,7 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
     const v = this.form.getRawValue();
     this.ds.write([
       { key: 'cell.apn',               value: v.apn ?? '' },
+      { key: 'cell.apn.cid',           value: Number(v.apnCid) || 1 },
       { key: 'cell.modem.tty',         value: v.modemTty ?? '' },
       { key: 'cell.gps.tty',           value: v.gpsTty ?? '' },
       { key: 'cell.poll.interval.sec', value: Number(v.pollSec) || 30 },

@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include <ace/Event_Handler.h>
 
@@ -36,6 +37,11 @@ class CellularClient : public ACE_Event_Handler {
             std::string  modem_tty = "/dev/ttyUSB2";
             std::string  gps_tty;                       ///< "" → no NMEA GNSS
             std::string  apn;
+            /// PDP context we provision + read back. The modem holds several (the
+            /// eSIM parks its own on a cid of its choosing); this says which one is
+            /// OURS. Everything cid-scoped keys off it: AT+CGDCONT=<cid>,
+            /// AT+CGCONTRDP=<cid> (source of cell.ip/DNS) and cell.apn.current.
+            int          apn_cid = 1;
             std::string  rat;                           ///< "" leave; auto|gsm|lte|… (Sierra !SELRAT)
             unsigned     interval_sec = 30;
             bool         gps_enable = true;
@@ -107,6 +113,9 @@ class CellularClient : public ACE_Event_Handler {
         Reg                             m_reg_eps = Reg::Unknown;  ///< +CEREG (LTE EPS)
         bool                            m_rat_done = false;        ///< one-time Sierra !SELRAT apply/read
         bool                            m_ident_done = false;      ///< one-time ATI / AT+CNUM identity read
+        /// Contexts collected from the current AT+CGDCONT? scan (one line each),
+        /// cleared before the scan is issued → published as cell.apn.profiles.
+        std::vector<PdpProfile>         m_pdp_scan;
         bool                            m_haveIp = false;
 
         // MO SMS send (sms.send.* envelope). The ds watch fires on the listener

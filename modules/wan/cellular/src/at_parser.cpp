@@ -284,20 +284,18 @@ std::string model_capability(const std::string& model) {
     return {};
 }
 
-std::string parse_cgdcont(const std::string& line) {
-    if (!contains(lower(line), "+cgdcont:")) return {};
+bool parse_cgdcont_entry(const std::string& line, PdpProfile& out) {
+    if (!contains(lower(line), "+cgdcont:")) return false;
     const auto parts = split_csv(after_colon(line));
-    // +CGDCONT: <cid>,"<PDP_type>","<apn>",... — the APN is field 2.
-    if (parts.size() < 3) return {};
-    // ONLY cid 1. `AT+CGDCONT?` answers with one line per provisioned context,
-    // and the caller feeds us every one of them — so without this the LAST cid
-    // listed won, not the one we use. A WP7702 carries Sierra's own profiles
-    // (iot.swir on a higher cid), so cell.apn.current reported iot.swir while
-    // the data call was actually on the operator APN we wrote to cid 1. cid 1 is
-    // the context this stack provisions (AT+CGDCONT=1) and reads back
-    // (AT+CGCONTRDP=1); the other cids are none of our business.
-    if (strip_quotes(parts[0]) != "1") return {};
-    return strip_quotes(parts[2]);
+    // +CGDCONT: <cid>,"<PDP_type>","<apn>",...
+    if (parts.size() < 3) return false;
+    int cid = 0;
+    try { cid = std::stoi(strip_quotes(parts[0])); } catch (...) { return false; }
+    if (cid <= 0) return false;
+    out.cid  = cid;
+    out.type = strip_quotes(parts[1]);
+    out.apn  = strip_quotes(parts[2]);
+    return true;
 }
 
 Vendor parse_vendor(const std::string& gmi_or_model) {

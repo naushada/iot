@@ -93,24 +93,38 @@ TEST(AtIdentity, CnumImeiModelCapability) {
     EXPECT_EQ(model_capability("Telit"), "");
 }
 
-TEST(AtCgdcont, ExtractsApn) {
-    EXPECT_EQ(parse_cgdcont("+CGDCONT: 1,\"IP\",\"airtelgprs.com\",\"0.0.0.0\",0,0"),
-              "airtelgprs.com");
-    EXPECT_EQ(parse_cgdcont("+CGDCONT: 1,\"IP\",\"\",\"0.0.0.0\",0,0"), "");  // undefined
-    EXPECT_EQ(parse_cgdcont("OK"), "");
+TEST(AtCgdcont, ExtractsCidTypeAndApn) {
+    PdpProfile p;
+    ASSERT_TRUE(parse_cgdcont_entry(
+        "+CGDCONT: 1,\"IP\",\"airtelgprs.com\",\"0.0.0.0\",0,0", p));
+    EXPECT_EQ(p.cid, 1);
+    EXPECT_EQ(p.type, "IP");
+    EXPECT_EQ(p.apn, "airtelgprs.com");
+
+    // An undefined context is still a context — it has a cid, just no APN. The
+    // device-ui shows the empty row rather than pretending the cid isn't there.
+    ASSERT_TRUE(parse_cgdcont_entry("+CGDCONT: 4,\"IP\",\"\",\"0.0.0.0\",0,0", p));
+    EXPECT_EQ(p.cid, 4);
+    EXPECT_EQ(p.apn, "");
+
+    EXPECT_FALSE(parse_cgdcont_entry("OK", p));
+    EXPECT_FALSE(parse_cgdcont_entry("+CGDCONT: 1,\"IP\"", p));   // truncated
 }
 
-/// AT+CGDCONT? answers with ONE LINE PER CONTEXT and the caller feeds every one
-/// of them to set_apn(), so anything but cid 1 must be ignored — otherwise the
-/// last line listed wins. A WP7702 carries the eSIM's own profile (iot.swir) on
-/// a higher cid, which is exactly how cell.apn.current came to report iot.swir
-/// while the data call was up on the operator APN provisioned to cid 1 (HW).
-TEST(AtCgdcont, IgnoresContextsOtherThanCid1) {
-    EXPECT_EQ(parse_cgdcont("+CGDCONT: 2,\"IP\",\"iot.swir\",\"0.0.0.0\",0,0"), "");
-    EXPECT_EQ(parse_cgdcont("+CGDCONT: 3,\"IPV4V6\",\"ims\",\"0.0.0.0\",0,0"), "");
-    // cid 1 still wins, whatever the eSIM parks on the other contexts.
-    EXPECT_EQ(parse_cgdcont("+CGDCONT: 1,\"IP\",\"airtelgprs.com\",\"0.0.0.0\",0,0"),
-              "airtelgprs.com");
+/// The cid is the whole point: AT+CGDCONT? answers with one line PER CONTEXT,
+/// and a WP7702 carries the eSIM's own profile (iot.swir) alongside ours. Before
+/// this, every line was folded into a single APN string, so the last context
+/// listed won and cell.apn.current reported the eSIM's APN while the data call
+/// was up on the operator APN we had provisioned. Found on HW.
+TEST(AtCgdcont, KeepsTheEsimContextDistinctFromOurs) {
+    PdpProfile ours, esim;
+    ASSERT_TRUE(parse_cgdcont_entry(
+        "+CGDCONT: 1,\"IP\",\"airtelgprs.com\",\"0.0.0.0\",0,0", ours));
+    ASSERT_TRUE(parse_cgdcont_entry(
+        "+CGDCONT: 2,\"IP\",\"iot.swir\",\"0.0.0.0\",0,0", esim));
+    EXPECT_NE(ours.cid, esim.cid);
+    EXPECT_EQ(ours.apn, "airtelgprs.com");
+    EXPECT_EQ(esim.apn, "iot.swir");
 }
 
 TEST(AtCgpaddr, ExtractsIp) {
