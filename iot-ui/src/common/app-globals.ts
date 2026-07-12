@@ -152,6 +152,17 @@ export interface CellStatus {
   sms_storage?: string;  // SIM message-store usage "used/total" (AT+CPMS?)
   // Received-SMS history (newest first), from sms.inbox — rendered as a table.
   sms_inbox?: SmsInboxEntry[];
+  apn_cid?: string;              // which PDP context is ours (cell.apn.cid)
+  apn_profiles?: PdpProfile[];   // every context the modem holds (cell.apn.profiles)
+}
+
+/// One provisioned PDP context (AT+CGDCONT?). The modem carries several — the
+/// eSIM parks its own profile alongside ours — so the cid is what tells them
+/// apart, and `apn_cid` says which one this device provisions and reads back.
+export interface PdpProfile {
+  cid?: number;
+  type?: string;   // "IP" / "IPV6" / "IPV4V6"
+  apn?: string;    // empty on an undefined context
 }
 
 export interface SmsInboxEntry {

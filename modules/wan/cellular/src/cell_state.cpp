@@ -1,5 +1,6 @@
 #include "cell_state.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 
@@ -97,6 +98,19 @@ void CellularState::set_apn(const std::string& apn) {
     std::lock_guard<std::mutex> lk(m_mtx);
     if (apn.empty() || apn == m_apn) return;
     m_apn = apn; m_haveCell = true; ++m_cellVersion;
+}
+
+void CellularState::set_apn_profiles(const std::vector<PdpProfile>& profiles) {
+    std::lock_guard<std::mutex> lk(m_mtx);
+    const bool same =
+        m_pdpProfiles.size() == profiles.size() &&
+        std::equal(m_pdpProfiles.begin(), m_pdpProfiles.end(), profiles.begin(),
+                   [](const PdpProfile& a, const PdpProfile& b) {
+                       return a.cid == b.cid && a.type == b.type && a.apn == b.apn;
+                   });
+    if (same) return;                 // the table is re-read on every scan
+    m_pdpProfiles = profiles;
+    m_haveCell = true; ++m_cellVersion;
 }
 
 void CellularState::set_dns(const std::string& dns) {
@@ -200,6 +214,14 @@ std::vector<KV> CellularState::to_kv() const {
         if (!m_fw.empty())       kv.push_back({"cell.fw", m_fw});
         if (!m_capability.empty())kv.push_back({"cell.capability", m_capability});
         if (!m_apn.empty())      kv.push_back({"cell.apn.current", m_apn});
+        if (!m_pdpProfiles.empty()) {
+            // Every provisioned PDP context, for the device-ui table. Same idiom
+            // as sms.inbox: a JSON array, embedded parsed by the http-server.
+            nlohmann::json arr = nlohmann::json::array();
+            for (const auto& p : m_pdpProfiles)
+                arr.push_back({{"cid", p.cid}, {"type", p.type}, {"apn", p.apn}});
+            kv.push_back({"cell.apn.profiles", arr.dump()});
+        }
         if (m_haveSignal) {
             kv.push_back({"cell.signal.dbm",  std::to_string(m_dbm)});
             kv.push_back({"cell.signal.bars", std::to_string(m_bars)});

@@ -3,7 +3,7 @@ import { Subscription } from 'rxjs';
 import { DataStoreService } from '../../../common/datastore.service';
 import { SessionService } from '../../../common/session.service';
 import { ToastService } from '../../../common/toast.service';
-import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
+import { CellStatus, PdpProfile, SmsInboxEntry } from '../../../common/app-globals';
 
 /// Cellular modem (mangOH Yellow WP) status. Reads cell.* off the shared
 /// /status stream — published by the cellular-client daemon. Property/Value
@@ -52,6 +52,39 @@ import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
 
         <clr-dg-footer>{{ rows.length }} properties</clr-dg-footer>
       </clr-datagrid>
+
+      <div class="inbox">
+        <div class="inbox-head">
+          <h4>Data Contexts (PDP Profiles)</h4>
+        </div>
+        <p class="hint">
+          Every context the modem holds. A module ships more than the one we
+          provision — the eSIM parks its own profile here too — so
+          <strong>Ours</strong> marks the context this device configures
+          (<code>cell.apn.cid</code>) and reads its IP and DNS back from.
+        </p>
+        <clr-datagrid>
+          <clr-dg-column [style.width.px]="90">Cid</clr-dg-column>
+          <clr-dg-column [style.width.px]="110">PDP Type</clr-dg-column>
+          <clr-dg-column>APN</clr-dg-column>
+          <clr-dg-column [style.width.px]="100">Ours</clr-dg-column>
+
+          <clr-dg-placeholder>No data contexts read yet.</clr-dg-placeholder>
+
+          <clr-dg-row *clrDgItems="let p of apnProfiles">
+            <clr-dg-cell>{{ p.cid }}</clr-dg-cell>
+            <clr-dg-cell>{{ p.type || '—' }}</clr-dg-cell>
+            <clr-dg-cell>{{ p.apn || '(undefined)' }}</clr-dg-cell>
+            <clr-dg-cell>
+              <span class="label label-info" *ngIf="isOurCid(p.cid)">ours</span>
+            </clr-dg-cell>
+          </clr-dg-row>
+
+          <clr-dg-footer>
+            {{ apnProfiles.length }} context{{ apnProfiles.length === 1 ? '' : 's' }}
+          </clr-dg-footer>
+        </clr-datagrid>
+      </div>
 
       <div class="inbox">
         <div class="inbox-head">
@@ -246,6 +279,17 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
 
   get smsInbox(): SmsInboxEntry[] {
     return Array.isArray(this.c.sms_inbox) ? this.c.sms_inbox : [];
+  }
+
+  get apnProfiles(): PdpProfile[] {
+    return Array.isArray(this.c.apn_profiles) ? this.c.apn_profiles : [];
+  }
+
+  /// cell.apn.cid arrives as a string off /status; default 1 (the schema default)
+  /// so the "ours" flag is still right on a device that never set the key.
+  isOurCid(cid?: number): boolean {
+    const ours = parseInt(this.c.apn_cid || '', 10);
+    return cid != null && cid === (isNaN(ours) ? 1 : ours);
   }
 
   constructor(private ds: DataStoreService,
