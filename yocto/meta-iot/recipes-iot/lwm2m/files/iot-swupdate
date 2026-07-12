@@ -262,8 +262,58 @@ if [ "$need_reboot" = 1 ]; then
 else
     log "restarting iot daemons"
     systemctl daemon-reload >/dev/null 2>&1 || true
-    for unit in iot-lwm2m-client iot-httpd iot-openvpn-client iot-net-router iot-wifi-client; do
-        systemctl try-restart "${unit}.service" >/dev/null 2>&1 || true
+
+    # Enable any unit this update NEWLY shipped. opkg drops the .service file but
+    # never enables it: SYSTEMD_AUTO_ENABLE / 90-iot.preset only run at image
+    # build + first boot. So a daemon introduced BY an OTA (iot-smsctld was the
+    # first) installed fine and then sat there `disabled`, invisible, until
+    # someone reflashed. Consult the shipped preset policy — the same file
+    # first-boot uses — and enable only what it says to enable, only for units
+    # this update actually installed. An operator's deliberate `systemctl
+    # disable` of a pre-existing unit is therefore never overridden.
+    PRESET=/lib/systemd/system-preset/90-iot.preset
+    [ -f "$PRESET" ] || PRESET=/usr/lib/systemd/system-preset/90-iot.preset
+    for pkg in $INSTALLED; do
+        for f in $(opkg files "$pkg" 2>/dev/null | grep -E '/systemd/system/iot-[^/]+\.(service|path)$'); do
+            unit="$(basename "$f")"
+            [ -f "$PRESET" ] || continue
+            grep -q "^enable[[:space:]]\+$unit\$" "$PRESET" || continue
+            state="$(systemctl is-enabled "$unit" 2>/dev/null)"
+            if [ "$state" = "disabled" ]; then
+                log "enabling newly shipped unit $unit (preset policy)"
+                systemctl enable "$unit" >/dev/null 2>&1 || true
+            fi
+        done
+    done
+
+    # Restart EVERY long-running iot daemon this image ships — derived from the
+    # unit files, not a hand-maintained list. The old code hardcoded five units
+    # and used `try-restart`, which is a no-op on an inactive unit. Two
+    # consequences, both seen on HW: (a) cellular/containers/sensors/ddns/mqtt/
+    # vehicle/smsctl were never in the list, so after an OTA they kept running
+    # the OLD binary until the next reboot; (b) a unit that happened to be
+    # inactive (cellular-client, skipped by its old ConditionPathExistsGlob) was
+    # never started, so the new code never ran at all — which is exactly how a
+    # phantom "connected" modem survived an update that was supposed to fix it.
+    #
+    # try-restart if it is running; start it if it is enabled but stopped.
+    # iot-ds is excluded: the migration step above already restarted it, and it
+    # is the store every other daemon depends on.
+    for f in /lib/systemd/system/iot-*.service /usr/lib/systemd/system/iot-*.service; do
+        [ -f "$f" ] || continue
+        unit="$(basename "$f")"
+        case "$unit" in
+            iot-ds.service) continue ;;                      # handled by migrate
+        esac
+        grep -q '^\[Install\]' "$f" || continue            # path/oneshot-activated helper
+        grep -q '^Type=oneshot' "$f" && continue             # not a daemon
+        systemctl is-enabled "$unit" >/dev/null 2>&1 || continue
+        if systemctl is-active --quiet "$unit"; then
+            systemctl try-restart "$unit" >/dev/null 2>&1 || true
+        else
+            log "starting $unit (was stopped; new code needs it up)"
+            systemctl start "$unit" >/dev/null 2>&1 || true
+        fi
     done
 fi
 exit 0
