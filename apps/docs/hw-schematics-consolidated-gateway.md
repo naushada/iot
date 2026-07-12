@@ -219,12 +219,16 @@ The SoM (Toradex Verdin AM62 / Variscite VAR-SOM-MX93) brings the SoC, LPDDR4, e
 
 ## Sheet 5 — WiFi 6 module
 
+> ✅ **DECISION: the AP is provisioning-only.** DBDC (dual-band dual-concurrent) is **not required** — the AP may share the STA's channel. Single-radio parts qualify.
+> **But keep 2×2 MIMO and both antennas:** WiFi STA is a *primary WAN bearer* carrying the VPN, LwM2M, telemetry and OTA. The antennas serve the uplink, not the AP.
+
 Interface depends on the module — decide before layout, they are not interchangeable:
 
 | Module | Host interface | Notes |
 |---|---|---|
 | **u-blox MAYA-W2** (NXP IW612) | **SDIO 3.0** (WiFi) + **UART** (BT) | SDIO is simpler to route than PCIe; needs a clean 4-bit bus. |
-| Ezurio Sona IF573 (Infineon) | SDIO **or** PCIe | PCIe gives more headroom for a real AP. |
+| Ezurio Sona IF573 (Infineon) | SDIO **or** PCIe | Second source. |
+| AzureWave AW-XB591NF (MT7921) | PCIe | Cost-down option; mainline `mt76`. Consumer-grade lifecycle — verify temp range and longevity. |
 
 ```
   SoM SDIO1 ──[22 Ω series on CLK]──► M1  WiFi module
@@ -240,7 +244,7 @@ Interface depends on the module — decide before layout, they are not interchan
 
 **Design notes:**
 
-1. **Two antennas, and they are not optional.** DBDC = 5 GHz STA + 2.4 GHz AP concurrently, and that needs both chains. If you fit one antenna you have silently bought a single-radio part.
+1. **Two antennas, and they are not optional** — but for a different reason than DBDC. They serve **2×2 MIMO on the STA uplink**, which is a primary WAN bearer. Fit one antenna and you halve the WAN throughput on the bearer most devices will actually use.
 2. **32.768 kHz sleep clock** — most modules require it and will exhibit bizarre association instability without it. Source it from the SoM PMIC if it exports one, otherwise fit a dedicated oscillator.
 3. `WL_EN` / `BT_EN` **must have pull-downs**, so the radios are off until Linux enables them. A radio that TXes before the driver configures a regulatory domain is a compliance problem.
 4. **VIO voltage:** some modules are 1.8 V, some 3.3 V. Mismatching this destroys the module. Confirm against the datasheet before assigning the SDIO bank.
@@ -249,6 +253,9 @@ Interface depends on the module — decide before layout, they are not interchan
 ---
 
 ## Sheet 6 — Cellular + SIM
+
+> ✅ **DECISION: cellular must carry a full OTA image → LTE Cat-4, Quectel EG25-G.**
+> Cat-1bis is rejected, so **J6 (Rx-diversity antenna) stays**. Rx-div is worth 3–6 dB on the downlink — exactly the margin an OTA needs at the cell edge, and required by some carrier certifications.
 
 ```
                           ┌─────────────────────────────────────┐
@@ -514,9 +521,15 @@ Keep this even though USB-C gives you `g_serial`: **the UART works when Linux is
 | 3 | **WiFi VIO 1.8 V vs 3.3 V (Sheet 5)** | Module-dependent, destroys the part if wrong. Confirm before assigning the SoM bank. |
 | 4 | **SoM 3.3 V budget (Sheet 2.3)** | Can the SoM PMIC source ~1.5 A externally, or do we fit U4? |
 | 5 | **SE050 / LP5024 I²C addresses (Sheet 8)** | Marked `[VERIFY]` — must be checked against datasheets and straps. |
-| 6 | **Cat-4 vs Cat-1bis (Sheet 6)** | Cat-1bis deletes J6 (Rx-div antenna) and shrinks the board. Blocked on the "must cellular carry a full OTA image?" question from the proposal. |
-| 7 | **Light-pipe pitch (Sheet 9)** | Mechanical must agree the front-panel pitch before LED placement is fixed. |
-| 8 | **All `[CALC]` values** | Inductors, dividers, fuse, pull-ups — recompute against the final power budget. |
+| 6 | **Light-pipe pitch (Sheet 9)** | Mechanical must agree the front-panel pitch before LED placement is fixed. |
+| 7 | **All `[CALC]` values** | Inductors, dividers, fuse, pull-ups — recompute against the final power budget. |
+
+### ✅ Closed on 2026-07-12
+
+| Item | Decision | Effect on these sheets |
+|---|---|---|
+| **Cellular class** | **Cat-4 (EG25-G)** — cellular must carry a full OTA image | Sheet 6 unchanged; **J6 Rx-div antenna stays**. 5 U.FL total. |
+| **WiFi AP role** | **Provisioning only** — DBDC not required | Sheet 5: single-radio parts now qualify. **Both antennas stay** (2×2 STA uplink). Deletes the design's only unverified assumption. |
 
 ---
 
