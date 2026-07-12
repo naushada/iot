@@ -62,10 +62,38 @@ CgVersion detect_cgroup(const StatsRoots& r) {
     return CgVersion::none;
 }
 
+/// The cgroup directory of THIS process — e.g. /sys/fs/cgroup/system.slice/
+/// iot-smsctld.service — resolved from /proc/self/cgroup.
+///
+/// Why this exists: the sampler used to read `cgroup_root` directly, i.e. the
+/// ROOT cgroup. That is correct in the cloud, where every daemon is its own
+/// container and the root cgroup IS that daemon's ("one service per container").
+/// On a systemd device it is not: every daemon lives in /system.slice/<unit>,
+/// so they all sampled the SAME host-wide counter and each reported TOTAL SYSTEM
+/// CPU as its own. Observed on HW: every row on the Services page showed ~9%
+/// while /proc said the daemons were at 0.00% — 9% was simply the whole box.
+///
+/// Returns cgroup_root unchanged when /proc/self/cgroup says "/" (a container),
+/// which keeps the cloud behaviour byte-identical.
+std::string self_cgroup_dir(const StatsRoots& r) {
+    std::ifstream ifs(r.proc_self + "/cgroup");
+    if (!ifs.is_open()) return r.cgroup_root;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        // cgroup v2: "0::/system.slice/iot-smsctld.service"
+        const auto p = line.rfind("::");
+        if (p == std::string::npos) continue;
+        std::string path = line.substr(p + 2);
+        if (path.empty() || path == "/") return r.cgroup_root;   // container / root
+        return r.cgroup_root + path;
+    }
+    return r.cgroup_root;
+}
+
 bool read_cpu_usec(const StatsRoots& r, CgVersion cg,
                    unsigned long long& out_usec) {
     if (cg == CgVersion::v2) {
-        std::ifstream ifs(r.cgroup_root + "/cpu.stat");
+        std::ifstream ifs(self_cgroup_dir(r) + "/cpu.stat");
         if (!ifs.is_open()) return false;
         std::string key;
         unsigned long long val = 0;
@@ -91,7 +119,7 @@ bool read_cpu_usec(const StatsRoots& r, CgVersion cg,
 std::int32_t read_mem_kb(const StatsRoots& r, CgVersion cg) {
     std::optional<unsigned long long> bytes;
     if (cg == CgVersion::v2)
-        bytes = read_uint_file(r.cgroup_root + "/memory.current");
+        bytes = read_uint_file(self_cgroup_dir(r) + "/memory.current");
     else if (cg == CgVersion::v1)
         bytes = read_uint_file(r.cgroup_root + "/memory/memory.usage_in_bytes");
     if (!bytes) return 0;
@@ -101,7 +129,7 @@ std::int32_t read_mem_kb(const StatsRoots& r, CgVersion cg) {
 std::int32_t read_pids(const StatsRoots& r, CgVersion cg) {
     std::optional<unsigned long long> n;
     if (cg == CgVersion::v2)
-        n = read_uint_file(r.cgroup_root + "/pids.current");
+        n = read_uint_file(self_cgroup_dir(r) + "/pids.current");
     else if (cg == CgVersion::v1)
         n = read_uint_file(r.cgroup_root + "/pids/pids.current");
     if (!n) return 0;
