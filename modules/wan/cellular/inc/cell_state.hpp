@@ -70,6 +70,11 @@ class CellularState {
         /// sms.inbox JSON array (newest first) + sms.count, so a daemon restart
         /// does not drop the table the device-ui shows. No-op on empty/corrupt.
         void seed_inbox(const std::string& inbox_json, std::uint64_t count);
+        /// Wipe the received-SMS history (device-ui "Clear"). Keeps publishing
+        /// sms.* — as an EMPTY inbox + zero count — rather than going silent, so
+        /// the cleared state actually reaches ds instead of leaving the last
+        /// values stranded there.
+        void clear_sms();
 
         /// `cell.*` + `gps.*` batch (only populated fields are emitted), plus a
         /// per-domain version counter for the device-ui long-poll.

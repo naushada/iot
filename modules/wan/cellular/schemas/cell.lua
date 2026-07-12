@@ -104,6 +104,11 @@ return {
     ["sms.send.to"]      = { access = "Admin", type = "string", default = "" },
     ["sms.send.text"]    = { access = "Admin", type = "string", default = "" },
     ["sms.send.request"] = { access = "Admin", type = "string", default = "" },
+    -- device-ui "Clear" on the Received SMS table: bump this monotonic token and
+    -- the daemon wipes its in-memory history and republishes an empty sms.inbox
+    -- + sms.count=0. A UI-only ds wipe would be undone by the next message,
+    -- because the daemon owns the history.
+    ["sms.clear.request"] = { access = "Admin", type = "string", default = "" },
     ["sms.send.status"]  = viewer_str(),
 
     -- GPS / GNSS (daemon-published)

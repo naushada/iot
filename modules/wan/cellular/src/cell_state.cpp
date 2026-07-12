@@ -137,6 +137,19 @@ void CellularState::set_sms_storage(const std::string& usage) {
     m_smsStorage = usage; m_haveCell = true; ++m_cellVersion;
 }
 
+void CellularState::clear_sms() {
+    std::lock_guard<std::mutex> lk(m_mtx);
+    m_smsInbox.clear();
+    m_smsCount = 0;
+    m_smsSender.clear();
+    m_smsText.clear();
+    m_smsTs.clear();
+    // m_haveSms stays TRUE on purpose: to_kv() only emits sms.* when it is set,
+    // so clearing it would leave the old inbox/count stranded in ds forever.
+    m_haveSms = true;
+    ++m_smsVersion;
+}
+
 void CellularState::seed_inbox(const std::string& inbox_json, std::uint64_t count) {
     std::lock_guard<std::mutex> lk(m_mtx);
     m_smsCount = count;
