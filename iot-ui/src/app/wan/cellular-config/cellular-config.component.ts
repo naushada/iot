@@ -86,17 +86,26 @@ import { ToastService } from '../../../common/toast.service';
             </clr-checkbox-wrapper>
             <clr-control-helper *dsDebug><app-ds-hint key="sms.enable"></app-ds-hint></clr-control-helper>
           </clr-checkbox-container>
-          <!-- pad to fill the 4-column row (Project Rule 5) -->
-          <div></div>
+          <clr-input-container>
+            <label>Data Context (cid)</label>
+            <input clrInput [disabled]="!isAdmin" type="number" min="1" max="16"
+                   formControlName="apnCid" />
+            <clr-control-helper>
+              Which PDP context we provision — see Data Contexts on the status page.
+            </clr-control-helper>
+            <clr-control-helper *dsDebug><app-ds-hint key="cell.apn.cid"></app-ds-hint></clr-control-helper>
+          </clr-input-container>
         </div>
 
         <h4>SMS Device Control</h4>
         <div class="gate" *ngIf="!modemReady">
           <clr-icon shape="disconnect"></clr-icon>
-          SMS control needs a modem that is enumerated <em>and</em> registered on the
-          network — the device receives its commands as SMS. Current modem state:
-          <strong>{{ cellState || 'absent' }}</strong>. These fields unlock once it
-          reaches <code>registered</code> / <code>connected</code>.
+          <span>
+            SMS control needs a modem that is enumerated <em>and</em> registered on the
+            network — the device receives its commands as SMS. Current modem state:
+            <strong>{{ cellState || 'absent' }}</strong>. These fields unlock once it
+            reaches <code>registered</code> / <code>connected</code>.
+          </span>
         </div>
         <p class="hint">
           Lets an operator control this device by texting it — the last channel
@@ -113,29 +122,28 @@ import { ToastService } from '../../../common/toast.service';
           <clr-checkbox-container>
             <label>SMS Control</label>
             <clr-checkbox-wrapper>
-              <input type="checkbox" clrCheckbox [disabled]="!isAdmin || !modemReady"
-                     formControlName="smsctlEnabled" />
+              <input type="checkbox" clrCheckbox formControlName="smsctlEnabled" />
               <label>Accept IOT commands</label>
             </clr-checkbox-wrapper>
             <clr-control-helper *dsDebug><app-ds-hint key="smsctl.enabled"></app-ds-hint></clr-control-helper>
           </clr-checkbox-container>
           <clr-input-container>
             <label>Allowed Numbers</label>
-            <input clrInput [disabled]="!isAdmin || !modemReady" formControlName="smsctlAllowed"
-                   placeholder="+919096383701,+4915112345678" />
+            <input clrInput formControlName="smsctlAllowed"
+                   [placeholder]="modemReady ? 'e.g. +919096383701,+4915112345678' : ''" />
             <clr-control-helper>Comma-separated. Empty = any sender may attempt login.</clr-control-helper>
             <clr-control-helper *dsDebug><app-ds-hint key="smsctl.allowed.numbers"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>Session TTL (s)</label>
-            <input clrInput [disabled]="!isAdmin || !modemReady" type="number" min="60" max="86400"
+            <input clrInput type="number" min="60" max="86400"
                    formControlName="smsctlTtl" />
             <clr-control-helper>How long a login stays valid.</clr-control-helper>
             <clr-control-helper *dsDebug><app-ds-hint key="smsctl.session.ttl.sec"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>Lockout After</label>
-            <input clrInput [disabled]="!isAdmin || !modemReady" type="number" min="1" max="20"
+            <input clrInput type="number" min="1" max="20"
                    formControlName="smsctlFailures" />
             <clr-control-helper>Failed logins per number before lockout.</clr-control-helper>
             <clr-control-helper *dsDebug><app-ds-hint key="smsctl.lockout.failures"></app-ds-hint></clr-control-helper>
@@ -155,10 +163,12 @@ import { ToastService } from '../../../common/toast.service';
     h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 12px 0; }
     h4 { font-size: 14px; font-weight: 600; color: #333; margin: 28px 0 6px 0; }
     .hint { color: #888; font-size: 13px; margin: 0 0 20px 0; }
-    .gate { display: flex; align-items: center; gap: 6px; margin: 0 0 12px 0;
-            padding: 8px 12px; border-radius: 4px; font-size: 13px;
+    .gate { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 12px 0;
+            padding: 8px 12px; border-radius: 4px; font-size: 13px; line-height: 1.5;
             color: #8a6d3b; background: #fcf8e3; border: 1px solid #faebcc; }
-    .gate clr-icon { flex: none; }
+    /* The message is one flex item; without the wrapping span each inline
+       tag (em/strong/code) would become its own item and break the sentence. */
+    .gate clr-icon { flex: none; margin-top: 2px; }
     code { background: #eef2f7; padding: 0 4px; border-radius: 3px; }
   `]
 })
@@ -170,7 +180,7 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
   cellState = '';
   private sub = new Subscription();
   private readonly KEYS = [
-    'cell.apn', 'cell.modem.tty', 'cell.gps.tty',
+    'cell.apn', 'cell.apn.cid', 'cell.modem.tty', 'cell.gps.tty',
     'cell.poll.interval.sec', 'cell.gps.enable', 'cell.rat', 'sms.enable',
     'smsctl.enabled', 'smsctl.allowed.numbers', 'smsctl.session.ttl.sec',
     'smsctl.lockout.failures',
@@ -193,6 +203,7 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
               private ds: DataStoreService) {
     this.form = fb.group({
       apn:       [''],
+      apnCid:    [1],
       modemTty:  ['/dev/ttyUSB2'],
       gpsTty:    [''],
       pollSec:   [30],
@@ -206,11 +217,21 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
     });
   }
 
+  /// Controls the modem gate gets to lock. Reactive forms IGNORE a [disabled]
+  /// binding on a formControlName element (FormControlName eats it as an @Input
+  /// and only logs a warning), so the gate has to be driven through the control
+  /// API or the fields stay editable behind the "locked" banner.
+  private readonly SMSCTL_CONTROLS = [
+    'smsctlEnabled', 'smsctlAllowed', 'smsctlTtl', 'smsctlFailures',
+  ];
+
   ngOnInit(): void {
     this.sub.add(this.ds.observeStatus().subscribe((s) => {
       this.cellState = s.cell?.state || '';
+      this.syncSmsCtlGate();
     }));
     this.applyData(this.ds.snapshot());
+    this.syncSmsCtlGate();
     this.loading = false;
     for (const k of this.KEYS)
       this.sub.add(this.ds.observe(k).subscribe(() => {
@@ -220,28 +241,49 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void { this.sub.unsubscribe(); }
 
+  /// Lock the SMS-control fields unless the operator is an Admin AND the modem
+  /// is registered — enabling a channel that physically cannot deliver is a
+  /// silent no-op. emitEvent:false so toggling the gate never marks the form
+  /// dirty, which would stop live ds updates from re-applying.
+  private syncSmsCtlGate(): void {
+    const unlocked = this.isAdmin && this.modemReady;
+    for (const name of this.SMSCTL_CONTROLS) {
+      const c = this.form.get(name);
+      if (!c) continue;
+      if (unlocked && c.disabled) c.enable({ emitEvent: false });
+      else if (!unlocked && c.enabled) c.disable({ emitEvent: false });
+    }
+  }
+
   private applyData(d: Record<string, unknown>): void {
+    // getRawValue(), not value: a disabled control is omitted from .value, so
+    // the ?? fallbacks would read undefined once the gate locks the fields.
+    const cur = this.form.getRawValue();
     this.form.patchValue({
-      apn:       d['cell.apn']               ?? this.form.value.apn,
-      modemTty:  d['cell.modem.tty']         ?? this.form.value.modemTty,
-      gpsTty:    d['cell.gps.tty']           ?? this.form.value.gpsTty,
-      pollSec:   d['cell.poll.interval.sec'] ?? this.form.value.pollSec,
-      gpsEnable: d['cell.gps.enable']        ?? this.form.value.gpsEnable,
-      rat:       d['cell.rat']               ?? this.form.value.rat,
-      smsEnable: d['sms.enable']             ?? this.form.value.smsEnable,
-      smsctlEnabled:  d['smsctl.enabled']           ?? this.form.value.smsctlEnabled,
-      smsctlAllowed:  d['smsctl.allowed.numbers']   ?? this.form.value.smsctlAllowed,
-      smsctlTtl:      d['smsctl.session.ttl.sec']   ?? this.form.value.smsctlTtl,
-      smsctlFailures: d['smsctl.lockout.failures']  ?? this.form.value.smsctlFailures,
+      apn:       d['cell.apn']               ?? cur.apn,
+      apnCid:    d['cell.apn.cid']           ?? cur.apnCid,
+      modemTty:  d['cell.modem.tty']         ?? cur.modemTty,
+      gpsTty:    d['cell.gps.tty']           ?? cur.gpsTty,
+      pollSec:   d['cell.poll.interval.sec'] ?? cur.pollSec,
+      gpsEnable: d['cell.gps.enable']        ?? cur.gpsEnable,
+      rat:       d['cell.rat']               ?? cur.rat,
+      smsEnable: d['sms.enable']             ?? cur.smsEnable,
+      smsctlEnabled:  d['smsctl.enabled']           ?? cur.smsctlEnabled,
+      smsctlAllowed:  d['smsctl.allowed.numbers']   ?? cur.smsctlAllowed,
+      smsctlTtl:      d['smsctl.session.ttl.sec']   ?? cur.smsctlTtl,
+      smsctlFailures: d['smsctl.lockout.failures']  ?? cur.smsctlFailures,
     });
   }
 
   save(): void {
     if (!this.isAdmin) return;
     this.saving = true;
-    const v = this.form.value;
+    // Raw: the SMS-control fields are disabled while the modem is down, and a
+    // disabled control is dropped from .value — saving would blank them out.
+    const v = this.form.getRawValue();
     this.ds.write([
       { key: 'cell.apn',               value: v.apn ?? '' },
+      { key: 'cell.apn.cid',           value: Number(v.apnCid) || 1 },
       { key: 'cell.modem.tty',         value: v.modemTty ?? '' },
       { key: 'cell.gps.tty',           value: v.gpsTty ?? '' },
       { key: 'cell.poll.interval.sec', value: Number(v.pollSec) || 30 },

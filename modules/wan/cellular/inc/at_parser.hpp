@@ -91,9 +91,22 @@ std::string parse_labeled(const std::string& line, const char* label);
 /// "LTE-M / NB-IoT / GSM"), or "" if unknown.
 std::string model_capability(const std::string& model);
 
-/// APN from a `+CGDCONT: <cid>,"IP","<apn>",...` context line → "<apn>", or ""
-/// (an undefined/empty context). Used to read back the provisioned data APN.
-std::string parse_cgdcont(const std::string& line);
+/// One provisioned PDP context, as read back from `AT+CGDCONT?`.
+struct PdpProfile {
+    int         cid = 0;    ///< context id (1..n)
+    std::string type;       ///< PDP type — "IP" / "IPV6" / "IPV4V6"
+    std::string apn;        ///< may be empty (an undefined context)
+};
+
+/// Parse one `+CGDCONT: <cid>,"IP","<apn>",...` context line. False if the line
+/// is not a context line or carries no usable cid.
+///
+/// `AT+CGDCONT?` answers with ONE LINE PER CONTEXT, and a module carries more
+/// than ours: a WP7702 ships the eSIM's own profile (iot.swir) on a higher cid.
+/// So the cid MATTERS — collapsing every line into a bare APN string made the
+/// last context listed win, and cell.apn.current reported the eSIM's APN while
+/// the data call ran on the operator APN we had provisioned to our own cid.
+bool parse_cgdcont_entry(const std::string& line, PdpProfile& out);
 
 /// `+CGPADDR: <cid>,"<ip>"` (or unquoted) → the IPv4/IPv6 string, or "".
 ///

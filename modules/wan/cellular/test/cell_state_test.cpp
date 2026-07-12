@@ -85,6 +85,27 @@ TEST(CellState, SmsPublished) {
     EXPECT_EQ(val(st.to_kv(), "sms.count"), "2");
 }
 
+/// The PDP table reaches ds as a JSON array so the device-ui can show WHICH
+/// contexts the modem holds — the eSIM's profile sits alongside ours, and with a
+/// single APN string on screen there was no way to tell them apart.
+TEST(CellState, ApnProfilesAreAJsonArray) {
+    CellularState st;
+    PdpProfile ours; ours.cid = 1; ours.type = "IP"; ours.apn = "airtelgprs.com";
+    PdpProfile esim; esim.cid = 2; esim.type = "IP"; esim.apn = "iot.swir";
+    st.set_apn_profiles({ours, esim});
+    st.set_apn("airtelgprs.com");   // the daemon feeds it OUR cid's apn
+
+    auto arr = nlohmann::json::parse(val(st.to_kv(), "cell.apn.profiles"));
+    ASSERT_TRUE(arr.is_array());
+    ASSERT_EQ(arr.size(), 2u);
+    EXPECT_EQ(arr[0]["cid"], 1);
+    EXPECT_EQ(arr[0]["apn"], "airtelgprs.com");
+    EXPECT_EQ(arr[1]["cid"], 2);
+    EXPECT_EQ(arr[1]["apn"], "iot.swir");
+    // The eSIM's context must NOT bleed into the reported APN.
+    EXPECT_EQ(val(st.to_kv(), "cell.apn.current"), "airtelgprs.com");
+}
+
 TEST(CellState, SmsInboxIsNewestFirstJsonArray) {
     CellularState st;
     SmsMessage a; a.sender = "+111"; a.text = "first";  a.scts = "2026-07-04T10:00:00";

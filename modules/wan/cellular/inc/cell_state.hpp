@@ -54,8 +54,14 @@ class CellularState {
         void set_model(const std::string& model);
         void set_fw(const std::string& fw);
         void set_capability(const std::string& cap);
-        /// Provisioned data-context APN (from AT+CGDCONT?).
+        /// Provisioned data-context APN (from AT+CGDCONT?) — the ACTIVE cid's.
         void set_apn(const std::string& apn);
+        /// Replace the provisioned PDP context table (from AT+CGDCONT?), published
+        /// as the cell.apn.profiles JSON array so the device-ui can show WHICH
+        /// contexts exist and which one we use — the eSIM parks its own profile on
+        /// a cid of its choosing, and with only a single APN string on screen there
+        /// was no way to tell the two apart.
+        void set_apn_profiles(const std::vector<PdpProfile>& profiles);
         /// Carrier DNS resolvers for the data context (from AT+CGCONTRDP=1), as a
         /// comma-joined list. Mirrors the `vpn.assigned.dns` convention.
         void set_dns(const std::string& dns);
@@ -87,6 +93,7 @@ class CellularState {
         std::string m_regCs, m_regPs, m_regEps;
         std::string m_smsStorage;
         std::string m_imei, m_msisdn, m_model, m_fw, m_capability, m_apn;
+        std::vector<PdpProfile> m_pdpProfiles;   ///< every provisioned context (AT+CGDCONT?)
         int  m_dbm = 0, m_bars = 0;
         bool m_haveSignal = false, m_haveCell = false;
         GpsFix m_gps;

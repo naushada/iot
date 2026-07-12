@@ -99,9 +99,19 @@ public:
     std::unordered_map<WatchHandle, WatchEntry>             watches;
     std::unordered_map<std::string, std::size_t>            key_refcount;
 
+    /// Outcome of one wire RegisterWatch — the two failure modes need
+    /// opposite handling, so a bare Status is not enough to decide.
+    enum class WatchWire {
+        Ok,
+        Transport,   ///< server down / timeout / half-open socket — RETRYABLE
+        Rejected,    ///< server said no (schema, ACL) — permanent
+    };
+
     Status send_frame(const std::string& frame);
     Status round_trip(proto::Op op, std::string_view body,
                       PendingValue& out, std::int32_t timeout_ms);
+    WatchWire register_watch(const std::vector<std::string>& keys,
+                             std::int32_t timeout_ms, Status& out);
     void   run_listener();
     void   drop_connection();
     bool   try_reconnect();
@@ -486,37 +496,71 @@ Status Client::get(const std::vector<std::string>& keys,
     return {};
 }
 
-Status Client::watch(const std::vector<std::string>& keys,
-                     std::int32_t                    timeout_ms) {
-    // Pull-style: bump local refcount, only send wire RegisterWatch
-    // for keys that just transitioned 0 → 1.
+Client::Impl::WatchWire
+Client::Impl::register_watch(const std::vector<std::string>& keys,
+                             std::int32_t                    timeout_ms,
+                             Status&                         out) {
+    // key_refcount is our subscription INTENT, and try_reconnect() rebuilds the
+    // server's view from it. So the refcount goes up FIRST and only comes back
+    // down when the server permanently refuses the key — never on a transport
+    // hiccup. Only keys that just went 0 → 1 need a wire registration.
     std::vector<std::string> wireKeys;
     {
-        std::lock_guard<std::mutex> g(m_impl->watches_mtx);
+        std::lock_guard<std::mutex> g(watches_mtx);
         for (const auto& k : keys) {
-            if (m_impl->key_refcount[k]++ == 0) wireKeys.push_back(k);
+            if (key_refcount[k]++ == 0) wireKeys.push_back(k);
         }
     }
-    if (wireKeys.empty()) return {};
+    if (wireKeys.empty()) { out = Status{}; return WatchWire::Ok; }
 
     json req;
     req["keys"] = wireKeys;
     const std::string body = req.dump();
-    PendingValue out;
-    auto rs = m_impl->round_trip(proto::Op::RegisterWatch,
-                                 std::string_view(body.data(), body.size()),
-                                 out, timeout_ms);
+    PendingValue resp;
+    auto rs = round_trip(proto::Op::RegisterWatch,
+                         std::string_view(body.data(), body.size()),
+                         resp, timeout_ms);
     if (!rs.ok) {
-        std::lock_guard<std::mutex> g(m_impl->watches_mtx);
+        // TRANSPORT failure: ds-server was down, restarting, or the socket was
+        // half-open. This used to erase the key from key_refcount — which made
+        // the loss PERMANENT, because the reconnect path re-registers only what
+        // key_refcount still holds. One timed-out RegisterWatch at boot and that
+        // key was deaf for the life of the process, silently. Keep the intent and
+        // force a reconnect; try_reconnect() re-sends the whole subscription set.
+        out = rs;
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D dsclient %N:%l RegisterWatch failed (%C) — keeping ")
+                   ACE_TEXT("the subscription, re-registering on reconnect\n"),
+                   rs.err.c_str()));
+        drop_connection();
+        return WatchWire::Transport;
+    }
+
+    out = status_from(resp, "watch");
+    if (!out.ok) {
+        // The SERVER refused (schema / read-ACL). That is a permanent answer, not
+        // a hiccup — retrying it on every reconnect would hammer a doomed key, so
+        // release the intent and let the caller see the error.
+        std::lock_guard<std::mutex> g(watches_mtx);
         for (const auto& k : wireKeys) {
-            auto it = m_impl->key_refcount.find(k);
-            if (it != m_impl->key_refcount.end() && it->second > 0) {
-                if (--it->second == 0) m_impl->key_refcount.erase(it);
+            auto it = key_refcount.find(k);
+            if (it != key_refcount.end() && it->second > 0) {
+                if (--it->second == 0) key_refcount.erase(it);
             }
         }
-        return rs;
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D dsclient %N:%l RegisterWatch rejected: %C\n"),
+                   out.err.c_str()));
+        return WatchWire::Rejected;
     }
-    return status_from(out, "watch");
+    return WatchWire::Ok;
+}
+
+Status Client::watch(const std::vector<std::string>& keys,
+                     std::int32_t                    timeout_ms) {
+    Status s;
+    m_impl->register_watch(keys, timeout_ms, s);
+    return s;
 }
 
 Status Client::watch(const std::vector<std::string>& keys,
@@ -525,19 +569,32 @@ Status Client::watch(const std::vector<std::string>& keys,
                      std::int32_t                    timeout_ms) {
     if (!cb) return protocol_err("watch: callback is null");
 
-    auto pull = watch(keys, timeout_ms);
-    if (!pull.ok) return pull;
-
+    // The callback table is local intent too, so it is populated BEFORE the wire
+    // round-trip. Registering it only on success meant a transient RegisterWatch
+    // failure left the caller holding no callback at all — and since callers
+    // routinely ignore the returned Status, the daemon just went quietly deaf.
+    // Now a failed registration still leaves a live subscription that the
+    // reconnect path heals.
     WatchHandle h = g_next_handle.fetch_add(1);
     {
         std::lock_guard<std::mutex> g(m_impl->watches_mtx);
         WatchEntry w;
         w.keys = keys;
-        w.cb   = std::move(cb);
+        w.cb   = cb;
         m_impl->watches.emplace(h, std::move(w));
     }
+
+    Status s;
+    const auto wire = m_impl->register_watch(keys, timeout_ms, s);
+    if (wire == Impl::WatchWire::Rejected) {
+        // Permanently refused — the key is gone from key_refcount, so a callback
+        // for it would never fire. Don't hand back a handle that means nothing.
+        std::lock_guard<std::mutex> g(m_impl->watches_mtx);
+        m_impl->watches.erase(h);
+        return s;
+    }
     if (out_handle) *out_handle = h;
-    return {};
+    return s;   // Transport → error returned, but the subscription lives on
 }
 
 Status Client::unwatch(WatchHandle handle, std::int32_t timeout_ms) {

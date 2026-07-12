@@ -284,12 +284,18 @@ std::string model_capability(const std::string& model) {
     return {};
 }
 
-std::string parse_cgdcont(const std::string& line) {
-    if (!contains(lower(line), "+cgdcont:")) return {};
+bool parse_cgdcont_entry(const std::string& line, PdpProfile& out) {
+    if (!contains(lower(line), "+cgdcont:")) return false;
     const auto parts = split_csv(after_colon(line));
-    // +CGDCONT: <cid>,"<PDP_type>","<apn>",... — the APN is field 2.
-    if (parts.size() >= 3) return strip_quotes(parts[2]);
-    return {};
+    // +CGDCONT: <cid>,"<PDP_type>","<apn>",...
+    if (parts.size() < 3) return false;
+    int cid = 0;
+    try { cid = std::stoi(strip_quotes(parts[0])); } catch (...) { return false; }
+    if (cid <= 0) return false;
+    out.cid  = cid;
+    out.type = strip_quotes(parts[1]);
+    out.apn  = strip_quotes(parts[2]);
+    return true;
 }
 
 Vendor parse_vendor(const std::string& gmi_or_model) {

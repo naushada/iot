@@ -1,5 +1,6 @@
 #include "cellular_client.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <vector>
 
@@ -55,6 +56,9 @@ void CellularClient::load_config_from_ds() {
     std::vector<data_store::Client::GetResult> got;
     if (m_ds.get({std::string("cell.poll.interval.sec")}, got).ok && !got.empty() && got[0].has_value)
         if (auto n = data_store::to_int32(got[0].value)) if (*n > 0) m_cfg.interval_sec = static_cast<unsigned>(*n);
+    got.clear();
+    if (m_ds.get({std::string("cell.apn.cid")}, got).ok && !got.empty() && got[0].has_value)
+        if (auto n = data_store::to_int32(got[0].value)) if (*n > 0) m_cfg.apn_cid = *n;
     got.clear();
     if (m_ds.get({std::string("cell.gps.enable")}, got).ok && !got.empty() && got[0].has_value)
         if (auto b = data_store::to_bool(got[0].value)) m_cfg.gps_enable = *b;
@@ -445,7 +449,8 @@ void CellularClient::poll_modem() {
     }
     ++m_poll_count;
     if (!m_apn_sent && !m_cfg.apn.empty()) {
-        cmd("AT+CGDCONT=1,\"IP\",\"" + m_cfg.apn + "\"");
+        cmd("AT+CGDCONT=" + std::to_string(m_cfg.apn_cid) + ",\"IP\",\"" +
+            m_cfg.apn + "\"");
         m_apn_sent = true;
     }
     if (m_cfg.sms_enable && !m_sms_setup) {
@@ -498,7 +503,11 @@ void CellularClient::poll_modem() {
     if (!m_ident_done) {
         cmd("ATI");
         cmd("AT+CNUM");
-        cmd("AT+CGDCONT?");   // → cell.apn.current (provisioned data APN)
+        // → cell.apn.profiles (every context) + cell.apn.current (ours). Drop the
+        // previous scan first so a context the operator deleted disappears from
+        // the table instead of lingering.
+        m_pdp_scan.clear();
+        cmd("AT+CGDCONT?");
         m_ident_done = true;
     }
 
@@ -518,7 +527,7 @@ void CellularClient::poll_modem() {
     // Dynamic context params → cell.dns. CGPADDR carries only a bare address, so
     // the carrier's resolvers are only obtainable here. Re-read every poll: the
     // bearer re-establishes on its own and the resolvers can change with it.
-    cmd("AT+CGCONTRDP=1");
+    cmd("AT+CGCONTRDP=" + std::to_string(m_cfg.apn_cid));
     cmd(iccid_command(m_vendor));   // QCCID/ICCID/CCID per vendor
 
     if (m_cfg.gps_enable) {
@@ -597,7 +606,21 @@ void CellularClient::handle_at_line(const std::string& line) {
     } else if (starts_with(line, "+CNUM:")) {
         m_state.set_msisdn(parse_cnum(line));
     } else if (starts_with(line, "+CGDCONT:")) {
-        m_state.set_apn(parse_cgdcont(line));   // → cell.apn.current
+        // One line PER CONTEXT. Keep them all (cell.apn.profiles) and take
+        // cell.apn.current from OUR cid only — the module carries the eSIM's
+        // profile too, and folding every line into one APN let whichever context
+        // happened to be listed last win.
+        PdpProfile p;
+        if (parse_cgdcont_entry(line, p)) {
+            auto it = std::find_if(m_pdp_scan.begin(), m_pdp_scan.end(),
+                                   [&p](const PdpProfile& e) { return e.cid == p.cid; });
+            if (it == m_pdp_scan.end()) m_pdp_scan.push_back(p);
+            else                        *it = p;
+            std::sort(m_pdp_scan.begin(), m_pdp_scan.end(),
+                      [](const PdpProfile& a, const PdpProfile& b) { return a.cid < b.cid; });
+            m_state.set_apn_profiles(m_pdp_scan);
+            if (p.cid == m_cfg.apn_cid) m_state.set_apn(p.apn);
+        }
     } else if (starts_with(line, "+CMGS:")) {
         m_send_active = false;
         m_ds.set_volatile(std::string("sms.send.status"),
