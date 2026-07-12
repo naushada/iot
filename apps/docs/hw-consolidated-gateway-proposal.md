@@ -17,7 +17,23 @@ Today's bring-up rig is four boards stacked:
 | mangOH Yellow + Sierra WP7702 | USB modem + 3 I²C sensors | Cat-M1/NB-IoT (~300 kbps — **too slow to carry an OTA bundle**), refuses host data call on `wwan0`, soldered eSIM hijacks the SIM slot |
 | MCP2515 SPI HAT / USB-CAN | CAN for OBD-II | extra board, extra connector, extra driver |
 
-Target: **one board**, ~80 × 55 mm, that does WiFi STA (uplink) + WiFi AP (downlink) + Cellular + Ethernet + CAN + I²C sensors + GNSS, with real status LEDs, a factory-reset button, and proper debug/RMA support.
+Target: **one board**, ~80 × 55 mm, that does WiFi STA (uplink) + WiFi AP (provisioning) + Cellular + Ethernet + CAN + I²C sensors + GNSS, with real status LEDs, a factory-reset button, and proper debug/RMA support.
+
+### 1.1 This is a product family, not one board
+
+| | **G1 — Gateway** *(this document)* | **G1-R — Regional variants** | **S1 — SMS/sensor node** |
+|---|---|---|---|
+| **Use case** | Full IoT gateway: vehicle telemetry, containers, VPN, OTA | Same board, different cellular region | Low-end: SMS + light telemetry only |
+| **Cellular** | Quectel **EG25-G** (Cat-4, global) | EC25-E (EU) / EC25-AF (US) | Quectel **BG95-M3** (Cat-M1/NB-IoT) |
+| **OTA over cellular** | ✅ full A/B image | ✅ | ❌ config/SMS only |
+| **WiFi** | 2×2 STA + provisioning AP | ✅ | optional / none |
+| **Ethernet / CAN / containers** | ✅ | ✅ | ❌ |
+| **PCB** | G1 | **same PCB — populate only** | separate, smaller board |
+| **Software** | one image | **one image** | subset |
+
+**G1 → G1-R costs nothing.** The Quectel EC2x/EG2x family shares a **common LCC footprint**, so a regional variant is a *populate option* on the same PCB — no respin, no new layout, no new BSP.
+
+**G1 → S1 is a different board, and should be.** The parts that make G1 capable (Cat-4 modem, 2×2 WiFi, GbE PHY, CAN, a containers-capable SoM) are exactly the parts an SMS-only node does not want. See §3.2.1 — the important constraint is that S1 stays inside the **Quectel** AT dialect, so both SKUs share one cellular code path.
 
 ---
 
@@ -66,42 +82,97 @@ Target: **one board**, ~80 × 55 mm, that does WiFi STA (uplink) + WiFi AP (down
 
 ## 3. Component selection
 
-### 3.1 The one decision that matters: WiFi STA **and** AP on one chip
+### 3.1 WiFi — one radio, STA (WAN uplink) + provisioning AP
 
-You want a client radio *and* an access point. Do **not** buy two radios. Buy one **DBDC** (dual-band dual-concurrent) WiFi 6 chip and run STA on 5 GHz + AP on 2.4 GHz simultaneously.
+> ### ✅ **DECISION (2026-07-12): the AP is for provisioning only.**
+> A technician or installer associates a phone/laptop to configure the box. Customer traffic does **not** live behind it.
 
-The trap: many "supports AP mode" chips have a **single radio**, so the AP is forced onto the STA's channel and both halve in throughput. The acceptance test is one command on an eval board — run it *before* you commit to a part:
+This decision **removes DBDC (dual-band dual-concurrent) from the requirements**, and that matters more than it sounds:
+
+- DBDC was the **only unverified, risk-carrying assumption in the entire design** — "5 GHz STA + 2.4 GHz AP simultaneously" is asserted by datasheets and is frequently not true in the driver's `nl80211` interface combinations. That risk is now **gone**.
+- A single-radio part costs roughly **half** what a DBDC part does.
+- The AP now **shares the STA's channel**, and both halve in throughput. For a provisioning AP carrying a config session, this is irrelevant. It would have been unacceptable for customer traffic.
+
+**Still required:** the module must permit **concurrent AP + STA on one channel** — the AP has to stay up while the STA holds the WAN uplink. Nearly every modern part does, but verify it on an eval board before committing:
 
 ```sh
 iw phy | sed -n '/valid interface combinations/,/^$/p'
-# You need a line permitting  #{ managed } <= 1, #{ AP } <= 1  with  #channels >= 2
+# Required:  #{ managed } <= 1, #{ AP } <= 1   (#channels == 1 is now FINE)
 ```
 
-If `#channels` is 1, that module cannot do 5 GHz STA + 2.4 GHz AP at once. Reject it.
+**Keep 2×2 MIMO on the STA side.** WiFi is a *primary WAN bearer*, not a convenience — the STA's uplink throughput carries the VPN, LwM2M, telemetry and OTA. Two antennas stay.
 
 | Candidate | Silicon | Driver | Why / why not |
 |---|---|---|---|
 | **u-blox MAYA-W2** *(recommended)* | NXP IW611/IW612 (WiFi 6 + BT + 802.15.4) | `nxpwifi` / NXP BSP | Industrial vendor, 10-yr longevity, published RMA, strong FAE support, pre-certified FCC/CE. Tri-radio gives you Thread/Zigbee for free later. |
 | **Ezurio (ex-Laird) Sona IF573** | Infineon CYW55573 (WiFi 6E) | `brcmfmac`/FMAC | Best-in-class Linux BSP + Yocto layer, long-term support contracts, excellent RMA. 6 GHz headroom. Note: same driver family as the BCM43430 we're fighting — verify the power-save bug is gone on eval. |
 | **Murata Type 2EL** | Infineon CYW55573 | `brcmfmac` | Smallest footprint of the three. Murata Linux BSP is solid. |
-| **AzureWave AW-XB591NF** *(budget)* | MediaTek MT7921 | `mt76` (**mainline**) | Cheapest, and mainline `mt76` means no vendor blob-driver dependency — a real long-term-maintenance win. Verify the interface-combination test above; MT7921 is single-radio 2x2, so **AP and STA will share a channel**. Acceptable only if the AP is for provisioning/service, not throughput. |
+| **AzureWave AW-XB591NF** *(cost-down)* | MediaTek MT7921 | `mt76` (**mainline**) | Single-radio 2×2 — **now sufficient**, given the provisioning-AP decision. Roughly half the price of a DBDC part, and mainline `mt76` means **no vendor blob-driver dependency**, which is a genuine long-term-maintenance win. ⚠️ Consumer-grade: confirm industrial temperature range and a 10-year longevity commitment before designing it in. |
 | ~~Qualcomm QCA/WCN~~ | — | `ath11k` | Needs a Qualcomm account and NDA'd firmware. Not worth it at our volume. |
 
-**Recommendation:** u-blox MAYA-W2 (NXP IW612) as primary, Ezurio Sona IF573 as the second-source. Both are **pre-certified modules** — that saves roughly $50–150k in FCC/CE intentional-radiator certification versus a bare chip, which dwarfs the per-unit module premium at our volumes.
+**Recommendation:** **u-blox MAYA-W2** primary, **Ezurio Sona IF573** second-source — chosen for *industrial temperature range, 10-year longevity and RMA*, which the provisioning-AP decision does **not** relax. Take the MT7921 route only if a per-unit cost target forces it and you accept the consumer-grade lifecycle.
 
-### 3.2 Cellular — and a hard truth about the WP7702
+All candidates are **pre-certified modules**, which saves roughly $50–150k in FCC/CE intentional-radiator certification versus a bare chip — a premium that dwarfs the per-unit module cost at our volumes.
 
-**The WP7702 must go.** It is Cat-M1/NB-IoT: roughly 300 kbps down. If cellular is a genuine WAN failover that has to carry the OpenVPN tunnel, LwM2M, telemetry *and an OTA bundle*, Cat-M1 cannot do it — an OTA image over Cat-M1 is a multi-hour download that will time out. You need Cat-1bis at minimum, Cat-4 to be comfortable.
+### 3.2 Cellular — Cat-4, and the WP7702 has to go
+
+> ### ✅ **DECISION (2026-07-12): cellular must carry a full OTA image.**
+> Cellular is a first-class WAN bearer. A device on cellular alone must be able to take a complete A/B image update.
+
+**This settles the class: LTE Cat-4. It is not a preference, it is arithmetic.**
+
+| Bearer | Downlink | Time for a ~450 MB A/B rootfs image | Verdict |
+|---|---|---|---|
+| **WP7702** (Cat-M1/NB-IoT, today) | ~0.3 Mbps | **≈ 3.5 hours** (best case, no retries) | ❌ Will time out. Unusable. |
+| Cat-1bis (EG915U) | ~10 Mbps | ≈ 6 min | ⚠️ Workable, but no headroom once the VPN, LwM2M and telemetry share the link |
+| **Cat-4 (EG25-G)** | up to 150 Mbps | **≈ 30–60 s** at realistic field rates | ✅ **Selected** |
+
+Real-world cellular is a fraction of the theoretical rate, and the link is simultaneously carrying the OpenVPN tunnel, LwM2M and telemetry. Cat-4 is what gives an OTA the margin to complete on a mediocre cell in a basement — which is precisely where the devices that most need an update will be.
 
 | Candidate | Class | GNSS | Antennas | Notes |
 |---|---|---|---|---|
-| **Quectel EG25-G** *(recommended)* | LTE Cat-4, global bands | integrated | 2 (main + Rx-div) + 1 GNSS | **The code already speaks Quectel** — `cell.lua` auto-detects via `AT+GMI`/`AT+CGMM`. Same 4× ttyUSB + ECM topology as the WP7702, so `modules/wan/cellular` ports with a config change. LCC solder-down: **no connector, no socket, 3 mm shorter stack**. |
-| **Quectel EG915U / EG916Q** | Cat-1bis | varies by SKU | **1** | Cat-1bis needs no Rx-diversity antenna → one fewer U.FL, one fewer antenna, smaller board. ~10 Mbps DL: enough for VPN + telemetry + a *slow* OTA. Confirm GNSS on the exact SKU. |
-| **Telit LE910C4-WWX** | Cat-4 | integrated | 2 + GNSS | Telit's RMA + carrier-cert support is excellent; slightly pricier. Second-source. |
-| **Fibocom L610** | Cat-1bis | integrated | 1 | Cheapest; weaker western FAE coverage. |
-| **u-blox LARA-R6** | Cat-1 | optional | 2 | Best documentation and longevity commitment in the industry; premium price. |
+| **Quectel EG25-G** ✅ **SELECTED** | LTE Cat-4, global bands | integrated | 2 (main + Rx-div) + 1 GNSS | **The code already speaks Quectel** — `cell.lua:8-11` auto-detects via `AT+GMI`/`AT+CGMM`. Same 4× ttyUSB + ECM topology as the WP7702, so `modules/wan/cellular` ports with a config change. LCC solder-down: **no connector, no socket, 3 mm shorter stack**. |
+| **Telit LE910C4-WWX** | Cat-4 | integrated | 2 + GNSS | **Second source.** Telit's RMA and carrier-certification support is excellent; slightly pricier. |
+| ~~Quectel EG915U / Fibocom L610~~ | Cat-1bis | varies | 1 | ❌ **Rejected by the OTA decision.** Would have saved one antenna and one U.FL. |
+| ~~Sierra WP7702~~ | Cat-M1/NB-IoT | — | 1 | ❌ **Rejected.** ~3.5 h for one OTA image. |
 
-**The footprint trick:** Quectel keeps a **common LCC footprint across the EC2x/EG2x family**. Lay down one footprint and you can populate EG25-G (global), EC25-E (EU), EC25-AF (US/AT&T), or drop to EG915U for cost-reduced SKUs — **one PCB, all regions, no respin**. This is the single highest-leverage decision on the board.
+**Antenna consequence:** Cat-4 keeps the **Rx-diversity antenna** (J6) — 5 U.FL total (2× WiFi, 2× LTE, 1× GNSS). Rx-diversity is not optional decoration: it is worth 3–6 dB on the downlink, which is exactly the margin an OTA needs at the cell edge, and some carrier certifications require it.
+
+**The footprint trick:** Quectel keeps a **common LCC footprint across the EC2x/EG2x family**. Lay down one footprint and you can populate EG25-G (global), EC25-E (EU) or EC25-AF (US/AT&T) — **one PCB, all regions, no respin**. This is the single highest-leverage decision on the board.
+
+### 3.2.1 Low-end SKU — Cat-M1 / NB-IoT for SMS-only devices
+
+There is a real product below this one: a device that only needs **SMS and light telemetry**, never an OTA image, never a VPN tunnel. Cat-M1/NB-IoT is exactly right for it — lower module cost, far lower power, and much better coverage deep inside buildings. This is a **second SKU**, not a compromise to the Cat-4 design.
+
+**Two things to get right, though:**
+
+**1. Use the Quectel BG95-M3, not the Sierra WP7702.**
+
+| | Sierra WP7702 | **Quectel BG95-M3** ✅ |
+|---|---|---|
+| Class | Cat-M1 / NB-IoT | Cat-M1 / NB-IoT / EGPRS |
+| GNSS | separate | integrated |
+| Driver code | Sierra path — needs the `AT!ENTERCND` / `AT!UIMS` incantations, and the eSIM-hijack trap | **`cell.lua:8-11` already auto-detects Quectel.** Same AT dialect as the EG25-G. |
+| Consequence | We maintain **two** vendor quirk paths forever | **One** vendor, one AT dialect, one set of quirks across both SKUs |
+
+Staying inside the Quectel family for both SKUs means the cellular daemon has **one** vendor path, and we finally get to **delete the Sierra hacks** rather than carry them for the low-end board. That is worth more than any per-unit saving on the module.
+
+If there is existing WP7702 inventory to burn, the code still supports it — but do not design it into a *new* board.
+
+**2. The SMS-only SKU is a different board, and that is fine.**
+
+The parts that make the flagship expensive — Cat-4 modem, 2×2 WiFi, GbE PHY, CAN, containers-capable SoM — are precisely the parts an SMS-only device does not want. Do not try to build one PCB that is both; you will end up with a board that is too expensive for the low end and too compromised for the high end.
+
+| | **Flagship** (this document) | **Low-end SMS SKU** |
+|---|---|---|
+| Cellular | Quectel EG25-G (Cat-4) | Quectel BG95-M3 (Cat-M1/NB-IoT) |
+| OTA over cellular | ✅ full A/B image | ❌ config/SMS only |
+| WiFi | 2×2 STA + provisioning AP | optional / none |
+| Ethernet, CAN, containers | ✅ | ❌ |
+| SoC | i.MX 93 / AM62 SoM | an MCU or a much smaller SoC |
+| Power | mains / vehicle | battery-capable (PSM/eDRX) |
+
+⚠️ **One warning from our own field history:** the WP7702 "no MT-SMS while connected" incident (2026-07-11) was a **CS-domain registration wedge** — `CREG` sat in *searching* while the combined `cell.reg` looked healthy, and only a `CFUN 0/1` cycle recovered it. Whatever module the low-end SKU uses, expose **`cell.reg.cs` / `cell.reg.ps` / `cell.reg.eps` separately** (we already do) and give it a modem-restart path. On an SMS-only device, a silently wedged CS domain is not a degradation — it is total product failure, and nothing else on the box will notice.
 
 **SIM:** MFF2 eSIM (soldered) **plus** a nano-SIM push-push tray, selected by a **TI TS3A27518E SIM mux** on a GPIO. This exists specifically because of the WP7702 lesson — the board booted on its soldered eSIM (TIM/`iot.swir`, zero downlink) while we thought it was on the external Airtel SIM, and the fix was an undocumented `AT!ENTERCND` / `AT!UIMS=0` incantation. With a hardware mux, SIM selection is a GPIO and a `cell.sim.slot` ds key. One extra IC, and it deletes an entire class of field mystery.
 
@@ -323,13 +394,21 @@ Items 4–7 are **net deletions of code** — the consolidation pays down debt, 
 
 ---
 
-## 9. Open questions for the review
+## 9. Decisions and open questions
 
-1. **Cat-4 (EG25-G, 2 antennas) or Cat-1bis (EG915U, 1 antenna)?** Cat-4 is the safe answer if cellular must carry an OTA bundle. Cat-1bis saves an antenna, a U.FL and some board area. What is the realistic cellular OTA requirement — must a device be able to take a full A/B image update over cellular, or is cellular allowed to be telemetry + VPN only, with OTA gated on WiFi/Ethernet?
-2. **Is the WiFi AP for throughput or for provisioning?** If it is a service/onboarding AP (a tech connects a phone to configure the box), a single-radio MT7921 at half the price is fine. If customer devices live behind it, you need the DBDC part.
-3. **Galvanic isolation on CAN?** ISO1042 vs TCAN1051 — driven by whether the OBD-II port shares a ground with the vehicle chassis.
-4. **Enclosure and mounting** — DIN rail, vehicle bracket, or both? This sets the connector edge and therefore the LED light-pipe placement.
-5. **BMI160 / OPT3001 NRND** — port to BMI270 / OPT4001 now, or lifetime-buy and defer?
+### ✅ Closed (2026-07-12)
+
+| # | Question | Decision | Consequence |
+|---|---|---|---|
+| 1 | Must cellular carry a full OTA image? | **YES** | **LTE Cat-4 — Quectel EG25-G.** Cat-1bis and Cat-M1 are rejected. Keeps the Rx-diversity antenna (5 U.FL total). Cat-M1 would need ~3.5 h for one image. |
+| 2 | Is the WiFi AP for throughput or provisioning? | **Provisioning only** | **DBDC is no longer required** — this deletes the design's only unverified, risk-carrying assumption. Single-radio parts qualify; AP shares the STA channel. Keep 2×2 on the STA side (WiFi is a primary WAN bearer). |
+
+### ⬜ Still open
+
+3. **Galvanic isolation on CAN?** ISO1042 vs TCAN1051 — driven by whether the OBD-II port shares a ground with the vehicle chassis. A ground offset will destroy a non-isolated transceiver.
+4. **ISO 7637-2 load dump** — is a 24 V vehicle (87 V load dump) in scope? The current front end survives 12 V only. Adding the clamp costs ~$2 and one sheet.
+5. **Enclosure and mounting** — DIN rail, vehicle bracket, or both? Sets the connector edge and therefore the LED light-pipe placement.
+6. **BMI160 / OPT3001 NRND** — port to BMI270 / OPT4001 now, or lifetime-buy and defer?
 
 ---
 
