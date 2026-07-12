@@ -100,6 +100,19 @@ TEST(AtCgdcont, ExtractsApn) {
     EXPECT_EQ(parse_cgdcont("OK"), "");
 }
 
+/// AT+CGDCONT? answers with ONE LINE PER CONTEXT and the caller feeds every one
+/// of them to set_apn(), so anything but cid 1 must be ignored — otherwise the
+/// last line listed wins. A WP7702 carries the eSIM's own profile (iot.swir) on
+/// a higher cid, which is exactly how cell.apn.current came to report iot.swir
+/// while the data call was up on the operator APN provisioned to cid 1 (HW).
+TEST(AtCgdcont, IgnoresContextsOtherThanCid1) {
+    EXPECT_EQ(parse_cgdcont("+CGDCONT: 2,\"IP\",\"iot.swir\",\"0.0.0.0\",0,0"), "");
+    EXPECT_EQ(parse_cgdcont("+CGDCONT: 3,\"IPV4V6\",\"ims\",\"0.0.0.0\",0,0"), "");
+    // cid 1 still wins, whatever the eSIM parks on the other contexts.
+    EXPECT_EQ(parse_cgdcont("+CGDCONT: 1,\"IP\",\"airtelgprs.com\",\"0.0.0.0\",0,0"),
+              "airtelgprs.com");
+}
+
 TEST(AtCgpaddr, ExtractsIp) {
     EXPECT_EQ(parse_cgpaddr("+CGPADDR: 1,\"10.181.22.7\""), "10.181.22.7");
     EXPECT_EQ(parse_cgpaddr("+CGPADDR: 1,100.92.3.44"), "100.92.3.44");
