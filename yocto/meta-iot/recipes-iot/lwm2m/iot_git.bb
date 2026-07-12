@@ -42,6 +42,7 @@ SRC_URI = "\
     file://iot-containerd.service \
     file://iot-mqttd.service \
     file://iot-ddnsd.service \
+    file://iot-smsctld.service \
     file://iot-pcap.service \
     file://10-iot-wired.network \
     file://05-iot-cellular-ecm.network \
@@ -369,6 +370,7 @@ do_install() {
         # iot-mqttd: MQTT telemetry mirror. Enabled by default but parks until a
         # broker is configured (mqtt.broker.host), so it is harmless when unused.
         install -m 0644 ${WORKDIR}/iot-mqttd.service           ${D}${systemd_system_unitdir}/
+        install -m 0644 ${WORKDIR}/iot-smsctld.service         ${D}${systemd_system_unitdir}/
         # iot-pcap: on-demand tcpdump capture, OFF by default (debug aid).
         install -m 0644 ${WORKDIR}/iot-pcap.service            ${D}${systemd_system_unitdir}/
         # networkd wired profile: RequiredForOnline=no so a cable-less eth0 does
@@ -463,6 +465,7 @@ PACKAGE_BEFORE_PN = "\
     ${PN}-containerd \
     ${PN}-mqtt \
     ${PN}-ddns \
+    ${PN}-smsctl \
     ${PN}-pcap \
     ${PN}-config \
     ${PN}-bcm2837-selftest \
@@ -710,6 +713,27 @@ RRECOMMENDS:${PN}-ddns = "\
     ${PN}-config \
 "
 
+# smsctl — iot-smsctld: authenticated device control over SMS. Consumes the
+# MT-SMS envelope cellular-client publishes (sms.*), authenticates the sender
+# against the device's own users (auth.users.*), and routes each command to the
+# owning daemon THROUGH the data-store (cell.apn / cell.reset.request /
+# wifi.networks); only reboot + factory-reset use the root .path trigger files,
+# because no daemon owns those. Ships the unit ENABLED but the daemon parks
+# until smsctl.enabled=true. smsctl.lua schema + smsctld.env ship in
+# ${PN}-config. See apps/docs/tdd-smsctl.md.
+FILES:${PN}-smsctl = "\
+    ${bindir}/iot-smsctld \
+    ${systemd_system_unitdir}/iot-smsctld.service \
+"
+# openssl: libcrypto for the SHA-256 that must match iot-httpd's password
+# hashing (the same auth.users.* hashes back the device-ui login).
+RDEPENDS:${PN}-smsctl = "ace-tao openssl"
+RRECOMMENDS:${PN}-smsctl = "\
+    ${PN}-ds-server \
+    ${PN}-config \
+    ${PN}-cellular \
+"
+
 # pcap — iot-pcap.service: on-demand tcpdump ring-buffer capture of the LwM2M
 # DTLS planes, for field debugging. No iot binary of its own — just the unit;
 # tcpdump (+ libpcap, pulled transitively) is the runtime dep. Ships DISABLED
@@ -821,6 +845,12 @@ SYSTEMD_SERVICE:${PN}-mqtt = "iot-mqttd.service"
 # 90-iot.preset so preset-all keeps it on across first boot.
 SYSTEMD_SERVICE:${PN}-ddns = "iot-ddnsd.service"
 SYSTEMD_AUTO_ENABLE:${PN}-ddns = "enable"
+# smsctl registered + auto-enabled: the daemon is inert while parked (it ignores
+# every inbound SMS until smsctl.enabled=true), so enabling it costs nothing and
+# spares the operator a `systemctl enable` on a device they can only reach by
+# SMS. Also `enable`d in 90-iot.preset so preset-all keeps it on across first boot.
+SYSTEMD_SERVICE:${PN}-smsctl = "iot-smsctld.service"
+SYSTEMD_AUTO_ENABLE:${PN}-smsctl = "enable"
 # pcap capture registered but NOT auto-enabled: a continuous packet capture is a
 # debug aid, not a boot service (flash wear + captures user traffic). Operator
 # `systemctl start iot-pcap` while diagnosing. Also `disable`d in 90-iot.preset

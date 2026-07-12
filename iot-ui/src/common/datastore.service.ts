@@ -41,6 +41,9 @@ export class DataStoreService {
     // unchecked, RAT "Leave unchanged") even though ds held the saved values.
     'cell.apn', 'cell.modem.tty', 'cell.gps.tty',
     'cell.poll.interval.sec', 'cell.gps.enable', 'cell.rat', 'sms.enable',
+    // SMS device control (iot-smsctld)
+    'smsctl.enabled', 'smsctl.allowed.numbers', 'smsctl.session.ttl.sec',
+    'smsctl.lockout.failures',
     // LwM2M client
     'iot.serial', 'iot.dev.mode', 'iot.bs.uri', 'iot.server.uri', 'iot.dm.uri',
     'iot.binding', 'iot.lifetime',

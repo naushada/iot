@@ -43,6 +43,7 @@ RDEPENDS:${PN}-full = "\
     iot-cellular \
     iot-containerd \
     iot-ddns \
+    iot-smsctl \
     iot-pcap \
     openvpn \
     nftables \
