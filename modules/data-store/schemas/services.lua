@@ -82,6 +82,37 @@ local keys = {
     ["services.container.state"]           = {
         access  = "Viewer", type = "string",  default = "stopped" },
 
+    -- The remaining device daemons. Every daemon that runs on the device gets a
+    -- row here so the device-ui Services page can show ALL of them (state + L22
+    -- CPU/mem/fd/thread telemetry + Restart), not just the five that happened to
+    -- carry a ServiceGate. Each self-reports .state on startup.
+    --
+    -- NOTE on `enable`: only net.router / openvpn.client / lwm2m.* / wifi.client
+    -- implement a ServiceGate, i.e. actually PARK when their enable key goes
+    -- false. For the others the key exists so the row renders uniformly, and the
+    -- Services page issues a systemd restart (via the root iot-service-restart
+    -- path unit) rather than an enable-flip. See apps/docs/tdd-services-page.md.
+    ["services.cellular.enable"]           = {
+        access  = "Admin", type = "boolean", default = true, write_acl = {"uid:0"} },
+    ["services.cellular.state"]            = {
+        access  = "Viewer", type = "string",  default = "stopped" },
+    ["services.sensors.enable"]            = {
+        access  = "Admin", type = "boolean", default = true, write_acl = {"uid:0"} },
+    ["services.sensors.state"]             = {
+        access  = "Viewer", type = "string",  default = "stopped" },
+    ["services.ddns.enable"]               = {
+        access  = "Admin", type = "boolean", default = true, write_acl = {"uid:0"} },
+    ["services.ddns.state"]                = {
+        access  = "Viewer", type = "string",  default = "stopped" },
+    ["services.smsctl.enable"]             = {
+        access  = "Admin", type = "boolean", default = true, write_acl = {"uid:0"} },
+    ["services.smsctl.state"]              = {
+        access  = "Viewer", type = "string",  default = "stopped" },
+    ["services.httpd.enable"]              = {
+        access  = "Admin", type = "boolean", default = true, write_acl = {"uid:0"} },
+    ["services.httpd.state"]               = {
+        access  = "Viewer", type = "string",  default = "stopped" },
+
     -- wifi-client — the WAN uplink, so NO dependency on net.router (routing
     -- layers on top of the uplink; the inverse dep deadlocked WiFi whenever
     -- net-router was down). Matches the (lack of) DepWatch in supervisor.cpp.
@@ -140,6 +171,11 @@ local stats_services = {
   "services.vehicle",
   "services.mqtt",
   "services.container",
+  "services.cellular",
+  "services.sensors",
+  "services.ddns",
+  "services.smsctl",
+  "services.httpd",
   "services.cloud.iot.cloudd",
   "services.cloud.iot.httpd",
   "services.cloud.openvpn.server",

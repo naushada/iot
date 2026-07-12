@@ -323,6 +323,8 @@ if(IOT_PACKAGING_INSTALL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-mqttd.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-ddnsd.service
                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-smsctld.service
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-service-restart.path
+                ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/systemd/iot-service-restart.service
             DESTINATION lib/systemd/system)
 
     # tmpfiles.d fallback for hosts where RuntimeDirectory= doesn't

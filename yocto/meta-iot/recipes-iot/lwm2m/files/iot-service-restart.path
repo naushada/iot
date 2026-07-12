@@ -1,0 +1,17 @@
+[Unit]
+Description=Watch the service-restart trigger (device-ui Services -> Restart)
+Documentation=https://github.com/naushada/iot
+
+[Path]
+# iot-httpd (unprivileged) arms this by writing ONE service slug into the file;
+# the root iot-service-restart.service maps that slug to a unit and restarts it.
+# Needed for the daemons that have no ServiceGate — flipping services.<x>.enable
+# only restarts a daemon that watches the key, so for the rest (cellular,
+# containers, mqtt, vehicle, sensors, ddns, smsctl) the Restart button used to
+# 400. The service removes the trigger to re-arm (a .path unit will not re-fire
+# until the path is gone again).
+PathExists=/run/iot/service-restart.request
+Unit=iot-service-restart.service
+
+[Install]
+WantedBy=multi-user.target

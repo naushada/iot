@@ -7,6 +7,8 @@
 #include <ace/Reactor.h>
 #include <ace/Time_Value.h>
 
+#include "data_store/stats_publisher.hpp"
+
 #include "line_router.hpp"
 
 namespace cellular {
@@ -159,6 +161,14 @@ int CellularClient::run() {
         m_gnss ? m_cfg.gps_tty.c_str() : (m_gps_via_at ? "AT+QGPSLOC" : "(none)"),
         m_cfg.apn.empty() ? "(unset)" : m_cfg.apn.c_str(),
         m_cfg.interval_sec));
+
+    // Services page: lifecycle + L22 resource telemetry. The reactor is pumped
+    // below, so the stats timer rides it (run_reactor_thread=false).
+    m_ds.set(std::string("services.cellular.state"),
+             data_store::Value{std::string("running")});
+    static data_store::StatsPublisher stats("services.cellular",
+        [this](const std::vector<data_store::KV>& kv) { m_ds.set(kv); });
+    stats.open(data_store::StatsPublisher::STATS_FLUSH_SEC, false);
 
     ACE_Reactor::instance()->run_reactor_event_loop();
     // Non-zero on modem loss so systemd (Restart=on-failure) retries and

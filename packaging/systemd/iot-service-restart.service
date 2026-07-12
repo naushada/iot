@@ -1,0 +1,32 @@
+[Unit]
+Description=Restart an iot daemon (armed by iot-service-restart.path)
+Documentation=https://github.com/naushada/iot
+# No [Install]: activated by iot-service-restart.path, never enabled directly.
+
+[Service]
+Type=oneshot
+# The trigger carries a SLUG, never a unit path — and the slug is re-validated
+# here against a fixed allowlist before it is used. iot-httpd already maps the
+# request through its own allowlist, so this is defence in depth: even if the
+# trigger file were written by something else with group `iot`, the worst it can
+# do is restart one of these iot units.
+#
+# Run via a shell so `systemctl`/`rm` resolve via PATH (matching iot-reboot.service:
+# a unit ExecStart needs an absolute path, and /bin/systemctl does not exist on
+# every image). Remove the trigger FIRST so the .path unit re-arms.
+ExecStart=/bin/sh -c '\
+  slug=$(cat /run/iot/service-restart.request 2>/dev/null | tr -dc "a-z0-9-"); \
+  rm -f /run/iot/service-restart.request; \
+  case "$slug" in \
+    cellular)  unit=iot-cellular-client ;; \
+    container) unit=iot-containerd ;; \
+    mqtt)      unit=iot-mqttd ;; \
+    vehicle)   unit=iot-vehicled ;; \
+    sensors)   unit=iot-sensord ;; \
+    ddns)      unit=iot-ddnsd ;; \
+    smsctl)    unit=iot-smsctld ;; \
+    httpd)     unit=iot-httpd ;; \
+    *) echo "iot-service-restart: refusing unknown slug \x27$slug\x27" >&2; exit 0 ;; \
+  esac; \
+  echo "iot-service-restart: restarting $unit"; \
+  exec systemctl restart "$unit"'

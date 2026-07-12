@@ -1,5 +1,7 @@
 #include "ddns_client.hpp"
 
+#include "data_store/stats_publisher.hpp"
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -182,6 +184,15 @@ int DdnsClient::run() {
         m_cfg.interval_sec, m_cfg.ip_source.c_str()));
 
     publish_state(m_cfg.enabled ? State::Detecting : State::Disabled);
+
+    // Services page: lifecycle + L22 resource telemetry. The daemon already
+    // pumps the singleton reactor below, so the stats timer rides it
+    // (run_reactor_thread=false) — no extra thread.
+    m_ds.set(std::string("services.ddns.state"),
+             data_store::Value{std::string("running")});
+    static data_store::StatsPublisher stats("services.ddns",
+        [this](const std::vector<data_store::KV>& kv) { m_ds.set(kv); });
+    stats.open(data_store::StatsPublisher::STATS_FLUSH_SEC, false);
 
     ACE_Reactor::instance()->schedule_timer(
         this, nullptr, ACE_Time_Value(1),

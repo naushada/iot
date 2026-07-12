@@ -417,6 +417,24 @@ int main(int argc, char** argv) {
                             "open failed\n")));
     }
 
+    // The SAME binary serves the cloud and the device, but the two UIs read
+    // different key namespaces: the cloud Services page reads the flat
+    // services.cloud.iot.httpd.* above, while the DEVICE Services page reads
+    // the nested services.<name>.* block. Publish under the device name too, so
+    // the web server appears on its own Services page instead of being the one
+    // daemon that is invisible there. Cheap: 5 extra keys every 10s.
+    ds.set(std::string("services.httpd.state"),
+           data_store::Value{std::string("running")});
+    data_store::StatsPublisher g_stats_device(
+        "services.httpd",
+        [&ds](const std::vector<data_store::KV>& kv) { ds.set(kv); });
+    if (g_stats_device.open(data_store::StatsPublisher::STATS_FLUSH_SEC,
+                            /*run_reactor_thread=*/false) != 0) {
+        ACE_ERROR((LM_ERROR,
+                   ACE_TEXT("%D httpd:thread:%t %M %N:%l device stats publisher "
+                            "open failed\n")));
+    }
+
     // The listening socket is polled directly via non-blocking accept() in
     // the loop below; only the per-connection sessions are registered with
     // the reactor (for their READ events).

@@ -38,7 +38,9 @@ interface SvcRow { key: string; name: string; label: string; info: ServiceInfo; 
           <clr-dg-cell class="num">{{ hasStats(s) ? s.info.fd_count : '—' }}</clr-dg-cell>
           <clr-dg-cell class="num">{{ hasStats(s) ? s.info.threads : '—' }}</clr-dg-cell>
           <clr-dg-cell>
-            <input type="checkbox" [checked]="s.info.enable" [disabled]="!isAdmin" (change)="toggleEnable(s)" />
+            <input *ngIf="isGated(s)" type="checkbox" [checked]="s.info.enable"
+                   [disabled]="!isAdmin" (change)="toggleEnable(s)" />
+            <span *ngIf="!isGated(s)" class="na" title="This daemon has no enable gate — use Restart">—</span>
           </clr-dg-cell>
           <clr-dg-cell>{{ s.info.uptime_sec != null ? s.info.uptime_sec + 's' : '—' }}</clr-dg-cell>
           <clr-dg-cell *ngIf="isAdmin">
@@ -52,7 +54,11 @@ interface SvcRow { key: string; name: string; label: string; info: ServiceInfo; 
 
         <clr-dg-footer>{{ services.length }} services</clr-dg-footer>
       </clr-datagrid>
-      <p class="hint">Restart: disable → 2 s wait → enable. ds-server cannot self-restart.</p>
+      <p class="hint">
+        Rows are discovered live — any daemon publishing <code>services.&lt;name&gt;.state</code> appears here.
+        Restart: gated daemons flip their enable key (disable → 2 s → enable); the rest get a systemd restart.
+        ds-server cannot self-restart. “—” under Enabled means the daemon has no enable gate.
+      </p>
     </div>
   `,
   styles: [`
@@ -60,21 +66,59 @@ interface SvcRow { key: string; name: string; label: string; info: ServiceInfo; 
     .svc-name { display: block; font-weight: 600; }
     .svc-key { display: block; font-size: 11px; color: #9e9e9e; }
     .num { text-align: left; font-variant-numeric: tabular-nums; }
+    .na { color: #9e9e9e; }
     .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
     .hint { font-size: 12px; color: #757575; margin-top: 16px; }
   `]
 })
 export class ServicesListComponent implements OnInit, OnDestroy {
-  services: SvcRow[] = [
-    { key: 'ds',             name: 'Data Store',     label: 'services.ds',             info: {}, restarting: false, msg: '' },
-    { key: 'net_router',     name: 'Network Router', label: 'services.net.router',     info: {}, restarting: false, msg: '' },
-    { key: 'openvpn_client', name: 'OpenVPN Client', label: 'services.openvpn.client', info: {}, restarting: false, msg: '' },
-    { key: 'lwm2m_client',   name: 'LwM2M Client',   label: 'services.lwm2m.client',   info: {}, restarting: false, msg: '' },
-    { key: 'wifi_client',    name: 'Wi-Fi Client',   label: 'services.wifi.client',    info: {}, restarting: false, msg: '' },
-    { key: 'vehicle',        name: 'Vehicle (OBD-II)', label: 'services.vehicle',     info: {}, restarting: false, msg: '' },
-    { key: 'mqtt',           name: 'MQTT Mirror',    label: 'services.mqtt',           info: {}, restarting: false, msg: '' },
-    { key: 'container',      name: 'Containers',     label: 'services.container',      info: {}, restarting: false, msg: '' },
+  /// Rows are built from whatever /status reports — NOT a hardcoded list.
+  /// The old fixed array is why half the daemons (cellular, sensors, ddns,
+  /// smsctl, httpd) never appeared here at all: each new daemon had to be
+  /// remembered in three places (schema, the httpd /status chain, and this
+  /// array), and it usually wasn't. Now a daemon shows up the moment it
+  /// publishes services.<name>.state.
+  services: SvcRow[] = [];
+
+  /// Display names for the daemons we know. Anything else still renders, with
+  /// a humanised fallback ("foo_bar" → "Foo Bar") — an unknown-but-present
+  /// daemon is better shown than hidden.
+  private static readonly NAMES: Record<string, string> = {
+    ds:              'Data Store',
+    net_router:      'Network Router',
+    openvpn_client:  'OpenVPN Client',
+    lwm2m_client:    'LwM2M Client',
+    lwm2m_server:    'LwM2M Server',
+    wifi_client:     'Wi-Fi Client',
+    cellular:        'Cellular Modem',
+    sensors:         'Sensors (I²C)',
+    vehicle:         'Vehicle (OBD-II)',
+    mqtt:            'MQTT Mirror',
+    container:       'Containers',
+    ddns:            'Dynamic DNS',
+    smsctl:          'SMS Control',
+    httpd:           'Web Server',
+  };
+
+  /// Sort order for the known daemons; unknown ones sort last, alphabetically.
+  private static readonly ORDER = [
+    'ds', 'httpd', 'net_router', 'wifi_client', 'cellular', 'openvpn_client',
+    'lwm2m_client', 'lwm2m_server', 'container', 'sensors', 'vehicle', 'mqtt',
+    'ddns', 'smsctl',
   ];
+
+  /// Only these daemons implement a ServiceGate — i.e. they actually watch
+  /// services.<x>.enable and park when it goes false. For the rest the checkbox
+  /// would be a lie (nobody is listening), so it is not offered; Restart still
+  /// works for them via systemd.
+  private static readonly GATED: Record<string, string> = {
+    net_router:     'services.net.router.enable',
+    openvpn_client: 'services.openvpn.client.enable',
+    lwm2m_client:   'services.lwm2m.client.enable',
+    lwm2m_server:   'services.lwm2m.server.enable',
+    wifi_client:    'services.wifi.client.enable',
+  };
+
   private sub = new Subscription();
 
     get isAdmin(): boolean { return this.session.isAdmin; }
@@ -106,9 +150,40 @@ export class ServicesListComponent implements OnInit, OnDestroy {
   applyStatus(s: StatusSnapshot): void {
     const svcs = s.services as Record<string, ServiceInfo> | undefined;
     if (!svcs) return;
-    for (const row of this.services) {
-      if (svcs[row.key]) row.info = { ...svcs[row.key] };
+    const rows: SvcRow[] = [];
+    for (const key of Object.keys(svcs)) {
+      const prev = this.services.find(r => r.key === key);
+      rows.push({
+        key,
+        name:  ServicesListComponent.NAMES[key] ?? this.humanize(key),
+        label: 'services.' + key.replace(/_/g, '.'),
+        info:  { ...svcs[key] },
+        // Preserve in-flight UI state across the status refresh.
+        restarting: prev?.restarting ?? false,
+        msg:        prev?.msg ?? '',
+      });
     }
+    const order = ServicesListComponent.ORDER;
+    rows.sort((a, b) => {
+      const ia = order.indexOf(a.key), ib = order.indexOf(b.key);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return -1;
+      if (ib >= 0) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    this.services = rows;
+  }
+
+  /// "net_router" → "Net Router" — the fallback for a daemon we don't know yet.
+  private humanize(key: string): string {
+    return key.split('_')
+              .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+              .join(' ');
+  }
+
+  /// True when this daemon actually honours services.<x>.enable.
+  isGated(s: SvcRow): boolean {
+    return !!ServicesListComponent.GATED[s.key];
   }
 
   toggleEnable(svc: SvcRow): void {
@@ -134,15 +209,7 @@ export class ServicesListComponent implements OnInit, OnDestroy {
   }
 
   private enableKey(k: string): string {
-    const m: Record<string, string> = {
-      net_router: 'services.net.router.enable',
-      openvpn_client: 'services.openvpn.client.enable',
-      lwm2m_client: 'services.lwm2m.client.enable',
-      wifi_client: 'services.wifi.client.enable',
-      vehicle: 'services.vehicle.enable',
-      mqtt: 'services.mqtt.enable',
-    };
-    return m[k] || '';
+    return ServicesListComponent.GATED[k] || '';
   }
 
   ngOnDestroy(): void { this.sub.unsubscribe(); }
