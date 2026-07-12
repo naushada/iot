@@ -17,7 +17,7 @@ Type=simple
 # socket (/run/iot/data_store.sock, 2775 root:iot).
 Group=iot
 EnvironmentFile=/etc/iot/ddnsd.env
-ExecStart=/usr/local/bin/iot-ddnsd $IOT_DDNS_ARGS
+ExecStart=/usr/bin/iot-ddnsd $IOT_DDNS_ARGS
 
 # Alternative secret source (FR-9): a credential FILE instead of the write-only
 # ds key. Point ddns.token.path at it, or drop it as a systemd credential (the

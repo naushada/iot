@@ -365,16 +365,26 @@ bool Supervisor::initialize() {
     }
     m_ds.set_pid_wpa(static_cast<std::uint32_t>(m_wpa.pid()));
 
-    // Give wpa_supplicant a moment to bind its control socket.
-    // Short busy-wait — 1s total, 50ms polls. Real production would
-    // use inotify; for v1 the wpa_supplicant startup time is ~ms.
+    // Wait for wpa_supplicant to bind its control socket, then ATTACH.
+    //
+    // Retry the CONNECT, not just the stat(). The old code broke out of the wait
+    // as soon as the socket FILE existed and then connected exactly once — which
+    // is fine on a cold start, but races on a RE-spawn (wifi.networks hot-apply):
+    // the previous instance's socket file is still on disk, so stat() succeeds
+    // immediately and we connect to a dead socket. Observed on HW after an SSID
+    // change: wpa_supplicant re-associated fine, but the daemon reported
+    // "ctrl connect/ATTACH failed" and sat in `scanning` while WiFi was actually
+    // up. ~5s of 125ms retries covers both the stale-file window and a slow bind.
     std::string sock_path = m_opt.ctrl_dir + "/" + m_opt.iface;
-    for (int i = 0; i < 20; ++i) {
+    bool attached = false;
+    for (int i = 0; i < 40 && !attached; ++i) {
         struct ::stat st;
-        if (::stat(sock_path.c_str(), &st) == 0) break;
-        ::usleep(50 * 1000);
+        if (::stat(sock_path.c_str(), &st) == 0 && m_ctrl.connect(sock_path))
+            attached = true;
+        else
+            ::usleep(125 * 1000);
     }
-    if (!m_ctrl.connect(sock_path)) {
+    if (!attached) {
         // Reap the wpa_supplicant we just spawned instead of orphaning it.
         // An orphaned wpa keeps its ctrl socket bound, which would make the
         // next start trip nm_conflict_detected() — the exact deadlock the
@@ -386,6 +396,10 @@ bool Supervisor::initialize() {
         m_ds.set_last_error("ctrl connect/ATTACH failed");
         return false;
     }
+    // Attached: drop any stale wifi.last.error from a previous failed attempt,
+    // otherwise the device-ui keeps showing "ctrl connect/ATTACH failed" next to
+    // a perfectly healthy connection.
+    m_ds.set_last_error("");
     m_ds.set_assoc_state("scanning");
     std::string reply;
     m_ctrl.request("SCAN", reply);

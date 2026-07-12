@@ -131,6 +131,18 @@ int CellularClient::run() {
     m_ds.watch(std::vector<std::string>{"cell.reset.request"},
                [this](const data_store::Client::Event& ev) { on_reset_request(ev); }, &wr);
 
+    // device-ui "Clear" on the Received SMS table. A UI-only ds wipe would not
+    // work: the daemon owns the inbox in memory and would republish it on the
+    // next message. So the clear is a command, like every other one.
+    {
+        std::vector<data_store::Client::GetResult> got;
+        if (m_ds.get({std::string("sms.clear.request")}, got).ok && !got.empty() && got[0].has_value)
+            if (auto s = data_store::to_string(got[0].value)) m_clear_token = *s;
+    }
+    data_store::Client::WatchHandle wc = data_store::Client::kInvalidHandle;
+    m_ds.watch(std::vector<std::string>{"sms.clear.request"},
+               [this](const data_store::Client::Event& ev) { on_clear_sms_request(ev); }, &wc);
+
     // First poll after 1s, then every interval. The reactor dispatches the
     // serial handles + this timer on one thread — no polling loop.
     // poll_modem() no-ops while the modem is absent (m_at == nullptr).
@@ -282,15 +294,35 @@ void CellularClient::on_reset_request(const data_store::Client::Event& ev) {
     ACE_Reactor::instance()->notify(this);                 // → handle_exception
 }
 
+void CellularClient::on_clear_sms_request(const data_store::Client::Event& ev) {
+    if (ev.key != "sms.clear.request") return;
+    const std::string val = data_store::to_string(ev.value).value_or(std::string());
+    {
+        std::lock_guard<std::mutex> lk(m_send_mtx);
+        if (val.empty() || val == m_clear_token) return;   // unchanged / cleared
+        m_clear_token = val;
+        m_clear_pending = true;
+    }
+    ACE_Reactor::instance()->notify(this);                 // → handle_exception
+}
+
+void CellularClient::start_clear_sms() {
+    m_state.clear_sms();
+    publish();                       // republish sms.* as an empty inbox + count 0
+    ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] received-SMS history cleared\n")));
+}
+
 int CellularClient::handle_exception(ACE_HANDLE) {
-    bool send_pending, reset_pending;
+    bool send_pending, reset_pending, clear_pending;
     {
         std::lock_guard<std::mutex> lk(m_send_mtx);
         send_pending  = m_send_pending;  m_send_pending  = false;
         reset_pending = m_reset_pending; m_reset_pending = false;
+        clear_pending = m_clear_pending; m_clear_pending = false;
     }
     if (send_pending)  start_send();
     if (reset_pending) start_reset();
+    if (clear_pending) start_clear_sms();
     return 0;
 }
 
@@ -635,11 +667,22 @@ void CellularClient::publish_absent() {
 
 void CellularClient::publish() {
     // Derive the lifecycle token from registration + data context.
-    const char* tok = "init";
-    if (m_haveIp)                                          tok = "connected";
-    else if (m_lastReg == Reg::Home || m_lastReg == Reg::Roaming) tok = "registered";
-    else if (m_lastReg == Reg::Searching)                 tok = "searching";
-    else if (m_lastReg == Reg::Denied)                    tok = "failed";
+    //
+    // With NO modem attached there is nothing to derive it FROM, and the answer
+    // is not "init" — it is "absent". publish() runs on the poll timer whether or
+    // not a modem is present, so without this guard it recomputed the token every
+    // tick and overwrote the "absent" that publish_absent() had just set. The
+    // live values were correctly cleared, but cell.state read "init" — so the
+    // device-ui never showed its "Modem not detected" banner (it keys off
+    // absent/sim-missing). Caught on HW.
+    const char* tok = "absent";
+    if (m_at) {
+        tok = "init";
+        if (m_haveIp)                                          tok = "connected";
+        else if (m_lastReg == Reg::Home || m_lastReg == Reg::Roaming) tok = "registered";
+        else if (m_lastReg == Reg::Searching)                 tok = "searching";
+        else if (m_lastReg == Reg::Denied)                    tok = "failed";
+    }
     m_state.set_state(tok);
 
     // cell.* / gps.* are LIVE TELEMETRY and are published VOLATILE — they must

@@ -54,7 +54,13 @@ import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
       </clr-datagrid>
 
       <div class="inbox">
-        <h4>Received SMS</h4>
+        <div class="inbox-head">
+          <h4>Received SMS</h4>
+          <button *ngIf="isAdmin && smsInbox.length" class="btn btn-sm btn-outline"
+                  [disabled]="clearing" (click)="clearSms()">
+            {{ clearing ? 'Clearing…' : 'Clear' }}
+          </button>
+        </div>
         <clr-datagrid>
           <clr-dg-column [style.width.px]="170">Time</clr-dg-column>
           <clr-dg-column [style.width.px]="150">Sender</clr-dg-column>
@@ -90,7 +96,7 @@ import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
   styles: [`
     .page { padding: 24px; }
     .head { display: flex; align-items: center; justify-content: space-between;
-            margin: 0 0 20px 0; max-width: 720px; }
+            margin: 0 0 20px 0; width: 100%; }
     .head h3 { margin: 0; }
     h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 20px 0; }
     .hint { color: #888; font-size: 13px; margin: 0 0 16px 0; }
@@ -107,14 +113,16 @@ import { CellStatus, SmsInboxEntry } from '../../../common/app-globals';
     .bar:nth-child(5) { height: 14px; }
     .bar.on { background: #2e7d32; }
     .sig-text { vertical-align: middle; }
-    /* One shared width for every block on the page. The property table was
-       full-width while the SMS table was 720px and the Send card 640px, so the
-       three never lined up. */
-    .panel { max-width: 720px; }
-    .inbox { margin-top: 24px; max-width: 720px; }
+    /* Every block spans the full page width: the property table, the SMS
+       history table and the Send card. They were 100% / 720px / 640px, so
+       nothing lined up. */
+    .panel { width: 100%; }
+    .inbox { margin-top: 24px; width: 100%; }
+    .inbox-head { display: flex; align-items: center; justify-content: space-between; }
+    .inbox-head h4 { margin: 0 0 10px 0; }
     .inbox h4 { font-size: 14px; font-weight: 600; color: #333; margin: 0 0 10px 0; }
     .msg-cell { white-space: pre-wrap; word-break: break-word; }
-    .send { margin-top: 24px; max-width: 720px; }
+    .send { margin-top: 24px; width: 100%; }
     .send h4 { font-size: 14px; font-weight: 600; color: #333; margin: 0 0 10px 0; }
     .send .row { display: flex; gap: 8px; align-items: center; }
     .send .msg { flex: 1; }
@@ -128,6 +136,7 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
   smsText = '';
   sending = false;
   restarting = false;
+  clearing = false;
   private sub = new Subscription();
 
   get isAdmin(): boolean { return this.session.isAdmin; }
@@ -165,6 +174,22 @@ export class CellularStatusComponent implements OnInit, OnDestroy {
         else this.toast.error('Send failed');
       },
       error: () => { this.sending = false; this.toast.error('Send failed'); },
+    });
+  }
+
+  /// Clear the received-SMS history. This is a COMMAND, not a ds wipe: the
+  /// daemon owns the inbox in memory and would republish it on the next message,
+  /// so we bump sms.clear.request and it clears + republishes an empty inbox.
+  clearSms(): void {
+    if (!this.isAdmin) return;
+    this.clearing = true;
+    this.ds.write([{ key: 'sms.clear.request', value: String(Date.now()) }]).subscribe({
+      next: (r) => {
+        this.clearing = false;
+        if (r.ok) this.toast.success('SMS history cleared');
+        else this.toast.error('Clear failed');
+      },
+      error: () => { this.clearing = false; this.toast.error('Clear failed'); },
     });
   }
 

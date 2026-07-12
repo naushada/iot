@@ -20,7 +20,7 @@ Type=simple
 # needs no privilege of its own — same bridge iot-httpd uses.
 Group=iot
 EnvironmentFile=/etc/iot/smsctld.env
-ExecStart=/usr/local/bin/iot-smsctld $IOT_SMSCTL_ARGS
+ExecStart=/usr/bin/iot-smsctld $IOT_SMSCTL_ARGS
 
 # /run/iot is owned solely by tmpfiles.d (iot.conf, 2775 root:iot) — do NOT use
 # RuntimeDirectory=iot: it resets /run/iot on start/stop and clobbers the
