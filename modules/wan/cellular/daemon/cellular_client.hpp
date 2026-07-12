@@ -57,6 +57,10 @@ class CellularClient : public ACE_Event_Handler {
 
     private:
         void load_config_from_ds();
+        /// Open the AT (+ optional GNSS) tty and re-arm every one-time setup
+        /// step. False when the tty is not there — the caller keeps probing, so
+        /// a modem switched on later re-attaches with no operator action.
+        bool open_modem();
         void on_at_line(const std::string& line);
         void handle_at_line(const std::string& line);   ///< on_at_line minus queue bookkeeping
         void on_nmea_line(const std::string& line);
@@ -85,7 +89,11 @@ class CellularClient : public ACE_Event_Handler {
         std::unique_ptr<SerialChannel>  m_at;
         std::unique_ptr<SerialChannel>  m_gnss;
         bool                            m_apn_sent = false;
-        bool                            m_modem_lost = false;   ///< AT tty torn down → exit non-zero
+        /// AT tty torn down (modem switched off / unplugged). Set from the
+        /// SerialChannel's close callback; the probe timer reaps the channel on
+        /// the next tick — we must not delete the handler from inside its own
+        /// handle_close.
+        bool                            m_tty_lost = false;
         // Serialized AT command stream — see cmd(). One command in flight at a
         // time; the watchdog timer un-wedges the queue if a command never answers.
         std::deque<std::string>         m_cmdq;

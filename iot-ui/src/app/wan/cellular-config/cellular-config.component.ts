@@ -91,6 +91,13 @@ import { ToastService } from '../../../common/toast.service';
         </div>
 
         <h4>SMS Device Control</h4>
+        <div class="gate" *ngIf="!modemReady">
+          <clr-icon shape="disconnect"></clr-icon>
+          SMS control needs a modem that is enumerated <em>and</em> registered on the
+          network — the device receives its commands as SMS. Current modem state:
+          <strong>{{ cellState || 'absent' }}</strong>. These fields unlock once it
+          reaches <code>registered</code> / <code>connected</code>.
+        </div>
         <p class="hint">
           Lets an operator control this device by texting it — the last channel
           left when the device has no IP path. Commands are authenticated with a
@@ -106,7 +113,7 @@ import { ToastService } from '../../../common/toast.service';
           <clr-checkbox-container>
             <label>SMS Control</label>
             <clr-checkbox-wrapper>
-              <input type="checkbox" clrCheckbox [disabled]="!isAdmin"
+              <input type="checkbox" clrCheckbox [disabled]="!isAdmin || !modemReady"
                      formControlName="smsctlEnabled" />
               <label>Accept IOT commands</label>
             </clr-checkbox-wrapper>
@@ -114,21 +121,21 @@ import { ToastService } from '../../../common/toast.service';
           </clr-checkbox-container>
           <clr-input-container>
             <label>Allowed Numbers</label>
-            <input clrInput [disabled]="!isAdmin" formControlName="smsctlAllowed"
+            <input clrInput [disabled]="!isAdmin || !modemReady" formControlName="smsctlAllowed"
                    placeholder="+919096383701,+4915112345678" />
             <clr-control-helper>Comma-separated. Empty = any sender may attempt login.</clr-control-helper>
             <clr-control-helper *dsDebug><app-ds-hint key="smsctl.allowed.numbers"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>Session TTL (s)</label>
-            <input clrInput [disabled]="!isAdmin" type="number" min="60" max="86400"
+            <input clrInput [disabled]="!isAdmin || !modemReady" type="number" min="60" max="86400"
                    formControlName="smsctlTtl" />
             <clr-control-helper>How long a login stays valid.</clr-control-helper>
             <clr-control-helper *dsDebug><app-ds-hint key="smsctl.session.ttl.sec"></app-ds-hint></clr-control-helper>
           </clr-input-container>
           <clr-input-container>
             <label>Lockout After</label>
-            <input clrInput [disabled]="!isAdmin" type="number" min="1" max="20"
+            <input clrInput [disabled]="!isAdmin || !modemReady" type="number" min="1" max="20"
                    formControlName="smsctlFailures" />
             <clr-control-helper>Failed logins per number before lockout.</clr-control-helper>
             <clr-control-helper *dsDebug><app-ds-hint key="smsctl.lockout.failures"></app-ds-hint></clr-control-helper>
@@ -148,6 +155,10 @@ import { ToastService } from '../../../common/toast.service';
     h3 { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 12px 0; }
     h4 { font-size: 14px; font-weight: 600; color: #333; margin: 28px 0 6px 0; }
     .hint { color: #888; font-size: 13px; margin: 0 0 20px 0; }
+    .gate { display: flex; align-items: center; gap: 6px; margin: 0 0 12px 0;
+            padding: 8px 12px; border-radius: 4px; font-size: 13px;
+            color: #8a6d3b; background: #fcf8e3; border: 1px solid #faebcc; }
+    .gate clr-icon { flex: none; }
     code { background: #eef2f7; padding: 0 4px; border-radius: 3px; }
   `]
 })
@@ -155,6 +166,8 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
   form: FormGroup;
   loading = true;
   saving = false;
+  /// Live modem lifecycle (cell.state), off the shared /status stream.
+  cellState = '';
   private sub = new Subscription();
   private readonly KEYS = [
     'cell.apn', 'cell.modem.tty', 'cell.gps.tty',
@@ -164,6 +177,15 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
   ];
 
   get isAdmin(): boolean { return this.session.isAdmin; }
+
+  /// SMS control is only meaningful when the modem is enumerated AND on the
+  /// network: the device's only inbound channel for these commands is MT-SMS,
+  /// which needs registration. Offering the fields on a device with no modem
+  /// (or one that never registered) invites an operator to "enable" a feature
+  /// that silently cannot work.
+  get modemReady(): boolean {
+    return this.cellState === 'registered' || this.cellState === 'connected';
+  }
 
   constructor(fb: FormBuilder,
               private session: SessionService,
@@ -185,6 +207,9 @@ export class CellularConfigComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.sub.add(this.ds.observeStatus().subscribe((s) => {
+      this.cellState = s.cell?.state || '';
+    }));
     this.applyData(this.ds.snapshot());
     this.loading = false;
     for (const k of this.KEYS)
