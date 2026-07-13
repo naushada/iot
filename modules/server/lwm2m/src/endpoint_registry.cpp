@@ -8,11 +8,19 @@ bool EndpointRegistry::add(const EndpointInfo& info) {
 
     if (m_by_ep.count(info.ep)) return false;               // duplicate ep
     if (m_tun_ip_to_ep.count(info.tun_ip)) return false;    // duplicate tun IP
-    if (m_port_to_ep.count(info.proxy_port)) return false;  // duplicate port
+
+    // proxy_port == 0 means "no proxy port" (the port pool was exhausted — see
+    // VpnRegistry::allocate). It is NOT an allocation, so it must not be indexed
+    // and must not collide: EVERY portless device carries 0, so treating 0 as a
+    // real port would reject the second one as a duplicate and — because
+    // BootstrapProvisioner rolls the VPN allocation back when add() fails —
+    // would block it from onboarding at all. Index only real ports.
+    const bool has_port = (info.proxy_port != 0);
+    if (has_port && m_port_to_ep.count(info.proxy_port)) return false;  // duplicate port
 
     m_by_ep[info.ep] = info;
     m_tun_ip_to_ep[info.tun_ip] = info.ep;
-    m_port_to_ep[info.proxy_port] = info.ep;
+    if (has_port) m_port_to_ep[info.proxy_port] = info.ep;
     return true;
 }
 

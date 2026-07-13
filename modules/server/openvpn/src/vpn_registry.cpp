@@ -59,9 +59,14 @@ void VpnRegistry::init_pool() {
         m_free_ips.insert(u32_to_ip(ip));
     }
 
-    // Port pool
-    for (std::uint16_t p = m_port_start; p <= m_port_end; ++p) {
-        m_free_ports.insert(p);
+    // Port pool. Port 0 is the "no proxy port" sentinel (see take_port_locked)
+    // and must never enter the free pool, so a caller passing port_start = 0
+    // starts at 1. m_port_end == 0 means "no port pool at all".
+    if (m_port_end != 0) {
+        for (std::uint16_t p = (m_port_start == 0) ? 1 : m_port_start;
+             p <= m_port_end; ++p) {
+            m_free_ports.insert(p);
+        }
     }
 }
 
@@ -70,20 +75,25 @@ void VpnRegistry::init_pool() {
 std::optional<VpnAllocation> VpnRegistry::allocate(const std::string& ep) {
     std::lock_guard<std::mutex> lk(m_mutex);
 
-    if (m_free_ips.empty() || m_free_ports.empty()) return std::nullopt;
+    // The tunnel IP is REQUIRED — without one the device has no VPN presence at
+    // all. The proxy port is OPTIONAL: it only feeds the legacy per-device DNAT
+    // (cloud:<port> -> <tun_ip>:8080), which the path-scoped proxy (/dev/<ep>/)
+    // has superseded. The port pool is a 16-bit resource and can never cover a
+    // large fleet, so running it dry must NOT block onboarding: the device gets
+    // proxy_port = 0, no DNAT rule is emitted for it (rebuild_device_dnat and
+    // build_device_dnat_ruleset both skip port 0), and it is reached over the
+    // path proxy like every other device.
+    if (m_free_ips.empty()) return std::nullopt;
 
     auto ip_it = m_free_ips.begin();
-    auto port_it = m_free_ports.begin();
 
     VpnAllocation a;
     a.ep         = ep;
     a.tun_ip     = *ip_it;
-    a.proxy_port = *port_it;
+    a.proxy_port = take_port_locked();   // 0 when the pool is exhausted
 
     m_free_ips.erase(ip_it);
-    m_free_ports.erase(port_it);
     m_allocated_ips.insert(a.tun_ip);
-    m_allocated_ports.insert(a.proxy_port);
     m_ep_to_alloc[ep] = a;
 
     return a;
@@ -94,28 +104,31 @@ VpnRegistry::allocate_in_subnet(const std::string& ep,
                                 const std::string& subnet_cidr) {
     std::lock_guard<std::mutex> lk(m_mutex);
 
-    if (m_free_ports.empty()) return std::nullopt;
-
     // Pick a host IP from the tenant subnet, avoiding every IP this registry has
     // already handed out (base pool + all tenants) so two tenants whose /24s
     // were mis-configured to overlap still never collide.
     std::vector<std::string> used(m_allocated_ips.begin(), m_allocated_ips.end());
     const std::string ip = allocate_ip_in_subnet(subnet_cidr, used);
-    if (ip.empty()) return std::nullopt;
-
-    auto port_it = m_free_ports.begin();
+    if (ip.empty()) return std::nullopt;   // tenant subnet exhausted — fatal
 
     VpnAllocation a;
     a.ep         = ep;
     a.tun_ip     = ip;            // from the tenant /24, NOT the base free pool
-    a.proxy_port = *port_it;
+    a.proxy_port = take_port_locked();     // 0 when exhausted — NOT fatal, see allocate()
 
-    m_free_ports.erase(port_it);
     m_allocated_ips.insert(ip);   // tracked as in-use; not drawn from m_free_ips
-    m_allocated_ports.insert(a.proxy_port);
     m_ep_to_alloc[ep] = a;
 
     return a;
+}
+
+std::uint16_t VpnRegistry::take_port_locked() {
+    if (m_free_ports.empty()) return 0;   // 0 == "no proxy port" sentinel
+    auto it = m_free_ports.begin();
+    const std::uint16_t port = *it;
+    m_free_ports.erase(it);
+    m_allocated_ports.insert(port);
+    return port;
 }
 
 void VpnRegistry::reserve(const std::string& ep, const std::string& ip,

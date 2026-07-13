@@ -362,9 +362,18 @@ return {
     },
 
     -- VPN subnet for tunnel IP allocation.
+    -- Tunnel subnet. /16 (65534 hosts), NOT /24 (254) — a /24 capped the whole
+    -- fleet at 254 devices, and it also has to COVER cloud.vpn.tenant.pool
+    -- (10.9.16.0/20) or a CCD-pinned tenant IP falls outside the OpenVPN
+    -- `server` directive and never routes. The openvpn server config is rendered
+    -- FROM this key (openvpn_server.cpp: cidr_to_net_mask), so widening it
+    -- widens the server subnet in lockstep — there is no second place to change.
+    -- Existing deployments are unaffected: iot-cloudd reads the STORED value and
+    -- only falls back to this default when the key was never set.
+    -- See apps/docs/tdd-cloud-scale-1m-devices.md §C2/P0c.
     ["cloud.vpn.subnet"] = {
       type    = "string",
-      default = "10.9.0.0/24",
+      default = "10.9.0.0/16",
     },
 
     -- Multi-tenant VPN pool (apps/docs/tdd-multi-tenant-cloud.md, P4): iot-cloudd

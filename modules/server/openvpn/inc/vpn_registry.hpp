@@ -20,7 +20,7 @@ namespace openvpn {
 struct VpnAllocation {
     std::string   ep;          // endpoint name
     std::string   tun_ip;      // assigned tunnel IP
-    std::uint16_t proxy_port;  // assigned proxy port
+    std::uint16_t proxy_port;  // assigned proxy port; 0 == none (pool exhausted)
 };
 
 class VpnRegistry {
@@ -36,16 +36,22 @@ public:
     const std::string& subnet() const { return m_subnet_cidr; }
     std::uint16_t proxy_port_start() const { return m_port_start; }
 
-    /// Allocate IP + port for an endpoint.  Returns nullopt when
-    /// the subnet or port range is exhausted.
+    /// Allocate a tunnel IP (+ a proxy port if one is free) for an endpoint.
+    ///
+    /// Returns nullopt ONLY when the IP subnet is exhausted. An exhausted PORT
+    /// pool is not an error: the allocation succeeds with `proxy_port == 0`,
+    /// meaning "no legacy DNAT forward for this device" — it is still reachable
+    /// over the path-scoped proxy (/dev/<ep>/), which needs no port. A port is
+    /// a 16-bit resource and cannot cover a large fleet; onboarding must not
+    /// depend on one. See apps/docs/tdd-cloud-scale-1m-devices.md §C1/P0b.
     std::optional<VpnAllocation> allocate(const std::string& ep);
 
     /// Multi-tenant (P3c): allocate a tunnel IP from `subnet_cidr` (a tenant's
-    /// /24, which lies OUTSIDE this registry's base pool) plus a proxy port,
-    /// avoiding any IP already handed out. Returns nullopt when the tenant
-    /// subnet or the port range is exhausted. The tenant IP is tracked as
-    /// allocated but is never returned to the base free pool on release (it is
-    /// re-derivable from the tenant subnet on demand).
+    /// /24) plus a proxy port if one is free, avoiding any IP already handed
+    /// out. Returns nullopt when the TENANT SUBNET is exhausted; an exhausted
+    /// port pool yields `proxy_port == 0`, exactly as in allocate(). The tenant
+    /// IP is tracked as allocated but is never returned to the base free pool on
+    /// release (it is re-derivable from the tenant subnet on demand).
     std::optional<VpnAllocation> allocate_in_subnet(const std::string& ep,
                                                     const std::string& subnet_cidr);
 
@@ -85,9 +91,23 @@ private:
 
     mutable std::mutex m_mutex;
 
-    std::set<std::string> m_free_ips;       // sorted — first is lowest
-    std::set<std::uint16_t> m_free_ports;   // sorted — first is lowest
-    std::set<std::string> m_allocated_ips;
+    /// Order dotted-quad IPs NUMERICALLY, not lexicographically.
+    ///
+    /// A plain std::set<std::string> compares byte-wise, so "10.9.0.10" sorts
+    /// BEFORE "10.9.0.2" and the pool hands out .10 as its first address. That
+    /// is still correct (every IP is unique) but it is not what the allocator
+    /// claims — "first is lowest" — and it is not what six of this class's own
+    /// unit tests assert. With a /16 pool (65534 hosts) the string order is
+    /// wild enough to be actively confusing when reading `cloud.endpoints`.
+    struct IpLess {
+        bool operator()(const std::string& a, const std::string& b) const {
+            return ip_to_u32(a) < ip_to_u32(b);
+        }
+    };
+
+    std::set<std::string, IpLess> m_free_ips;   // sorted numerically — first is lowest
+    std::set<std::uint16_t> m_free_ports;       // sorted — first is lowest
+    std::set<std::string> m_allocated_ips;      // membership only; order irrelevant
     std::set<std::uint16_t> m_allocated_ports;
 
     std::unordered_map<std::string, VpnAllocation> m_ep_to_alloc;
@@ -110,6 +130,11 @@ private:
     /// the non-recursive m_mutex → self-deadlock); it calls these instead.
     void release_ip_locked(const std::string& ip);
     void release_port_locked(std::uint16_t port);
+
+    /// Take the lowest free proxy port and mark it allocated, or return 0 when
+    /// the pool is dry (0 is the "no proxy port" sentinel — it is never a valid
+    /// allocatable port, since the range is >= 1024). Caller MUST hold m_mutex.
+    std::uint16_t take_port_locked();
 };
 
 } // namespace openvpn

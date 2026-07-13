@@ -286,11 +286,31 @@ the lwm2m binary finds the schema and provisioning data it expects.
 Each registered device runs its own web UI behind NAT, reachable from the
 operator only through the tunnel. The cloud exposes it via a per-device DNAT.
 
+**Operator access is the path proxy, NOT the port.** The Endpoints page
+**Launch UI** link is `/dev/<endpoint>/` — same-origin, reverse-proxied by
+iot-httpd over the tun (`handler_proxy.cpp`, `apps/docs/tdd-device-ui-path-proxy.md`).
+It is session-gated and needs **no published port**, so it is the route that
+scales. The per-device port + DNAT below is the **legacy** path, kept for one
+transition release and scheduled for deletion
+(`apps/docs/tdd-cloud-scale-1m-devices.md` §C1/P2).
+
 **Per-device mapping.** When a device registers it is assigned a VPN virtual
-IP (`tun_ip`, e.g. `10.9.0.x`) and a proxy port (`proxy_port`, allocated by
-`VpnRegistry`); both live in the `cloud.endpoints` ds JSON. Operator access is
-`http://<cloud-host>:<proxy_port>/` — the Endpoints page **Launch UI** link —
-which DNATs to the device's UI over the tunnel.
+IP (`tun_ip`, e.g. `10.9.0.x`) and — **if one is free** — a proxy port
+(`proxy_port`, allocated by `VpnRegistry`); both live in the `cloud.endpoints`
+ds JSON.
+
+> **`proxy_port == 0` means "no DNAT port", and is normal.** The port range is
+> tiny (51 by default) and a TCP port is a 16-bit resource, so it can never
+> cover a fleet. An exhausted port pool therefore **does not fail provisioning**
+> — the device gets `proxy_port = 0`, no DNAT rule is emitted for it, and it is
+> reached over the path proxy like every other device. (It used to return
+> `nullopt` from `VpnRegistry::allocate` → `BootstrapProvisioner::provision`,
+> so device #52 got no tunnel IP and no BS PSK and could not onboard at all.)
+
+> **The published range is bound to `127.0.0.1`.** On `0.0.0.0` it put every
+> device's UI *login page* on the cloud's public IP, bypassing the operator-session
+> gate that iot-httpd enforces on `/dev/<ep>/`. Loopback keeps the DNAT usable
+> from the cloud host itself while taking it off the internet.
 
 **nftables DNAT (`modules/server/dnat`).** `iot-cloudd` installs a per-device
 DNAT for every endpoint that has both a `tun_ip` and a `proxy_port`:
@@ -313,7 +333,7 @@ once at startup.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `cloud.proxy.device.ui.port` | `80` | the device's web-UI port (DNAT target port); seeded at startup |
+| `cloud.proxy.device.ui.port` | `8080` | the device's web-UI port (DNAT target port); seeded at startup |
 | `cloud.vpn.proxy.port.start` | `10000` | low end of the proxy-port range `VpnRegistry` allocates from |
 | `cloud.vpn.proxy.port.end` | `10050` | high end of the proxy-port range |
 
@@ -610,8 +630,13 @@ writer of `cloud.lwm2m.registrations`, iot-cloudd merges into `cloud.endpoints`
 
 ### VPN Server (cloud.vpn.*)
 ```
-cloud.vpn.subnet         → Tunnel subnet (default 10.9.0.0/24); ds-only (no
-                           VPN_SUBNET env/CLI — read live by iot-cloudd)
+cloud.vpn.subnet         → Tunnel subnet (default 10.9.0.0/16 — a /24 capped the
+                           fleet at 254 devices, and it must COVER
+                           cloud.vpn.tenant.pool or CCD-pinned tenant IPs don't
+                           route); ds-only (no VPN_SUBNET env/CLI — read live by
+                           iot-cloudd, which renders the openvpn `server`
+                           directive FROM it). A deployment that already stored
+                           the old /24 keeps it — widening is opt-in on the VPN page.
 cloud.vpn.port.next      → Next proxy port (10000–10050)
 cloud.vpn.ca.crt         → CA cert path
 cloud.vpn.ca.key         → CA key path (secret volume)

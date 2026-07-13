@@ -154,14 +154,25 @@ interface EpCred {
           <clr-dg-detail-header>Provisioned Credentials — {{e.endpoint}}</clr-dg-detail-header>
           <clr-dg-detail-body>
             <!-- Device UI over VPN: the per-device nftables DNAT installed by
-                 iot-cloudd (cloud:<proxy_port> → <tun_ip>:<ui_port> over tun0). -->
+                 iot-cloudd (cloud:<proxy_port> → <tun_ip>:<ui_port> over tun0).
+                 proxy_port 0 == the port pool was exhausted at provision time.
+                 That is NOT an error and never blocks onboarding — the device is
+                 reached over the path proxy (Launch UI, /dev/<ep>/) like every
+                 other one. The port+DNAT path is legacy and loopback-bound; see
+                 apps/docs/tdd-cloud-scale-1m-devices.md. -->
             <dl class="cred-list" style="margin-bottom:16px;">
               <dt>VPN forwarding rule</dt>
-              <dd>
+              <dd *ngIf="e.proxy_port; else noProxyPort">
                 <code>tcp dport {{ e.proxy_port }} &rarr; {{ e.dev_tun_ip || e.tun_ip }}:{{ uiPort }}</code>
                 <span class="hint" style="margin-left:8px;" *ngIf="e.dev_tun_ip">DNAT — device UI over VPN</span>
                 <span class="hint" style="margin-left:8px;" *ngIf="!e.dev_tun_ip">VPN down — rule inactive</span>
               </dd>
+              <ng-template #noProxyPort>
+                <dd>
+                  <code>none</code>
+                  <span class="hint" style="margin-left:8px;">no legacy DNAT port — reach this device with Launch UI</span>
+                </dd>
+              </ng-template>
             </dl>
             <ng-container *ngIf="credFor(e) as c; else noCred">
               <dl class="cred-list">

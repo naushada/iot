@@ -69,9 +69,21 @@ services:
     # network namespace (network_mode: service:iot-cloudd) so the device-UI
     # reverse proxy can reach the OpenVPN tun (tun0/10.9.0.x lives here). Mirrors
     # the device stack's httpd↔openvpn-client netns sharing.
+    #
+    # ── The proxy range is bound to LOOPBACK, deliberately ──────────────────
+    # Published on 0.0.0.0 it put every device's UI *login page* directly on the
+    # cloud's public IP (cloud:10000+N -> device:8080 over the tun), a route that
+    # BYPASSES the operator-session gate iot-httpd enforces on the /dev/<ep>/
+    # path proxy (handler_proxy.cpp: no session -> 302 /webui/). The device's own
+    # auth was the only barrier left. The supported operator route is the path
+    # proxy (Endpoints -> Launch UI -> /dev/<ep>/), which is same-origin, gated,
+    # and needs no published port at all. Loopback keeps the DNAT usable from the
+    # cloud host itself (debugging) while taking it off the internet.
+    # The whole port+DNAT path is scheduled for deletion — see
+    # apps/docs/tdd-cloud-scale-1m-devices.md §C1/P2.
     ports:
       - "1194:1194/tcp"
-      - "${PROXY_START:-10000}-${PROXY_END:-10050}:${PROXY_START:-10000}-${PROXY_END:-10050}"
+      - "127.0.0.1:${PROXY_START:-10000}-${PROXY_END:-10050}:${PROXY_START:-10000}-${PROXY_END:-10050}"
       - "${HTTP_PORT:-80}:${HTTP_PORT:-80}"
     depends_on:
       ds-server:
