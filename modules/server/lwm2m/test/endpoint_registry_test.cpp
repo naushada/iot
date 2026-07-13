@@ -110,6 +110,64 @@ TEST(EndpointRegistryTest, DuplicateProxyPortRejected) {
     EXPECT_EQ(reg.count(), 1U);
 }
 
+// ── proxy_port 0 == "no port" and must NOT collide ──────────────────
+//
+// Once the port pool runs dry every further device carries proxy_port 0
+// (VpnRegistry::allocate). If 0 were indexed like a real port, the SECOND such
+// device would be rejected as a duplicate — and because BootstrapProvisioner
+// rolls the VPN allocation back when add() fails, it would be unable to onboard
+// at all. This is the exact 52nd-device cliff P0b removes; guard it.
+
+TEST(EndpointRegistryTest, MultiplePortlessEndpointsCoexist) {
+    EndpointRegistry reg;
+    EndpointInfo a;
+    a.ep = "ep-a"; a.tun_ip = "10.9.0.10"; a.proxy_port = 0;
+    ASSERT_TRUE(reg.add(a));
+
+    EndpointInfo b;
+    b.ep = "ep-b"; b.tun_ip = "10.9.0.11"; b.proxy_port = 0;
+    ASSERT_TRUE(reg.add(b)) << "a second portless endpoint must not collide";
+
+    EndpointInfo c;
+    c.ep = "ep-c"; c.tun_ip = "10.9.0.12"; c.proxy_port = 0;
+    ASSERT_TRUE(reg.add(c));
+
+    EXPECT_EQ(reg.count(), 3U);
+    // Each is still reachable by the dimensions that DO identify it.
+    ASSERT_NE(reg.lookup_by_ep("ep-b"), nullptr);
+    EXPECT_EQ(reg.lookup_by_ep("ep-b")->tun_ip, "10.9.0.11");
+    ASSERT_NE(reg.lookup_by_tun_ip("10.9.0.12"), nullptr);
+    EXPECT_EQ(reg.lookup_by_tun_ip("10.9.0.12")->ep, "ep-c");
+}
+
+TEST(EndpointRegistryTest, LookupByProxyPortZeroFindsNothing) {
+    EndpointRegistry reg;
+    EndpointInfo a;
+    a.ep = "ep-a"; a.tun_ip = "10.9.0.10"; a.proxy_port = 0;
+    ASSERT_TRUE(reg.add(a));
+    // 0 is a sentinel, not an address — it must never resolve to an endpoint.
+    EXPECT_EQ(reg.lookup_by_proxy_port(0), nullptr);
+}
+
+TEST(EndpointRegistryTest, PortlessAndPortedEndpointsCoexist) {
+    EndpointRegistry reg;
+    EndpointInfo ported;
+    ported.ep = "ep-ported"; ported.tun_ip = "10.9.0.10"; ported.proxy_port = 10000;
+    ASSERT_TRUE(reg.add(ported));
+
+    EndpointInfo portless;
+    portless.ep = "ep-portless"; portless.tun_ip = "10.9.0.11"; portless.proxy_port = 0;
+    ASSERT_TRUE(reg.add(portless));
+
+    // The real port still resolves; removing the portless one leaves it intact.
+    ASSERT_NE(reg.lookup_by_proxy_port(10000), nullptr);
+    EXPECT_EQ(reg.lookup_by_proxy_port(10000)->ep, "ep-ported");
+    ASSERT_TRUE(reg.remove("ep-portless"));
+    ASSERT_NE(reg.lookup_by_proxy_port(10000), nullptr)
+        << "removing a portless endpoint must not evict a real port mapping";
+    EXPECT_EQ(reg.count(), 1U);
+}
+
 // ── 6. Lookup by tunnel IP ──────────────────────────────────────────
 
 TEST(EndpointRegistryTest, LookupByTunIp) {

@@ -83,6 +83,46 @@ TEST(BootstrapProvisionerTest, FailsWhenSubnetExhausted) {
     EXPECT_TRUE(exhausted);
 }
 
+// ── 4b. An exhausted PORT pool must NOT fail provisioning ─────────
+//
+// The 52nd-device cliff (tdd-cloud-scale-1m-devices.md §C1/P0b): the proxy port
+// was allocated at PROVISION time and a dry pool returned nullopt, so device #52
+// got no tunnel IP and no BS PSK — it could not bootstrap at all, merely because
+// a legacy DNAT forward was unavailable. The port is optional; the tunnel IP is
+// not. Provisioning must succeed with proxy_port == 0, and the device is then
+// reached over the path proxy (/dev/<ep>/), which needs no port.
+
+TEST(BootstrapProvisionerTest, PortPoolExhaustionDoesNotFailProvision) {
+    EndpointRegistry ep_reg;
+    VpnRegistry vpn_reg("10.9.0.0/24", 10000, 10001);   // roomy subnet, TWO ports
+    BootstrapProvisioner provisioner(ep_reg, vpn_reg);
+
+    auto a = provisioner.provision("ep-a");
+    auto b = provisioner.provision("ep-b");
+    ASSERT_TRUE(a.has_value());
+    ASSERT_TRUE(b.has_value());
+    EXPECT_GT(a->proxy_port, 0U);
+    EXPECT_GT(b->proxy_port, 0U);
+
+    // Port pool is now dry. The next devices must STILL onboard.
+    auto c = provisioner.provision("ep-c");
+    ASSERT_TRUE(c.has_value()) << "a dry port pool must never block bootstrap";
+    EXPECT_EQ(c->proxy_port, 0U);
+    EXPECT_FALSE(c->tun_ip.empty())          << "…and must still get a tunnel IP";
+    EXPECT_GT(c->security_object_tlv.size(), 0U) << "…and its BS credentials";
+    EXPECT_GT(c->server_object_tlv.size(), 0U);
+
+    // …and so must the one after it — i.e. portless devices don't collide in the
+    // EndpointRegistry (proxy_port 0 is not indexed as a real port).
+    auto d = provisioner.provision("ep-d");
+    ASSERT_TRUE(d.has_value()) << "two portless devices must coexist";
+    EXPECT_EQ(d->proxy_port, 0U);
+    EXPECT_NE(d->tun_ip, c->tun_ip);
+
+    EXPECT_EQ(ep_reg.count(), 4U);
+    ASSERT_NE(ep_reg.lookup_by_ep("ep-d"), nullptr);
+}
+
 // ── 5. Security Object TLV contains correct fields ────────────────
 
 TEST(BootstrapProvisionerTest, SecurityObjectTlvHasRequiredFields) {

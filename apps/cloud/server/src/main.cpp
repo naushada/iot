@@ -291,7 +291,7 @@ std::string tenant_subnet_of(data_store::Client& ds, const std::string& tenant) 
 void reconcile_routing(data_store::Client& ds, const std::string& tun_dev) {
     rebuild_device_dnat(ds, tun_dev);
     rebuild_tenant_ccd(ds, ds_str(ds, "cloud.vpn.ccd.dir", ""),
-                       ds_str(ds, "cloud.vpn.subnet", "10.9.0.0/24"));
+                       ds_str(ds, "cloud.vpn.subnet", "10.9.0.0/16"));
 }
 
 // Merge lwm2m-dm's registration status into the EndpointRegistry. lwm2m-dm
@@ -602,7 +602,7 @@ std::size_t rehydrate_registry(data_store::Client& ds,
 int main(int argc, char** argv) {
     // ── CLI args ──────────────────────────────────────────────────
     std::string ds_path = "/var/run/iot/data_store.sock";
-    std::string vpn_subnet = "10.9.0.0/24";
+    std::string vpn_subnet = "10.9.0.0/16";
     int proxy_port_start = 10000;   // above CoAP 5683/5684; small window —
     int proxy_port_end   = 10050;   // each published port = one docker-proxy
     int sync_interval    = 10;  // seconds
@@ -647,9 +647,10 @@ int main(int argc, char** argv) {
            data_store::Value{static_cast<std::uint32_t>(proxy_port_end)});
 
     // Tunnel subnet is ds-driven too (cloud.vpn.subnet, schema default
-    // 10.9.0.0/24) — no env/CLI needed. ds is the single source of truth so a
+    // 10.9.0.0/16) — no env/CLI needed. ds is the single source of truth so a
     // VPN-page edit isn't clobbered on restart; seed the effective value back
-    // so it's visible/editable.
+    // so it's visible/editable. A deployment that already persisted the old
+    // /24 KEEPS it (the stored value wins) — widening is opt-in on the VPN page.
     vpn_subnet = ds_str(ds, "cloud.vpn.subnet", vpn_subnet);
     ds.set("cloud.vpn.subnet", data_store::Value{vpn_subnet});
 
@@ -764,7 +765,7 @@ int main(int argc, char** argv) {
     // exact same config an operator's UI change should produce.
     auto load_ovpn_cfg = [&ds]() {
         server::openvpn::OpenVpnServerConfig c;
-        c.subnet    = ds_str(ds, "cloud.vpn.subnet",     "10.9.0.0/24");
+        c.subnet    = ds_str(ds, "cloud.vpn.subnet",     "10.9.0.0/16");
         // Operator-facing base form ("tcp"/"udp") — build_server_config adds the
         // "-server" suffix for the TCP listen socket, and the device push uses
         // the base as-is (client). Default "tcp"; legacy "tcp-server" normalizes.

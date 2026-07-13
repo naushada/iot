@@ -186,17 +186,40 @@ reverse-connect design is later revised.
 
 ## 5. Phased plan
 
-### P0 — Stop the bleeding (small, ship first)
+### P0 — Stop the bleeding — **DONE** (2026-07-13)
 
-| # | Change | Files |
+| # | Change | Status |
 |---|---|---|
-| P0a | Bind the published proxy range to **loopback** (see §6) | `apps/cloud/docker-compose.yml:74` |
-| P0b | Make `proxy_port` allocation **non-fatal**: allocate when the pool has a free port, else `proxy_port = 0`, skip that device's DNAT rule, and let provisioning **succeed** | `vpn_registry.cpp:73,97`; `bootstrap.cpp:36` |
-| P0c | Widen `cloud.vpn.subnet` /24 → /16, and the per-tenant carve /24 → /20 | `cloud.lua:365-368`, `cloud.vpn.tenant.pool` |
+| P0a | Bind the published proxy range to **loopback** (see §6) | ✅ `docker-compose.yml` |
+| P0b | Make `proxy_port` allocation **non-fatal**: allocate when the pool has a free port, else `proxy_port = 0`, skip that device's DNAT rule, and let provisioning **succeed** | ✅ `vpn_registry.cpp`, `endpoint_registry.cpp` |
+| P0c | Widen the `cloud.vpn.subnet` **default** /24 → /16 | ✅ `cloud.lua` |
 
-P0b alone removes the 51-device onboarding cliff **today**: devices past the pool
-lose only their DNAT fallback, and the path proxy — the gated path — carries them
-anyway. P0 gets the deployment to ~65k devices honestly.
+P0b removes the 51-device onboarding cliff: devices past the pool lose only their
+DNAT fallback, and the path proxy — the gated path — carries them anyway. P0 gets
+the deployment to ~65k devices honestly (the /16 host count).
+
+**Two things found while implementing P0**, both fixed in the same change:
+
+1. **`EndpointRegistry::add()` indexed `proxy_port` unconditionally**, so it
+   would have rejected the *second* portless device as a "duplicate port" — and
+   because `BootstrapProvisioner` rolls the VPN allocation back when `add()`
+   fails, that would have reintroduced the very cliff P0b removes, one device
+   later. Port 0 is now a sentinel and is never indexed.
+2. **The IP pool was ordered lexicographically.** `m_free_ips` was a
+   `std::set<std::string>`, so `"10.9.0.10" < "10.9.0.2"` and the *first* device
+   was handed `.10`. Harmless (IPs stayed unique) but it had been failing **six
+   of `vpn_registry`'s own unit tests** since they were written — invisibly,
+   because `BUILD_SERVER_OPENVPN_TESTS` defaults `OFF`. Now ordered numerically
+   via an `IpLess` comparator; all six pass. This matters more at /16, where the
+   string order across 65k hosts is genuinely confusing to read in
+   `cloud.endpoints`.
+
+`cloud.vpn.subnet` is only a **schema default** change: `iot-cloudd` reads the
+*stored* value, so a deployment that already persisted `10.9.0.0/24` keeps it.
+Widening an existing cloud is an opt-in edit on the VPN page. The openvpn
+`server` directive is rendered *from* this key (`openvpn_server.cpp`
+`cidr_to_net_mask`), so it widens in lockstep — there is no second place to
+change, and no risk of the allocator handing out an IP the VPN can't route.
 
 ### P1 — Kill the `cloud.endpoints` blob (C4)
 
