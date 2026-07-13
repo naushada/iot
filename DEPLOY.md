@@ -239,7 +239,21 @@ cd yocto
 ```
 
 It picks `MACHINE=raspberrypi3-64` by default; override with `MACHINE=…` or
-point at any image with `IMAGE=/path/to.wic.bz2`.
+point at any image with `IMAGE=/path/to.wic.bz2` — needed whenever the image
+isn't under `yocto/build/…` (e.g. one you downloaded or copied elsewhere):
+
+```sh
+IMAGE=~/tmp/iot-image-raspberrypi3-64.rootfs-20260712171914.wic.bz2 ./flash-sd.sh
+```
+
+**Seed WiFi at flash time.** The RPi 3B is WiFi-only in most setups, and a
+fresh image ships with no credentials — so it boots, finds no network, and
+you reflash. Avoid the round trip by writing them onto the boot partition in
+the same pass (both flags required together):
+
+```sh
+./flash-sd.sh --wifi-ssid '<SSID>' --wifi-psk '<WPA-PSK>'
+```
 
 **Manual.** Find the SD device first — `lsblk` on Linux (`/dev/sdX`),
 `diskutil list` on macOS (`/dev/diskN`; unmount with `diskutil unmountDisk`
@@ -247,6 +261,8 @@ first). Write the **whole disk**, not a partition. Decompress on the fly and
 write with `dd`:
 
 ```sh
+# The .rootfs.wic.bz2 symlink only exists in the yocto build dir. If you copied
+# the image somewhere else, point IMG at the actual TIMESTAMPED file.
 IMG=yocto/build/raspberrypi3-64/images/raspberrypi3-64/iot-image-raspberrypi3-64.rootfs.wic.bz2
 
 bzcat $IMG | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
@@ -274,6 +290,19 @@ bzcat $IMG | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
 > support, so `wic.bmap` is omitted from `IMAGE_FSTYPES`. If you build on a
 > Linux host and want `bmaptool copy`'s faster verified writes, add
 > `"wic.bmap"` back to `IMAGE_FSTYPES` in `meta-iot/recipes-iot/images/iot-image.bb`.
+
+#### Flash troubleshooting
+
+Both of these come from copy-pasting the `dd` one-liner without the lines
+around it. `flash-sd.sh` avoids both — it resolves the image and unmounts the
+card for you.
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `bzcat: I won't read compressed data from a terminal.` | **`$IMG` is empty** — so `bzcat` got no filename and fell back to reading stdin. The variable isn't set in *this* shell (new tab, or you `cd`'d somewhere the relative path doesn't resolve). | `echo "$IMG"` to confirm it's blank, then set it to the image's **full path**. Remember the `.rootfs.wic.bz2` symlink exists only under `yocto/build/…`. |
+| `dd: /dev/rdiskN: Permission denied` — *even under `sudo`* | **The card is still mounted.** macOS refuses raw writes to a disk with mounted volumes, root or not. `sudo` is not the problem. | `diskutil unmountDisk /dev/diskN` — **not** `eject`, which removes the device node too. If it persists, grant your terminal Full Disk Access (System Settings → Privacy & Security). |
+| `dd: /dev/sdX: Permission denied` (Linux) | Not root, or the card is mounted. | `sudo umount /dev/sdX*` then re-run with `sudo`. |
+| Image writes, but the Pi never joins WiFi | Fresh image, no credentials. | Reflash with `--wifi-ssid` / `--wifi-psk` (above), or set `wifi.networks` over the serial console / device-UI. |
 
 ### 3. Boot + ssh in
 
