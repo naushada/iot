@@ -22,6 +22,7 @@ import { WifiScanComponent } from './wan/wifi-scan/wifi-scan.component';
 import { IfacePriorityComponent } from './wan/iface-priority/iface-priority.component';
 import { CellularStatusComponent } from './wan/cellular-status/cellular-status.component';
 import { CellularConfigComponent } from './wan/cellular-config/cellular-config.component';
+import { SensorsSubmenuComponent } from './sensors/sensors-submenu/sensors-submenu.component';
 import { SensorsStatusComponent } from './sensors/sensors-status/sensors-status.component';
 import { GpsStatusComponent } from './sensors/gps-status/gps-status.component';
 import { VehicleStatusComponent } from './vehicle/vehicle-status.component';
@@ -46,6 +47,7 @@ import { SoftwareUpdateComponent } from './software-update/software-update.compo
 import { HttpConfigComponent } from './http-config/http-config.component';
 import { ContainersComponent } from './containers/containers.component';
 import { ShellComponent } from './shell/shell.component';
+import { AdvancedSubmenuComponent } from './advanced/advanced-submenu/advanced-submenu.component';
 import { AdvancedComponent } from './advanced/advanced.component';
 
 import { SsoAuthInterceptor } from '../common/sso-auth.interceptor';
@@ -62,7 +64,8 @@ import { DsDebugDirective } from '../common/ds-debug.directive';
     StatusBadgeComponent,
     VpnSubmenuComponent, VpnConfigComponent, VpnStatusComponent,
     WanSubmenuComponent, WifiConfigComponent, WifiScanComponent, IfacePriorityComponent,
-    CellularStatusComponent, CellularConfigComponent, SensorsStatusComponent, GpsStatusComponent,
+    CellularStatusComponent, CellularConfigComponent,
+    SensorsSubmenuComponent, SensorsStatusComponent, GpsStatusComponent,
     VehicleStatusComponent, MqttConfigComponent, DdnsConfigComponent,
     RoutingSubmenuComponent, PortForwardComponent, CustomRulesComponent,
     RouteTableComponent,
@@ -72,7 +75,7 @@ import { DsDebugDirective } from '../common/ds-debug.directive';
     UsersComponent, SoftwareUpdateComponent, HttpConfigComponent,
     ContainersComponent,
     ShellComponent,
-    AdvancedComponent,
+    AdvancedSubmenuComponent, AdvancedComponent,
     DsHintComponent, DsDebugDirective,
   ],
   imports: [

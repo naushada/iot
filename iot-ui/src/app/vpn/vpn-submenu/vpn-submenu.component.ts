@@ -16,20 +16,7 @@ import { Component, Output, EventEmitter } from '@angular/core';
       </a>
     </div>
   `,
-  styles: [`
-    .subnav-bar {
-      display: flex; gap: 0; background: #fff;
-      border-bottom: 2px solid #e0e0e0; padding: 0 24px;
-    }
-    .subnav-tab {
-      display: flex; align-items: center; gap: 6px;
-      padding: 12px 20px; cursor: pointer; font-size: 13px;
-      color: #666; border-bottom: 2px solid transparent;
-      margin-bottom: -2px; transition: all 0.15s;
-    }
-    .subnav-tab:hover { color: #333; background: #f5f5f5; }
-    .subnav-tab.active { color: #2e7d32; border-bottom-color: #2e7d32; font-weight: 500; }
-  `]
+  // styles provided by global .subnav-bar / .subnav-tab in styles.scss
 })
 export class VpnSubmenuComponent {
   active = 'config';

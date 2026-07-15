@@ -16,47 +16,40 @@ import { StatusSnapshot, fmtDuration } from '../../common/app-globals';
 })
 export class MainComponent {
   selectedMenu = 'dashboard';
-  selectedSubNav = '';      // submenu item label
-  selectedSubItem = '';     // event from submenu
+  selectedSubNav = '';      // active in-page tab within the section ('' = first)
   today = new Date().toLocaleDateString('en-US', {
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
   });
 
   status: StatusSnapshot | null = null;
 
-  // Sidebar nav items with collapsible children
+  // Flat sidebar nav items. Sections with sub-pages (VPN, WAN, Sensors,
+  // Routing, LwM2M, Services, Advanced) render an in-page tab bar
+  // (app-*-submenu) at the top of their content — same pattern as cloud-ui.
   // Canonical sidebar order (the reset target). The displayed `menus` is
   // reordered by the per-browser saved order in ngOnInit and on drag.
   private readonly DEFAULT_MENUS = [
-    { id: 'dashboard', label: 'Dashboard', svg: 'assets/icons/dashboard.svg', children: [] as {id:string,label:string}[] },
-    { id: 'vpn',       label: 'VPN',       svg: 'assets/icons/vpn.svg',
-      children: [{id:'config',label:'Configuration'},{id:'status',label:'Status'}] },
-    { id: 'http',      label: 'HTTP',      svg: 'assets/icons/http.svg', children: [] as {id:string,label:string}[] },
-    { id: 'wan',       label: 'WAN',       svg: 'assets/icons/wan.svg',
-      children: [{id:'wifi',label:'WiFi Config'},{id:'scan',label:'Scan Results'},{id:'priority',label:'Priority'},{id:'cellular',label:'Cellular Config'},{id:'cellstatus',label:'Cellular Status'}] },
-    { id: 'sensors',   label: 'Sensors',   svg: 'assets/icons/sensor.svg',
-      children: [{id:'env',label:'Sensors'},{id:'gps',label:'Location (GPS)'}] },
-    { id: 'vehicle',   label: 'Vehicle',   svg: 'assets/icons/vehicle.svg', children: [] as {id:string,label:string}[] },
-    { id: 'mqtt',      label: 'MQTT',      svg: 'assets/icons/mqtt.svg', children: [] as {id:string,label:string}[] },
-    { id: 'ddns',      label: 'DDNS',      svg: 'assets/icons/ddns.svg', children: [] as {id:string,label:string}[] },
-    { id: 'routing',   label: 'Routing',   svg: 'assets/icons/routing.svg',
-      children: [{id:'routes',label:'Routes'},{id:'ports',label:'Port Forward'},{id:'dnat',label:'DNAT Target'},{id:'rules',label:'Firewall Rules'}] },
-    { id: 'lwm2m',     label: 'LwM2M',     svg: 'assets/icons/lwm2m.svg',
-      children: [{id:'server',label:'Server'},{id:'security',label:'Security'}] },
-    { id: 'services',  label: 'Services',  svg: 'assets/icons/services.svg',
-      children: [{id:'list',label:'All Services'}] },
-    { id: 'logs',      label: 'Logs',      svg: 'assets/icons/logs.svg', children: [] as {id:string,label:string}[] },
-    { id: 'users',     label: 'Users',     svg: 'assets/icons/users.svg', children: [] as {id:string,label:string}[] },
-    { id: 'software',  label: 'Software',  svg: 'assets/icons/software.svg', children: [] as {id:string,label:string}[] },
-    { id: 'containers',label: 'Containers',svg: 'assets/icons/containers.svg', children: [] as {id:string,label:string}[] },
-    { id: 'shell',     label: 'Terminal',  svg: 'assets/icons/terminal.svg', children: [] as {id:string,label:string}[] },
-    { id: 'advanced',  label: 'Advanced',  svg: 'assets/icons/advanced.svg',
-      children: [{id:'reboot',label:'Reboot'},{id:'factory',label:'Factory Reset'},{id:'transfer',label:'Transfer'}] },
+    { id: 'dashboard', label: 'Dashboard', svg: 'assets/icons/dashboard.svg' },
+    { id: 'vpn',       label: 'VPN',       svg: 'assets/icons/vpn.svg' },
+    { id: 'http',      label: 'HTTP',      svg: 'assets/icons/http.svg' },
+    { id: 'wan',       label: 'WAN',       svg: 'assets/icons/wan.svg' },
+    { id: 'sensors',   label: 'Sensors',   svg: 'assets/icons/sensor.svg' },
+    { id: 'vehicle',   label: 'Vehicle',   svg: 'assets/icons/vehicle.svg' },
+    { id: 'mqtt',      label: 'MQTT',      svg: 'assets/icons/mqtt.svg' },
+    { id: 'ddns',      label: 'DDNS',      svg: 'assets/icons/ddns.svg' },
+    { id: 'routing',   label: 'Routing',   svg: 'assets/icons/routing.svg' },
+    { id: 'lwm2m',     label: 'LwM2M',     svg: 'assets/icons/lwm2m.svg' },
+    { id: 'services',  label: 'Services',  svg: 'assets/icons/services.svg' },
+    { id: 'logs',      label: 'Logs',      svg: 'assets/icons/logs.svg' },
+    { id: 'users',     label: 'Users',     svg: 'assets/icons/users.svg' },
+    { id: 'software',  label: 'Software',  svg: 'assets/icons/software.svg' },
+    { id: 'containers',label: 'Containers',svg: 'assets/icons/containers.svg' },
+    { id: 'shell',     label: 'Terminal',  svg: 'assets/icons/terminal.svg' },
+    { id: 'advanced',  label: 'Advanced',  svg: 'assets/icons/advanced.svg' },
   ];
   menus = [...this.DEFAULT_MENUS];
   dragId = '';   // id of the menu being dragged ('' = none)
 
-  expandedMenu: string | null = null;  // which menu is expanded in sidebar
   version = '';                         // running release (iot.version)
   shellEnabled = false;                 // http.shell.enabled (gates Terminal)
 
@@ -106,23 +99,6 @@ export class MainComponent {
     this.ds.observe('http.shell.enabled').subscribe((v) => {
       this.shellEnabled = v === true || v === 'true';
     });
-  }
-
-  toggleMenu(menuId: string): void {
-    if (this.expandedMenu === menuId) {
-      this.expandedMenu = null;
-    } else {
-      this.expandedMenu = menuId;
-    }
-    this.selectedMenu = menuId;
-    this.selectedSubNav = '';
-    this.pubsub.publish('menu', menuId);
-  }
-
-  onChildSelect(menuId: string, childId: string): void {
-    this.selectedMenu = menuId;
-    this.selectedSubNav = childId;
-    this.pubsub.publish('subnav', { menu: menuId, item: childId });
   }
 
   onMenuSelect(menuId: string): void {
