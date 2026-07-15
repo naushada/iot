@@ -250,3 +250,204 @@ separate, reversible PR after the proxy is proven.
    follow-up PR once verified.
 5. **URL form = `/dev/<urlencoded-endpoint>/`** ✅ (recommended/accepted) —
    human-readable, no new id to allocate; resolved against `cloud.endpoints`.
+
+---
+
+## Appendix A — Primer: how the cloud reaches the device's `:8080` over the VPN tunnel
+
+*This appendix is a from-scratch explanation for someone new to the codebase.
+It re-tells §1–§4 at a slower pace, one layer at a time. Nothing here is new
+behaviour — it's the same flow the code above implements, spelled out.*
+
+### A.1 The problem in one sentence
+
+The device's web server runs on **port 8080**, but the device sits **behind a
+home router (NAT)** — it has a private address like `192.168.1.7` and **no
+public IP**, so the cloud **cannot dial it directly** from the internet. The VPN
+tunnel exists to solve exactly this: it gives the cloud a private, always-open
+"back door" to each device.
+
+### A.2 First, clear up "localhost:8080"
+
+It's natural to say *"the device UI runs on localhost:8080."* That's true from
+the **device's own point of view**, but it's not the whole story, and the
+difference is the crux of this whole design.
+
+The device httpd binds to **`0.0.0.0:8080`** (config key `http.listen.ip`,
+default `0.0.0.0`), which means *"accept connections arriving on **any** network
+interface,"* not just the loopback one. So the same server is reachable at:
+
+| Address | Who can use it |
+|---------|----------------|
+| `127.0.0.1:8080` | only a process **on the device itself** (true "localhost") |
+| `192.168.1.7:8080` | anyone on the **home LAN** |
+| `10.9.0.7:8080` | anyone on the **VPN** — *this is the cloud's door in* |
+
+That last address — `10.9.0.7` — only exists **because of the tunnel**. It's a
+*virtual* address the VPN hands the device. The cloud connects to **that**, and
+because the httpd listens on `0.0.0.0`, the connection is accepted just like a
+LAN one. If the httpd bound to `127.0.0.1` only, this would all be impossible —
+the tunnel would deliver the packet and the kernel would refuse it.
+
+### A.3 The tunnel is a pipe between two virtual addresses
+
+Think of the VPN (OpenVPN) as a **physical pipe** welded between the cloud and
+the device. Each end of the pipe is a **virtual network card** called `tun0`:
+
+- the **cloud** end of the pipe is `tun0 = 10.9.0.1` (fixed — the concentrator),
+- **each device** gets its own end, e.g. `tun0 = 10.9.0.7` (the `dev_tun_ip`).
+
+```
+        CLOUD  (public IP, e.g. 65.20.74.23)                  DEVICE (behind home NAT — no public IP)
+  ┌──────────────────────────────────────────┐          ┌──────────────────────────────────────────┐
+  │  iot-httpd  (the reverse proxy)           │          │  device httpd  →  listening 0.0.0.0:8080  │
+  │      │ connect() to 10.9.0.7:8080         │          │        ▲  kernel delivers to :8080         │
+  │      ▼                                    │          │        │                                   │
+  │   tun0 = 10.9.0.1  ╞══════ THE VPN TUNNEL (one welded pipe) ══════╡  tun0 = 10.9.0.7              │
+  │      │  OpenVPN encrypts everything        │  the encrypted pipe   │        ▲  OpenVPN decrypts     │
+  │      ▼                                    │  rides the real        │        │                       │
+  │   eth0 (public)  ─────────────────────────┼── internet, port 1194 ─┼──► router/NAT ──► eth0/wlan0 ─┘
+  └──────────────────────────────────────────┘                        └──────────────────────────────┘
+```
+
+Two important consequences of the "pipe" picture:
+
+1. **To the cloud's software, `10.9.0.7` looks like a normal, routable host.**
+   The proxy just opens an ordinary TCP socket to `10.9.0.7:8080`. It does **not**
+   know or care that a VPN is involved — the operating system's routing table
+   sends anything for `10.9.0.0/16` into `tun0`, and OpenVPN takes it from there.
+2. **The device made the pipe, not the cloud.** Because the device is behind
+   NAT, *it* dials **out** to the cloud's OpenVPN server (`<cloud-public>:1194`)
+   and holds that connection open. Once open, the pipe carries traffic **both
+   ways** — so the cloud can now originate connections *toward* the device even
+   though it could never have dialed in cold.
+
+### A.4 What actually travels inside the pipe (the minute detail)
+
+When the proxy calls `connect()` to `10.9.0.7:8080`, the kernel produces an
+ordinary TCP/IP packet. OpenVPN, sitting on `tun0`, grabs that packet,
+**encrypts it, and wraps it inside a second packet** addressed to the device's
+*real* public IP on port 1194. That outer packet is what crosses the internet.
+This wrap-a-packet-inside-another-packet is called **encapsulation**:
+
+```
+  (1) The proxy's packet, as the cloud kernel builds it:
+          inner IP/TCP   src 10.9.0.1   →   dst 10.9.0.7 : 8080     ("please talk to the device UI")
+
+  (2) OpenVPN grabs it at tun0 and encapsulates + encrypts:
+      ┌───────────────────────────────────────────────────────────────────────┐
+      │ OUTER  IP/UDP   src <cloud-public>   →   dst <device-public> : 1194     │  ← this is what the
+      │   ┌───────────────────────────────────────────────────────────────┐   │    internet actually
+      │   │  🔒 encrypted blob  =                                          │   │    carries; routers
+      │   │       the entire inner packet:  TCP 10.9.0.1 → 10.9.0.7:8080   │   │    only see the outer
+      │   └───────────────────────────────────────────────────────────────┘   │    envelope
+      └───────────────────────────────────────────────────────────────────────┘
+
+  (3) It reaches the device's router, which NATs it in to the device; the device's
+      OpenVPN decrypts the blob, recovers the inner packet, and pushes it out its
+      own tun0. The device kernel sees "a packet for 10.9.0.7:8080" and delivers
+      it to the httpd. The reply retraces the pipe in reverse.
+```
+
+Nobody in the middle (the ISP, the coffee-shop Wi-Fi, the backbone routers) can
+read the inner packet — they only see an encrypted UDP/TCP stream between two
+public IPs on port 1194. That's the "private" in VPN.
+
+> **Outer transport = OpenVPN on port 1194.** Today the outer envelope is TCP;
+> switching it to UDP is a parked improvement (see the VPN-UDP-transport note).
+> It doesn't change anything in this document — the *inner* connection to
+> `:8080` is always TCP either way.
+
+### A.5 The TCP connection, step by step
+
+"The cloud initiates a TCP connection through the tunnel" means a normal TCP
+**3-way handshake** happens between the cloud proxy and the device httpd — every
+packet of it just rides the encrypted pipe from §A.4. Reading left-to-right is
+the cloud→device direction:
+
+```
+  cloud proxy            cloud tun0 (OpenVPN)          device OpenVPN (tun0)        device httpd :8080
+      │  connect()             │                             │                            │
+      │ ─ SYN →10.9.0.7:8080 ─►│ encrypt, send over 1194 ═══════════════════►  decrypt ─► │ SYN  (in listen backlog)
+      │                        │                             │                            │
+      │ ◄──────── SYN-ACK ─────┤◄══════════ encrypt back ════════════════════════ emit ◄─ │ SYN-ACK
+      │ ─ ACK ────────────────►│ ═══════════════════════════════════════════════════════►│ ESTABLISHED ✓
+      │                        │                             │                            │
+      │ ─ "GET /api/v1/... " ─►│ (HTTP request bytes, same encrypted pipe) ═════════════► │ handler runs
+      │ ◄─────── "200 OK\r\n\r\n{...}" ◄══════════════════════════════════════════════════│ response
+      │  close()               │                             │                            │
+```
+
+In code this is the whole of `upstream_exchange()` in
+`modules/http-server/src/handler_proxy.cpp`:
+
+```cpp
+ACE_INET_Addr addr(port, ip.c_str());   // ip = "10.9.0.7", port = 8080
+ACE_SOCK_Connector conn;
+ACE_SOCK_Stream    stream;
+ACE_Time_Value ct(5, 0);                 // give up if the SYN-ACK doesn't come back in 5s
+if (conn.connect(stream, addr, &ct) != 0) return false;   // ← the handshake above
+stream.send_n(request.data(), request.size());            // ← send the "GET ..." bytes
+// ... recv() in a loop until the device closes the connection (75s cap) ...
+```
+
+`ACE_SOCK_Connector::connect()` **is** the three arrows at the top; `send_n()`
+and `recv()` are the request/response bytes. There is no special "VPN API" in the
+code — it's a plain socket, and the routing table + OpenVPN quietly do the
+tunnelling underneath. That's the elegance: **the proxy writes ordinary TCP; the
+tunnel makes an unreachable device reachable.**
+
+### A.6 Where the cloud gets `10.9.0.7` from
+
+The proxy is handed a URL like `/dev/urn%3Adev%3Agateway-42/api/v1/status`, not
+an IP. It turns the endpoint name into the tunnel IP by reading the
+`cloud.endpoints` list in the data store (`resolve_dev_tun_ip()`):
+
+```
+  /dev/<ep>/...   ──url-decode──►  ep = "urn:dev:gateway-42"
+                                       │  look up in cloud.endpoints JSON
+                                       ▼
+                    { "endpoint": "urn:dev:gateway-42", "dev_tun_ip": "10.9.0.7", ... }
+                                       │
+                                       ▼
+                          connect to 10.9.0.7 : cloud.proxy.device.ui.port (8080)
+```
+
+`dev_tun_ip` is written by `iot-cloudd` when the device's tunnel comes up, and
+cleared when it drops. So:
+
+- **no such endpoint** → nothing to connect to → **404**;
+- **endpoint exists but `dev_tun_ip` is empty** (tunnel down) → **502
+  "device tunnel is down"**;
+- **tunnel up but httpd not answering** → connect/`recv` fails → **504**.
+
+This lookup is also the security boundary (**SSRF-safe**): the cloud will only
+ever `connect()` to an IP that it itself put in `cloud.endpoints`, on the one
+fixed port `8080` — a malicious URL can never steer the proxy at an arbitrary
+host or port.
+
+### A.7 One more layer on top: the HTTP reverse proxy
+
+§A.5 gets a raw TCP connection to the device's httpd. The remaining job — turning
+the operator's browser request under `https://<cloud>/dev/<ep>/…` into the right
+request to the device and fixing up the reply — is the **three rewrites** in §3
+(path strip, `<base href>` inject, `Set-Cookie` Path). Those are pure HTTP text
+edits layered *on top of* the tunnelled socket; they're covered above and in the
+handler. The tunnel (this appendix) is the plumbing; the rewrites are what make a
+single SPA work under a per-device URL prefix.
+
+### A.8 The ports, all in one place
+
+| Port | Where | Role |
+|------|-------|------|
+| `443` (or `80`) | cloud, public | The single origin the operator's browser talks to (`/webui/`, `/dev/<ep>/…`). |
+| `1194` | cloud, public | OpenVPN — the **mouth of the pipe**; devices dial in here and hold it open. |
+| `10.9.0.1` | cloud, inside tunnel | Cloud's `tun0` — the cloud end of every device's pipe. |
+| `10.9.0.x` | device, inside tunnel | The device's `tun0` (`dev_tun_ip`) — what the proxy `connect()`s to. |
+| `8080` | device | The device httpd (`http.listen.port`, bound `0.0.0.0`) — the actual UI server. |
+
+**In one line:** the operator hits `https://<cloud>/dev/<ep>/`; `iot-httpd` looks
+up the device's `10.9.0.x`, opens a plain TCP socket to `:8080` that OpenVPN
+silently encrypts and tunnels to the NATed device, relays the HTTP with three
+small rewrites, and streams the reply back — all over the one public origin, no
+per-device port, no inbound hole in the device's router.
