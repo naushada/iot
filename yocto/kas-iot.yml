@@ -70,16 +70,15 @@ repos:
 # Build configuration
 local_conf_header:
   iot-base: |
+    # Build the custom iot-distro (meta-iot/conf/distro/iot-distro.conf) rather
+    # than the poky reference distro. iot-distro owns distro policy, so
+    # INIT_MANAGER=systemd and PACKAGE_CLASSES=package_ipk now live in that file
+    # (removed from here to keep a single source of truth).
+    DISTRO = "iot-distro"
+
     # Accept the CLOSED license for iot recipes, plus the rpidistro
     # Wi-Fi/Bluetooth firmware (synaptics-killswitch).
     LICENSE_FLAGS_ACCEPTED += "CLOSED synaptics-killswitch"
-
-    # Systemd as init manager (required for DynamicUser=, RuntimeDirectory=)
-    INIT_MANAGER = "systemd"
-
-    # .ipk packages → on-target opkg + a flat ipk feed under tmp/deploy/ipk
-    # so iot-*.ipk can be installed over ssh.
-    PACKAGE_CLASSES = "package_ipk"
 
     # Empty root password for first-boot ssh. REMOVE for production.
     EXTRA_IMAGE_FEATURES ?= "debug-tweaks"
