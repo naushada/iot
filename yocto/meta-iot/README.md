@@ -371,9 +371,12 @@ Distro-*identity* policy lives in that conf file. Build-host and per-build knobs
 (thread counts, `rm_work`, sstate mirrors, `MACHINE`, `IOT_AB`) stay in
 `entrypoint.sh` — they are not part of the distribution.
 
-`DISTRO_FEATURES` is currently identical to poky's; a deliberate trim (dropping
-`x11 wayland opengl 3g nfc pcmcia` — the stack is headless) is staged as a
-commented line in the conf and applied only after a verified boot.
+`DISTRO_FEATURES` trims six capabilities nothing in the stack uses: the display
+features `x11 wayland opengl` (the device is headless) and the legacy
+`3g nfc pcmcia` (our cellular path is the custom WP7702 AT/QMI client, not
+ofono's `3g`). `wifi`, `bluetooth`, `systemd`, `usbhost`, `ipv4`/`ipv6`, and
+`seccomp` are kept — the RPi3B bring-up depends on them. Pending an HW boot to
+confirm; bisect by commenting features back if the board comes up degraded.
 
 ## Layer dependencies
 
