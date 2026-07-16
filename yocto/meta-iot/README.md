@@ -357,9 +357,28 @@ systemctl enable --now iot-ds.service iot-lwm2m-client.service
 ds-cli --socket=/run/iot/data_store.sock get iot.endpoint
 ```
 
+## Distribution
+
+The image is built against a **custom distro, `iot-distro`**, not poky's stock
+reference distro. Its policy lives in one file — `conf/distro/iot-distro.conf` —
+which `require`s `conf/distro/poky.conf` as a baseline and then overrides the
+distro identity plus the two policy vars the stack needs: `INIT_MANAGER =
+"systemd"` (for `DynamicUser=`/`RuntimeDirectory=`/`StateDirectory=`) and
+`PACKAGE_CLASSES = "package_ipk"` (for the on-target opkg feed). Builds select it
+with `DISTRO = "iot-distro"` (set by both `entrypoint.sh` and `kas-iot.yml`).
+
+Distro-*identity* policy lives in that conf file. Build-host and per-build knobs
+(thread counts, `rm_work`, sstate mirrors, `MACHINE`, `IOT_AB`) stay in
+`entrypoint.sh` — they are not part of the distribution.
+
+`DISTRO_FEATURES` is currently identical to poky's; a deliberate trim (dropping
+`x11 wayland opengl 3g nfc pcmcia` — the stack is headless) is staged as a
+commented line in the conf and applied only after a verified boot.
+
 ## Layer dependencies
 
-- `poky` (scarthgap) — core layer
+- `poky` (scarthgap) — core layer (`meta`/`meta-poky`); the build uses its
+  recipes but ships the custom `iot-distro` above rather than the poky distro
 - `meta-openembedded` (scarthgap) — `meta-oe` (lua, nlohmann-json, gtest),
   `meta-python`, `meta-networking` (openvpn)
 - `meta-raspberrypi` (scarthgap) — `raspberrypi3-64` MACHINE, bootfiles,

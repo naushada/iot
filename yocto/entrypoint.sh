@@ -66,18 +66,17 @@ cat >> conf/local.conf <<'YOCONF'
 
 # ── iot stack configuration ────────────────────────────────────────
 
+# Build the custom iot-distro (meta-iot/conf/distro/iot-distro.conf) instead of
+# the poky reference distro. iot-distro owns distro policy — INIT_MANAGER=systemd
+# and PACKAGE_CLASSES=package_ipk now live THERE, not here — so those two lines
+# were removed from this block. Everything below stays: it's build-host/per-build
+# config, not distro identity.
+DISTRO = "iot-distro"
+
 # Accept CLOSED license for iot recipes, plus the Raspberry Pi distro
 # Wi-Fi/Bluetooth firmware licenses (synaptics-killswitch gates the
 # rpidistro brcm firmware).
 LICENSE_FLAGS_ACCEPTED += "CLOSED synaptics-killswitch"
-
-# systemd as init manager (required for DynamicUser=, RuntimeDirectory=)
-INIT_MANAGER = "systemd"
-
-# .ipk packages → on-target opkg + a flat ipk feed under tmp/deploy/ipk,
-# so iot-*.ipk can be scp'd and `opkg install`ed over ssh. (Poky defaults
-# to rpm; without this the ipk feed the scripts reference is never built.)
-PACKAGE_CLASSES = "package_ipk"
 
 # Disable mongo PACKAGECONFIG for faster builds (RegistryMirror).
 # Remove to enable the MongoDB registration mirror feature.
