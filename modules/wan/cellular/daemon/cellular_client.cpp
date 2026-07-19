@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <vector>
 
+#include <sys/wait.h>
+
 #include <ace/Log_Msg.h>
 #include <ace/Reactor.h>
 #include <ace/Time_Value.h>
@@ -65,6 +67,12 @@ void CellularClient::load_config_from_ds() {
     got.clear();
     if (m_ds.get({std::string("sms.enable")}, got).ok && !got.empty() && got[0].has_value)
         if (auto b = data_store::to_bool(got[0].value)) m_cfg.sms_enable = *b;
+
+    str("cell.qmi.dev",   m_cfg.qmi_dev);
+    str("cell.wan.iface", m_cfg.wan_iface);
+    got.clear();
+    if (m_ds.get({std::string("cell.data.enable")}, got).ok && !got.empty() && got[0].has_value)
+        if (auto b = data_store::to_bool(got[0].value)) m_cfg.data_enable = *b;
 }
 
 int CellularClient::run() {
@@ -271,6 +279,7 @@ int CellularClient::handle_timeout(const ACE_Time_Value&, const void* act) {
     }
     poll_modem();
     publish();
+    supervise_data_call();   // no-op unless cell.data.enable
     return 0;
 }
 
@@ -734,6 +743,179 @@ void CellularClient::publish() {
     if (!persistent_batch.empty() && !m_ds.set(persistent_batch).ok) {
         ACE_ERROR((LM_ERROR, ACE_TEXT("%D [cell] ds set(sms.*) failed\n")));
     }
+}
+
+std::string CellularClient::run_shell(const std::vector<std::string>& argv, int* rc) {
+    // popen a shell-quoted argv with stderr merged (qmicli writes its "error:"
+    // lines to stderr, and the parsers key off them). This BLOCKS the reactor for
+    // the subprocess duration — fine for the sub-second status queries; the one
+    // slow call is --wds-start-network (a few seconds on 2G), acceptable at the
+    // 30s poll cadence. Mirrors net_router::shell::default_runner.
+    if (argv.empty()) { if (rc) *rc = 127; return {}; }
+    std::string cmdline;
+    for (std::size_t i = 0; i < argv.size(); ++i) {
+        if (i) cmdline += ' ';
+        cmdline.push_back('\'');
+        for (char c : argv[i]) { if (c == '\'') cmdline += "'\\''"; else cmdline.push_back(c); }
+        cmdline.push_back('\'');
+    }
+    cmdline += " 2>&1";
+    std::FILE* fp = ::popen(cmdline.c_str(), "r");
+    if (!fp) { if (rc) *rc = 127; return {}; }
+    std::string out;
+    char buf[4096];
+    std::size_t n = 0;
+    while ((n = std::fread(buf, 1, sizeof buf, fp)) > 0) out.append(buf, n);
+    int status = ::pclose(fp);
+    if (rc) *rc = WIFEXITED(status) ? WEXITSTATUS(status) : 127;
+    return out;
+}
+
+void CellularClient::supervise_data_call() {
+    if (!m_cfg.data_enable) return;   // ECM / status-only mode — nothing to do
+    if (!m_at) return;                // modem absent; the probe timer re-attaches
+
+    // The bearer needs the network. Gate on the combined registration the poll
+    // already computed (Home/Roaming). Not registered → tear our view down and
+    // wait; a re-registration on the next tick re-drives the bring-up.
+    if (m_lastReg != Reg::Home && m_lastReg != Reg::Roaming) {
+        if (m_data_up) { m_data_up = false; m_data_ip.clear(); }
+        publish_data("waiting-reg");
+        return;
+    }
+
+    // Already up? Confirm BOTH the QMI session ("connected") and that wwan0 still
+    // carries the IP we assigned — a modem re-enumeration silently drops the WDS
+    // session and wipes the netdev address, so neither alone is sufficient.
+    const std::string status = run_shell(
+        {"qmicli", "-d", m_cfg.qmi_dev, "-p", "--wds-get-packet-service-status"});
+    const std::string addr = run_shell(
+        {"ip", "-o", "-4", "addr", "show", "dev", m_cfg.wan_iface});
+    const bool has_ip = !m_data_ip.empty() && addr.find(m_data_ip) != std::string::npos;
+    if (parse_connected(status) && has_ip) {
+        m_data_up = true;
+        m_data_fail = 0;
+        publish_data("up");
+        return;
+    }
+
+    // Down (or just re-enumerated). The PS (packet-switched) domain must be
+    // attached before --wds-start-network, and on the WP7702 the AT and QMI views
+    // of PS desync — AT+CGATT=1 re-syncs it. Check the QMI (authoritative) view;
+    // if detached, nudge over AT (async, idempotent) and retry next tick.
+    const std::string ss = run_shell(
+        {"qmicli", "-d", m_cfg.qmi_dev, "-p", "--nas-get-serving-system"});
+    if (!parse_ps_attached(ss)) {
+        cmd("AT+CGATT=1");
+        m_data_up = false;
+        publish_data("attaching");
+        return;
+    }
+
+    if (bring_up_data_call()) {
+        m_data_up = true;
+        m_data_fail = 0;
+    } else {
+        m_data_up = false;
+        ++m_data_fail;
+    }
+}
+
+bool CellularClient::bring_up_data_call() {
+    const std::string& dev = m_cfg.wan_iface;
+    publish_data("starting");
+
+    // raw-ip must be set with the link DOWN — the qmi_wwan default is 802.3, which
+    // silently drops the modem's raw-ip downlink. See §4.4.
+    run_shell({"ip", "link", "set", dev, "down"});
+    run_shell({"sh", "-c", "echo Y > /sys/class/net/" + dev + "/qmi/raw_ip"});
+    run_shell({"ip", "link", "set", dev, "up"});
+
+    // The APN comes from the selected PROFILE/context, not the SIM slot. When the
+    // operator set cell.apn, use it explicitly; otherwise start the modem's own
+    // context cell.apn.cid (AT+CGDCONT=<cid>), whose stored APN the modem carries
+    // in NV — e.g. a Sierra WP defaults context 1 to "iot.swir". This matches how
+    // the AT side provisions the same cid. See §3 (two APN stores) / §4.4.
+    const std::string net_arg =
+        m_cfg.apn.empty()
+            ? "--wds-start-network=profile=" + std::to_string(m_cfg.apn_cid)
+            : "--wds-start-network=apn=" + m_cfg.apn + ",ip-type=4";
+    int rc = 0;
+    const std::string out = run_shell(
+        {"qmicli", "-d", m_cfg.qmi_dev, "-p", net_arg,
+         "--client-no-release-cid"}, &rc);
+    const StartResult sr = parse_start_network(out);
+    if (sr.status == StartResult::Status::CidTimeout) {
+        // Leaked WDS CIDs across re-enumerations wedge the qmi-proxy — restart it
+        // so the next tick allocates a fresh CID.
+        run_shell({"killall", "qmi-proxy"});
+        ACE_ERROR((LM_WARNING,
+            ACE_TEXT("%D [cell] wds-start-network: qmi-proxy CID timeout — "
+                     "killed proxy, retrying next tick\n")));
+        publish_data("error");
+        return false;
+    }
+    if (sr.status != StartResult::Status::Started) {
+        ACE_ERROR((LM_WARNING,
+            ACE_TEXT("%D [cell] wds-start-network failed (%C %C)\n"),
+            sr.end_reason.c_str(), sr.verbose.c_str()));
+        publish_data("error");
+        return false;
+    }
+
+    const std::string cs = run_shell(
+        {"qmicli", "-d", m_cfg.qmi_dev, "-p", "--wds-get-current-settings"});
+    DirectIpSettings s = parse_current_settings(cs);
+    if (!s.valid) {
+        ACE_ERROR((LM_ERROR,
+            ACE_TEXT("%D [cell] bearer up but current-settings had no IPv4\n")));
+        publish_data("error");
+        return false;
+    }
+
+    const int prefix = s.prefix > 0 ? s.prefix : 30;
+    run_shell({"ip", "addr", "replace", s.ip + "/" + std::to_string(prefix),
+               "dev", dev});
+    // Install a default route carrying the gateway so net-router (cellular slot =
+    // wwan0) can discover it (`ip route show default dev wwan0`) and re-metric it
+    // by WAN priority. Metric 700 keeps cellular as the last-resort WAN until then.
+    if (!s.gateway.empty())
+        run_shell({"ip", "route", "replace", "default", "via", s.gateway,
+                   "dev", dev, "metric", "700"});
+    else
+        run_shell({"ip", "route", "replace", "default", "dev", dev,
+                   "metric", "700"});
+    // Feed the carrier resolvers to this link (best-effort; Airtel blocks 1.1.1.1,
+    // one of resolved's global fallbacks, so its own resolvers are more reliable).
+    if (!s.dns.empty()) {
+        std::vector<std::string> argv = {"resolvectl", "dns", dev};
+        for (const auto& d : s.dns) argv.push_back(d);
+        run_shell(argv);
+    }
+
+    m_data_ip = s.ip;
+    publish_data("up", &s);
+    ACE_DEBUG((LM_INFO,
+        ACE_TEXT("%D [cell] DirectIP up on %C: %C/%d gw %C\n"),
+        dev.c_str(), s.ip.c_str(), prefix,
+        s.gateway.empty() ? "(none)" : s.gateway.c_str()));
+    return true;
+}
+
+void CellularClient::publish_data(const char* state, const DirectIpSettings* s) {
+    std::vector<data_store::KV> b;
+    b.emplace_back(std::string("cell.data.state"), data_store::Value{std::string(state)});
+    if (s) {
+        b.emplace_back(std::string("cell.data.ip"),      data_store::Value{s->ip});
+        b.emplace_back(std::string("cell.data.gateway"), data_store::Value{s->gateway});
+        std::string dns;
+        for (std::size_t i = 0; i < s->dns.size(); ++i) {
+            if (i) dns += ",";
+            dns += s->dns[i];
+        }
+        b.emplace_back(std::string("cell.data.dns"), data_store::Value{dns});
+    }
+    m_ds.set_volatile(b);
 }
 
 } // namespace cellular

@@ -53,12 +53,14 @@ return {
         access  = "Admin", type = "string",  default = "eth0" },
     ["net.iface.wifi.name"]       = {
         access  = "Admin", type = "string",  default = "wlan0" },
-    -- The WP7702 module owns the data session internally; the host cannot open
-    -- a data call on wwan0 (firmware refuses it). Cellular WAN reaches us over
-    -- the modem's ECM link (cdc_ether), which enumerates as eth1 on the RPi3B —
-    -- eth0 is the onboard smsc95xx. See apps/docs/hw-bringup-wp7702-cellular-wan.md.
+    -- Cellular WAN slot. With the WP7702 in the DirectIP USB composition
+    -- (ECM dropped via AT!USBCOMP=1,1,0000010D), the host owns the data call on
+    -- wwan0 and iot-cellular-client brings it up (raw_ip + qmicli wds-start-network
+    -- + address/route). The older ECM layout used eth1 (cdc_ether) instead — set
+    -- this back to "eth1" for an ECM-composition build. eth0 is the onboard
+    -- smsc95xx. See apps/docs/hw-bringup-wp7702-cellular-wan.md §4.4 / §6.1.
     ["net.iface.cellular.name"]   = {
-        access  = "Admin", type = "string",  default = "eth1" },
+        access  = "Admin", type = "string",  default = "wwan0" },
     ["net.forward.ports"]         = {
         access  = "Admin", type = "string",  default = "80,443,5684" },
     ["net.custom.rules"]          = {

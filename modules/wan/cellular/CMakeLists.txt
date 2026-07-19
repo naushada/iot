@@ -22,7 +22,8 @@ add_library(cellular_core STATIC
     src/cell_state.cpp
     src/line_router.cpp
     src/sms_pdu.cpp
-    src/sms_receiver.cpp)
+    src/sms_receiver.cpp
+    src/qmi_wan.cpp)
 # nlohmann::json — vendored under apps/3rdparty/json/ (also a Yocto DEPENDS).
 # Used by cell_state to build/parse the sms.inbox JSON array.
 set(NLOHMANN_JSON_INCLUDE
@@ -78,7 +79,8 @@ if(CELLULAR_BUILD_TESTS)
         test/cell_state_test.cpp
         test/line_router_test.cpp
         test/sms_pdu_test.cpp
-        test/sms_receiver_test.cpp)
+        test/sms_receiver_test.cpp
+        test/qmi_wan_test.cpp)
     target_link_libraries(cellular-tests cellular_core GTest::gtest GTest::gtest_main pthread)
     include(GoogleTest)
     if(CELLULAR_TOP_LEVEL)
