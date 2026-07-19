@@ -380,8 +380,8 @@ bool encode_sms_submit(const std::string& to, const std::string& utf8_text,
     if (digits.empty()) return false;
 
     std::vector<std::uint8_t> tpdu;
-    tpdu.push_back(0x11);                       // SUBMIT, VPF=relative
-    tpdu.push_back(0x00);                       // TP-MR
+    tpdu.push_back(0x31);                       // SUBMIT, VPF=relative, TP-SRR set
+    tpdu.push_back(0x00);                       // TP-MR (modem overrides w/ +CMGS mr)
     tpdu.push_back(static_cast<std::uint8_t>(digits.size()));   // TP-DA length (digits)
     tpdu.push_back(intl ? 0x91 : 0x81);         // TP-TOA
     for (std::size_t i = 0; i < digits.size(); i += 2) {        // swapped BCD
@@ -429,6 +429,44 @@ bool encode_sms_submit(const std::string& to, const std::string& utf8_text,
     put_hex(pdu_hex, 0x00);                       // SMSC = use the SIM default
     for (std::uint8_t b : tpdu) put_hex(pdu_hex, b);
     return true;
+}
+
+bool decode_status_report(const std::string& pdu_hex, SmsStatusReport& out) {
+    std::vector<std::uint8_t> b;
+    if (!hex_to_bytes(pdu_hex, b)) return false;
+
+    std::size_t i = 0;
+    // SMSC address: length octet counts the following type + digit octets.
+    if (i >= b.size()) return false;
+    i += 1 + b[i];
+    // First octet — TP-MTI (bits 0-1) == 0b10 marks an SMS-STATUS-REPORT.
+    if (i >= b.size() || (b[i] & 0x03) != 0x02) return false;
+    ++i;
+    if (i >= b.size()) return false;
+    out.mr = b[i++];                              // TP-MR (matches +CMGS mr)
+    // TP-RA (recipient address): semi-octet count → (n+1)/2 digit octets, plus
+    // the type-of-address octet. We don't need the digits, just skip past them.
+    if (i >= b.size()) return false;
+    const std::size_t ra_digits = b[i++];
+    i += 1 + (ra_digits + 1) / 2;                 // TOA + BCD digits
+    i += 7;                                       // TP-SCTS (service-centre time)
+    i += 7;                                       // TP-DT (discharge time)
+    if (i >= b.size()) return false;
+    out.status    = b[i];                         // TP-ST
+    out.delivered = out.status < 0x20;            // 0x00-0x1F: completed
+    out.pending   = out.status >= 0x20 && out.status < 0x40;
+    out.failed    = out.status >= 0x40;           // permanent error / SC gave up
+    return true;
+}
+
+std::string status_report_text(const SmsStatusReport& rpt) {
+    char st[8];
+    std::snprintf(st, sizeof st, "0x%02X",
+                  rpt.status < 0 ? 0 : rpt.status & 0xFF);
+    if (rpt.delivered) return "delivered";
+    if (rpt.pending)   return std::string("pending (SC retrying, ST=") + st + ")";
+    if (rpt.failed)    return std::string("failed: undeliverable (ST=") + st + ")";
+    return std::string("unknown (ST=") + st + ")";
 }
 
 } // namespace cellular

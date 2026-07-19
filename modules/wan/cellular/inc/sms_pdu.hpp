@@ -47,9 +47,29 @@ bool decode_sms_deliver(const std::string& pdu_hex, SmsMessage& out);
 /// maps, else UCS2). Sets `pdu_hex` (uppercase, SMSC field = "00" = use the
 /// SIM default) and `tpdu_len` = the octet count EXCLUDING that SMSC field, which
 /// is the number `AT+CMGS=<tpdu_len>` expects. Returns false on an empty/invalid
-/// recipient. See apps/docs/tdd-mangoh-cellular-sms.md.
+/// recipient. TP-SRR is set so the network returns an SMS-STATUS-REPORT (routed
+/// as `+CDS` — see decode_status_report). See apps/docs/tdd-mangoh-cellular-sms.md.
 bool encode_sms_submit(const std::string& to, const std::string& utf8_text,
                        std::string& pdu_hex, int& tpdu_len);
+
+/// A decoded SMS-STATUS-REPORT (the delivery report the SMSC returns for a sent
+/// message when TP-SRR was set — the `+CDS` PDU). `mr` matches the reference the
+/// modem reported in `+CMGS: <mr>`, so the sender can correlate report→message.
+struct SmsStatusReport {
+    int  mr        = -1;    ///< TP-MR — matches the +CMGS reference of the sent SM
+    int  status    = -1;    ///< TP-ST (3GPP TS 23.040 §9.2.3.15), -1 if unparsed
+    bool delivered = false; ///< ST 0x00–0x1F: transaction completed (0x00 = to SME)
+    bool pending   = false; ///< ST 0x20–0x3F: temporary error, SC still trying
+    bool failed    = false; ///< ST ≥ 0x40: permanent error / SC gave up
+};
+
+/// Decode a hex SMS-STATUS-REPORT TPDU (the line after `+CDS:`) into `out`.
+/// Returns false on malformed/short input or a non-STATUS-REPORT PDU.
+bool decode_status_report(const std::string& pdu_hex, SmsStatusReport& out);
+
+/// A short human string for a TP-ST value, e.g. "delivered", "pending (SC
+/// retrying, ST=0x30)", "failed: undeliverable (ST=0x45)". For sms.send.status.
+std::string status_report_text(const SmsStatusReport& rpt);
 
 } // namespace cellular
 
