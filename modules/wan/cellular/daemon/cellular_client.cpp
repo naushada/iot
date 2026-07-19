@@ -322,6 +322,11 @@ void CellularClient::on_clear_sms_request(const data_store::Client::Event& ev) {
 void CellularClient::start_clear_sms() {
     m_state.clear_sms();
     publish();                       // republish sms.* as an empty inbox + count 0
+    // Also empty the modem store, not just the ds record: otherwise the next
+    // restart's AT+CMGL=4 drain re-reads the very messages we just cleared and
+    // repopulates sms.inbox. Guarded on the AT channel + sms.enable; delflag=4
+    // deletes ALL slots (see the drain in poll_modem for the delflag rationale).
+    if (m_at && m_cfg.sms_enable) cmd("AT+CMGD=1,4");
     ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] received-SMS history cleared\n")));
 }
 
@@ -474,10 +479,16 @@ void CellularClient::poll_modem() {
         cmd("AT+CNMI=2,1,0,0,0");
         cmd("AT+CMGL=4");
         // The queue is serialized, so this runs after the drain completes:
-        // delete all READ messages (delflag=1 spares unread) — the drain
-        // itself never deletes, and a SIM store that fills up silently
-        // blocks MT-SMS delivery. Live +CMTI receives delete per-index.
-        cmd("AT+CMGD=1,1");
+        // delete ALL messages (delflag=4). The drain above has already copied
+        // every stored message into the persistent sms.inbox record, so the SIM
+        // copy is now redundant and must go — a SIM store that fills up silently
+        // blocks MT-SMS delivery. delflag=1 ("delete READ") does NOT work here:
+        // AT+CMGL=4 does not mark messages READ on the WP7702, so the just-drained
+        // messages stay REC UNREAD and survive a READ-only delete, refilling the
+        // inbox on every restart. The narrow window is a message landing between
+        // the CMGL OK and this CMGD; that is far preferable to a store that never
+        // empties, and genuinely-new messages arrive fresh via +CMTI afterwards.
+        cmd("AT+CMGD=1,4");
         // Store usage → sms.storage ("used/total"): makes a full store
         // visible instead of just "SMS stopped arriving".
         cmd("AT+CPMS?");

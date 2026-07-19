@@ -137,6 +137,13 @@ void CellularState::set_gps(const GpsFix& fix) {
 
 void CellularState::set_sms(const SmsMessage& msg) {
     std::lock_guard<std::mutex> lk(m_mtx);
+    // De-dup: a restart re-drains stored messages (AT+CMGL=4) and a slot that
+    // wasn't deleted in time would otherwise land in the inbox a second time.
+    // Same sender + timestamp + text is the same message — drop the repeat so
+    // the history table never shows doubles (and sms.count isn't inflated).
+    for (const auto& e : m_smsInbox)
+        if (e.sender == msg.sender && e.scts == msg.scts && e.text == msg.text)
+            return;
     m_smsSender = msg.sender;
     m_smsText   = msg.text;
     m_smsTs     = msg.scts;
