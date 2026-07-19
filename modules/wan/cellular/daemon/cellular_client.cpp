@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include <sys/wait.h>
@@ -18,6 +19,14 @@ namespace cellular {
 
 namespace {
     bool starts_with(const std::string& s, const char* p) { return s.rfind(p, 0) == 0; }
+    /// First run of digits after the ':' in `s`, or -1 (e.g. "+CMGS: 9" → 9).
+    int int_after_colon(const std::string& s) {
+        const auto colon = s.find(':');
+        std::size_t k = (colon == std::string::npos) ? 0 : colon + 1;
+        while (k < s.size() && (s[k] < '0' || s[k] > '9')) ++k;
+        if (k >= s.size()) return -1;
+        return std::atoi(s.c_str() + k);
+    }
     // Distinct timer acts so handle_timeout can tell the periodic poll (act=null)
     // from the one-shot MO-send data phase and the AT command watchdog.
     const int   kSendTagStorage = 0;
@@ -476,7 +485,11 @@ void CellularClient::poll_modem() {
         // + index anyway. The +CMGL/+CMTI/+CMGR replies land in on_at_line → m_sms.
         // See apps/docs/tdd-mangoh-cellular-sms.md.
         cmd("AT+CMGF=0");
-        cmd("AT+CNMI=2,1,0,0,0");
+        // <ds>=1 routes SMS-STATUS-REPORTs as +CDS so a sent message's delivery
+        // outcome (delivered / undeliverable / SC-retrying) reaches on_at_line —
+        // without it AT+CMGS "sent" only means the SMSC accepted the submit, not
+        // that the handset got it. Pairs with the TP-SRR bit in encode_sms_submit.
+        cmd("AT+CNMI=2,1,0,1,0");
         cmd("AT+CMGL=4");
         // The queue is serialized, so this runs after the drain completes:
         // delete ALL messages (delflag=4). The drain above has already copied
@@ -584,6 +597,28 @@ void CellularClient::on_at_line(const std::string& line) {
 }
 
 void CellularClient::handle_at_line(const std::string& line) {
+    // Delivery report for a sent message: "+CDS: <len>" is followed by the
+    // SMS-STATUS-REPORT PDU on the next line. Handle it before the receive
+    // dispatch — a +CDS PDU is a bare hex line the SmsReceiver would otherwise
+    // ignore, and we must not let it fall through to the status parser.
+    if (m_await_cds) {
+        m_await_cds = false;
+        SmsStatusReport rpt;
+        if (decode_status_report(line, rpt)) {
+            const std::string txt = status_report_text(rpt);
+            // Correlate to the last send by TP-MR; surface even on a mismatch
+            // (single send in flight at a time) but note it in the log.
+            const bool match = (m_send_mr < 0) || (rpt.mr == m_send_mr);
+            m_ds.set_volatile(std::string("sms.send.status"),
+                              data_store::Value{txt});
+            ACE_DEBUG((LM_INFO,
+                ACE_TEXT("%D [cell] SMS delivery report (mr=%d%C): %C\n"),
+                rpt.mr, match ? "" : " unmatched", txt.c_str()));
+        }
+        return;
+    }
+    if (starts_with(line, "+CDS:")) { m_await_cds = true; return; }
+
     // SMS-related lines (URCs, +CMGR/+CMGL headers, and the PDU line that
     // follows) go to the receive state machine instead of the status dispatcher;
     // it returns the follow-up commands to issue and any decoded messages.
@@ -643,6 +678,10 @@ void CellularClient::handle_at_line(const std::string& line) {
         }
     } else if (starts_with(line, "+CMGS:")) {
         m_send_active = false;
+        // Remember the message reference so an incoming +CDS delivery report can
+        // be matched back to this send. "sent" = SMSC accepted it; the +CDS (if
+        // one arrives) upgrades sms.send.status to delivered/failed.
+        m_send_mr = int_after_colon(line);
         m_ds.set_volatile(std::string("sms.send.status"),
                           data_store::Value{std::string("sent")});
         ACE_DEBUG((LM_INFO, ACE_TEXT("%D [cell] SMS sent: %C\n"), line.c_str()));

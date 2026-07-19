@@ -155,6 +155,8 @@ class CellularClient : public ACE_Event_Handler {
         bool                            m_clear_pending = false;
         std::string                     m_send_pdu;                ///< encoded PDU awaiting the '>' data phase
         bool                            m_send_active = false;     ///< AT+CMGS issued, awaiting +CMGS/+CMS ERROR
+        int                             m_send_mr = -1;            ///< +CMGS reference of the last send (matches +CDS TP-MR)
+        bool                            m_await_cds = false;       ///< next line is the +CDS delivery-report PDU
         bool                            m_gps_via_at = false;  ///< GNSS over AT poll (no NMEA tty)
         Vendor                          m_vendor = Vendor::Generic;
         bool                            m_gps_started = false; ///< GNSS engine kicked

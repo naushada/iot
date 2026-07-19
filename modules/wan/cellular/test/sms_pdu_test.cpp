@@ -59,11 +59,12 @@ TEST(SmsPdu, ConcatenatedUcs2Part) {
 }
 
 // Encode a GSM 7-bit SMS-SUBMIT (MO send) — hand-computed vector: SMSC "00",
-// SUBMIT+relative-VP, dest +1234, PID 00, DCS 00 (GSM7), VP AA, "hi" packed.
+// SUBMIT+relative-VP+TP-SRR (0x31), dest +1234, PID 00, DCS 00 (GSM7), VP AA,
+// "hi" packed. The 0x31 first octet requests a delivery report (+CDS).
 TEST(SmsPdu, EncodeSubmitGsm7) {
     std::string pdu; int len = 0;
     ASSERT_TRUE(encode_sms_submit("+1234", "hi", pdu, len));
-    EXPECT_EQ(pdu, "001100049121430000AA02E834");
+    EXPECT_EQ(pdu, "003100049121430000AA02E834");
     EXPECT_EQ(len, 12);   // TPDU octets, excluding the SMSC "00" — for AT+CMGS=<len>
 }
 
@@ -71,8 +72,52 @@ TEST(SmsPdu, EncodeSubmitGsm7) {
 TEST(SmsPdu, EncodeSubmitUcs2) {
     std::string pdu; int len = 0;
     ASSERT_TRUE(encode_sms_submit("+1", "\xE4\xB8\xAD", pdu, len));   // "中" U+4E2D
-    EXPECT_EQ(pdu, "0011000191F10008AA024E2D");
+    EXPECT_EQ(pdu, "0031000191F10008AA024E2D");
     EXPECT_EQ(len, 11);
+}
+
+// SMS-STATUS-REPORT (the +CDS delivery report), ST=0x00 → delivered to SME.
+// SMSC "00", first octet 0x06 (MTI=STATUS-REPORT), TP-MR 0x09, RA +1234,
+// SCTS + DT (7 octets each), TP-ST 0x00.
+TEST(SmsPdu, StatusReportDelivered) {
+    SmsStatusReport r;
+    ASSERT_TRUE(decode_status_report(
+        "00060904912143222030000000002220300000000000", r));
+    EXPECT_EQ(r.mr, 9);
+    EXPECT_EQ(r.status, 0x00);
+    EXPECT_TRUE(r.delivered);
+    EXPECT_FALSE(r.failed);
+    EXPECT_EQ(status_report_text(r), "delivered");
+}
+
+// Same report, TP-ST 0x45 → permanent error (undeliverable).
+TEST(SmsPdu, StatusReportFailed) {
+    SmsStatusReport r;
+    ASSERT_TRUE(decode_status_report(
+        "00060904912143222030000000002220300000000045", r));
+    EXPECT_EQ(r.mr, 9);
+    EXPECT_EQ(r.status, 0x45);
+    EXPECT_TRUE(r.failed);
+    EXPECT_FALSE(r.delivered);
+    EXPECT_EQ(status_report_text(r), "failed: undeliverable (ST=0x45)");
+}
+
+// TP-ST 0x30 → temporary error, service centre still retrying.
+TEST(SmsPdu, StatusReportPending) {
+    SmsStatusReport r;
+    ASSERT_TRUE(decode_status_report(
+        "00060904912143222030000000002220300000000030", r));
+    EXPECT_TRUE(r.pending);
+    EXPECT_FALSE(r.delivered);
+    EXPECT_FALSE(r.failed);
+}
+
+TEST(SmsPdu, StatusReportRejectsNonReport) {
+    SmsStatusReport r;
+    // A DELIVER PDU (TP-MTI 00) is not a STATUS-REPORT.
+    EXPECT_FALSE(decode_status_report("0004049121430008222030000000000400680069", r));
+    EXPECT_FALSE(decode_status_report("", r));       // empty
+    EXPECT_FALSE(decode_status_report("0006", r));   // truncated before TP-MR
 }
 
 TEST(SmsPdu, EncodeSubmitRejectsEmptyRecipient) {
