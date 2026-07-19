@@ -1,7 +1,8 @@
 # WP7702 Cellular WAN — Bring-up, eSIM/SIM-slot Trap, and the `wwan0` Question
 
 Field investigation on a **Raspberry Pi 3B + mangOH (Sierra WP7702)** rig,
-2026-07-10, device `192.168.1.20`.
+2026-07-10, device `192.168.1.20`. **QMI/`qmicli` follow-up 2026-07-19** on the
+same board after reflashing the latest bundle (§4.2).
 
 Companion to [`hw-bringup-mangoh-yellow.md`](hw-bringup-mangoh-yellow.md) (wiring
 and sensor plane) and [`tdd-mangoh-yellow-sensors.md`](tdd-mangoh-yellow-sensors.md)
@@ -19,12 +20,27 @@ Symptom: `wwan0` enumerated but never got an IP; cellular WAN dead.
    and passed **zero downlink bytes**. Fixed persistently with `AT!UIMS=0`.
 2. After the slot change the external **Airtel** SIM registers on its **home**
    network, APN `airtelgprs.com` activates, and **data works**.
-3. **`wwan0` still does not come up.** Firmware `SWI9X06Y_02.32.02.00` refuses
-   the host-side data call (`AT$QCRMCALL=1,1` → `NO CARRIER`). This is
-   **unresolved**; the only untested path is QMI via `qmicli`, which is not in
-   the image.
-4. **What does work today** is the **ECM path** (`eth1` ↔ module `ecm0`) with
-   NAT on the module. Verified end-to-end from the Pi.
+3. ⭐ **`wwan0` DOES work — SOLVED 2026-07-19 (§4.2/§4.4).** Root cause: the USB
+   composition had **both `rmnet0` and `ecm` enabled** (`AT!USBCOMP?` bitmask
+   `0008010D`), and with both present the firmware bridges the PDN to **ECM**,
+   leaving the QMI/DirectIP `wwan0` side control-only. Removing ECM from the
+   composition — `AT!USBCOMP=1,1,0000010D` (`diag,nmea,modem,rmnet0`) + `AT!RESET`
+   — forces the PDN onto DirectIP. After that, `qmicli --wds-start-network`
+   +`raw_ip=Y`+the QMI IP makes **`wwan0` carry data**: verified by DNS resolving
+   `github.com` over `wwan0` and the netdev RX counter matching the modem WDS RX
+   (multi-second latency = real 2G/EDGE). The old `AT$QCRMCALL → NO CARRIER` and
+   the QMI "connected but deaf" were both symptoms of the ECM bridge.
+4. **Tradeoff: it's ECM *or* DirectIP, not both.** Dropping ECM removes `eth1`.
+   The **ECM path** (`eth1` ↔ module `ecm0`, module NAT) still works and was the
+   only path before this fix — but adopting `wwan0`/DirectIP means reverting the
+   repo's `net.iface.cellular.name` from `eth1` back to `wwan0` and automating the
+   QMI data-call bring-up (§4.4, §6.1). Not yet shipped — the fix is HW-proven,
+   the plumbing is not.
+5. ⚠️ **Poking QMI/`raw_ip`/`start-network` re-enumerates the modem and can wedge
+   `/dev/ttyUSB2`** — after which `iot-cellular-client` gets `EPERM` on open (as
+   root, with `DeviceAllow` correct) and device-ui shows the modem "not
+   connected" with all `cell.*` keys empty (§4.3). A **daemon restart clears it**
+   once QMI activity stops — no reboot needed.
 
 ---
 
@@ -221,10 +237,10 @@ AT+CGCONTRDP=1    # → IP, gateway, DNS1, DNS2
 
 ---
 
-## 4. `wwan0` — still refused (OPEN)
+## 4. `wwan0` — SOLVED via USB-composition change (QMI DirectIP)
 
 With a healthy home-network SIM, an active context, `raw_ip=Y`, and the link up,
-the host-side data call is **still refused**:
+the host-side data call is **still refused over AT**:
 
 ```
 AT$QCRMCALL=1,1  →  NO CARRIER
@@ -246,27 +262,187 @@ Result: `wwan0` carries only a link-local address.
 - ~~"Dual-stack `IPV4V6` breaks the 2G bearer."~~ Switching context 1 to `"IP"`
   changed nothing.
 
-**Still untested — the only remaining lead.** QMI directly on the control port:
+### 4.2 ⭐ QMI tested 2026-07-19 — control plane works, data plane still goes to ECM
+
+The latest bundle ships `qmicli 1.34.0` + `libqmi-glib.so.5` (verified on both
+`192.168.1.20` and `192.168.1.170`). So the §4 recipe could finally be run against
+`/dev/cdc-wdm0`. **The QMI control plane works end to end; the data plane does
+not reach `wwan0`.**
+
+What worked (control plane):
+
+```sh
+qmicli -d /dev/cdc-wdm0 --dms-get-operating-mode        # → online
+qmicli -d /dev/cdc-wdm0 --nas-get-serving-system        # → registered, Airtel
+                                                        #   MCC 404/MNC 90, home,
+                                                        #   CS+PS attached, GSM/EDGE
+qmicli -d /dev/cdc-wdm0 -p --wds-start-network="apn=iot.swir,ip-type=4" \
+       --client-no-release-cid                          # → Network started, handle OK
+qmicli -d /dev/cdc-wdm0 -p --wds-get-packet-service-status   # → connected
+qmicli -d /dev/cdc-wdm0 -p --wds-get-current-settings        # → IP 100.115.65.218/30,
+                                                             #   gw .217, Airtel DNS, MTU 1500
+```
+
+> **APN surprise:** on this board `apn=iot.swir` **started the network**, while
+> `apn=airtelgprs.com` returned `CallFailed / call-end-reason generic-no-service
+> (verbose 1075)` this session — the opposite of §3's earlier result on the same
+> SIM. Registration was Airtel home (not roaming), so this is either an M2M-SIM
+> APN-subscription quirk or a transient 2G attach failure. **Needs a clean
+> retest**; do not treat `airtelgprs.com` vs `iot.swir` as settled.
+
+What did **not** work (data plane) — the wall:
+
+- Set `raw_ip=Y` (netdev correctly `POINTOPOINT,NOARP,link/none`), assigned the
+  QMI-reported IP, added a route, brought `eth1`/ECM **down** to remove
+  contention.
+- `ping -I wwan0`, DNS, and `wget` bound to the wwan0 source IP: **100% loss.**
+- **The modem's WDS RX counter kept climbing (73 → 105 → 124)** across the tests
+  while the Pi's `wwan0` **netdev RX stayed flat.** Downlink reaches the radio but
+  is never delivered to the QMI/DirectIP host netdev.
+
+Ruled out as the cause:
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| `rp_filter` drops asymmetric replies | `all=0`, `wwan0=2` + symmetric `/32` route via wwan0 | still 100% loss |
+| ECM steals the session while `eth1` is up | brought `eth1` **down** | still 100% loss; modem RX still climbs |
+| Module autoconnect owns the PDN | `--wds-get-autoconnect-settings` | `disabled` — not it |
+| netdev in 802.3 mode | `raw_ip=Y`, confirmed `NOARP/link/none` | fixed the mode; data still doesn't flow |
+
+**Interim conclusion (later overturned — see §4.4).** The WP7702 firmware
+`SWI9X06Y_02.32.02.00` bridges the PDN downlink to its internal `rmnet_data0 →
+ecm0` (CDC-ECM) endpoint, **not** to the QMI/DirectIP `wwan0` netdev *while ECM is
+in the USB composition*. `qmicli` can *establish and connect* a WDS session
+(further than AT's `$QCRMCALL`), but the bearer's data terminates at ECM. Host-side
+routing, `raw_ip`, and `rp_filter` cannot move it. The diagnosis was right; the fix
+turned out to be the composition change in §4.4.
+
+### 4.4 ⭐⭐ SOLVED — drop ECM from the USB composition (HW-verified 2026-07-19)
+
+`AT!USBCOMP?` revealed the actual cause: **both `rmnet0` (QMI/DirectIP) and `ecm`
+were enabled at once.**
+
+```
+AT!ENTERCND="A710"
+AT!USBCOMP?
+#   Interface bitmask: 0008010D (diag,nmea,modem,rmnet0,ecm)   ← ecm + rmnet0 both on
+```
+
+Bit values (from `AT!USBCOMP=?`): `DIAG 0x1, NMEA 0x4, MODEM 0x8, RMNET0 0x100,
+ECM 0x80000`. With ECM present the firmware routes the PDN to `ecm0`; `rmnet0`/QMI
+is left control-only. **Remove ECM** (keep `rmnet0`) and reset:
+
+```
+AT!ENTERCND="A710"
+AT!USBCOMP=1,1,0000010D     # diag,nmea,modem,rmnet0  — ECM dropped
+AT!USBCOMP?                 # verify → Interface bitmask: 0000010D (diag,nmea,modem,rmnet0)
+AT!RESET                    # composition changes apply only after a modem reset
+```
+
+After the reset **`eth1` is gone** and `wwan0` remains. Bring up DirectIP from the
+Pi:
 
 ```sh
 ip link set wwan0 down
-echo Y > /sys/class/net/wwan0/qmi/raw_ip     # must be written while link is DOWN
+echo Y > /sys/class/net/wwan0/qmi/raw_ip      # write while link is DOWN
 ip link set wwan0 up
-qmicli -d /dev/cdc-wdm0 --wds-start-network="apn=airtelgprs.com,ip-type=4" \
+qmicli -d /dev/cdc-wdm0 -p --wds-start-network="apn=iot.swir,ip-type=4" \
        --client-no-release-cid
-qmicli -d /dev/cdc-wdm0 --wds-get-current-settings   # IP / gateway / DNS / MTU
-ip addr add <ip>/<prefix> dev wwan0
+IP=$(qmicli -d /dev/cdc-wdm0 -p --wds-get-current-settings | awk '/IPv4 address/{print $3}')
+ip addr add "$IP"/30 dev wwan0
+ip route add default dev wwan0 metric 700      # last-resort WAN
 ```
 
-The image shipped **no** `qmicli`, `qmi-network`, `uqmi`, `mmcli`, or
-ModemManager, and `opkg` has none in its feed. `libqmi` is now in
-`RRECOMMENDS:${PN}-cellular` (it comes from `meta-networking`, already enabled in
-`yocto/kas-iot.yml`), so the next image build carries `qmicli` and the test above
-can finally be run. **Until it is, treat `wwan0` as unsupported on this hardware
-and use the ECM path (§5).** If QMI is refused too, `wwan0` should be documented
-as permanently unsupported here.
+**Verified on HW:** `nslookup github.com 117.96.122.74` resolved to `20.207.73.82`
+over `wwan0`, and the `wwan0` **netdev RX counter matched the modem WDS RX** (7 = 7)
+— exactly the equality that was missing in §4.2. Latency is multi-second (2G/EDGE),
+and ICMP is flaky/deprioritised as always (§9) — trust DNS + RX counters, not ping.
 
-### 4.1 ⚠️ Never `ip addr add` the AT-reported IP onto `wwan0`
+**Gotchas found while proving it:**
+
+- **The first data call re-enumerates the modem once** (dmesg `qmi_wwan …
+  unregister`/`register`), which drops the WDS session and resets `raw_ip` to `N`.
+  Re-run the bring-up after it settles; it is stable on the second attempt.
+- **`--client-no-release-cid` leaks WDS CIDs**, and after several re-enumerations
+  the CTL client returns `CID allocation failed: Transaction timed out`. Recover
+  with `killall qmi-proxy` (the `-p` proxy respawns fresh), then retry.
+- ⚠️ **This inverts §4.1** — with DirectIP the QMI-reported IP **is** `wwan0`'s
+  address, so you *do* `ip addr add` it (unlike the ECM composition, where the
+  AT-reported IP belonged to `rmnet_data0`). §4.1 applies only to the ECM layout.
+- **PS can detach and `start-network` then fails** `CallFailed / generic-unspecified
+  / verbose 1075`, with `--nas-get-serving-system` showing `Registration:
+  registered` but `PS: detached`. The AT view can disagree (`AT+CGATT?` → `1`) while
+  QMI still reports detached. **`AT+CGATT=1` (wait ~10 s) re-syncs it** → QMI then
+  shows `PS: attached` and the call starts. A daemon must confirm PS attach before
+  `--wds-start-network`, not just registration.
+- **The link is fragile on 2G/EDGE**, independent of the composition: latency is
+  multi-second and downlink is lossy (a clean run had `netdev RX == modem RX == 7`
+  and resolved DNS; minutes later another attempt passed 1 packet). Plus the modem
+  **spontaneously re-enumerates roughly every ~12 min** in this ECM-less layout —
+  likely the module's Legato `dataConnectionService` reacting to the missing ECM
+  it expects. Each re-enum drops the WDS session and PS attach. **This is the core
+  reason DirectIP needs a supervising daemon** (re-attach + re-establish on
+  re-enum), not just a one-shot bring-up. Note: dropping ECM also **removes the
+  `ssh root@192.168.2.2` module-management path** (it went over `ecm0`), so
+  module-side (`cm data`, Legato) debugging is no longer reachable from the Pi.
+
+**Plumbing status.** Implemented in the working tree (not yet built — CI builds on
+main only — and not yet HW-validated):
+
+- `net.iface.cellular.name` default `eth1 → wwan0` (`modules/net/router/schemas/net.lua`).
+- A DirectIP data-call supervisor in `iot-cellular-client`
+  (`modules/wan/cellular/`), gated on the new `cell.data.enable` key (OFF by
+  default). Each poll tick it verifies the bearer (QMI `connected` **and** the
+  netdev still carries the assigned IP — a re-enum drops both) and re-establishes
+  otherwise: force PS attach (`AT+CGATT=1` when QMI shows `PS: detached`),
+  `raw_ip=Y`, `qmicli --wds-start-network` (`killall qmi-proxy` + retry on the
+  CID-alloc timeout), read `--wds-get-current-settings`, then `ip addr replace` +
+  `ip route replace default via <gw> dev wwan0 metric 700` (so net-router
+  discovers + re-metrics it) + `resolvectl dns`. Publishes `cell.data.*`.
+  - The `qmicli` output parsing is isolated into a pure, unit-tested module
+    (`inc/qmi_wan.hpp`, `src/qmi_wan.cpp`, `test/qmi_wan_test.cpp`).
+  - New keys: `cell.data.enable`, `cell.qmi.dev`, `cell.wan.iface`, and status
+    `cell.data.state/ip/gateway/dns` (`schemas/cell.lua`).
+  - The unit gains `DeviceAllow=/dev/cdc-wdm0` and `ProtectKernelTunables=no` (the
+    `raw_ip` sysfs write needs `/sys` writable).
+
+**Still to do:** build + HW-validate on .20 (set `cell.data.enable=true`); confirm
+`ip route ... via <gw>` works on the raw-ip point-to-point link (only `dev wwan0`
+was hand-verified); consider making the supervisor re-establish faster than the
+30s poll on a detected re-enum; drop `05-iot-cellular-ecm.network` + the module NAT
+script (§5), now vestigial under DirectIP. `AT!USBCOMP` is persistent modem NV; the
+host-side bring-up is not.
+
+### 4.3 ⚠️ QMI poking wedges `/dev/ttyUSB2` → cellular-client `EPERM`
+
+A real operational hazard surfaced during the QMI test. Running `qmicli`
+`--wds-start-network` / toggling `raw_ip` **re-enumerated the modem** (dmesg:
+`qmi_wwan … unregister` then `register`, ttyUSB nodes recreated). After that,
+`iot-cellular-client` — which drives the modem over the **AT port
+`/dev/ttyUSB2`**, not QMI — logged, every 10 s:
+
+```
+[cell] open(/dev/ttyUSB2) failed: Operation not permitted
+```
+
+This is **`EPERM`, not `EACCES`**, and the daemon runs as **root** with the unit's
+`DeviceAllow` already listing `/dev/ttyUSB2` + `char-ttyUSB` (`DevicePolicy=auto`,
+`DynamicUser=no`) — so it is neither a permission-bit nor a device-cgroup problem.
+It is the USB-serial port left wedged by the re-enumeration. Consequence: the
+daemon can't read the modem, **all `cell.*` / `wan.*` ds keys go unset, and
+device-ui shows the cellular modem "not connected."**
+
+> **Lesson:** don't run host QMI experiments on a board whose `iot-cellular-client`
+> is live and AT-based — they fight over the modem and the re-enumeration wedges
+> the AT port. Stop the daemon first (`systemctl stop iot-cellular-client`) if you
+> must poke QMI. **Recovery is just `systemctl restart iot-cellular-client` once
+> the QMI activity stops** — the daemon reopens the port cleanly (verified; no
+> modem reset or reboot needed).
+
+### 4.1 ⚠️ Never `ip addr add` the AT-reported IP onto `wwan0` (ECM composition only)
+
+> This applies to the **ECM composition** (§5). Under the DirectIP composition
+> (§4.4) the QMI-reported IP *is* `wwan0`'s address and you assign it deliberately.
 
 `AT+CGPADDR` reports the address of the module's **internal `rmnet_data0`**, not
 of `wwan0`. Assigning it to `wwan0` would make the interface satisfy net-router's
@@ -548,6 +724,21 @@ at "AT+CGDCONT?"
 
 Stop `iot-cellular-client` first if it is running — it owns `/dev/ttyUSB2`.
 
+**QMI control-plane probe** (image now ships `qmicli 1.34.0`). Read-only queries
+are safe; `--wds-start-network` re-enumerates the modem and wedges the AT port
+(§4.3), so stop `iot-cellular-client` first:
+
+```sh
+qmicli -d /dev/cdc-wdm0 --dms-get-operating-mode
+qmicli -d /dev/cdc-wdm0 --nas-get-serving-system        # registration / operator / RAT
+qmicli -d /dev/cdc-wdm0 --wds-get-profile-list=3gpp     # APN profiles
+qmicli -d /dev/cdc-wdm0 -p --wds-get-packet-statistics  # ⭐ modem-side TX/RX — honest liveness
+```
+
+> The modem-side **WDS RX packet counter** (`--wds-get-packet-statistics`) is the
+> QMI equivalent of `rmnet_data0` RX bytes: it climbs even when `wwan0`'s netdev is
+> deaf, which is exactly how §4.2 proved the data terminates at ECM, not QMI.
+
 **Ground-truth checks, in order:**
 
 ```sh
@@ -575,6 +766,11 @@ ifconfig rmnet_data0      # ⭐ RX bytes — the only honest liveness signal
 - `AT+CEER` and `AT+CGCLASS?` return `ERROR` on this firmware — no help.
 - `+CGPADDR` changes on every context re-activation, not per read. Two different
   reads returning different IPs is **not** a churning bearer.
+- ⭐ **`qmicli --wds-start-network` re-enumerates the modem and wedges
+  `/dev/ttyUSB2`** — `iot-cellular-client` then fails `open()` with `EPERM` (as
+  root, `DeviceAllow` fine) and device-ui shows the modem "not connected" with
+  `cell.*` empty (§4.3). Stop the daemon before QMI experiments; recover with a
+  modem `CFUN` cycle or reboot.
 - Device busybox lacks `timeout`, `head -c`, `nc -z`, `pkill`, `pgrep`.
 - `zsh` on the dev Mac has **no `/dev/tcp`** — port probes there silently
   false-negative. Use `nc -z -G 5 host port`.
@@ -584,18 +780,19 @@ ifconfig rmnet_data0      # ⭐ RX bytes — the only honest liveness signal
 
 ## 10. Open questions
 
-1. **Can `wwan0` work at all?** `libqmi` is now in `RRECOMMENDS:${PN}-cellular`, so
-   the next image carries `qmicli`. Run the §4 recipe against `/dev/cdc-wdm0`.
-   Still unanswered until then. If QMI is refused too, the ECM path is the *only*
-   option and `wwan0` should be documented as permanently unsupported.
-2. Should `cellular-client` own the SIM-slot selection (`AT!UIMS`) and expose it
+1. Should `cellular-client` own the SIM-slot selection (`AT!UIMS`) and expose it
    as a ds key, so the eSIM trap is a UI field rather than a field investigation?
-3. Should net-router push `cell.dns` to the link (`resolvectl dns eth1 …`)? Not a
+2. Should net-router push `cell.dns` to the link (`resolvectl dns eth1 …`)? Not a
    correctness gap (§6.3), but Airtel blocks `1.1.1.1` — one of resolved's global
    fallbacks — so the carrier's resolvers would be closer and more reliable.
 
 **Answered:**
 
+- ~~Can `wwan0` work at all via QMI?~~ **Yes — SOLVED (§4.4).** The blocker was
+  ECM being in the USB composition alongside `rmnet0`; the firmware bridged the PDN
+  to ECM. `AT!USBCOMP=1,1,0000010D` + `AT!RESET` drops ECM, and `wwan0`/DirectIP
+  then carries data (HW-verified: DNS over `wwan0`, netdev RX = modem RX). Tradeoff:
+  loses `eth1`. Plumbing to ship it is still TODO (§4.4).
 - ~~Does Airtel provision LTE-M/NB-IoT on this SIM?~~ **No** — `!SELRAT=06` never
   attaches (§7). Stuck at GPRS.
 - ~~Where does the module-side NAT config live?~~ `packaging/mangoh/iot-ecm-nat.sh`,

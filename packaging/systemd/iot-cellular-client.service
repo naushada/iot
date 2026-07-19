@@ -20,14 +20,15 @@ Type=simple
 EnvironmentFile=/etc/iot/cellular-client.env
 ExecStart=/usr/local/bin/cellular-client $CELLULAR_CLIENT_ARGS
 
-# Drives the WP module's AT + GNSS serial ports (/dev/ttyUSB*). Needs r/w on
-# those device nodes; runs with no extra capabilities. The exact device path /
-# permission model is confirmed on hardware (PR-C task / open questions §6.D).
+# Drives the WP module's AT + GNSS serial ports (/dev/ttyUSB*) and, when
+# cell.data.enable=true, the QMI control node (/dev/cdc-wdm0) for the wwan0
+# DirectIP data call. Needs r/w on those device nodes.
 DeviceAllow=char-ttyUSB rw
 DeviceAllow=/dev/ttyUSB0 rw
 DeviceAllow=/dev/ttyUSB1 rw
 DeviceAllow=/dev/ttyUSB2 rw
 DeviceAllow=/dev/ttyUSB3 rw
+DeviceAllow=/dev/cdc-wdm0 rw
 
 # /run/iot is owned solely by tmpfiles.d (iot.conf, 2775 root:iot) — do NOT use
 # RuntimeDirectory=iot: it resets /run/iot to root:root 0755 on start and removes
@@ -42,7 +43,12 @@ StandardError=journal
 
 NoNewPrivileges=yes
 PrivateTmp=yes
-ProtectKernelTunables=yes
+# ProtectKernelTunables must stay OFF: the DirectIP data call writes
+# /sys/class/net/wwan0/qmi/raw_ip (the qmi_wwan raw-ip toggle), and that write
+# — even from a child `sh -c 'echo Y > …'` — needs /sys writable, which
+# ProtectKernelTunables=yes would forbid for the whole service namespace. The
+# daemon otherwise only touches its own ds socket + the modem device nodes.
+ProtectKernelTunables=no
 ProtectControlGroups=yes
 RestrictRealtime=yes
 

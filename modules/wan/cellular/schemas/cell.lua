@@ -74,6 +74,15 @@ return {
     ["cell.rat"]               = { access = "Admin", type = "string", default = "" },  -- ""=leave; auto|gsm|umts|lte|gsm+lte|... (Sierra AT!SELRAT)
     ["sms.enable"]             = { access = "Admin", type = "boolean", default = false },
     ["sms.forward.cloud"]      = { access = "Admin", type = "boolean", default = false },
+    -- DirectIP data-call supervisor (opt-in). With the WP7702 in the DirectIP USB
+    -- composition (ECM dropped via AT!USBCOMP=1,1,0000010D), the host owns the data
+    -- call on wwan0; the daemon runs raw_ip + `qmicli --wds-start-network` + address
+    -- /route, and re-establishes on each modem re-enumeration. OFF by default: an
+    -- ECM-composition board keeps using eth1 and must NOT bring up wwan0. See
+    -- apps/docs/hw-bringup-wp7702-cellular-wan.md §4.4.
+    ["cell.data.enable"]       = { access = "Admin", type = "boolean", default = false },
+    ["cell.qmi.dev"]           = admin_str("/dev/cdc-wdm0"),   -- QMI control node
+    ["cell.wan.iface"]         = admin_str("wwan0"),           -- raw-ip WAN netdev
 
     -- write (daemon-published status)
     ["cell.state"]       = viewer_str(),
@@ -100,6 +109,14 @@ return {
     ["cell.rat.current"] = viewer_str(),   -- RAT the modem reports (AT!SELRAT?)
     ["cell.reg.reason"]  = viewer_str(),   -- network reject cause (AT+CEER), if any
     ["cell.version"]     = viewer_str(),
+
+    -- DirectIP data-call status (only meaningful when cell.data.enable=true).
+    -- cell.data.ip is the REAL wwan0 host address (unlike cell.ip, which on a
+    -- WP7702 is the module's internal rmnet_data0 address).
+    ["cell.data.state"]   = viewer_str(),  -- waiting-reg/attaching/starting/up/error
+    ["cell.data.ip"]      = viewer_str(),  -- host IPv4 on wwan0 (from QMI)
+    ["cell.data.gateway"] = viewer_str(),  -- QMI-reported gateway
+    ["cell.data.dns"]     = viewer_str(),  -- QMI-reported resolvers, comma-joined
 
     -- Module restart request (device-ui button): bump this monotonic token
     -- and the daemon cycles the radio (AT+CFUN=0/1) + re-applies APN/SMS/RAT

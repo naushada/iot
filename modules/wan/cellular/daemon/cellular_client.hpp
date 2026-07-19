@@ -13,6 +13,7 @@
 #include "cell_state.hpp"
 #include "nmea_parser.hpp"
 #include "at_parser.hpp"
+#include "qmi_wan.hpp"
 #include "serial_channel.hpp"
 #include "sms_receiver.hpp"
 
@@ -46,6 +47,12 @@ class CellularClient : public ACE_Event_Handler {
             unsigned     interval_sec = 30;
             bool         gps_enable = true;
             bool         sms_enable = false;            ///< MT SMS receive (off by default)
+            // DirectIP data-call supervisor (cell.data.enable). Off → the daemon
+            // is status-only and the cellular WAN reaches the host over ECM (eth1),
+            // exactly as before. On → the daemon owns the wwan0 data call over QMI.
+            bool         data_enable = false;
+            std::string  qmi_dev  = "/dev/cdc-wdm0";    ///< QMI control node (cell.qmi.dev)
+            std::string  wan_iface = "wwan0";           ///< raw-ip WAN netdev (cell.wan.iface)
         };
 
         explicit CellularClient(Config cfg) : m_cfg(std::move(cfg)) {}
@@ -89,6 +96,20 @@ class CellularClient : public ACE_Event_Handler {
         void cmd(const std::string& c);
         void pump_cmdq();           ///< write the next command if none is in flight
         void cmd_done();            ///< a terminal response arrived → advance the queue
+
+        // ── DirectIP data-call supervisor (cell.data.enable) ──
+        /// Called each poll tick. No-op unless data_enable. Verifies the wwan0
+        /// bearer is up (and the netdev still carries our IP — a modem re-enum
+        /// silently drops both) and (re-)establishes it otherwise.
+        void supervise_data_call();
+        /// raw_ip + `qmicli --wds-start-network` + address/route/DNS. Returns true
+        /// once wwan0 carries the QMI-assigned IP.
+        bool bring_up_data_call();
+        /// Publish cell.data.* (volatile). `s` non-null on success carries ip/gw/dns.
+        void publish_data(const char* state, const DirectIpSettings* s = nullptr);
+        /// Run argv as a subprocess (popen, stderr merged), return stdout. BLOCKS
+        /// the reactor for the call — all uses are sub-second except start-network.
+        std::string run_shell(const std::vector<std::string>& argv, int* rc = nullptr);
 
         Config                          m_cfg;
         data_store::Client              m_ds;
@@ -140,6 +161,11 @@ class CellularClient : public ACE_Event_Handler {
         unsigned                        m_poll_count = 0;      ///< for periodic GNSS restart
         SmsReceiver                     m_sms;                 ///< MT SMS receive state machine
         bool                            m_sms_setup = false;   ///< one-time CMGF/CNMI/CMGL done
+
+        // DirectIP data-call supervisor state (cell.data.enable).
+        bool                            m_data_up = false;     ///< bearer confirmed up last tick
+        std::string                     m_data_ip;             ///< IP currently on wan_iface (re-enum detect)
+        unsigned                        m_data_fail = 0;       ///< consecutive bring-up failures (logging)
 };
 
 } // namespace cellular
